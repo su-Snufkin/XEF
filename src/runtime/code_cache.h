@@ -1,0 +1,113 @@
+// XEF — code cache, block metadata, guest-PC → host-code map, IBTC.
+#pragma once
+#include <atomic>
+#include <mutex>
+
+#include "common/common.h"
+
+namespace xef {
+
+struct BlockMeta;
+
+enum ExitKind : u8 {
+    EK_JMP = 0,     // jmp rel32 site
+    EK_JCC = 1,     // jcc rel32 site
+    EK_CALL = 2,    // call rel32 site (BL)
+};
+
+// One patchable direct exit of a translated block.
+struct ExitInfo {
+    u8* site;              // address of the rel32 field
+    u8* stub;              // unlinked target (link stub)
+    GuestAddr target;
+    BlockMeta* owner;
+    ExitInfo* next_in;     // intrusive list of exits linked INTO a block (for unlinking)
+    u8 kind;
+    u8 linked;
+};
+
+struct BlockMeta {
+    GuestAddr start;
+    GuestAddr end;
+    u8* code;
+    u32 code_size;
+    u16 nexits;
+    u8 tier;
+    u8 flags;
+    ExitInfo* incoming;    // exits from other blocks that jump here
+    BlockMeta* next_on_page;  // chained per guest page for invalidation
+    u64 exec_count;
+    u32 host_pc_map_off;   // offset of host→guest pc map (for faults)
+    u32 host_pc_map_len;
+    ExitInfo exits[];
+};
+
+// Indirect branch target cache: direct-mapped, 16K entries, probed inline by JIT code.
+struct IbtcEntry {
+    u64 guest;   // odd value (1) = empty
+    u64 host;
+};
+constexpr int kIbtcEntries = 16384;
+
+struct RuntimeStubs {
+    u8* enter;               // void enter(CpuState*, void* host) — C ABI
+    u8* exit_to_runtime;     // save state, return to C++ (reason already stored)
+    u8* link_stub;           // rax = ExitInfo*
+    u8* ibtc_miss;           // rax = guest target
+    u8* syscall_exit;        // rax = next pc
+};
+
+class CodeCache {
+public:
+    void init(size_t size);
+    u8* alloc_code(size_t max_size);          // returns write pointer (caller commits)
+    void commit_code(u8* start, size_t used);
+    BlockMeta* alloc_meta(int nexits);
+
+    // guest pc -> block (lock-free read)
+    BlockMeta* lookup(GuestAddr pc) const {
+        u64 i1 = (pc >> 24) & ((1ull << 24) - 1);
+        BlockMeta** l2 = l1_[i1].load(std::memory_order_acquire);
+        if (!l2) return nullptr;
+        return __atomic_load_n(&l2[(pc >> 2) & ((1u << 22) - 1)], __ATOMIC_ACQUIRE);
+    }
+    void publish(BlockMeta* b);
+    void unpublish(GuestAddr pc);
+
+    void ibtc_insert(IbtcEntry* table, GuestAddr pc, u8* host) {
+        IbtcEntry& e = table[(pc >> 2) & (kIbtcEntries - 1)];
+        __atomic_store_n(&e.guest, 1ull, __ATOMIC_RELAXED);
+        __atomic_store_n(&e.host, (u64)host, __ATOMIC_RELEASE);
+        __atomic_store_n(&e.guest, pc, __ATOMIC_RELEASE);
+    }
+    IbtcEntry* new_ibtc();
+
+    bool contains(const void* p) const { return (const u8*)p >= base_ && (const u8*)p < base_ + size_; }
+    u8* base() const { return base_; }
+    size_t used() const { return code_ptr_ - base_; }
+
+    // host code address -> block (blocks are allocated with increasing code addresses)
+    BlockMeta* find_by_host(const u8* p) const;
+    void register_block(BlockMeta* b);
+
+    std::mutex lock;   // serializes translation / linking (off the hot path)
+    RuntimeStubs stubs;
+
+private:
+    u8* base_ = nullptr;
+    size_t size_ = 0;
+    u8* code_ptr_ = nullptr;
+    u8* meta_base_ = nullptr;
+    u8* meta_ptr_ = nullptr;
+    u8* meta_end_ = nullptr;
+    std::atomic<BlockMeta**>* l1_ = nullptr;
+    BlockMeta** by_host_ = nullptr;
+    size_t nby_host_ = 0, cap_by_host_ = 0;
+};
+
+extern CodeCache g_cache;
+
+// Patches a direct exit to jump to `host` (atomic 4-byte store).
+void link_exit(ExitInfo* e, u8* host);
+
+}  // namespace xef

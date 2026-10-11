@@ -1,0 +1,27 @@
+// XEF — guest threads and processes.
+#pragma once
+#include "common/common.h"
+#include "ir/ir.h"
+#include "runtime/code_cache.h"
+#include "runtime/cpu_state.h"
+
+namespace xef {
+
+struct ThreadCtx {
+    CpuState* st = nullptr;
+    ir::Block* blk = nullptr;       // translation scratch
+    u8* jit_stack = nullptr;
+    size_t jit_stack_size = 0;
+    int tid = 0;
+    u64 clear_child_tid = 0;
+};
+
+ThreadCtx* thread_create(CpuState* parent);
+void thread_exit(CpuState* st, int code);
+i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid);
+i64 process_execve(CpuState* st, u64 path, u64 argv, u64 envp);
+
+extern int g_main_argc_xef;      // number of argv entries belonging to xef itself
+extern char** g_xef_argv;
+
+}  // namespace xef

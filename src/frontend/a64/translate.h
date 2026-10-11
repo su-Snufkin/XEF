@@ -1,0 +1,61 @@
+// XEF — AArch64 → IR translator (frontend).
+#pragma once
+#include "ir/builder.h"
+
+namespace xef::a64 {
+
+struct TranslateOpts {
+    int max_insts = 128;          // max guest instructions per block
+    bool stop_at_page = false;
+};
+
+// Reads guest code at `pc` and fills `blk`. Always produces a terminated block.
+void translate_block(GuestAddr pc, ir::Block& blk, const TranslateOpts& opts);
+
+// Decode helpers shared with SIMD translation.
+bool decode_bit_masks(u32 n, u32 imms, u32 immr, bool immediate, int datasize, u64* wmask);
+
+class Translator {
+public:
+    Translator(ir::Block& b) : b_(b), ir_(b) {}
+
+    // Translates one instruction. Returns false if it ended the block.
+    bool step(GuestAddr pc, u32 insn);
+
+    ir::Builder& ir() { return ir_; }
+
+    // operand helpers
+    ir::Val X(int r, ir::Type t) { return r == 31 ? ir_.cnst(t, 0) : ir_.get_reg(r, t); }
+    ir::Val XSP(int r, ir::Type t) { return ir_.get_reg(r, t); }
+    void setX(int r, ir::Val v) { if (r != 31) ir_.set_reg(r, v); }
+    void setXSP(int r, ir::Val v) { ir_.set_reg(r, v); }
+
+    void undef(GuestAddr pc, u32 insn);
+
+    GuestAddr pc_ = 0;
+
+private:
+    bool dp_imm(u32 i);
+    bool branch_sys(u32 i);
+    bool ldst(u32 i);
+    bool dp_reg(u32 i);
+    bool simd_fp(u32 i);   // translate_simd.cpp
+
+    bool ldst_exclusive(u32 i);
+    bool ldst_pair(u32 i);
+    bool ldst_reg(u32 i);
+    bool ldst_atomic(u32 i);
+    bool ldst_simd_struct(u32 i);  // translate_simd.cpp
+    bool system(u32 i);
+
+    ir::Val shift_reg(ir::Type t, ir::Val v, int type, int amount);
+    ir::Val extend_reg(ir::Type t, ir::Val v, int option, int shift);
+    void do_load(int rt, ir::Val addr, int size, bool sign, ir::Type dst, bool vec);
+    void do_store(int rt, ir::Val addr, int size, bool vec);
+
+    ir::Block& b_;
+    ir::Builder ir_;
+    bool ended_ = false;
+};
+
+}  // namespace xef::a64
