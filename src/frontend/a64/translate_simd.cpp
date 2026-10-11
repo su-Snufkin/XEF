@@ -496,6 +496,7 @@ static bool simd_three_same(Translator& t, u32 i, bool scalar) {
     case 0x08: op = V_SSHL; break;
     case 0x09: op = V_SQSHL; break;
     case 0x0a: op = V_SRSHL; break;
+    case 0x0b: op = V_SQRSHL; break;
     case 0x0c: op = V_SMAX; break;
     case 0x0d: op = V_SMIN; break;
     case 0x0e: op = V_SABD; break;
@@ -518,6 +519,7 @@ static bool simd_three_same(Translator& t, u32 i, bool scalar) {
     case 0x28: op = V_USHL; break;
     case 0x29: op = V_UQSHL; break;
     case 0x2a: op = V_URSHL; break;
+    case 0x2b: op = V_UQRSHL; break;
     case 0x2c: op = V_UMAX; break;
     case 0x2d: op = V_UMIN; break;
     case 0x2e: op = V_UABD; break;
@@ -538,7 +540,7 @@ static bool simd_three_same(Translator& t, u32 i, bool scalar) {
         case V_SSHL: case V_USHL: case V_SRSHL: case V_URSHL:
             if (size != 3) return false;
             break;
-        case V_SQADD: case V_UQADD: case V_SQSUB: case V_UQSUB: case V_SQSHL: case V_UQSHL:
+        case V_SQADD: case V_UQADD: case V_SQSUB: case V_UQSUB: case V_SQSHL: case V_UQSHL: case V_SQRSHL: case V_UQRSHL:
         case V_SQDMULH: case V_SQRDMULH:
             break;
         default: return false;
@@ -893,7 +895,16 @@ static bool simd_three_diff(Translator& t, u32 i, bool scalar) {
     int size = bits(i, 23, 22), opcode = bits(i, 15, 12);
     int rd = bits(i, 4, 0), rn = bits(i, 9, 5), rm = bits(i, 20, 16);
     int esize = 1 << size;
-    if (scalar) return false;
+    if (scalar) {
+        // scalar SQDMULL / SQDMLAL / SQDMLSL
+        if (u || (size != 1 && size != 2)) return false;
+        u16 sop = opcode == 0xd ? V_SQDMULL : opcode == 0x9 ? V_SQDMLAL : opcode == 0xb ? V_SQDMLSL : 0;
+        if (!sop) return false;
+        Val c = sop == V_SQDMULL ? kNone : s.V(rd);
+        Val r = s.vop(sop, esize, F_SCALAR, s.V(rn), s.V(rm), c);
+        s.setV(rd, s.zext(r, esize * 2));
+        return true;
+    }
     Val a = s.V(rn), b = s.V(rm);
     // "2" variants operate on upper halves
     auto hi = [&](Val v) { return q ? s.vop(V_DUPELEM, 8, 0, v, kNone, kNone, 1) : v; };
@@ -909,7 +920,10 @@ static bool simd_three_diff(Translator& t, u32 i, bool scalar) {
     case 0x06: op = V_SUBHN; narrow = true; break;
     case 0x07: op = V_SABDL; break;
     case 0x08: op = V_SMLAL; acc = true; break;
+    case 0x09: op = V_SQDMLAL; acc = true; break;
     case 0x0a: op = V_SMLSL; acc = true; break;
+    case 0x0b: op = V_SQDMLSL; acc = true; break;
+    case 0x0d: op = V_SQDMULL; break;
     case 0x0c: op = V_SMULL; break;
     case 0x0e: op = V_PMULL; break;
     case 0x10: op = V_UADDL; break;
@@ -926,6 +940,7 @@ static bool simd_three_diff(Translator& t, u32 i, bool scalar) {
     default: return false;
     }
     if (size == 3 && op != V_PMULL) return false;
+    if ((op == V_SQDMULL || op == V_SQDMLAL || op == V_SQDMLSL) && (u || size == 0)) return false;
     if (narrow) {
         Val r = s.vop(op, esize, 0, a, b);   // esize = destination (narrow) element size
         if (q) r = s.vop(V_INSELEM, 8, 0, s.V(rd), r, kNone, 1);
@@ -981,6 +996,13 @@ static bool simd_indexed(Translator& t, u32 i, bool scalar) {
     case 0x12: if (scalar) return false; s.setV(rd, s.vop(V_UMLAL, esize, 0, hi(a), be, s.V(rd))); return true;
     case 0x06: if (scalar) return false; s.setV(rd, s.vop(V_SMLSL, esize, 0, hi(a), be, s.V(rd))); return true;
     case 0x16: if (scalar) return false; s.setV(rd, s.vop(V_UMLSL, esize, 0, hi(a), be, s.V(rd))); return true;
+    case 0x0b: case 0x03: case 0x07: {
+        u16 op = opcode == 0xb ? V_SQDMULL : opcode == 0x3 ? V_SQDMLAL : V_SQDMLSL;
+        Val c = op == V_SQDMULL ? kNone : s.V(rd);
+        if (scalar) { s.setV(rd, s.zext(s.vop(op, esize, F_SCALAR, a, be, c), esize * 2)); return true; }
+        s.setV(rd, s.vop(op, esize, 0, hi(a), be, c));
+        return true;
+    }
     case 0x0c: s.setV(rd, s.vop(V_SQDMULH, esize, fl, a, be)); return true;
     case 0x0d: s.setV(rd, s.vop(V_SQRDMULH, esize, fl, a, be)); return true;
     default: return false;

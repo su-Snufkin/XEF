@@ -313,6 +313,9 @@ static u64 frecpe(u64 x, int es, u32 fpcr) {
     u64 sgn = x & fp.sign();
     if (fp.is_inf(x)) return sgn;
     if (fp.is_zero(x)) return sgn | (es == 4 ? 0x7f800000ull : 0x7ff0000000000000ull);
+    // |x| < 2^-128 (single) / 2^-1024 (double): estimate overflows to infinity
+    if (fp.abs(x) < (es == 4 ? 0x00200000ull : 0x0004000000000000ull))
+        return sgn | (es == 4 ? 0x7f800000ull : 0x7ff0000000000000ull);
     if (es == 4) {
         u32 v = (u32)x;
         int exp = (v >> 23) & 0xff;
@@ -437,22 +440,21 @@ void vec_ref(u32 op, int es, u32 flags, u64 imm, const V128& a, const V128& b, c
     case V_CMHI: elementwise([](u64 x, u64 y, u64) { return x > y ? ~0ull : 0; }); break;
     case V_CMHS: elementwise([](u64 x, u64 y, u64) { return x >= y ? ~0ull : 0; }); break;
     case V_CMTST: elementwise([](u64 x, u64 y, u64) { return (x & y) ? ~0ull : 0; }); break;
-    case V_SSHL: case V_USHL: case V_SRSHL: case V_URSHL: case V_SQSHL: case V_UQSHL: {
-        bool sg = op == V_SSHL || op == V_SRSHL || op == V_SQSHL;
-        bool rnd = op == V_SRSHL || op == V_URSHL;
-        bool sat = op == V_SQSHL || op == V_UQSHL;
+    case V_SSHL: case V_USHL: case V_SRSHL: case V_URSHL: case V_SQSHL: case V_UQSHL: case V_SQRSHL: case V_UQRSHL: {
+        bool sg = op == V_SSHL || op == V_SRSHL || op == V_SQSHL || op == V_SQRSHL;
+        bool rnd = op == V_SRSHL || op == V_URSHL || op == V_SQRSHL || op == V_UQRSHL;
+        bool sat = op == V_SQSHL || op == V_UQSHL || op == V_SQRSHL || op == V_UQRSHL;
         elementwise([&](u64 x, u64 y, u64) -> u64 {
             int sh = (int)(i8)(y & 0xff);
             __int128 v = sg ? (__int128)sx(x, es) : (__int128)x;
             if (sh >= 0) {
-                if (sh >= 128) sh = 127;
-                __int128 res = sh >= 100 ? (v == 0 ? 0 : (v > 0 ? ((__int128)1 << 100) : -((__int128)1 << 100))) : v << sh;
+                __int128 res = sh >= 64 ? (v == 0 ? 0 : (v > 0 ? ((__int128)1 << 100) : -((__int128)1 << 100))) : v * ((__int128)1 << sh);
                 if (sat) return sg ? sat_s(res, es) : sat_u(res, es);
                 return sh >= eb ? 0 : (u64)res;
             }
             int rs = -sh;
             if (rnd) {
-                if (rs > eb + 1) return 0;
+                if (rs > eb) return 0;
                 __int128 rv = (v + ((__int128)1 << (rs - 1))) >> rs;
                 return sat ? (sg ? sat_s(rv, es) : sat_u(rv, es)) : (u64)rv;
             }
@@ -548,6 +550,19 @@ void vec_ref(u32 op, int es, u32 flags, u64 imm, const V128& a, const V128& b, c
             default: v = z + (u64)(x > y ? x - y : y - x); break;
             }
             put(r, i, ws, v & emask(ws));
+        }
+        break;
+    }
+    case V_SQDMULL: case V_SQDMLAL: case V_SQDMLSL: {
+        int ws = es * 2;
+        int ln = scalar ? 1 : 8 / es;
+        for (int i = 0; i < ln; i++) {
+            __int128 p = (__int128)2 * sx(get(a, i, es), es) * sx(get(b, i, es), es);
+            u64 pr = sat_s(p, ws);
+            if (op == V_SQDMULL) { put(r, i, ws, pr); continue; }
+            __int128 acc = sx(get(c, i, ws), ws);
+            __int128 res = op == V_SQDMLAL ? acc + sx(pr, ws) : acc - sx(pr, ws);
+            put(r, i, ws, sat_s(res, ws));
         }
         break;
     }

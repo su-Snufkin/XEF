@@ -605,13 +605,17 @@ void T1::emit_binop(Val v) {
             as_.andn(s, d, rb, ra);
         } else {
             Opnd oa = opnd(a, true, true, s);
-            Reg t = alloc_temp(); pinned_ |= 1 << t;
-            load_into(t, b, s);
-            as_.not_(s, t);
+            if (oa.k == Opnd::R) pinned_ |= 1 << oa.r;
+            Opnd ob = opnd(b, true, true, s);
+            if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
             AluOp op = in.op == Op::AndNot ? AND : in.op == Op::OrNot ? OR : XOR;
-            emit_alu(op, s, t, oa);
             d = dest_for(v, s);
-            if (d != t) { as_.mov(s, d, t); }
+            Reg t = d;
+            if (oa.k == Opnd::R && oa.r == d) { t = alloc_temp(); pinned_ |= 1 << t; }
+            emit_mov_opnd(s, t, ob);
+            as_.not_(s, t);
+            emit_alu(op, s, t, oa);
+            if (t != d) as_.mov(s, d, t);
         }
         break;
     }
@@ -935,9 +939,11 @@ void T1::emit_mulh(Val v) {
     take_reg(RAX); pinned_ |= 1 << RAX;
     take_reg(R11); pinned_ |= 1 << R11;
     Reg hint = dest_hint(v);
+    load_into(RAX, in.a, 8);
+    pinned_ = (1 << RAX) | (1 << R11);
+    pin(in.b);
     Opnd ob = opnd(in.b, true, false, 8);
     if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
-    load_into(RAX, in.a, 8);
     as_.mov(8, R11, RDX);
     if (ob.k == Opnd::R) {
         Reg src = ob.r == RDX ? R11 : ob.r;

@@ -307,6 +307,13 @@ void T1::emit_vec(Val v) {
         return;
     }
     case Op::VSelect: {
+        if (in.aux == ir::AL || in.aux == ir::NV) {
+            Xmm xt = xreg(in.b);
+            Xmm d = new_x(v);
+            as_.movaps(d, xt);
+            zero_upper(d, in.size);
+            return;
+        }
         Xmm xt = xreg(in.b);
         Xmm xf = xreg(in.c);
         Xmm d = new_x(v);
@@ -471,7 +478,7 @@ void T1::emit_itof(Val v) {
     const Inst& in = I(v);
     int fs = in.size;
     bool sgn = in.aux & 1;
-    Type st = I(resolve(in.a)).ty;
+    Type st = I(in.a).ty;
     bool src64 = st == Type::I64;
     if (in.imm != 0 || (!sgn && src64) || (fs != 4 && fs != 8)) {
         Reg r = to_reg(in.a); pinned_ |= 1 << r;
@@ -680,8 +687,9 @@ void T1::emit_vop(Val v) {
         Xmm od = alloc_x(); xpinned_ |= 1 << od;
         if (es == 4) {
             if (half) {
-                as_.xop(PUNPCKL[8], ev, a, b);  // a0 a1 b0 b1
-                as_.xop1(PSHUFD, od, ev, 0xB1); // a1 a0 b1 b0
+                as_.xop(PUNPCKL[8], d, a, b);    // a0 a1 b0 b1
+                as_.xop1(PSHUFD, ev, d, 0x08);   // a0 b0
+                as_.xop1(PSHUFD, od, d, 0x0D);   // a1 b1
             } else {
                 as_.xop(SHUFPS, ev, a, b, 0x88);
                 as_.xop(SHUFPS, od, a, b, 0xDD);
@@ -1136,17 +1144,18 @@ void T1::emit_vop(Val v) {
     }
     case V_FMLA: case V_FMLS: case V_FMADD: case V_FMSUB: case V_FNMADD: case V_FNMSUB: {
         if (!g_host.fma || !as_.avx) return helper();
+        // ARM negates operands before the fused op (FPNeg flips NaN signs too), so negate
+        // explicitly and always use vfmadd231: d = a*b + d.
+        bool neg_a = in.sub == V_FMLS || in.sub == V_FMSUB || in.sub == V_FNMADD;
+        bool neg_c = in.sub == V_FNMADD || in.sub == V_FNMSUB;
         Xmm a = A(), b = B(), c = C();
         Xmm d = new_x(v);
-        as_.movaps(d, c);
-        u8 base;
-        switch (in.sub) {
-        case V_FMLA: case V_FMADD: base = 0xB8; break;   // vfmadd231:  d = a*b + d
-        case V_FMLS: case V_FMSUB: base = 0xBC; break;   // vfnmadd231: d = -(a*b) + d
-        case V_FNMADD: base = 0xBE; break;               // vfnmsub231: d = -(a*b) - d
-        default: base = 0xBA; break;                     // vfmsub231:  d = a*b - d
-        }
-        as_.xop(scalar ? FMA231S(base, es) : FMA231V(base, es), d, a, b);
+        u64 m = es == 8 ? 0x8000000000000000ull : 0x8000000080000000ull;
+        if (neg_c) as_.xop_m(PXOR, d, c, vconst_mem(m, m));
+        else as_.movaps(d, c);
+        Xmm x = a;
+        if (neg_a) { x = alloc_x(); xpinned_ |= 1 << x; as_.xop_m(PXOR, x, a, vconst_mem(m, m)); }
+        as_.xop(scalar ? FMA231S(0xB8, es) : FMA231V(0xB8, es), d, x, b);
         finish(d);
         return;
     }
