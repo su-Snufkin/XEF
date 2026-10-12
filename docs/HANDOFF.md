@@ -6,7 +6,7 @@ wydajność jest priorytetem zaraz po poprawności. Użytkownik akceptuje każdy
 jest „rozwijaj XEF dopóki nie skończą się tokeny”.
 
 **Zasady repo:** commity BEZ stopki „Co-Authored-By: Claude”; autor zawsze `su-Snufkin <341201482+su-Snufkin@users.noreply.github.com>` (ustawione w `git config` repo; nie podawaj `-c user.email`).
-Remote: `git@github.com:su-Snufkin/XEF.git`, gałąź `main`.
+Remote: `git@github.com:su-Snufkin/XEF.git`; bieżąca praca na gałęzi `claude/upbeat-wright-ausggy` (`git push -u origin claude/upbeat-wright-ausggy`), bez PR-ów bez prośby.
 
 ## Szybki start (nowa maszyna / cloud)
 ```sh
@@ -14,7 +14,10 @@ tools/setup.sh                       # cmake/ninja (venv), sysroot arm64, qemu-u
 export PATH=$PWD/.tools/venv/bin:$PATH
 cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ && ninja -C build
 cmake -S . -B build-dbg -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ && ninja -C build-dbg
-tests/guest/run.sh                   # programy C/C++ vs qemu (27/27 przechodzi)
+tests/guest/run.sh                   # programy C/C++ vs qemu (72/72)
+tests/rootfs/run.sh                  # ścieżki -L (symlinki wewnątrz rootfs)
+tests/gui/run.sh                     # shimy --host-gl (bez serwera X)
+tools/build_thunks.sh                # shimy gościa dla --host-gl (libGL/libEGL/libvulkan)
 (cd tests/diff && python3 fuzz.py -n 3000 --class all --seed 1)   # fuzzer instrukcji vs qemu
 bench/build.sh && bench/run.py       # benchmarki -> docs/benchmarks.md
 ```
@@ -35,8 +38,13 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - **Inwalidacja kodu**: IC IVAU, munmap/mmap FIXED/mprotect/mremap; zależności bloków (ciało + lookahead
   flag) w indeksie stron; regiony tier 2 zabijane przez przekierowanie wewnętrznych skoków (atomowo).
 - Wątki, fork/vfork, execve; przepełnienie stosu JIT (głęboka rekurencja) obsługiwane.
-- **GUI / gry 3D** (docs/GUI.md): X11, GTK3, Qt, Mesa llvmpipe (GL 4.5), glxgears, glmark2 (174 vs 350
-  natywnie), Neverball, Extreme Tux Racer, OpenArena, Minetest, SuperTuxKart — wszystkie grywalne.
+- **GUI / gry 3D** (docs/GUI.md): X11, GTK3, Qt, Mesa llvmpipe (GL 4.5), glmark2, Neverball, ETR,
+  OpenArena, Minetest, SuperTuxKart, Warzone 2100, TORCS, Trigger Rally, Red Eclipse, Scorched3D,
+  MegaGlest, Blender 4.0, Godot 3.5, Stellarium, WebKitGTK (WebGL), vkcube/vkmark.
+- **`--host-gl`** (thunki): GL/GLX/EGL/GLES/Vulkan gościa → natywne biblioteki hosta (src/thunks,
+  thunks/, tools/gen_glthunks.py). Wywołania zwrotne host→gość przez `guest_call` (hlt #0x5847).
+- Python 3.12 z rootfs przechodzi testy stdlib (pakiet `libpython3.12-testsuite`; uruchamiaj
+  `build/xef -L R /usr/bin/python3 -m test ...` — ścieżką gościa, inaczej sys.prefix wskazuje hosta).
 
 ## Narzędzia
 - `tools/mkrootfs.sh [pkg…]` — rootfs arm64 z Ubuntu noble (z zależnościami), `tools/guishot.sh` —
@@ -45,6 +53,13 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - `--trace` (bez linkowania, ślad ostatnich bloków przy skoku w niezamapowany adres), `--profile`
   (bloki + czas poza JIT wg funkcji/bibliotek), `--stats` (lista operacji wektorowych przez helper C).
 - Sieć w chmurze: deb.debian.org zablokowany → `tools/setup.sh` używa Ubuntu ports/archive.
+- **Szukanie błędów translacji**: uruchom duży program/test (np. testy stdlib Pythona), a gdy wynik
+  różni się od qemu: `--max-block 1 --no-tier2` (czy to interakcja w bloku?), potem bisekcja zakresu
+  adresów z `XEF_SPLIT=lo-hi` (bloki z tego zakresu po jednej instrukcji) i `setarch x86_64 -R`
+  (stałe adresy bibliotek) — skrypt w stylu `/tmp/bisectg.sh` z historii; znaleziony blok odtwórz
+  w asm jako test w tests/guest/. Tak znalezione: dzielenie przez stałą 64-bit (pożyczony rejestr),
+  cset po remat flag, zwolnienie operandów flag w terminatorze.
+- `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64); fuzzer go ustawia.
 
 ## Następne kroki (priorytet)
 1. Wydajność gier: przypinanie rejestrów V do XMM w regionach tier 2 (shadery llvmpipe to gorące
@@ -57,6 +72,14 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 4. Trwały cache AOT, thunki bibliotek.
 
 ## Pułapki, na które już wpadliśmy
+- Remat flag czyta operandy producenta flag: zapis rejestru docelowego (select/adc) i zwalnianie
+  rejestrów w terminatorze muszą nastąpić PO `need_flags`/z zachowaniem tych wartości.
+- `nzcv_live_at` używa wspólnego `scratch` — wskaźniki do jego instrukcji są nieważne po rekurencji.
+- Pożyczenie zmapowanego rejestru gościa (`alloc_temp` bez wolnych tymczasowych) musi przepiąć wartości
+  czytające ten rejestr (także nietknięte GetReg) na zapisaną kopię w CpuState.
+- Wewnętrzne fd XEF (pipe tier 2) są ≥1000 i chronione przed close/close_range/dup3 gościa — dziecko po
+  fork zamykające „wszystko” inaczej podmieniało je na pliki gościa.
+- Próbkowanie używa sygnału RT 64 (`kSampleSig`), SIGPROF należy do gościa.
 - Remat flag w terminatorach nie może używać RAX (cel skoku) — RAX jest przypinany w Exit*Indirect/Ret.
 - `CLONE_PARENT_SETTID` musi być zapisany zanim dziecko ruszy (glibc: ptid == ctid).
 - `alloc_code()` tylko rezerwuje; drugi alloc przed `commit_code` zwraca ten sam adres.
