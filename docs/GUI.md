@@ -123,4 +123,5 @@ exists (not an XEF issue).
   run as `build/xef -L R /usr/bin/python3 -m test ...`), except VSOCK socket tests (no device).
 - OpenJDK 21 (HotSpot C1/C2 JIT on top of XEF, SIGSEGV-based null checks, threads): a mixed
   benchmark (recursion, collections, streams, sorting, 10k NullPointerExceptions, 4 threads) runs
-  correctly in 1.6 s vs 0.4 s natively.
+  correctly in 1.6 s vs 0.4 s natively (`tests/java/run.sh`). Swing / Java2D with antialiasing
+  renders (`tests/java/SwingDemo.java`, `docs/screenshots/java-swing.jpg`).
