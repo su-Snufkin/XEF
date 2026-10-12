@@ -39,6 +39,7 @@ program from the rootfs with these settings and takes a screenshot of the X serv
 | Minetest (Irrlicht + LuaJIT) | world creation and gameplay (`docs/screenshots/minetest-game.png`) |
 | SuperTuxKart 1.4 | race on Lighthouse (`--race-now`, `docs/screenshots/supertuxkart-race.png`) |
 | FeatherPad (Qt) | works (`docs/screenshots/qt-featherpad.png`) |
+| WebKitGTK MiniBrowser (multi-process, JavaScriptCore JIT) | page with CSS gradients, canvas, JS (`docs/screenshots/webkit-minibrowser.png`); needs `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` (bubblewrap/seccomp sandbox is not emulated) |
 
 Without `ALSOFT_DRIVERS=null` OpenAL games spin on failing audio calls when no sound device
 exists (not an XEF issue).

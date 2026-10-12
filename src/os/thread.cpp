@@ -166,7 +166,8 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     std::vector<std::string> args;
     for (char** a = (char**)gargv; a && *a; a++) args.push_back(*a);
     std::vector<char*> envp;
-    for (char** e = (char**)genvp; e && *e; e++) envp.push_back(*e);
+    for (char** e = (char**)genvp; e && *e; e++)
+        if (strncmp(*e, "XEF_ROOTFS=", 11)) envp.push_back(*e);   // ours (below) must be the one seen
     std::string rootenv;
     if (!g_rootfs.empty()) { rootenv = "XEF_ROOTFS=" + g_rootfs; envp.push_back((char*)rootenv.c_str()); }
     envp.push_back(nullptr);
