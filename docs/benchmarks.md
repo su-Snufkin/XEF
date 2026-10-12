@@ -2,6 +2,17 @@
 
 Each benchmark is built from the same source with the same flags (-O2) for x86-64 (native) and AArch64 (static). Times are best-of-N wall clock. "XEF vs native" is native time / XEF time (100% = native speed). Newest results first. Regenerate with `bench/build.sh && bench/run.py`.
 
+## 2026-10-12 — Intel(R) Xeon(R) Processor @ 2.80GHz (commit 6b132b7) — flags dead at calls, DSE, spill fixes
+
+| benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
+|---|---:|---:|---:|---:|---:|
+| coremark — CoreMark (200k iterations) | 8.837 | 16.701 | — | 53% | — |
+| intloop — integer loops (sieve, hash, counting) | 0.850 | 0.740 | — | 115% | — |
+| fploop — FP loops (matmul, n-body, mandelbrot) | 0.341 | 0.610 | — | 56% | — |
+| calls — calls + indirect branches (fib, fn pointers, interpreter) | 0.626 | 1.266 | — | 49% | — |
+| zstd-c — zstd -6 compress 48 MB text | 0.919 | 2.805 | — | 33% | — |
+| zstd-d — zstd decompress 48 MB text | 0.075 | 0.204 | — | 37% | — |
+
 ## 2026-10-12 — 13th Gen Intel(R) Core(TM) i7-13620H (commit 9c10fe1) — tier 2 regions (regional regmap), flag remat
 
 | benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
