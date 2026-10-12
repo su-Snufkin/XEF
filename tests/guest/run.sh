@@ -18,7 +18,7 @@ for src in "$ROOT"/tests/guest/t_*.c "$ROOT"/tests/guest/t_*.cpp; do
     link=$1; opt=$2
     exe=$OUT/$name-$link$opt
     lflag=""; [ "$link" = static ] && lflag=-static
-    if [ ! -x "$exe" ] || [ "$src" -nt "$exe" ]; then
+    if [ ! -x "$exe" ] || [ "$src" -nt "$exe" ] || [ "$ROOT/thunks/thunk_ids.h" -nt "$exe" ]; then
       $CC --target=aarch64-linux-gnu --sysroot=$S -fuse-ld=lld $lflag $opt "$src" -lm -o "$exe" 2>$OUT/build.log || { echo "BUILD FAIL $name"; cat $OUT/build.log; continue; }
     fi
     if [ -f "${src%.*}.expected" ]; then exp=$(cat "${src%.*}.expected"); ec=0

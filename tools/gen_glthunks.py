@@ -93,7 +93,7 @@ def parse(text, pattern):
     return out
 
 funcs = {}
-order = []
+order = []   # thunk ids = positions (xef_selftest_mix is put first)
 def add(name, ret, params):
     if name in funcs: return
     rc = classify(ret)
@@ -186,7 +186,7 @@ if os.path.exists(os.path.join(vkdir, 'vulkan_core.h')):
 # host helpers used by the guest shim (resolved in the host libX11)
 funcs['xef_host_XFree'] = ('i', 'l', 2); order.append('xef_host_XFree')
 # ABI self-test implemented inside XEF (tests/guest/t_thunk_abi.c)
-funcs['xef_selftest_mix'] = ('d', 'ifdlbcsSfdiiiiifffffdl', 0); order.append('xef_selftest_mix')
+funcs['xef_selftest_mix'] = ('d', 'ifdlbcsSfdiiiiifffffdl', 0); order.insert(0, 'xef_selftest_mix')   # id 0: stable
 
 os.makedirs(os.path.join(ROOT, 'src/thunks'), exist_ok=True)
 os.makedirs(os.path.join(ROOT, 'thunks'), exist_ok=True)
