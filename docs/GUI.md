@@ -35,6 +35,7 @@ Verified with `--host-gl`:
 | MegaGlest, Armagetron Advanced, X-Moto | menus / animated 3D menu | `hostgl-games2.jpg` |
 | Scorched3D | wxWidgets launcher starting the SDL client; tutorial match against bots | `scorched3d-hostgl.jpg` |
 | BZFlag, Widelands, Endless Sky | menus | |
+| LibreOffice 24.2 Writer | GTK3; typing, spell checking (no --host-gl needed) | `libreoffice-writer.jpg` |
 | vkmark (Vulkan) | 300 points vs 360 natively (llvmpipe/lavapipe) | |
 
 (screenshots in `docs/screenshots/`)

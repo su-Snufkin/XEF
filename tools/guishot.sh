@@ -9,7 +9,7 @@ keep=0; [ "$1" = --keep ] && { keep=1; shift; }
 [ "$1" = -- ] && shift
 prog=$1; shift
 export DISPLAY=${DISPLAY:-:1} LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy ALSOFT_DRIVERS=null NO_AT_BRIDGE=1
-"$ROOT/build/xef" -L "$R" "$R$prog" "$@" > "${out%.png}.log" 2>&1 &
+"$ROOT/build/xef" -L "$R" "$prog" "$@" > "${out%.png}.log" 2>&1 &
 pid=$!
 sleep "$secs"
 xwd -root -silent | convert xwd:- "$out"

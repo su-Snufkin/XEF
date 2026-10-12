@@ -34,6 +34,15 @@ for d in $R/usr/lib/aarch64-linux-gnu/blas $R/usr/lib/aarch64-linux-gnu/lapack $
     [ -e $R/usr/lib/aarch64-linux-gnu/$b ] || ln -s ${d#$R/usr/lib/aarch64-linux-gnu/}/$b $R/usr/lib/aarch64-linux-gnu/$b
   done
 done
+# libreoffice-common's postinst: the configuration registry is linked into /etc
+if [ -d $R/usr/lib/libreoffice/share/.registry ]; then
+  mkdir -p $R/etc/libreoffice/registry/res
+  for f in $R/usr/lib/libreoffice/share/.registry/*.xcd $R/usr/lib/libreoffice/share/.registry/res/*.xcd; do
+    [ -e "$f" ] || continue
+    rel=${f#$R/usr/lib/libreoffice/share/.registry/}
+    ln -sfn /usr/lib/libreoffice/share/.registry/$rel $R/etc/libreoffice/registry/$rel
+  done
+fi
 # What maintainer scripts would normally generate (needs build/xef): gdk-pixbuf loaders cache,
 # compiled GSettings schemas, icon caches, font cache.
 X=$ROOT/build/xef
