@@ -177,7 +177,8 @@ if os.path.exists(os.path.join(vkdir, 'vulkan_core.h')):
         funcs[name] = (rc, ''.join(args), fl)
         order.append(name)
         vk_order.append(name)
-    for f in ('vulkan/vulkan_core.h', 'vulkan/vulkan_xlib.h', 'vulkan/vulkan_xcb.h'):
+    # Wayland WSI too: programs link against it even when they run on X11 (mpv)
+    for f in ('vulkan/vulkan_core.h', 'vulkan/vulkan_xlib.h', 'vulkan/vulkan_xcb.h', 'vulkan/vulkan_wayland.h'):
         if not os.path.exists(os.path.join(INC, f)): continue
         for m in re.finditer(r'VKAPI_ATTR\s+([\w\s\*]+?)\s+VKAPI_CALL\s+(vk\w+)\s*\((.*?)\)\s*;', read(f), re.S):
             vk_add(m.group(2), m.group(1), m.group(3))

@@ -38,6 +38,8 @@ Verified with `--host-gl`:
 | LibreOffice 24.2 Writer | GTK3; ready in ~15 s; typing, spell checking (no --host-gl needed) | `libreoffice-writer.jpg` |
 | OpenSCAD 2021 | Qt 5 + CGAL (needs FP rounding modes: FPCR -> MXCSR); CSG preview on host GL | `openscad-hostgl.jpg` |
 | Inkscape 1.2 | GTK3 welcome dialog | `inkscape.jpg` |
+| Krita 5.2 | Qt 5, OpenGL canvas on host GL: new image, brush strokes | `krita-hostgl.jpg` |
+| mpv 0.37 | `--vo=gpu --gpu-sw=yes` (llvmpipe counts as software): 640x360@30 in real time, 1 frame dropped per minute | `mpv-hostgl.jpg` |
 | vkmark (Vulkan) | 300 points vs 360 natively (llvmpipe/lavapipe) | |
 
 (screenshots in `docs/screenshots/`)
@@ -48,7 +50,7 @@ FPS) run on the host (`docs/screenshots/hostgl-egl.png`).
 
 Vulkan: `libvulkan.so.1` is redirected to a second shim (`build/thunks/libvulkan.so.1`, ~630
 entry points from `vulkan_core.h`, Xlib and XCB WSI). Allocation callbacks are dropped (NULL),
-debug messengers are faked in the guest and stripped from `vkCreateInstance`'s pNext chain,
+Wayland WSI entry points exist for programs that link them (mpv), debug messengers are faked in the guest and stripped from `vkCreateInstance`'s pNext chain,
 `VkXlibSurfaceCreateInfoKHR::dpy` / `VkXcbSurfaceCreateInfoKHR::connection` are swapped for host
 connections, and `vkGet*ProcAddr` hand out the shim's stubs for functions the host provides.
 vulkaninfo and vkcube run on the host's lavapipe (`docs/screenshots/vkcube-hostvk.png`).

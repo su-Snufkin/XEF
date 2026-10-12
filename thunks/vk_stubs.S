@@ -5016,4 +5016,20 @@ vkGetPhysicalDeviceXcbPresentationSupportKHR:
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceXcbPresentationSupportKHR, .-vkGetPhysicalDeviceXcbPresentationSupportKHR
+    .globl vkCreateWaylandSurfaceKHR
+    .type vkCreateWaylandSurfaceKHR, %function
+    .p2align 2
+vkCreateWaylandSurfaceKHR:
+    mov x17, #3900
+    hlt #0x5846
+    ret
+    .size vkCreateWaylandSurfaceKHR, .-vkCreateWaylandSurfaceKHR
+    .globl vkGetPhysicalDeviceWaylandPresentationSupportKHR
+    .type vkGetPhysicalDeviceWaylandPresentationSupportKHR, %function
+    .p2align 2
+vkGetPhysicalDeviceWaylandPresentationSupportKHR:
+    mov x17, #3901
+    hlt #0x5846
+    ret
+    .size vkGetPhysicalDeviceWaylandPresentationSupportKHR, .-vkGetPhysicalDeviceWaylandPresentationSupportKHR
     .section .note.GNU-stack,"",%progbits

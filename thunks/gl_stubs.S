@@ -26368,7 +26368,7 @@ glXGetTransparentIndexSUN:
     .type xef_host_XFree, %function
     .p2align 2
 xef_host_XFree:
-    mov x17, #3900
+    mov x17, #3902
     hlt #0x5846
     ret
     .size xef_host_XFree, .-xef_host_XFree
@@ -26376,7 +26376,7 @@ xef_host_XFree:
     .type xef_selftest_mix, %function
     .p2align 2
 xef_selftest_mix:
-    mov x17, #3901
+    mov x17, #3903
     hlt #0x5846
     ret
     .size xef_selftest_mix, .-xef_selftest_mix
