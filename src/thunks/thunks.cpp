@@ -8,6 +8,7 @@
 // same layout on both LP64 ABIs, so pointers are passed through unchanged. Display* arguments
 // are replaced by a host Xlib connection to the same X server (window XIDs are server-side).
 #include "thunks/thunks.h"
+#include "os/syscalls.h"
 
 #include <dlfcn.h>
 #include <sys/mman.h>
@@ -139,6 +140,8 @@ void* host_display(void* guest) {
     const char* name = g_XDisplayString(guest);
     void* h = g_XOpenDisplay(name);
     if (!h) fatal("--host-gl: cannot open display %s on the host", name ? name : "(null)");
+    static auto conn_number = (int (*)(void*))dlsym(g_libx11, "XConnectionNumber");
+    if (conn_number) protect_host_fd(conn_number(h));
     if (g_ndpy < 16) g_dpy[g_ndpy++] = {guest, h};
     return h;
 }
@@ -150,6 +153,8 @@ void* host_xcb() {
     auto conn = lib ? (void* (*)(const char*, int*))dlsym(lib, "xcb_connect") : nullptr;
     if (!conn) fatal("--host-gl: cannot load the host libxcb.so.1");
     g_xcb_conn = conn(nullptr, nullptr);   // $DISPLAY: the same server as the guest's
+    auto get_fd = (int (*)(void*))dlsym(lib, "xcb_get_file_descriptor");
+    if (get_fd && g_xcb_conn) protect_host_fd(get_fd(g_xcb_conn));
     return g_xcb_conn;
 }
 

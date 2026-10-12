@@ -79,13 +79,13 @@ enum GuestNr {
 struct Pair { i16 g, h; };
 static const Pair kPass[] = {
     {G_eventfd2, SYS_eventfd2}, {G_epoll_create1, SYS_epoll_create1}, {G_dup, SYS_dup},
-    {G_dup3, SYS_dup3}, {G_inotify_init1, SYS_inotify_init1}, {27, SYS_inotify_add_watch},
+    {G_inotify_init1, SYS_inotify_init1}, {27, SYS_inotify_add_watch},
     {28, SYS_inotify_rm_watch}, {G_ioctl, SYS_ioctl}, {G_flock, SYS_flock}, {G_mknodat, SYS_mknodat},
     {G_mkdirat, SYS_mkdirat}, {G_unlinkat, SYS_unlinkat}, {G_symlinkat, SYS_symlinkat}, {G_linkat, SYS_linkat},
     {G_renameat, SYS_renameat}, {G_statfs, SYS_statfs}, {G_fstatfs, SYS_fstatfs}, {G_truncate, SYS_truncate},
     {G_ftruncate, SYS_ftruncate}, {G_fallocate, SYS_fallocate}, {G_chdir, SYS_chdir}, {G_fchdir, SYS_fchdir},
     {G_chroot, SYS_chroot}, {G_fchmod, SYS_fchmod}, {G_fchmodat, SYS_fchmodat}, {G_fchownat, SYS_fchownat},
-    {G_fchown, SYS_fchown}, {G_close, SYS_close}, {G_pipe2, SYS_pipe2}, {G_getdents64, SYS_getdents64},
+    {G_fchown, SYS_fchown}, {G_pipe2, SYS_pipe2}, {G_getdents64, SYS_getdents64},
     {G_lseek, SYS_lseek}, {G_read, SYS_read}, {G_write, SYS_write}, {G_readv, SYS_readv},
     {G_writev, SYS_writev}, {G_pread64, SYS_pread64}, {G_pwrite64, SYS_pwrite64}, {G_preadv, SYS_preadv},
     {G_pwritev, SYS_pwritev}, {G_sendfile, SYS_sendfile}, {G_pselect6, SYS_pselect6}, {G_ppoll, SYS_ppoll},
@@ -127,7 +127,7 @@ static const Pair kPass[] = {
     {G_recvmmsg, SYS_recvmmsg}, {G_wait4, SYS_wait4}, {G_prlimit64, SYS_prlimit64}, {G_syncfs, SYS_syncfs},
     {G_sendmmsg, SYS_sendmmsg}, {G_renameat2, SYS_renameat2}, {G_getrandom, SYS_getrandom},
     {G_memfd_create, SYS_memfd_create}, {G_membarrier, SYS_membarrier},
-    {G_copy_file_range, SYS_copy_file_range}, {G_close_range, 436},
+    {G_copy_file_range, SYS_copy_file_range},
     {G_faccessat2, 439}, {G_futex_waitv, 449}, {G_fchmodat2, 452},
     // identical ABI on both sides
     {5, SYS_setxattr}, {6, SYS_lsetxattr}, {7, SYS_fsetxattr}, {8, SYS_getxattr}, {9, SYS_lgetxattr},
@@ -154,6 +154,51 @@ static const Pair kPass[] = {
     {290, SYS_pkey_free}, {424, 424 /*pidfd_send_signal*/}, {434, 434 /*pidfd_open*/},
     {438, 438 /*pidfd_getfd*/}, {440, 440 /*process_madvise*/}, {448, 448 /*process_mrelease*/},
 };
+
+// ---- XEF's own file descriptors ----
+static constexpr int kMaxReserved = 4096;
+static std::atomic<u64> g_reserved[kMaxReserved / 64];
+
+static bool fd_reserved(u64 fd) {
+    return fd < kMaxReserved && (g_reserved[fd / 64].load(std::memory_order_relaxed) >> (fd % 64) & 1);
+}
+
+int reserve_host_fd(int fd) {
+    // high numbers, below the usual 1024 soft limit: shells and fork+exec helpers use small ones
+    int nfd = fcntl(fd, F_DUPFD_CLOEXEC, 1000);
+    if (nfd < 0) nfd = fcntl(fd, F_DUPFD_CLOEXEC, 100);
+    if (nfd >= 0) {
+        int fl = fcntl(fd, F_GETFL);
+        close(fd);
+        fcntl(nfd, F_SETFL, fl);
+        fd = nfd;
+    }
+    if (fd >= 0 && fd < kMaxReserved) g_reserved[fd / 64].fetch_or(1ull << (fd % 64));
+    return fd;
+}
+
+void protect_host_fd(int fd) {
+    if (fd >= 0 && fd < kMaxReserved) g_reserved[fd / 64].fetch_or(1ull << (fd % 64));
+}
+
+void release_host_fd(int fd) {
+    if (fd >= 0 && fd < kMaxReserved) g_reserved[fd / 64].fetch_and(~(1ull << (fd % 64)));
+}
+
+// close_range without XEF's descriptors
+static bool first_le(u64 a, u64 b) { return (u32)a <= (u32)b; }
+
+static i64 close_range_guest(u64 first, u64 last, u64 flags) {
+    u64 lo = first;
+    i64 r = 0;
+    for (u64 fd = first; fd <= last && fd < kMaxReserved; fd++) {
+        if (!fd_reserved(fd)) continue;
+        if (fd > lo) r = raw(436, lo, fd - 1, flags);
+        if (r < 0) return r;
+        lo = fd + 1;
+    }
+    return lo <= last ? raw(436, lo, last, flags) : r;
+}
 
 // ---- process state ----
 static std::mutex g_mm_lock;
@@ -313,6 +358,9 @@ void do_syscall(CpuState* st) {
         break;
     }
     case G_openat2: r = -ENOSYS; break;
+    case G_close: r = fd_reserved(a0) ? 0 : raw(SYS_close, a0); break;   // pretend: the guest owns it no more
+    case G_close_range: r = first_le(a0, a1) ? close_range_guest((u32)a0, (u32)a1, a2) : -EINVAL; break;
+    case G_dup3: r = fd_reserved(a1) ? -EBADF : raw(SYS_dup3, a0, a1, a2); break;
     case G_getcwd: {   // inside the rootfs (after chdir to a redirected path): report the guest path
         char buf[PATH_MAX];
         r = raw(SYS_getcwd, (u64)buf, sizeof buf);

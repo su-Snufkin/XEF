@@ -1,0 +1,3 @@
+fd is small: 1
+file: 4 'data'
+dup3 onto low fd: 1

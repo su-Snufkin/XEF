@@ -7,6 +7,7 @@
 // that mapping. Internal edges are direct jumps; the register transfer happens
 // only on region entry/exit. The region is then made live by re-pointing the
 // head block's incoming links to the region entry.
+#include "os/syscalls.h"
 #include "runtime/tier2.h"
 #include "os/signals.h"
 #include "os/thread.h"
@@ -400,6 +401,8 @@ static void start_compiler_thread() {
     if (pipe2(g_pipe, O_CLOEXEC) != 0) fatal("tier2: pipe");
     // the SIGPROF handler must never block: drop requests if the pipe is full
     fcntl(g_pipe[1], F_SETFL, O_NONBLOCK);
+    g_pipe[0] = reserve_host_fd(g_pipe[0]);
+    g_pipe[1] = reserve_host_fd(g_pipe[1]);
     pthread_t th;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -437,6 +440,8 @@ void tier2_after_fork(ThreadCtx* t) {
     if (t) t->prof_timer_ok = false;   // POSIX timers are not inherited by fork
     tier2_thread_start(t);
     if (!g_t2_enabled) return;
+    release_host_fd(g_pipe[0]);
+    release_host_fd(g_pipe[1]);
     close(g_pipe[0]);
     close(g_pipe[1]);
     start_compiler_thread();

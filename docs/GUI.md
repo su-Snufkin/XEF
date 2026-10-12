@@ -33,6 +33,9 @@ Verified with `--host-gl`:
 | Trigger Rally | race (driven with xdotool) | `trigger-rally-hostgl.png` |
 | TORCS | quick race against four AI cars, 25 FPS | `hostgl-games2.jpg` |
 | MegaGlest, Armagetron Advanced, X-Moto | menus / animated 3D menu | `hostgl-games2.jpg` |
+| Scorched3D | wxWidgets launcher starting the SDL client; tutorial match against bots | `scorched3d-hostgl.jpg` |
+| BZFlag, Widelands, Endless Sky | menus | |
+| vkmark (Vulkan) | 300 points vs 360 natively (llvmpipe/lavapipe) | |
 
 (screenshots in `docs/screenshots/`)
 
