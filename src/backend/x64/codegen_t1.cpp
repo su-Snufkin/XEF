@@ -1194,13 +1194,12 @@ void T1::emit_adc_sbc(Val v, bool flags_out, Val) {
         Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
         Opnd ob = opnd(in.b, true, true, s);
         if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
+        need_flags(in.c);   // before d is written (see emit_select); the movs below keep flags
         Reg d = dest_for(v, s);
         if (ob.k == Opnd::R && ob.r == d && d != ra) {
             Reg t = alloc_temp(); pinned_ |= 1 << t; as_.mov(8, t, ob.r); ob.r = t;
         }
-        // flags must hold the input carry; mov does not disturb flags
         if (d != ra) as_.mov(s, d, ra);
-        need_flags(in.c);
         if (flags_needed_after(cur_) && !fuse) {
             // preserve: spill, compute, restore later
             as_.pushfq(); as_.pop(mem(R15, XEF_ST(flags_spill)));
@@ -1258,6 +1257,19 @@ void T1::emit_select(Val v) {
             return;
         }
     }
+    // Flags first: rematerializing them re-reads their operands, which may die here and share
+    // a register with d (cset w0 after cmp w0: d = x0's register).
+    need_flags(in.a, in.aux);
+    if (is_c(in.b) && is_c(in.c)) {   // cset with the inverted condition: select(c, 0, 1)
+        u64 m = s == 4 ? 0xffffffffull : ~0ull;
+        if ((cv(in.b) & m) == 0 && (cv(in.c) & m) == 1) {
+            Reg d = dest_for(v, s);
+            as_.setcc(invert(c), d);
+            as_.movzx8(d, d);
+            finish_def(v, d);
+            return;
+        }
+    }
     Opnd ot = opnd(in.b, true, false, s);
     if (ot.k == Opnd::R) pinned_ |= 1 << ot.r;
     Opnd of = opnd(in.c, true, true, s);
@@ -1270,13 +1282,11 @@ void T1::emit_select(Val v) {
             as_.mov_imm(t, (u64)of.imm);
             of.k = Opnd::R; of.r = t;
         }
-        need_flags(in.a, in.aux);
         if (of.k == Opnd::R) as_.cmov(invert(c), s, d, of.r); else as_.cmov(invert(c), s, d, of.m);
         if (s == 4 && false) {}
     } else {
         if (of.k == Opnd::R && of.r == d) {
         } else emit_mov_opnd(s, d, of);  // mov does not touch flags
-        need_flags(in.a, in.aux);
         if (ot.k == Opnd::R) as_.cmov(c, s, d, ot.r); else as_.cmov(c, s, d, ot.m);
     }
     finish_def(v, d);

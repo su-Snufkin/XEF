@@ -927,9 +927,12 @@ bool nzcv_live_at(GuestAddr pc, int depth) {
         if (term) {
             switch (term->op) {
             case Op::ExitJump: pc = term->imm; continue;
-            case Op::ExitCbz: case Op::ExitTbz:
+            case Op::ExitCbz: case Op::ExitTbz: {
                 if (depth >= 2) return true;
-                return nzcv_live_at(term->imm, depth + 1) || nzcv_live_at(term->imm2, depth + 1);
+                // read both targets first: the recursion reuses `scratch`, which `term` points into
+                GuestAddr t1 = term->imm, t2 = term->imm2;
+                return nzcv_live_at(t1, depth + 1) || nzcv_live_at(t2, depth + 1);
+            }
             default: return !abi_kills_flags(term->op);  // indirect branches, syscalls: conservative
             }
         }
