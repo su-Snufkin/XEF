@@ -21,6 +21,9 @@ build/xef -L $R $R/usr/games/openarena +map aggressor   # shell-script launchers
 build/xef -L $R $R/usr/games/minetest
 ```
 
+`tools/guishot.sh SECONDS OUT.png -- /usr/games/supertuxkart --race-now --track=lighthouse` runs a
+program from the rootfs with these settings and takes a screenshot of the X server.
+
 ## Verified (2026-10-12, i7 cloud VM, Xvfb)
 
 | Program | Result |
@@ -34,6 +37,8 @@ build/xef -L $R $R/usr/games/minetest
 | Extreme Tux Racer | menus and racing (`docs/screenshots/etr-race.png`) |
 | OpenArena (ioquake3, launched through its shell script) | menus, deathmatch with bots (`docs/screenshots/openarena-game.png`) |
 | Minetest (Irrlicht + LuaJIT) | world creation and gameplay (`docs/screenshots/minetest-game.png`) |
+| SuperTuxKart 1.4 | race on Lighthouse (`--race-now`, `docs/screenshots/supertuxkart-race.png`) |
+| FeatherPad (Qt) | works (`docs/screenshots/qt-featherpad.png`) |
 
 Without `ALSOFT_DRIVERS=null` OpenAL games spin on failing audio calls when no sound device
 exists (not an XEF issue).
