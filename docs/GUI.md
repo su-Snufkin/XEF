@@ -40,6 +40,7 @@ Verified with `--host-gl`:
 | Inkscape 1.2 | GTK3 welcome dialog | `inkscape.jpg` |
 | Krita 5.2 | Qt 5, OpenGL canvas on host GL: new image, brush strokes | `krita-hostgl.jpg` |
 | mpv 0.37 | `--vo=gpu --gpu-sw=yes` (llvmpipe counts as software): 640x360@30 in real time, 1 frame dropped per minute | `mpv-hostgl.jpg` |
+| Audacity 3.4, darktable 4.6 | wxWidgets / GTK3; `darktable-cli` exports a JPEG through its pipeline in 3 s | `audacity-darktable.jpg` |
 | vkmark (Vulkan) | 300 points vs 360 natively (llvmpipe/lavapipe) | |
 
 (screenshots in `docs/screenshots/`)
