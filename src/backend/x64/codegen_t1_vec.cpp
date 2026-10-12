@@ -257,13 +257,15 @@ void T1::emit_vec(Val v) {
         if (in.aux == 1) {  // INS into existing vector
             Xmm src = xreg(in.b);
             Xmm d = new_x(v);
-            if (d != src) as_.movaps(d, src);
+            Xmm s1 = d;
+            if (as_.avx) s1 = src;                 // VEX form is non-destructive: no copy
+            else if (d != src) as_.movaps(d, src);
             int idx = (int)in.imm;
             switch (es) {
-            case 1: as_.xop_gx(PINSRB, d, r, idx, d); break;
-            case 2: as_.xop_gx(PINSRW, d, r, idx, d); break;
-            case 4: as_.xop_gx(PINSRD, d, r, idx, d); break;
-            default: as_.xop_gx(PINSRQ, d, r, idx, d); break;
+            case 1: as_.xop_gx(PINSRB, d, r, idx, s1); break;
+            case 2: as_.xop_gx(PINSRW, d, r, idx, s1); break;
+            case 4: as_.xop_gx(PINSRD, d, r, idx, s1); break;
+            default: as_.xop_gx(PINSRQ, d, r, idx, s1); break;
             }
             return;
         }
@@ -1035,8 +1037,10 @@ void T1::emit_vop(Val v) {
         }
         Reg g = alloc_temp(); pinned_ |= 1 << g;
         as_.xop_gx(es == 1 ? PEXTRB : PEXTRW, b, g, si);
-        if (d != a) as_.movaps(d, a);
-        as_.xop_gx(es == 1 ? PINSRB : PINSRW, d, g, di, d);
+        Xmm s1 = d;
+        if (as_.avx) s1 = a;
+        else if (d != a) as_.movaps(d, a);
+        as_.xop_gx(es == 1 ? PINSRB : PINSRW, d, g, di, s1);
         return;
     }
     case V_ZEXT: {

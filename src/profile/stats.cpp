@@ -2,6 +2,7 @@
 #include <string>
 #include <cstring>
 #include <unistd.h>
+#include <fcntl.h>
 #include "profile/stats.h"
 
 #include <signal.h>
@@ -55,6 +56,16 @@ void profile_report() {
     int in_t2 = 0;
     for (BlockMeta* b : blocks) if (b->tier == 2) in_t2++;
     fprintf(stderr, "  tier-2 regions: %.1f%% of samples\n", n ? 100.0 * in_t2 / n : 0.0);
+    // the hottest blocks' host and guest code, for offline disassembly
+    for (size_t i = 0; i < counts.size() && i < 5; i++) {
+        BlockMeta* b = counts[i].first;
+        char path[64];
+        snprintf(path, sizeof path, "/tmp/xef-hot%zu.host", i);
+        if (FILE* f = fopen(path, "wb")) { fwrite(b->code, 1, b->code_size, f); fclose(f); }
+        snprintf(path, sizeof path, "/tmp/xef-hot%zu.guest", i);
+        int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);   // guest code may be unmapped by now
+        if (fd >= 0) { ssize_t w = write(fd, (void*)b->start, b->end - b->start); (void)w; close(fd); }
+    }
     for (size_t i = 0; i < counts.size() && i < 25; i++) {
         BlockMeta* b = counts[i].first;
         fprintf(stderr, "  %5.1f%%  guest %#lx..%#lx  (%d insns, host %u bytes @%p)\n", 100.0 * counts[i].second / n,

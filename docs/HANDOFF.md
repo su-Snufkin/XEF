@@ -49,6 +49,9 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 ## Następne kroki (priorytet)
 1. Wydajność gier: przypinanie rejestrów V do XMM w regionach tier 2 (shadery llvmpipe to gorące
    pętle NEON), mniej przeładowań stałych wektorowych, regiony obejmujące BL.
+   Odroczone zapisy rejestrów V (dziś VSet przed każdym dostępem do pamięci jest zachowywany dla
+   precyzji SIGSEGV): wymaga zapisu w mapie PC, w którym XMM/slocie jest bieżąca wartość V.
+   Pomiar zysku utrudnia szum maszyny (glmark2 ±15%); mierzyć CPU-time przy LP_NUM_THREADS=1.
 2. FP16 arytmetyka (HWCAP FPHP/ASIMDHP), rzadsze operacje NEON wciąż w helperze (`--stats`).
 3. Zwalnianie kodu (cache rośnie bez końca: inwalidacja tylko odpina bloki), epoki dla wątków.
 4. Trwały cache AOT, thunki bibliotek.
