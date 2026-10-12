@@ -25,6 +25,15 @@ for d in bin sbin lib; do
   [ -e $R/$d ] || ln -s usr/$d $R/$d
 done
 [ -e $R/usr/lib/ld-linux-aarch64.so.1 ] || ln -s aarch64-linux-gnu/ld-linux-aarch64.so.1 $R/usr/lib/ld-linux-aarch64.so.1
+# update-alternatives links for libraries shipped in alternative directories (blas, lapack, ...)
+for d in $R/usr/lib/aarch64-linux-gnu/blas $R/usr/lib/aarch64-linux-gnu/lapack $R/usr/lib/aarch64-linux-gnu/openblas-pthread; do
+  [ -d $d ] || continue
+  for f in $d/*.so*; do
+    [ -e $f ] || continue
+    b=$(basename $f)
+    [ -e $R/usr/lib/aarch64-linux-gnu/$b ] || ln -s ${d#$R/usr/lib/aarch64-linux-gnu/}/$b $R/usr/lib/aarch64-linux-gnu/$b
+  done
+done
 # What maintainer scripts would normally generate (needs build/xef): gdk-pixbuf loaders cache,
 # compiled GSettings schemas, icon caches, font cache.
 X=$ROOT/build/xef
