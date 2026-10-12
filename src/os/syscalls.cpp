@@ -136,6 +136,8 @@ static std::mutex g_mm_lock;
 static GuestAddr g_brk_start, g_brk_cur, g_brk_mapped;
 static std::string g_exe_realpath;
 
+std::string guest_exe_path() { return g_exe_realpath; }
+
 void syscalls_init(const LoadedImage& img) {
     for (auto& v : g_passthrough_nr) v = -1;
     for (auto& p : kPass) g_passthrough_nr[p.g] = p.h;

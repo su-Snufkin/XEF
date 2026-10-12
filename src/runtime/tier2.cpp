@@ -351,17 +351,35 @@ static void sample_handler(int sig, siginfo_t* si, void* ctx) {
     (void)si;
 }
 
+static bool g_t2_enabled = false;
+
+static void start_compiler_thread() {
+    if (pipe2(g_pipe, O_CLOEXEC) != 0) fatal("tier2: pipe");
+    // the SIGPROF handler must never block: drop requests if the pipe is full
+    fcntl(g_pipe[1], F_SETFL, O_NONBLOCK);
+    pthread_t th;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_attr_setstacksize(&attr, 8 << 20);
+    if (pthread_create(&th, &attr, compiler_thread, nullptr) != 0) fatal("tier2: thread");
+}
+
+void tier2_after_fork() {
+    if (!g_t2_enabled) return;
+    close(g_pipe[0]);
+    close(g_pipe[1]);
+    start_compiler_thread();
+    // the ITIMER_PROF timer is not inherited by fork
+    struct itimerval it {};
+    it.it_interval.tv_usec = 1000;
+    it.it_value.tv_usec = 1000;
+    setitimer(ITIMER_PROF, &it, nullptr);
+}
+
 void tier2_init(bool enable) {
-    if (enable) {
-        if (pipe2(g_pipe, O_CLOEXEC) != 0) fatal("tier2: pipe");
-        // the SIGPROF handler must never block: drop requests if the pipe is full
-        fcntl(g_pipe[1], F_SETFL, O_NONBLOCK);
-        pthread_t th;
-        pthread_attr_t attr;
-        pthread_attr_init(&attr);
-        pthread_attr_setstacksize(&attr, 8 << 20);
-        if (pthread_create(&th, &attr, compiler_thread, nullptr) != 0) fatal("tier2: thread");
-    }
+    g_t2_enabled = enable;
+    if (enable) start_compiler_thread();
     if (!enable && !g_opt.profile) return;
     struct sigaction sa {};
     sa.sa_sigaction = sample_handler;

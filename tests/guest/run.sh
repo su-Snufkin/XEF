@@ -19,7 +19,8 @@ for src in "$ROOT"/tests/guest/t_*.c "$ROOT"/tests/guest/t_*.cpp; do
     if [ ! -x "$exe" ] || [ "$src" -nt "$exe" ]; then
       $CC --target=aarch64-linux-gnu --sysroot=$S -fuse-ld=lld $lflag $opt "$src" -lm -o "$exe" 2>$OUT/build.log || { echo "BUILD FAIL $name"; cat $OUT/build.log; continue; }
     fi
-    exp=$(XEF_T=v $Q -L $S "$exe" a b 2>&1); ec=$?
+    if [ -f "${src%.*}.expected" ]; then exp=$(cat "${src%.*}.expected"); ec=0
+    else exp=$(XEF_T=v $Q -L $S "$exe" a b 2>&1); ec=$?; fi
     got=$(XEF_T=v $X -L $S "$exe" a b 2>&1); gc=$?
     if [ "$exp" = "$got" ] && [ $ec = $gc ]; then pass=$((pass+1)); else
       fail=$((fail+1)); echo "FAIL $name-$link$opt (exit qemu=$ec xef=$gc)"
