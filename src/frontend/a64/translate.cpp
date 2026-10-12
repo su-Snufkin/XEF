@@ -873,7 +873,7 @@ static bool guest_readable(GuestAddr pc) {
 }
 
 // Returns true if NZCV may be read at `pc` before being overwritten.
-static bool nzcv_live_at(GuestAddr pc, int depth) {
+bool nzcv_live_at(GuestAddr pc, int depth) {
     static thread_local ir::Block* scratch = new ir::Block();
     for (int i = 0; i < 24; i++) {
         if (!guest_readable(pc)) return true;

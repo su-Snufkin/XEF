@@ -121,6 +121,40 @@ static bool compile_region(GuestAddr head) {
     }
     if (!loops) return false;
 
+    // ---- NZCV liveness over the region CFG (more precise than per-block lookahead)
+    bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], f_live_in[kMaxRegionBlocks];
+    bool f_live_out[kMaxRegionBlocks];
+    GuestAddr f_succ[kMaxRegionBlocks][2];
+    int f_nsucc[kMaxRegionBlocks];
+    for (int i = 0; i < R.n; i++) {
+        a64::translate_block(R.pcs[i], blk, topt);
+        f_reads[i] = f_writes[i] = false;
+        for (int v = 1; v < blk.n; v++) {
+            if (blk.insts[v].op == ir::Op::GetFlags) f_reads[i] = true;
+            if (blk.insts[v].op == ir::Op::SetFlags) f_writes[i] = true;
+        }
+        direct_terminator(blk, f_succ[i], &f_nsucc[i]);
+        f_live_in[i] = f_reads[i];
+        f_live_out[i] = false;
+    }
+    auto idx_of = [&](GuestAddr pc) { for (int i = 0; i < R.n; i++) if (R.pcs[i] == pc) return i; return -1; };
+    bool ext_live[kMaxRegionBlocks][2];
+    for (int i = 0; i < R.n; i++)
+        for (int k = 0; k < f_nsucc[i]; k++)
+            ext_live[i][k] = idx_of(f_succ[i][k]) < 0 ? a64::nzcv_live_at(f_succ[i][k]) : false;
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (int i = R.n - 1; i >= 0; i--) {
+            bool out = false;
+            for (int k = 0; k < f_nsucc[i]; k++) {
+                int j = idx_of(f_succ[i][k]);
+                out |= j >= 0 ? f_live_in[j] : ext_live[i][k];
+            }
+            bool in = f_reads[i] || (!f_writes[i] && out);
+            if (out != f_live_out[i] || in != f_live_in[i]) { f_live_out[i] = out; f_live_in[i] = in; changed = true; }
+        }
+    }
+
     // ---- register mapping
     Reg map[32];
     memcpy(map, regmap::kMap, sizeof map);
@@ -179,6 +213,7 @@ static bool compile_region(GuestAddr head) {
     BlockMeta* metas[kMaxRegionBlocks];
     for (int i = 0; i < R.n; i++) {
         a64::translate_block(R.pcs[i], blk, topt);
+        blk.flags_live_out = f_live_out[i];
         BlockMeta* meta = g_cache.alloc_meta(backend::count_exits(blk));
         meta->start = R.pcs[i];
         meta->end = blk.end;
@@ -192,6 +227,11 @@ static bool compile_region(GuestAddr head) {
         meta->code = code;
         meta->code_size = (u32)out.size;
         g_cache.commit_code(code, out.size);
+        if (g_opt.dump_code) {
+            char path[64];
+            snprintf(path, sizeof path, "/tmp/xef-t2-%lx.bin", (unsigned long)R.pcs[i]);
+            if (FILE* f = fopen(path, "wb")) { fwrite(code, 1, out.size, f); fclose(f); }
+        }
         g_cache.register_block(meta);
         meta->nexits = (u16)out.nexits;
         code_of[i] = code;

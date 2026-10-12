@@ -12,6 +12,9 @@ struct TranslateOpts {
 // Reads guest code at `pc` and fills `blk`. Always produces a terminated block.
 void translate_block(GuestAddr pc, ir::Block& blk, const TranslateOpts& opts);
 
+// True if NZCV may be read at pc before being written (bounded decode-ahead scan).
+bool nzcv_live_at(GuestAddr pc, int depth = 0);
+
 // Decode helpers shared with SIMD translation.
 bool decode_bit_masks(u32 n, u32 imms, u32 immr, bool immediate, int datasize, u64* wmask);
 

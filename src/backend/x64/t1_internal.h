@@ -166,11 +166,20 @@ private:
         if (eflags_ == f) return;
         if (remat_ok(f)) { remat_flags(f, cond); eflags_ = f; return; }
         XEF_ASSERT(spilled_flags_ == f);
-        as_.push(mem(R15, XEF_ST(flags_spill)));
-        as_.popfq();
+        restore_spilled_flags();
         eflags_ = f;
     }
     void remat_flags(Val f, u8 cond);
+    // EFLAGS <- saved value without POPF (slow, microcoded): AH = flags byte, OF via add al,0x7f.
+    void restore_spilled_flags() {
+        as_.mov(8, mem(R15, XEF_ST(spill) + 15 * 8), RAX);
+        as_.mov(4, RAX, mem(R15, XEF_ST(flags_spill)));
+        as_.db(0x66); as_.db(0xC1); as_.db(0xC0); as_.db(8);    // rol ax, 8   (AH = E[7:0], AL = E[15:8])
+        as_.db(0xC0); as_.db(0xE8); as_.db(3);                  // shr al, 3   (AL = OF)
+        as_.alu_imm(ADD, 1, RAX, 0x7f);                          // OF = AL
+        as_.sahf();                                              // SF ZF AF PF CF
+        as_.mov(8, RAX, mem(R15, XEF_ST(spill) + 15 * 8));
+    }
     Val resolve(Val v) const {
         while (vi_[v].k == L_ALIAS) v = I(v).a;
         return v;

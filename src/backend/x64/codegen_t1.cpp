@@ -213,7 +213,7 @@ void T1::evict(Reg r) {
         else { x.k = L_GMEM; x.g = (u8)g; }
     } else {
         int s = -1;
-        for (int i = 0; i < 16; i++) if (!(spill_used_ & (1u << i))) { s = i; break; }
+        for (int i = 0; i < 15; i++) if (!(spill_used_ & (1u << i))) { s = i; break; }  // slot 15: flags restore
         if (s < 0) fatal("codegen: out of spill slots");
         spill_used_ |= 1u << s;
         as_.mov(8, mem(R15, XEF_ST(spill) + s * 8), r);
@@ -326,7 +326,7 @@ void T1::evacuate_guest(int g, int upto) {
 Reg T1::dest_hint(Val v) {
     int nx = v + 1;
     while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded || I(nx).op == Op::Nop)) nx++;
-    if (nx < b_.n && vi_[v].uses == 1) {
+    if (nx < b_.n) {
         const Inst& s = I(nx);
         if (s.op == Op::SetReg && mapped(s.aux) && s.a == v) {
             pinned_ |= 1 << host(s.aux);
