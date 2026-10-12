@@ -440,7 +440,7 @@ void T1::emit_inst(Val v) {
         return;
     }
     case Op::GetFlags: vi_[v].k = L_ALIAS; return;
-    case Op::SetFlags: return;  // bookkeeping only
+    case Op::SetFlags: gflags_ = in.a; return;  // bookkeeping only
     case Op::SetReg: {
         int g = in.aux;
         Val src = resolve(in.a);

@@ -192,6 +192,7 @@ static bool compile_region(GuestAddr head) {
     // ---- runtime feedback record
     RegionInfo* ri = new RegionInfo();
     ri->head_t1 = hm;
+    for (int g = 0; g < 32; g++) ri->map[g] = (u8)map[g];
     ri->exit_counter = (u64*)g_cache.alloc_data(8);
     *ri->exit_counter = 0;
 
@@ -256,6 +257,7 @@ static bool compile_region(GuestAddr head) {
         meta->code = code;
         meta->code_size = (u32)out.size;
         g_cache.commit_code(code, out.size);
+        g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
         if (g_opt.dump_code) {
             char path[64];
             snprintf(path, sizeof path, "/tmp/xef-t2-%lx.bin", (unsigned long)R.pcs[i]);
@@ -393,6 +395,7 @@ void tier2_init(bool enable) {
     struct sigaction sa {};
     sa.sa_sigaction = sample_handler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sa.sa_flags |= SA_ONSTACK;
     sigaction(SIGPROF, &sa, nullptr);
     struct itimerval it {};
     it.it_interval.tv_usec = 1000;

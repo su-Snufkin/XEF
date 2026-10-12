@@ -171,10 +171,12 @@ bool load_elf(const char* path, LoadedImage& img) {
 }
 
 GuestAddr setup_stack(const LoadedImage& img, int argc, char** argv, char** envp) {
-    const u64 stack_size = 8ull << 20;
-    void* r = mmap(nullptr, stack_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    const u64 stack_size = 8ull << 20, guard = 64 << 10;
+    void* r = mmap(nullptr, stack_size + guard, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
+                   -1, 0);
     if (r == MAP_FAILED) fatal("cannot allocate guest stack");
-    u8* top = (u8*)r + stack_size;
+    mprotect(r, guard, PROT_NONE);   // overflow faults instead of running into a neighbouring mapping
+    u8* top = (u8*)r + guard + stack_size;
     u8* sp = top;
     auto push_str = [&](const char* s) -> GuestAddr {
         size_t n = strlen(s) + 1;

@@ -59,6 +59,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     meta->code_size = (u32)out.size;
     meta->tier = 1;
     g_cache.commit_code(code, out.size);
+    g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
     if (g_opt.dump_code) dump_code(code, out.size, pc);
     // link exits whose targets already exist
     for (int i = 0; i < out.nexits; i++) {

@@ -78,6 +78,7 @@ private:
     Val eflags_ = kEntryFlags;  // flags value currently in EFLAGS (0 = garbage)
     Val spilled_flags_ = 0;
     Val final_flags_ = kEntryFlags;
+    Val gflags_ = kEntryFlags;  // guest NZCV as of the current instruction (last SetFlags)
     bool live_out_ = true;
     i32 entry_flags_last_ = 0;
     u32 spill_used_ = 0;
@@ -351,9 +352,13 @@ private:
     }
     void record_pc() {
         if (npc_ < 1024) {  // host->guest pc map for faults
-            pcmap_[npc_].host_off = (u32)as_.offset();
-            pcmap_[npc_].guest_off = b_.pc_off[cur_];
-            npc_++;
+            HostPcEntry& e = pcmap_[npc_++];
+            e = {};
+            e.host_off = (u32)as_.offset();
+            e.guest_off = (u16)b_.pc_off[cur_];
+            e.borrowed = borrowed_;
+            Val f = fid(gflags_);
+            e.flags_loc = eflags_ == f ? PCF_EFLAGS : spilled_flags_ == f ? PCF_SPILL : PCF_UNKNOWN;
         }
     }
 };

@@ -110,6 +110,36 @@ BlockMeta* CodeCache::find_by_host(const u8* p) const {
     return b;
 }
 
+void CodeCache::set_pcmap(BlockMeta* b, const PcMapEntry* e, int n) {
+    std::lock_guard<std::mutex> g(pcmap_lock_);
+    if (!pcmap_) {
+        cap_pcmap_ = 1u << 26;
+        void* p = mmap(nullptr, (size_t)cap_pcmap_ * sizeof(PcMapEntry), PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (p == MAP_FAILED) fatal("pc map alloc");
+        pcmap_ = (PcMapEntry*)p;
+    }
+    if (npcmap_ + (u32)n > cap_pcmap_) { b->host_pc_map_len = 0; return; }  // degrade: no fault mapping
+    memcpy(pcmap_ + npcmap_, e, sizeof(PcMapEntry) * n);
+    b->host_pc_map_off = npcmap_;
+    b->host_pc_map_len = (u32)n;
+    npcmap_ += (u32)n;
+}
+
+// Last recorded access at or before `host` (entries are in increasing host order). Called from
+// signal handlers: no locks, the entries of a published block never change.
+const PcMapEntry* CodeCache::find_pc(const BlockMeta* b, const u8* host) const {
+    if (!pcmap_ || !b->host_pc_map_len || host < b->code) return nullptr;
+    u32 off = (u32)(host - b->code);
+    const PcMapEntry* best = nullptr;
+    for (u32 i = 0; i < b->host_pc_map_len; i++) {
+        const PcMapEntry& e = pcmap_[b->host_pc_map_off + i];
+        if (e.host_off > off) break;
+        best = &e;
+    }
+    return best;
+}
+
 void link_exit(ExitInfo* e, u8* host) {
     // The rel32 field is 4-byte aligned, so this store is atomic w.r.t. concurrent execution.
     i32 rel = (i32)(host - (e->site + 4));

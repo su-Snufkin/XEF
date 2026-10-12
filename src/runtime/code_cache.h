@@ -9,6 +9,16 @@ namespace xef {
 
 struct BlockMeta;
 
+// Host code offset -> guest instruction, recorded at every guest memory access (fault mapping).
+struct PcMapEntry {
+    u32 host_off;      // offset of the host instruction from BlockMeta::code
+    u16 guest_off;     // guest pc - BlockMeta::start
+    u16 borrowed;      // host regs borrowed as temporaries: their guest value is in CpuState
+    u8 flags_loc;      // where the guest NZCV is: PCF_EFLAGS / PCF_SPILL / PCF_UNKNOWN
+    u8 pad[3];
+};
+enum : u8 { PCF_EFLAGS = 0, PCF_SPILL = 1, PCF_UNKNOWN = 2 };
+
 // Runtime feedback for a tier-2 region.
 struct RegionInfo {
     BlockMeta* head_t1;   // tier-1 version of the head (for demotion)
@@ -17,6 +27,7 @@ struct RegionInfo {
     u64 samples;
     bool demoted;
     u8* sig_exit;         // region -> canonical transfer + exit_to_runtime (signal delivery)
+    u8 map[32];           // region register mapping: guest reg -> host reg (0xff: CpuState)
 };
 
 enum ExitKind : u8 {
@@ -104,6 +115,10 @@ public:
     BlockMeta* find_by_host(const u8* p) const;
     void register_block(BlockMeta* b);
 
+    // per-block host->guest pc maps
+    void set_pcmap(BlockMeta* b, const PcMapEntry* e, int n);
+    const PcMapEntry* find_pc(const BlockMeta* b, const u8* host) const;
+
     std::mutex lock;   // serializes translation / linking (off the hot path)
     RuntimeStubs stubs;
 
@@ -120,6 +135,9 @@ private:
     std::atomic<BlockMeta**>* l1_ = nullptr;
     BlockMeta** by_host_ = nullptr;
     size_t nby_host_ = 0, cap_by_host_ = 0;
+    PcMapEntry* pcmap_ = nullptr;
+    u32 npcmap_ = 0, cap_pcmap_ = 0;
+    std::mutex pcmap_lock_;
 };
 
 extern CodeCache g_cache;
