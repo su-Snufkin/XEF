@@ -347,10 +347,16 @@ void T1::evacuate_guest(int g, int upto) {
 // register, compute v directly into that host register (after evacuating live aliases).
 Reg T1::dest_hint(Val v) {
     int nx = v + 1;
-    while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded || I(nx).op == Op::Nop)) nx++;
+    Val cur = v;
+    for (;;) {
+        while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded || I(nx).op == Op::Nop)) nx++;
+        // look through alias views (e.g. the zero-extension of a 32-bit result) before SetReg
+        if (nx < b_.n && I(nx).a == cur && is_alias_op(I(nx)) && I(nx).op != Op::GetFlags) { cur = (Val)nx++; continue; }
+        break;
+    }
     if (nx < b_.n) {
         const Inst& s = I(nx);
-        if (s.op == Op::SetReg && mapped(s.aux) && s.a == v) {
+        if (s.op == Op::SetReg && mapped(s.aux) && s.a == cur) {
             pinned_ |= 1 << host(s.aux);
             evacuate_guest(s.aux, cur_);
             return host(s.aux);

@@ -52,6 +52,9 @@ void profile_report() {
     std::sort(counts.begin(), counts.end(), [](auto& a, auto& b) { return a.second > b.second; });
     fprintf(stderr, "xef profile: %d samples, %.1f%% in translated code, %.1f%% in runtime/syscalls\n", n,
             n ? 100.0 * in_jit / n : 0.0, n ? 100.0 * (n - in_jit) / n : 0.0);
+    int in_t2 = 0;
+    for (BlockMeta* b : blocks) if (b->tier == 2) in_t2++;
+    fprintf(stderr, "  tier-2 regions: %.1f%% of samples\n", n ? 100.0 * in_t2 / n : 0.0);
     for (size_t i = 0; i < counts.size() && i < 25; i++) {
         BlockMeta* b = counts[i].first;
         fprintf(stderr, "  %5.1f%%  guest %#lx..%#lx  (%d insns, host %u bytes @%p)\n", 100.0 * counts[i].second / n,
