@@ -1708,7 +1708,10 @@ void T1::emit_sys(Val v) {
 void T1::emit_call_c(void* fn, Val v, Val a, Val b, u64 imm) {
     // load arguments into temps first (they may alias registers we are about to clobber)
     pin(a); pin(b);
-    for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) if (owner_[r] && !(pinned_ & (1 << r))) evict(r);
+    // the call clobbers every temporary: values needed afterwards (an argument too, e.g. the IC
+    // IVAU address reused by the next instruction) move to their home or a spill slot first
+    for (int ti_ = 0; ti_ < ntemps_; ti_++)
+        if (Reg r = temps_[ti_]; owner_[r] && (vi_[owner_[r]].last > cur_ || !(pinned_ & (1 << r)))) evict(r);
     for (int x = 0; x < 16; x++) if (xowner_[x] && vi_[xowner_[x]].last > cur_) evict_x(x);
     save_caller_saved_guests();
     // arguments: fetch from current locations (registers hold correct values still)

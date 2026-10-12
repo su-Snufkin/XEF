@@ -70,6 +70,9 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64); fuzzer go ustawia.
 
 ## Następne kroki (priorytet)
+- Firefox: sandbox procesów potomnych (seccomp ustawiany sygnałem do każdego wątku) zgłasza wątek, który
+  nie odpowiada w 10 s -> sprawdzić dostarczanie sygnału do wątku zablokowanego w syscallu
+  (dziś: `MOZ_DISABLE_*_SANDBOX=1`), oraz czy prctl/seccomp gościa jest emulowany sensownie.
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
    znalezione bloki; testy Pythona (w tym asyncio, ssl) przechodzą po naprawie slotów spill
    i dostarczania sygnałów (test_socket: tylko VSOCK — środowisko).
@@ -83,6 +86,11 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 4. Trwały cache AOT, thunki bibliotek.
 
 ## Pułapki, na które już wpadliśmy
+- Wywołanie helpera C (`emit_call_c`) niszczy rejestry tymczasowe: wartości żywe po wywołaniu, także
+  jego argumenty, muszą zostać wyrzucone przed nim (adres IC IVAU używany dalej -> Firefox flushował
+  od adresu 0 całą przestrzeń). Weryfikator pomija bloki z helperami, test: t_icflush.
+- `IC IVAU`/munmap/mprotect na zakresach bez tłumaczeń nie biorą blokady (bitmapa `mark_code`, 64 KiB):
+  tłumacz zaznacza strony PRZED sprawdzeniem epoki, unieważniający podbija epokę PRZED odczytem bitmapy.
 - Remat flag czyta operandy producenta flag: zapis rejestru docelowego (select/adc) i zwalnianie
   rejestrów w terminatorze muszą nastąpić PO `need_flags`/z zachowaniem tych wartości.
 - `nzcv_live_at` używa wspólnego `scratch` — wskaźniki do jego instrukcji są nieważne po rekurencji.

@@ -21,6 +21,7 @@ tools/build_thunks.sh                            # guest shims for --host-gl (li
 ```sh
 build/xef program args...                        # static arm64 binaries
 tools/mkrootfs.sh [packages...]                  # arm64 root filesystem (Ubuntu noble + dependencies)
+XEF_REPOS=http://ppa.launchpad.net/mozillateam/ppa/ubuntu tools/mkrootfs.sh firefox   # + extra repositories (PPAs)
 build/xef -L .tools/rootfs-arm64 .tools/rootfs-arm64/usr/bin/python3 -c 'print(42)'
 ```
 

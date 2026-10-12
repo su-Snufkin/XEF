@@ -94,6 +94,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         a64::translate_block(pc, blk, topt);
         a64::set_peek_log(nullptr);
         if (peeks.overflow) blk.flags_live_out = true;   // don't depend on code we can't track
+        g_cache.mark_code(pc, blk.end, peeks.overflow ? nullptr : &peeks);   // before the epoch check
         lk.lock();
         if (g_cache.epoch.load(std::memory_order_seq_cst) == ep) break;
         lk.unlock();   // code was invalidated meanwhile: decode again
@@ -144,6 +145,13 @@ u8* get_or_translate(ThreadCtx* t, GuestAddr pc) {
 }
 
 void code_invalidate_range(GuestAddr start, u64 len) {
+    // translations in flight must not be published; then nothing to do where no code was translated
+    g_cache.epoch.fetch_add(1, std::memory_order_seq_cst);
+    if (g_opt.stats) __atomic_fetch_add(&g_stats.inval_requests, 1, __ATOMIC_RELAXED);
+    if (!g_cache.may_have_code(start, start + len)) {
+        if (g_opt.stats) __atomic_fetch_add(&g_stats.inval_unmarked, 1, __ATOMIC_RELAXED);
+        return;
+    }
     std::lock_guard<std::mutex> lk(g_cache.lock);
     if (g_cache.invalidate_range(start, start + len)) {
         g_cache.scrub_ibtcs();

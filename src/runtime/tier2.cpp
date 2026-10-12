@@ -83,6 +83,8 @@ static bool compile_region(GuestAddr head) {
     BlockMeta* hm = g_cache.lookup(head);
     if (!hm || hm->tier != 1) return false;
     hm->tier = 3;  // "tried": don't retry on failure
+    // cache maintenance does not take the lock where no code is marked (CodeCache::mark_code)
+    u64 ep = g_cache.epoch.load(std::memory_order_seq_cst);
     // every guest range decoded ahead while forming the region becomes an invalidation dependency
     static PeekLog peeks;
     peeks.n = 0;
@@ -319,6 +321,8 @@ static bool compile_region(GuestAddr head) {
         }
     }
     if (peeks.overflow) return false;   // dependencies not trackable (abandoned code stays unpublished)
+    for (int i = 0; i < R.n; i++) g_cache.mark_code(metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
+    if (g_cache.epoch.load(std::memory_order_seq_cst) != ep) { hm->tier = 1; return false; }   // code changed
     for (int i = 0; i < R.n; i++) g_cache.add_deps(entry, metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
     // ---- go live: publish the entry and re-point incoming links of the tier-1 head
     entry->incoming = hm->incoming;

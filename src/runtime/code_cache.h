@@ -152,6 +152,20 @@ public:
     void set_pcmap(BlockMeta* b, const PcMapEntry* e, int n);
     const PcMapEntry* find_pc(const BlockMeta* b, const u8* host) const;
 
+    // ---- code page filter (lock-free) ----
+    // One bit per 64 KiB of guest address space: set before a translation of code there can be
+    // published (bits are never cleared). Cache maintenance on ranges without any bit set has
+    // nothing to invalidate; JITs flush every cache line they write (SpiderMonkey, V8).
+    // Protocol: a translator marks its ranges, THEN re-checks `epoch`; an invalidator bumps
+    // `epoch`, THEN tests the bits. Either the translator sees the new epoch (and decodes
+    // again) or the invalidator sees the bit (and takes `lock`).
+    void mark_code(GuestAddr lo, GuestAddr hi);
+    void mark_code(GuestAddr lo, GuestAddr hi, const PeekLog* peeks) {
+        mark_code(lo, hi);
+        for (int i = 0; peeks && i < peeks->n; i++) mark_code(peeks->r[i].lo, peeks->r[i].hi);
+    }
+    bool may_have_code(GuestAddr lo, GuestAddr hi) const;
+
     // ---- invalidation (all with `lock` held) ----
     // Records that `b` depends on guest code in [lo, hi) (its body) and on the peeked ranges.
     void add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog* peeks);
@@ -177,6 +191,7 @@ private:
     u8* meta_ptr_ = nullptr;
     u8* meta_end_ = nullptr;
     std::atomic<BlockMeta**>* l1_ = nullptr;
+    u64* code_pages_ = nullptr;   // mark_code bitmap
     BlockMeta** by_host_ = nullptr;
     size_t nby_host_ = 0, cap_by_host_ = 0;
     struct Dep { BlockMeta* b; GuestAddr lo, hi; };
