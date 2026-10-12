@@ -9,7 +9,8 @@ Outputs:
 Signature: "<ret>:<args>", one letter per value (AAPCS64 -> SysV marshalling in src/thunks):
   v void, i 32-bit int, l 64-bit int/pointer, b u8, c s8, s s16, S u16, f float, d double,
   D Display* (replaced by the host connection).
-Flags: 1 = takes a callback (not forwarded), 2 = implemented by the guest shim (raw thunk only).
+Flags: 1 = takes a callback (not forwarded), 2 = implemented by the guest shim (raw thunk only),
+  8 = eglGetPlatformDisplay: arg 1 is a Display* when arg 0 is EGL_PLATFORM_X11.
 
 usage: gen_glthunks.py [include-dir]   (default /usr/include)
 """
@@ -33,13 +34,24 @@ I64 = {'GLintptr', 'GLsizeiptr', 'GLintptrARB', 'GLsizeiptrARB', 'GLint64', 'GLu
        'GLXPbufferSGIX', 'Window', 'Pixmap', 'Font', 'Colormap', 'GLXContext', 'GLXFBConfig',
        'GLXFBConfigSGIX', 'GLXVideoCaptureDeviceNV', 'GLXHyperpipeNetworkSGIX', '__GLXextFuncPtr',
        'GLXVideoDeviceNV*', 'size_t', 'ssize_t', 'GLXFBConfig*'}
-CALLBACK = {'GLDEBUGPROC', 'GLDEBUGPROCARB', 'GLDEBUGPROCKHR', 'GLDEBUGPROCAMD', 'GLVULKANPROCNV'}
+CALLBACK = {'GLDEBUGPROC', 'GLDEBUGPROCARB', 'GLDEBUGPROCKHR', 'GLDEBUGPROCAMD', 'GLVULKANPROCNV',
+            'EGLDEBUGPROCKHR', 'EGLSetBlobFuncANDROID', 'EGLGetBlobFuncANDROID'}
+INT32 |= {'EGLint', 'EGLBoolean', 'EGLenum', 'EGLNativeFileDescriptorKHR'}
+I64 |= {'EGLDisplay', 'EGLConfig', 'EGLContext', 'EGLSurface', 'EGLClientBuffer', 'EGLImage', 'EGLImageKHR',
+        'EGLSync', 'EGLSyncKHR', 'EGLSyncNV', 'EGLAttrib', 'EGLAttribKHR', 'EGLTime', 'EGLTimeKHR', 'EGLTimeNV',
+        'EGLuint64KHR', 'EGLuint64NV', 'EGLDeviceEXT', 'EGLOutputLayerEXT', 'EGLOutputPortEXT', 'EGLStreamKHR',
+        'EGLObjectKHR', 'EGLLabelKHR', 'EGLsizeiANDROID', 'EGLNativePixmapType', 'EGLNativeWindowType',
+        'EGLnsecsANDROID', '__eglMustCastToProperFunctionPointerType'}
 # the guest's pending X requests must reach the server before these (drawables created by the guest)
 SYNC = {'glXMakeCurrent', 'glXMakeContextCurrent', 'glXMakeCurrentReadSGI', 'glXCreateWindow', 'glXCreatePixmap',
         'glXCreateGLXPixmap', 'glXCreateGLXPixmapWithConfigSGIX', 'glXSwapBuffers'}
 # implemented in the guest shim (memory the guest frees with XFree, guest function pointers)
 SHIM = {'glXChooseVisual', 'glXGetVisualFromFBConfig', 'glXChooseFBConfig', 'glXGetFBConfigs',
-        'glXGetProcAddress', 'glXGetProcAddressARB', 'glXChooseFBConfigSGIX', 'glXGetVisualFromFBConfigSGIX'}
+        'glXGetProcAddress', 'glXGetProcAddressARB', 'glXChooseFBConfigSGIX', 'glXGetVisualFromFBConfigSGIX',
+        'eglGetProcAddress', 'eglGetDisplay', 'eglGetPlatformDisplay', 'eglGetPlatformDisplayEXT'}
+# EGL calls that use the guest's X windows: XSync the display the guest last passed to eglGetDisplay
+SYNC_EGL = {'eglCreateWindowSurface', 'eglCreatePlatformWindowSurface', 'eglCreatePlatformWindowSurfaceEXT',
+            'eglMakeCurrent', 'eglSwapBuffers', 'eglCreatePixmapSurface', 'eglCreatePlatformPixmapSurface'}
 
 def classify(t):
     t = t.replace('const', ' ').replace('struct', ' ').strip()
@@ -49,6 +61,8 @@ def classify(t):
         if base == 'Display' and t.count('*') == 1:
             return 'D'
         return 'l'
+    if t == 'EGLNativeDisplayType':
+        return 'D'
     if t in CALLBACK:
         return 'CB'
     if t in INT32: return 'i'
@@ -95,6 +109,7 @@ def add(name, ret, params):
         if c == 'CB': c, flags = 'l', flags | 1
         args.append(c)
     if name in SHIM: flags |= 2
+    if name in ('eglGetPlatformDisplay', 'eglGetPlatformDisplayEXT'): flags |= 8   # X11 native display
     funcs[name] = (rc, ''.join(args), flags)
     order.append(name)
 
@@ -108,6 +123,9 @@ glx = read('GL/glx.h')
 for name, ret, params in parse(glx, r'extern\s+([\w\s\*]+?)\s*\b(glX\w+)\s*\((.*?)\)\s*;'):
     add(name, ret, params)
 add('glXGetProcAddress', 'void*', 'const GLubyte *procname')
+for f in ('EGL/egl.h', 'EGL/eglext.h'):
+    for name, ret, params in parse(read(f), r'EGLAPI\s+([^;()]+?)\s*EGLAPIENTRY\s+(egl\w+)\s*\((.*?)\)\s*;'):
+        add(name, ret, params)
 glxext = read('GL/glxext.h')
 for blk in re.findall(r'#ifdef GLX_GLXEXT_PROTOTYPES\n(.*?)#endif', glxext, re.S):
     for name, ret, params in parse(blk, r'([\w\s\*]+?)\s*\b(glX\w+)\s*\((.*?)\)\s*;'):
@@ -130,10 +148,10 @@ with open(os.path.join(ROOT, 'thunks/gl_stubs.S'), 'w') as f:
         rc, a, fl = funcs[n]
         sym = n if n.startswith('xef_') else ('xef_raw_' + n) if fl & 2 else n
         f.write('    .globl %s\n    .type %s, %%function\n    .p2align 2\n%s:\n' % (sym, sym, sym))
-        if n in SYNC:   # guest XSync(dpy) first: the guest's own X requests (window creation) must be done
+        if n in SYNC or n in SYNC_EGL:   # guest XSync first: its own X requests (window creation) must be done
             f.write('    stp x29, x30, [sp, #-80]!\n    mov x29, sp\n    stp x0, x1, [sp, #16]\n'
                     '    stp x2, x3, [sp, #32]\n    stp x4, x5, [sp, #48]\n    stp x6, x7, [sp, #64]\n'
-                    '    bl xef_guest_xsync\n'
+                    '    bl %s\n' % ('xef_guest_xsync_egl' if n in SYNC_EGL else 'xef_guest_xsync') +
                     '    ldp x0, x1, [sp, #16]\n    ldp x2, x3, [sp, #32]\n    ldp x4, x5, [sp, #48]\n'
                     '    ldp x6, x7, [sp, #64]\n    ldp x29, x30, [sp], #80\n')
         f.write('    mov x17, #%d\n    hlt #0x5846\n    ret\n' % i)

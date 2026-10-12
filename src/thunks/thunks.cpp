@@ -44,6 +44,8 @@ void* g_fn[kCount];
 std::mutex g_lock;
 void* g_libgl;
 void* g_libx11;
+void* g_libegl;
+void* (*g_eglproc)(const char*);
 void* (*g_getproc)(const unsigned char*);
 void* (*g_XOpenDisplay)(const char*);
 char* (*g_XDisplayString)(void*);
@@ -69,6 +71,8 @@ void load_libs() {
     g_libx11 = dlopen("libX11.so.6", RTLD_NOW | RTLD_GLOBAL);
     if (!g_libx11) fatal("--host-gl: cannot load the host libX11.so.6: %s", dlerror());
     g_getproc = (void* (*)(const unsigned char*))dlsym(g_libgl, "glXGetProcAddressARB");
+    g_libegl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_GLOBAL);   // optional
+    if (g_libegl) g_eglproc = (void* (*)(const char*))dlsym(g_libegl, "eglGetProcAddress");
     g_XOpenDisplay = (void* (*)(const char*))dlsym(g_libx11, "XOpenDisplay");
     g_XDisplayString = (char* (*)(void*))dlsym(g_libx11, "XDisplayString");
     if (auto seh = (void* (*)(int (*)(void*, void*)))dlsym(g_libx11, "XSetErrorHandler")) seh(host_x_error);
@@ -81,7 +85,11 @@ void* resolve(int id) {
     const char* name = kTable[id].name;
     void* f = nullptr;
     if (!strncmp(name, "xef_host_", 9)) f = dlsym(g_libx11, name + 9);
-    else {
+    else if (!strncmp(name, "egl", 3)) {
+        if (!g_libegl) fatal("--host-gl: the host has no libEGL.so.1 (needed for %s)", name);
+        f = dlsym(g_libegl, name);
+        if (!f && g_eglproc) f = g_eglproc(name);
+    } else {
         f = dlsym(g_libgl, name);
         if (!f && g_getproc) f = g_getproc((const unsigned char*)name);
     }
@@ -110,8 +118,11 @@ const char* thunk_lib_redirect(const char* path) {
     if (!g_host_gl || !path) return nullptr;
     const char* b = strrchr(path, '/');
     b = b ? b + 1 : path;
-    if (strcmp(b, "libGL.so.1") && strcmp(b, "libGLX.so.0") && strcmp(b, "libOpenGL.so.0") && strcmp(b, "libGL.so"))
-        return nullptr;
+    static const char* const kLibs[] = {"libGL.so.1", "libGLX.so.0", "libOpenGL.so.0", "libGL.so", "libEGL.so.1",
+                                        "libGLESv2.so.2", "libGLESv1_CM.so.1", "libEGL.so", "libGLESv2.so"};
+    bool match = false;
+    for (const char* l : kLibs) match |= !strcmp(b, l);
+    if (!match) return nullptr;
     static std::string shim;
     static std::once_flag once;
     std::call_once(once, [] {
@@ -137,6 +148,12 @@ void thunk_dispatch(CpuState* st) {
     u64 ir[6] = {}, fr[8] = {}, stk[32];
     int ni = 0, nf = 0, ns = 0, gi = 0, gf = 0, gs = 0;
     const u64* gstack = (const u64*)st->x[kGuestSP];
+    u64 x1_override = 0;
+    bool have_override = false;
+    if ((e.flags & 8) && (u32)st->x[0] == 0x31D5) {   // EGL_PLATFORM_X11_KHR: native display is a Display*
+        x1_override = (u64)host_display((void*)st->x[1]);
+        have_override = true;
+    }
     const char* p = strchr(e.sig, ':') + 1;
     for (; *p; p++) {
         char c = *p;
@@ -148,6 +165,7 @@ void thunk_dispatch(CpuState* st) {
             if (c == 'f') v &= 0xffffffffull;
         } else {
             v = gi < 8 ? st->x[gi++] : gstack[gs++];
+            if (have_override && gi == 2) v = x1_override;
             switch (c) {   // AAPCS64 leaves the upper bits of small arguments unspecified
             case 'b': v = (u8)v; break;
             case 'c': v = (u64)(i64)(i8)v; break;

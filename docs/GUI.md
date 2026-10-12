@@ -24,9 +24,13 @@ with AVX2 here, or the GPU driver on a real machine.
 Neverball, Extreme Tux Racer, OpenArena, Minetest, Warzone 2100 and glxgears all run with
 `--host-gl` (`docs/screenshots/hostgl-games.png`).
 
-Limits: callbacks from the host into guest code (`glDebugMessageCallback`) are dropped; EGL is
-not thunked yet (programs using EGL keep the guest Mesa); X errors on the host connection are
-ignored instead of reaching the guest's handler.
+EGL (X11 platform) and GLES go through the same shim (`libEGL.so.1`, `libGLESv2.so.2`,
+`libGLESv1_CM.so.1` are redirected too): eglinfo, eglgears_x11, and WebGL in WebKitGTK (22 → 41
+FPS) run on the host (`docs/screenshots/hostgl-egl.png`).
+
+Limits: callbacks from the host into guest code (`glDebugMessageCallback`) are dropped; the
+GBM/Wayland EGL platforms are not supported; X errors on the host connection are ignored instead
+of reaching the guest's handler.
 
 ## Setup
 

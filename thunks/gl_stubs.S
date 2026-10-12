@@ -24296,11 +24296,1351 @@ xef_raw_glXGetProcAddress:
     hlt #0x5846
     ret
     .size xef_raw_glXGetProcAddress, .-xef_raw_glXGetProcAddress
+    .globl eglChooseConfig
+    .type eglChooseConfig, %function
+    .p2align 2
+eglChooseConfig:
+    mov x17, #3028
+    hlt #0x5846
+    ret
+    .size eglChooseConfig, .-eglChooseConfig
+    .globl eglCopyBuffers
+    .type eglCopyBuffers, %function
+    .p2align 2
+eglCopyBuffers:
+    mov x17, #3029
+    hlt #0x5846
+    ret
+    .size eglCopyBuffers, .-eglCopyBuffers
+    .globl eglCreateContext
+    .type eglCreateContext, %function
+    .p2align 2
+eglCreateContext:
+    mov x17, #3030
+    hlt #0x5846
+    ret
+    .size eglCreateContext, .-eglCreateContext
+    .globl eglCreatePbufferSurface
+    .type eglCreatePbufferSurface, %function
+    .p2align 2
+eglCreatePbufferSurface:
+    mov x17, #3031
+    hlt #0x5846
+    ret
+    .size eglCreatePbufferSurface, .-eglCreatePbufferSurface
+    .globl eglCreatePixmapSurface
+    .type eglCreatePixmapSurface, %function
+    .p2align 2
+eglCreatePixmapSurface:
+    stp x29, x30, [sp, #-80]!
+    mov x29, sp
+    stp x0, x1, [sp, #16]
+    stp x2, x3, [sp, #32]
+    stp x4, x5, [sp, #48]
+    stp x6, x7, [sp, #64]
+    bl xef_guest_xsync_egl
+    ldp x0, x1, [sp, #16]
+    ldp x2, x3, [sp, #32]
+    ldp x4, x5, [sp, #48]
+    ldp x6, x7, [sp, #64]
+    ldp x29, x30, [sp], #80
+    mov x17, #3032
+    hlt #0x5846
+    ret
+    .size eglCreatePixmapSurface, .-eglCreatePixmapSurface
+    .globl eglCreateWindowSurface
+    .type eglCreateWindowSurface, %function
+    .p2align 2
+eglCreateWindowSurface:
+    stp x29, x30, [sp, #-80]!
+    mov x29, sp
+    stp x0, x1, [sp, #16]
+    stp x2, x3, [sp, #32]
+    stp x4, x5, [sp, #48]
+    stp x6, x7, [sp, #64]
+    bl xef_guest_xsync_egl
+    ldp x0, x1, [sp, #16]
+    ldp x2, x3, [sp, #32]
+    ldp x4, x5, [sp, #48]
+    ldp x6, x7, [sp, #64]
+    ldp x29, x30, [sp], #80
+    mov x17, #3033
+    hlt #0x5846
+    ret
+    .size eglCreateWindowSurface, .-eglCreateWindowSurface
+    .globl eglDestroyContext
+    .type eglDestroyContext, %function
+    .p2align 2
+eglDestroyContext:
+    mov x17, #3034
+    hlt #0x5846
+    ret
+    .size eglDestroyContext, .-eglDestroyContext
+    .globl eglDestroySurface
+    .type eglDestroySurface, %function
+    .p2align 2
+eglDestroySurface:
+    mov x17, #3035
+    hlt #0x5846
+    ret
+    .size eglDestroySurface, .-eglDestroySurface
+    .globl eglGetConfigAttrib
+    .type eglGetConfigAttrib, %function
+    .p2align 2
+eglGetConfigAttrib:
+    mov x17, #3036
+    hlt #0x5846
+    ret
+    .size eglGetConfigAttrib, .-eglGetConfigAttrib
+    .globl eglGetConfigs
+    .type eglGetConfigs, %function
+    .p2align 2
+eglGetConfigs:
+    mov x17, #3037
+    hlt #0x5846
+    ret
+    .size eglGetConfigs, .-eglGetConfigs
+    .globl eglGetCurrentDisplay
+    .type eglGetCurrentDisplay, %function
+    .p2align 2
+eglGetCurrentDisplay:
+    mov x17, #3038
+    hlt #0x5846
+    ret
+    .size eglGetCurrentDisplay, .-eglGetCurrentDisplay
+    .globl eglGetCurrentSurface
+    .type eglGetCurrentSurface, %function
+    .p2align 2
+eglGetCurrentSurface:
+    mov x17, #3039
+    hlt #0x5846
+    ret
+    .size eglGetCurrentSurface, .-eglGetCurrentSurface
+    .globl xef_raw_eglGetDisplay
+    .type xef_raw_eglGetDisplay, %function
+    .p2align 2
+xef_raw_eglGetDisplay:
+    mov x17, #3040
+    hlt #0x5846
+    ret
+    .size xef_raw_eglGetDisplay, .-xef_raw_eglGetDisplay
+    .globl eglGetError
+    .type eglGetError, %function
+    .p2align 2
+eglGetError:
+    mov x17, #3041
+    hlt #0x5846
+    ret
+    .size eglGetError, .-eglGetError
+    .globl xef_raw_eglGetProcAddress
+    .type xef_raw_eglGetProcAddress, %function
+    .p2align 2
+xef_raw_eglGetProcAddress:
+    mov x17, #3042
+    hlt #0x5846
+    ret
+    .size xef_raw_eglGetProcAddress, .-xef_raw_eglGetProcAddress
+    .globl eglInitialize
+    .type eglInitialize, %function
+    .p2align 2
+eglInitialize:
+    mov x17, #3043
+    hlt #0x5846
+    ret
+    .size eglInitialize, .-eglInitialize
+    .globl eglMakeCurrent
+    .type eglMakeCurrent, %function
+    .p2align 2
+eglMakeCurrent:
+    stp x29, x30, [sp, #-80]!
+    mov x29, sp
+    stp x0, x1, [sp, #16]
+    stp x2, x3, [sp, #32]
+    stp x4, x5, [sp, #48]
+    stp x6, x7, [sp, #64]
+    bl xef_guest_xsync_egl
+    ldp x0, x1, [sp, #16]
+    ldp x2, x3, [sp, #32]
+    ldp x4, x5, [sp, #48]
+    ldp x6, x7, [sp, #64]
+    ldp x29, x30, [sp], #80
+    mov x17, #3044
+    hlt #0x5846
+    ret
+    .size eglMakeCurrent, .-eglMakeCurrent
+    .globl eglQueryContext
+    .type eglQueryContext, %function
+    .p2align 2
+eglQueryContext:
+    mov x17, #3045
+    hlt #0x5846
+    ret
+    .size eglQueryContext, .-eglQueryContext
+    .globl eglQueryString
+    .type eglQueryString, %function
+    .p2align 2
+eglQueryString:
+    mov x17, #3046
+    hlt #0x5846
+    ret
+    .size eglQueryString, .-eglQueryString
+    .globl eglQuerySurface
+    .type eglQuerySurface, %function
+    .p2align 2
+eglQuerySurface:
+    mov x17, #3047
+    hlt #0x5846
+    ret
+    .size eglQuerySurface, .-eglQuerySurface
+    .globl eglSwapBuffers
+    .type eglSwapBuffers, %function
+    .p2align 2
+eglSwapBuffers:
+    stp x29, x30, [sp, #-80]!
+    mov x29, sp
+    stp x0, x1, [sp, #16]
+    stp x2, x3, [sp, #32]
+    stp x4, x5, [sp, #48]
+    stp x6, x7, [sp, #64]
+    bl xef_guest_xsync_egl
+    ldp x0, x1, [sp, #16]
+    ldp x2, x3, [sp, #32]
+    ldp x4, x5, [sp, #48]
+    ldp x6, x7, [sp, #64]
+    ldp x29, x30, [sp], #80
+    mov x17, #3048
+    hlt #0x5846
+    ret
+    .size eglSwapBuffers, .-eglSwapBuffers
+    .globl eglTerminate
+    .type eglTerminate, %function
+    .p2align 2
+eglTerminate:
+    mov x17, #3049
+    hlt #0x5846
+    ret
+    .size eglTerminate, .-eglTerminate
+    .globl eglWaitGL
+    .type eglWaitGL, %function
+    .p2align 2
+eglWaitGL:
+    mov x17, #3050
+    hlt #0x5846
+    ret
+    .size eglWaitGL, .-eglWaitGL
+    .globl eglWaitNative
+    .type eglWaitNative, %function
+    .p2align 2
+eglWaitNative:
+    mov x17, #3051
+    hlt #0x5846
+    ret
+    .size eglWaitNative, .-eglWaitNative
+    .globl eglBindTexImage
+    .type eglBindTexImage, %function
+    .p2align 2
+eglBindTexImage:
+    mov x17, #3052
+    hlt #0x5846
+    ret
+    .size eglBindTexImage, .-eglBindTexImage
+    .globl eglReleaseTexImage
+    .type eglReleaseTexImage, %function
+    .p2align 2
+eglReleaseTexImage:
+    mov x17, #3053
+    hlt #0x5846
+    ret
+    .size eglReleaseTexImage, .-eglReleaseTexImage
+    .globl eglSurfaceAttrib
+    .type eglSurfaceAttrib, %function
+    .p2align 2
+eglSurfaceAttrib:
+    mov x17, #3054
+    hlt #0x5846
+    ret
+    .size eglSurfaceAttrib, .-eglSurfaceAttrib
+    .globl eglSwapInterval
+    .type eglSwapInterval, %function
+    .p2align 2
+eglSwapInterval:
+    mov x17, #3055
+    hlt #0x5846
+    ret
+    .size eglSwapInterval, .-eglSwapInterval
+    .globl eglBindAPI
+    .type eglBindAPI, %function
+    .p2align 2
+eglBindAPI:
+    mov x17, #3056
+    hlt #0x5846
+    ret
+    .size eglBindAPI, .-eglBindAPI
+    .globl eglQueryAPI
+    .type eglQueryAPI, %function
+    .p2align 2
+eglQueryAPI:
+    mov x17, #3057
+    hlt #0x5846
+    ret
+    .size eglQueryAPI, .-eglQueryAPI
+    .globl eglCreatePbufferFromClientBuffer
+    .type eglCreatePbufferFromClientBuffer, %function
+    .p2align 2
+eglCreatePbufferFromClientBuffer:
+    mov x17, #3058
+    hlt #0x5846
+    ret
+    .size eglCreatePbufferFromClientBuffer, .-eglCreatePbufferFromClientBuffer
+    .globl eglReleaseThread
+    .type eglReleaseThread, %function
+    .p2align 2
+eglReleaseThread:
+    mov x17, #3059
+    hlt #0x5846
+    ret
+    .size eglReleaseThread, .-eglReleaseThread
+    .globl eglWaitClient
+    .type eglWaitClient, %function
+    .p2align 2
+eglWaitClient:
+    mov x17, #3060
+    hlt #0x5846
+    ret
+    .size eglWaitClient, .-eglWaitClient
+    .globl eglGetCurrentContext
+    .type eglGetCurrentContext, %function
+    .p2align 2
+eglGetCurrentContext:
+    mov x17, #3061
+    hlt #0x5846
+    ret
+    .size eglGetCurrentContext, .-eglGetCurrentContext
+    .globl eglCreateSync
+    .type eglCreateSync, %function
+    .p2align 2
+eglCreateSync:
+    mov x17, #3062
+    hlt #0x5846
+    ret
+    .size eglCreateSync, .-eglCreateSync
+    .globl eglDestroySync
+    .type eglDestroySync, %function
+    .p2align 2
+eglDestroySync:
+    mov x17, #3063
+    hlt #0x5846
+    ret
+    .size eglDestroySync, .-eglDestroySync
+    .globl eglClientWaitSync
+    .type eglClientWaitSync, %function
+    .p2align 2
+eglClientWaitSync:
+    mov x17, #3064
+    hlt #0x5846
+    ret
+    .size eglClientWaitSync, .-eglClientWaitSync
+    .globl eglGetSyncAttrib
+    .type eglGetSyncAttrib, %function
+    .p2align 2
+eglGetSyncAttrib:
+    mov x17, #3065
+    hlt #0x5846
+    ret
+    .size eglGetSyncAttrib, .-eglGetSyncAttrib
+    .globl eglCreateImage
+    .type eglCreateImage, %function
+    .p2align 2
+eglCreateImage:
+    mov x17, #3066
+    hlt #0x5846
+    ret
+    .size eglCreateImage, .-eglCreateImage
+    .globl eglDestroyImage
+    .type eglDestroyImage, %function
+    .p2align 2
+eglDestroyImage:
+    mov x17, #3067
+    hlt #0x5846
+    ret
+    .size eglDestroyImage, .-eglDestroyImage
+    .globl xef_raw_eglGetPlatformDisplay
+    .type xef_raw_eglGetPlatformDisplay, %function
+    .p2align 2
+xef_raw_eglGetPlatformDisplay:
+    mov x17, #3068
+    hlt #0x5846
+    ret
+    .size xef_raw_eglGetPlatformDisplay, .-xef_raw_eglGetPlatformDisplay
+    .globl eglCreatePlatformWindowSurface
+    .type eglCreatePlatformWindowSurface, %function
+    .p2align 2
+eglCreatePlatformWindowSurface:
+    stp x29, x30, [sp, #-80]!
+    mov x29, sp
+    stp x0, x1, [sp, #16]
+    stp x2, x3, [sp, #32]
+    stp x4, x5, [sp, #48]
+    stp x6, x7, [sp, #64]
+    bl xef_guest_xsync_egl
+    ldp x0, x1, [sp, #16]
+    ldp x2, x3, [sp, #32]
+    ldp x4, x5, [sp, #48]
+    ldp x6, x7, [sp, #64]
+    ldp x29, x30, [sp], #80
+    mov x17, #3069
+    hlt #0x5846
+    ret
+    .size eglCreatePlatformWindowSurface, .-eglCreatePlatformWindowSurface
+    .globl eglCreatePlatformPixmapSurface
+    .type eglCreatePlatformPixmapSurface, %function
+    .p2align 2
+eglCreatePlatformPixmapSurface:
+    stp x29, x30, [sp, #-80]!
+    mov x29, sp
+    stp x0, x1, [sp, #16]
+    stp x2, x3, [sp, #32]
+    stp x4, x5, [sp, #48]
+    stp x6, x7, [sp, #64]
+    bl xef_guest_xsync_egl
+    ldp x0, x1, [sp, #16]
+    ldp x2, x3, [sp, #32]
+    ldp x4, x5, [sp, #48]
+    ldp x6, x7, [sp, #64]
+    ldp x29, x30, [sp], #80
+    mov x17, #3070
+    hlt #0x5846
+    ret
+    .size eglCreatePlatformPixmapSurface, .-eglCreatePlatformPixmapSurface
+    .globl eglWaitSync
+    .type eglWaitSync, %function
+    .p2align 2
+eglWaitSync:
+    mov x17, #3071
+    hlt #0x5846
+    ret
+    .size eglWaitSync, .-eglWaitSync
+    .globl eglCreateSync64KHR
+    .type eglCreateSync64KHR, %function
+    .p2align 2
+eglCreateSync64KHR:
+    mov x17, #3072
+    hlt #0x5846
+    ret
+    .size eglCreateSync64KHR, .-eglCreateSync64KHR
+    .globl eglDebugMessageControlKHR
+    .type eglDebugMessageControlKHR, %function
+    .p2align 2
+eglDebugMessageControlKHR:
+    mov x17, #3073
+    hlt #0x5846
+    ret
+    .size eglDebugMessageControlKHR, .-eglDebugMessageControlKHR
+    .globl eglQueryDebugKHR
+    .type eglQueryDebugKHR, %function
+    .p2align 2
+eglQueryDebugKHR:
+    mov x17, #3074
+    hlt #0x5846
+    ret
+    .size eglQueryDebugKHR, .-eglQueryDebugKHR
+    .globl eglLabelObjectKHR
+    .type eglLabelObjectKHR, %function
+    .p2align 2
+eglLabelObjectKHR:
+    mov x17, #3075
+    hlt #0x5846
+    ret
+    .size eglLabelObjectKHR, .-eglLabelObjectKHR
+    .globl eglQueryDisplayAttribKHR
+    .type eglQueryDisplayAttribKHR, %function
+    .p2align 2
+eglQueryDisplayAttribKHR:
+    mov x17, #3076
+    hlt #0x5846
+    ret
+    .size eglQueryDisplayAttribKHR, .-eglQueryDisplayAttribKHR
+    .globl eglCreateSyncKHR
+    .type eglCreateSyncKHR, %function
+    .p2align 2
+eglCreateSyncKHR:
+    mov x17, #3077
+    hlt #0x5846
+    ret
+    .size eglCreateSyncKHR, .-eglCreateSyncKHR
+    .globl eglDestroySyncKHR
+    .type eglDestroySyncKHR, %function
+    .p2align 2
+eglDestroySyncKHR:
+    mov x17, #3078
+    hlt #0x5846
+    ret
+    .size eglDestroySyncKHR, .-eglDestroySyncKHR
+    .globl eglClientWaitSyncKHR
+    .type eglClientWaitSyncKHR, %function
+    .p2align 2
+eglClientWaitSyncKHR:
+    mov x17, #3079
+    hlt #0x5846
+    ret
+    .size eglClientWaitSyncKHR, .-eglClientWaitSyncKHR
+    .globl eglGetSyncAttribKHR
+    .type eglGetSyncAttribKHR, %function
+    .p2align 2
+eglGetSyncAttribKHR:
+    mov x17, #3080
+    hlt #0x5846
+    ret
+    .size eglGetSyncAttribKHR, .-eglGetSyncAttribKHR
+    .globl eglCreateImageKHR
+    .type eglCreateImageKHR, %function
+    .p2align 2
+eglCreateImageKHR:
+    mov x17, #3081
+    hlt #0x5846
+    ret
+    .size eglCreateImageKHR, .-eglCreateImageKHR
+    .globl eglDestroyImageKHR
+    .type eglDestroyImageKHR, %function
+    .p2align 2
+eglDestroyImageKHR:
+    mov x17, #3082
+    hlt #0x5846
+    ret
+    .size eglDestroyImageKHR, .-eglDestroyImageKHR
+    .globl eglLockSurfaceKHR
+    .type eglLockSurfaceKHR, %function
+    .p2align 2
+eglLockSurfaceKHR:
+    mov x17, #3083
+    hlt #0x5846
+    ret
+    .size eglLockSurfaceKHR, .-eglLockSurfaceKHR
+    .globl eglUnlockSurfaceKHR
+    .type eglUnlockSurfaceKHR, %function
+    .p2align 2
+eglUnlockSurfaceKHR:
+    mov x17, #3084
+    hlt #0x5846
+    ret
+    .size eglUnlockSurfaceKHR, .-eglUnlockSurfaceKHR
+    .globl eglQuerySurface64KHR
+    .type eglQuerySurface64KHR, %function
+    .p2align 2
+eglQuerySurface64KHR:
+    mov x17, #3085
+    hlt #0x5846
+    ret
+    .size eglQuerySurface64KHR, .-eglQuerySurface64KHR
+    .globl eglSetDamageRegionKHR
+    .type eglSetDamageRegionKHR, %function
+    .p2align 2
+eglSetDamageRegionKHR:
+    mov x17, #3086
+    hlt #0x5846
+    ret
+    .size eglSetDamageRegionKHR, .-eglSetDamageRegionKHR
+    .globl eglSignalSyncKHR
+    .type eglSignalSyncKHR, %function
+    .p2align 2
+eglSignalSyncKHR:
+    mov x17, #3087
+    hlt #0x5846
+    ret
+    .size eglSignalSyncKHR, .-eglSignalSyncKHR
+    .globl eglCreateStreamKHR
+    .type eglCreateStreamKHR, %function
+    .p2align 2
+eglCreateStreamKHR:
+    mov x17, #3088
+    hlt #0x5846
+    ret
+    .size eglCreateStreamKHR, .-eglCreateStreamKHR
+    .globl eglDestroyStreamKHR
+    .type eglDestroyStreamKHR, %function
+    .p2align 2
+eglDestroyStreamKHR:
+    mov x17, #3089
+    hlt #0x5846
+    ret
+    .size eglDestroyStreamKHR, .-eglDestroyStreamKHR
+    .globl eglStreamAttribKHR
+    .type eglStreamAttribKHR, %function
+    .p2align 2
+eglStreamAttribKHR:
+    mov x17, #3090
+    hlt #0x5846
+    ret
+    .size eglStreamAttribKHR, .-eglStreamAttribKHR
+    .globl eglQueryStreamKHR
+    .type eglQueryStreamKHR, %function
+    .p2align 2
+eglQueryStreamKHR:
+    mov x17, #3091
+    hlt #0x5846
+    ret
+    .size eglQueryStreamKHR, .-eglQueryStreamKHR
+    .globl eglQueryStreamu64KHR
+    .type eglQueryStreamu64KHR, %function
+    .p2align 2
+eglQueryStreamu64KHR:
+    mov x17, #3092
+    hlt #0x5846
+    ret
+    .size eglQueryStreamu64KHR, .-eglQueryStreamu64KHR
+    .globl eglCreateStreamAttribKHR
+    .type eglCreateStreamAttribKHR, %function
+    .p2align 2
+eglCreateStreamAttribKHR:
+    mov x17, #3093
+    hlt #0x5846
+    ret
+    .size eglCreateStreamAttribKHR, .-eglCreateStreamAttribKHR
+    .globl eglSetStreamAttribKHR
+    .type eglSetStreamAttribKHR, %function
+    .p2align 2
+eglSetStreamAttribKHR:
+    mov x17, #3094
+    hlt #0x5846
+    ret
+    .size eglSetStreamAttribKHR, .-eglSetStreamAttribKHR
+    .globl eglQueryStreamAttribKHR
+    .type eglQueryStreamAttribKHR, %function
+    .p2align 2
+eglQueryStreamAttribKHR:
+    mov x17, #3095
+    hlt #0x5846
+    ret
+    .size eglQueryStreamAttribKHR, .-eglQueryStreamAttribKHR
+    .globl eglStreamConsumerAcquireAttribKHR
+    .type eglStreamConsumerAcquireAttribKHR, %function
+    .p2align 2
+eglStreamConsumerAcquireAttribKHR:
+    mov x17, #3096
+    hlt #0x5846
+    ret
+    .size eglStreamConsumerAcquireAttribKHR, .-eglStreamConsumerAcquireAttribKHR
+    .globl eglStreamConsumerReleaseAttribKHR
+    .type eglStreamConsumerReleaseAttribKHR, %function
+    .p2align 2
+eglStreamConsumerReleaseAttribKHR:
+    mov x17, #3097
+    hlt #0x5846
+    ret
+    .size eglStreamConsumerReleaseAttribKHR, .-eglStreamConsumerReleaseAttribKHR
+    .globl eglStreamConsumerGLTextureExternalKHR
+    .type eglStreamConsumerGLTextureExternalKHR, %function
+    .p2align 2
+eglStreamConsumerGLTextureExternalKHR:
+    mov x17, #3098
+    hlt #0x5846
+    ret
+    .size eglStreamConsumerGLTextureExternalKHR, .-eglStreamConsumerGLTextureExternalKHR
+    .globl eglStreamConsumerAcquireKHR
+    .type eglStreamConsumerAcquireKHR, %function
+    .p2align 2
+eglStreamConsumerAcquireKHR:
+    mov x17, #3099
+    hlt #0x5846
+    ret
+    .size eglStreamConsumerAcquireKHR, .-eglStreamConsumerAcquireKHR
+    .globl eglStreamConsumerReleaseKHR
+    .type eglStreamConsumerReleaseKHR, %function
+    .p2align 2
+eglStreamConsumerReleaseKHR:
+    mov x17, #3100
+    hlt #0x5846
+    ret
+    .size eglStreamConsumerReleaseKHR, .-eglStreamConsumerReleaseKHR
+    .globl eglGetStreamFileDescriptorKHR
+    .type eglGetStreamFileDescriptorKHR, %function
+    .p2align 2
+eglGetStreamFileDescriptorKHR:
+    mov x17, #3101
+    hlt #0x5846
+    ret
+    .size eglGetStreamFileDescriptorKHR, .-eglGetStreamFileDescriptorKHR
+    .globl eglCreateStreamFromFileDescriptorKHR
+    .type eglCreateStreamFromFileDescriptorKHR, %function
+    .p2align 2
+eglCreateStreamFromFileDescriptorKHR:
+    mov x17, #3102
+    hlt #0x5846
+    ret
+    .size eglCreateStreamFromFileDescriptorKHR, .-eglCreateStreamFromFileDescriptorKHR
+    .globl eglQueryStreamTimeKHR
+    .type eglQueryStreamTimeKHR, %function
+    .p2align 2
+eglQueryStreamTimeKHR:
+    mov x17, #3103
+    hlt #0x5846
+    ret
+    .size eglQueryStreamTimeKHR, .-eglQueryStreamTimeKHR
+    .globl eglCreateStreamProducerSurfaceKHR
+    .type eglCreateStreamProducerSurfaceKHR, %function
+    .p2align 2
+eglCreateStreamProducerSurfaceKHR:
+    mov x17, #3104
+    hlt #0x5846
+    ret
+    .size eglCreateStreamProducerSurfaceKHR, .-eglCreateStreamProducerSurfaceKHR
+    .globl eglSwapBuffersWithDamageKHR
+    .type eglSwapBuffersWithDamageKHR, %function
+    .p2align 2
+eglSwapBuffersWithDamageKHR:
+    mov x17, #3105
+    hlt #0x5846
+    ret
+    .size eglSwapBuffersWithDamageKHR, .-eglSwapBuffersWithDamageKHR
+    .globl eglWaitSyncKHR
+    .type eglWaitSyncKHR, %function
+    .p2align 2
+eglWaitSyncKHR:
+    mov x17, #3106
+    hlt #0x5846
+    ret
+    .size eglWaitSyncKHR, .-eglWaitSyncKHR
+    .globl eglSetBlobCacheFuncsANDROID
+    .type eglSetBlobCacheFuncsANDROID, %function
+    .p2align 2
+eglSetBlobCacheFuncsANDROID:
+    mov x17, #3107
+    hlt #0x5846
+    ret
+    .size eglSetBlobCacheFuncsANDROID, .-eglSetBlobCacheFuncsANDROID
+    .globl eglCreateNativeClientBufferANDROID
+    .type eglCreateNativeClientBufferANDROID, %function
+    .p2align 2
+eglCreateNativeClientBufferANDROID:
+    mov x17, #3108
+    hlt #0x5846
+    ret
+    .size eglCreateNativeClientBufferANDROID, .-eglCreateNativeClientBufferANDROID
+    .globl eglGetCompositorTimingSupportedANDROID
+    .type eglGetCompositorTimingSupportedANDROID, %function
+    .p2align 2
+eglGetCompositorTimingSupportedANDROID:
+    mov x17, #3109
+    hlt #0x5846
+    ret
+    .size eglGetCompositorTimingSupportedANDROID, .-eglGetCompositorTimingSupportedANDROID
+    .globl eglGetCompositorTimingANDROID
+    .type eglGetCompositorTimingANDROID, %function
+    .p2align 2
+eglGetCompositorTimingANDROID:
+    mov x17, #3110
+    hlt #0x5846
+    ret
+    .size eglGetCompositorTimingANDROID, .-eglGetCompositorTimingANDROID
+    .globl eglGetNextFrameIdANDROID
+    .type eglGetNextFrameIdANDROID, %function
+    .p2align 2
+eglGetNextFrameIdANDROID:
+    mov x17, #3111
+    hlt #0x5846
+    ret
+    .size eglGetNextFrameIdANDROID, .-eglGetNextFrameIdANDROID
+    .globl eglGetFrameTimestampSupportedANDROID
+    .type eglGetFrameTimestampSupportedANDROID, %function
+    .p2align 2
+eglGetFrameTimestampSupportedANDROID:
+    mov x17, #3112
+    hlt #0x5846
+    ret
+    .size eglGetFrameTimestampSupportedANDROID, .-eglGetFrameTimestampSupportedANDROID
+    .globl eglGetFrameTimestampsANDROID
+    .type eglGetFrameTimestampsANDROID, %function
+    .p2align 2
+eglGetFrameTimestampsANDROID:
+    mov x17, #3113
+    hlt #0x5846
+    ret
+    .size eglGetFrameTimestampsANDROID, .-eglGetFrameTimestampsANDROID
+    .globl eglGetNativeClientBufferANDROID
+    .type eglGetNativeClientBufferANDROID, %function
+    .p2align 2
+eglGetNativeClientBufferANDROID:
+    mov x17, #3114
+    hlt #0x5846
+    ret
+    .size eglGetNativeClientBufferANDROID, .-eglGetNativeClientBufferANDROID
+    .globl eglDupNativeFenceFDANDROID
+    .type eglDupNativeFenceFDANDROID, %function
+    .p2align 2
+eglDupNativeFenceFDANDROID:
+    mov x17, #3115
+    hlt #0x5846
+    ret
+    .size eglDupNativeFenceFDANDROID, .-eglDupNativeFenceFDANDROID
+    .globl eglPresentationTimeANDROID
+    .type eglPresentationTimeANDROID, %function
+    .p2align 2
+eglPresentationTimeANDROID:
+    mov x17, #3116
+    hlt #0x5846
+    ret
+    .size eglPresentationTimeANDROID, .-eglPresentationTimeANDROID
+    .globl eglQuerySurfacePointerANGLE
+    .type eglQuerySurfacePointerANGLE, %function
+    .p2align 2
+eglQuerySurfacePointerANGLE:
+    mov x17, #3117
+    hlt #0x5846
+    ret
+    .size eglQuerySurfacePointerANGLE, .-eglQuerySurfacePointerANGLE
+    .globl eglGetMscRateANGLE
+    .type eglGetMscRateANGLE, %function
+    .p2align 2
+eglGetMscRateANGLE:
+    mov x17, #3118
+    hlt #0x5846
+    ret
+    .size eglGetMscRateANGLE, .-eglGetMscRateANGLE
+    .globl eglClientSignalSyncEXT
+    .type eglClientSignalSyncEXT, %function
+    .p2align 2
+eglClientSignalSyncEXT:
+    mov x17, #3119
+    hlt #0x5846
+    ret
+    .size eglClientSignalSyncEXT, .-eglClientSignalSyncEXT
+    .globl eglCompositorSetContextListEXT
+    .type eglCompositorSetContextListEXT, %function
+    .p2align 2
+eglCompositorSetContextListEXT:
+    mov x17, #3120
+    hlt #0x5846
+    ret
+    .size eglCompositorSetContextListEXT, .-eglCompositorSetContextListEXT
+    .globl eglCompositorSetContextAttributesEXT
+    .type eglCompositorSetContextAttributesEXT, %function
+    .p2align 2
+eglCompositorSetContextAttributesEXT:
+    mov x17, #3121
+    hlt #0x5846
+    ret
+    .size eglCompositorSetContextAttributesEXT, .-eglCompositorSetContextAttributesEXT
+    .globl eglCompositorSetWindowListEXT
+    .type eglCompositorSetWindowListEXT, %function
+    .p2align 2
+eglCompositorSetWindowListEXT:
+    mov x17, #3122
+    hlt #0x5846
+    ret
+    .size eglCompositorSetWindowListEXT, .-eglCompositorSetWindowListEXT
+    .globl eglCompositorSetWindowAttributesEXT
+    .type eglCompositorSetWindowAttributesEXT, %function
+    .p2align 2
+eglCompositorSetWindowAttributesEXT:
+    mov x17, #3123
+    hlt #0x5846
+    ret
+    .size eglCompositorSetWindowAttributesEXT, .-eglCompositorSetWindowAttributesEXT
+    .globl eglCompositorBindTexWindowEXT
+    .type eglCompositorBindTexWindowEXT, %function
+    .p2align 2
+eglCompositorBindTexWindowEXT:
+    mov x17, #3124
+    hlt #0x5846
+    ret
+    .size eglCompositorBindTexWindowEXT, .-eglCompositorBindTexWindowEXT
+    .globl eglCompositorSetSizeEXT
+    .type eglCompositorSetSizeEXT, %function
+    .p2align 2
+eglCompositorSetSizeEXT:
+    mov x17, #3125
+    hlt #0x5846
+    ret
+    .size eglCompositorSetSizeEXT, .-eglCompositorSetSizeEXT
+    .globl eglCompositorSwapPolicyEXT
+    .type eglCompositorSwapPolicyEXT, %function
+    .p2align 2
+eglCompositorSwapPolicyEXT:
+    mov x17, #3126
+    hlt #0x5846
+    ret
+    .size eglCompositorSwapPolicyEXT, .-eglCompositorSwapPolicyEXT
+    .globl eglQueryDeviceAttribEXT
+    .type eglQueryDeviceAttribEXT, %function
+    .p2align 2
+eglQueryDeviceAttribEXT:
+    mov x17, #3127
+    hlt #0x5846
+    ret
+    .size eglQueryDeviceAttribEXT, .-eglQueryDeviceAttribEXT
+    .globl eglQueryDeviceStringEXT
+    .type eglQueryDeviceStringEXT, %function
+    .p2align 2
+eglQueryDeviceStringEXT:
+    mov x17, #3128
+    hlt #0x5846
+    ret
+    .size eglQueryDeviceStringEXT, .-eglQueryDeviceStringEXT
+    .globl eglQueryDevicesEXT
+    .type eglQueryDevicesEXT, %function
+    .p2align 2
+eglQueryDevicesEXT:
+    mov x17, #3129
+    hlt #0x5846
+    ret
+    .size eglQueryDevicesEXT, .-eglQueryDevicesEXT
+    .globl eglQueryDisplayAttribEXT
+    .type eglQueryDisplayAttribEXT, %function
+    .p2align 2
+eglQueryDisplayAttribEXT:
+    mov x17, #3130
+    hlt #0x5846
+    ret
+    .size eglQueryDisplayAttribEXT, .-eglQueryDisplayAttribEXT
+    .globl eglQueryDeviceBinaryEXT
+    .type eglQueryDeviceBinaryEXT, %function
+    .p2align 2
+eglQueryDeviceBinaryEXT:
+    mov x17, #3131
+    hlt #0x5846
+    ret
+    .size eglQueryDeviceBinaryEXT, .-eglQueryDeviceBinaryEXT
+    .globl eglQueryDmaBufFormatsEXT
+    .type eglQueryDmaBufFormatsEXT, %function
+    .p2align 2
+eglQueryDmaBufFormatsEXT:
+    mov x17, #3132
+    hlt #0x5846
+    ret
+    .size eglQueryDmaBufFormatsEXT, .-eglQueryDmaBufFormatsEXT
+    .globl eglQueryDmaBufModifiersEXT
+    .type eglQueryDmaBufModifiersEXT, %function
+    .p2align 2
+eglQueryDmaBufModifiersEXT:
+    mov x17, #3133
+    hlt #0x5846
+    ret
+    .size eglQueryDmaBufModifiersEXT, .-eglQueryDmaBufModifiersEXT
+    .globl eglGetOutputLayersEXT
+    .type eglGetOutputLayersEXT, %function
+    .p2align 2
+eglGetOutputLayersEXT:
+    mov x17, #3134
+    hlt #0x5846
+    ret
+    .size eglGetOutputLayersEXT, .-eglGetOutputLayersEXT
+    .globl eglGetOutputPortsEXT
+    .type eglGetOutputPortsEXT, %function
+    .p2align 2
+eglGetOutputPortsEXT:
+    mov x17, #3135
+    hlt #0x5846
+    ret
+    .size eglGetOutputPortsEXT, .-eglGetOutputPortsEXT
+    .globl eglOutputLayerAttribEXT
+    .type eglOutputLayerAttribEXT, %function
+    .p2align 2
+eglOutputLayerAttribEXT:
+    mov x17, #3136
+    hlt #0x5846
+    ret
+    .size eglOutputLayerAttribEXT, .-eglOutputLayerAttribEXT
+    .globl eglQueryOutputLayerAttribEXT
+    .type eglQueryOutputLayerAttribEXT, %function
+    .p2align 2
+eglQueryOutputLayerAttribEXT:
+    mov x17, #3137
+    hlt #0x5846
+    ret
+    .size eglQueryOutputLayerAttribEXT, .-eglQueryOutputLayerAttribEXT
+    .globl eglQueryOutputLayerStringEXT
+    .type eglQueryOutputLayerStringEXT, %function
+    .p2align 2
+eglQueryOutputLayerStringEXT:
+    mov x17, #3138
+    hlt #0x5846
+    ret
+    .size eglQueryOutputLayerStringEXT, .-eglQueryOutputLayerStringEXT
+    .globl eglOutputPortAttribEXT
+    .type eglOutputPortAttribEXT, %function
+    .p2align 2
+eglOutputPortAttribEXT:
+    mov x17, #3139
+    hlt #0x5846
+    ret
+    .size eglOutputPortAttribEXT, .-eglOutputPortAttribEXT
+    .globl eglQueryOutputPortAttribEXT
+    .type eglQueryOutputPortAttribEXT, %function
+    .p2align 2
+eglQueryOutputPortAttribEXT:
+    mov x17, #3140
+    hlt #0x5846
+    ret
+    .size eglQueryOutputPortAttribEXT, .-eglQueryOutputPortAttribEXT
+    .globl eglQueryOutputPortStringEXT
+    .type eglQueryOutputPortStringEXT, %function
+    .p2align 2
+eglQueryOutputPortStringEXT:
+    mov x17, #3141
+    hlt #0x5846
+    ret
+    .size eglQueryOutputPortStringEXT, .-eglQueryOutputPortStringEXT
+    .globl xef_raw_eglGetPlatformDisplayEXT
+    .type xef_raw_eglGetPlatformDisplayEXT, %function
+    .p2align 2
+xef_raw_eglGetPlatformDisplayEXT:
+    mov x17, #3142
+    hlt #0x5846
+    ret
+    .size xef_raw_eglGetPlatformDisplayEXT, .-xef_raw_eglGetPlatformDisplayEXT
+    .globl eglCreatePlatformWindowSurfaceEXT
+    .type eglCreatePlatformWindowSurfaceEXT, %function
+    .p2align 2
+eglCreatePlatformWindowSurfaceEXT:
+    stp x29, x30, [sp, #-80]!
+    mov x29, sp
+    stp x0, x1, [sp, #16]
+    stp x2, x3, [sp, #32]
+    stp x4, x5, [sp, #48]
+    stp x6, x7, [sp, #64]
+    bl xef_guest_xsync_egl
+    ldp x0, x1, [sp, #16]
+    ldp x2, x3, [sp, #32]
+    ldp x4, x5, [sp, #48]
+    ldp x6, x7, [sp, #64]
+    ldp x29, x30, [sp], #80
+    mov x17, #3143
+    hlt #0x5846
+    ret
+    .size eglCreatePlatformWindowSurfaceEXT, .-eglCreatePlatformWindowSurfaceEXT
+    .globl eglCreatePlatformPixmapSurfaceEXT
+    .type eglCreatePlatformPixmapSurfaceEXT, %function
+    .p2align 2
+eglCreatePlatformPixmapSurfaceEXT:
+    mov x17, #3144
+    hlt #0x5846
+    ret
+    .size eglCreatePlatformPixmapSurfaceEXT, .-eglCreatePlatformPixmapSurfaceEXT
+    .globl eglStreamConsumerOutputEXT
+    .type eglStreamConsumerOutputEXT, %function
+    .p2align 2
+eglStreamConsumerOutputEXT:
+    mov x17, #3145
+    hlt #0x5846
+    ret
+    .size eglStreamConsumerOutputEXT, .-eglStreamConsumerOutputEXT
+    .globl eglQuerySupportedCompressionRatesEXT
+    .type eglQuerySupportedCompressionRatesEXT, %function
+    .p2align 2
+eglQuerySupportedCompressionRatesEXT:
+    mov x17, #3146
+    hlt #0x5846
+    ret
+    .size eglQuerySupportedCompressionRatesEXT, .-eglQuerySupportedCompressionRatesEXT
+    .globl eglSwapBuffersWithDamageEXT
+    .type eglSwapBuffersWithDamageEXT, %function
+    .p2align 2
+eglSwapBuffersWithDamageEXT:
+    mov x17, #3147
+    hlt #0x5846
+    ret
+    .size eglSwapBuffersWithDamageEXT, .-eglSwapBuffersWithDamageEXT
+    .globl eglUnsignalSyncEXT
+    .type eglUnsignalSyncEXT, %function
+    .p2align 2
+eglUnsignalSyncEXT:
+    mov x17, #3148
+    hlt #0x5846
+    ret
+    .size eglUnsignalSyncEXT, .-eglUnsignalSyncEXT
+    .globl eglCreatePixmapSurfaceHI
+    .type eglCreatePixmapSurfaceHI, %function
+    .p2align 2
+eglCreatePixmapSurfaceHI:
+    mov x17, #3149
+    hlt #0x5846
+    ret
+    .size eglCreatePixmapSurfaceHI, .-eglCreatePixmapSurfaceHI
+    .globl eglCreateDRMImageMESA
+    .type eglCreateDRMImageMESA, %function
+    .p2align 2
+eglCreateDRMImageMESA:
+    mov x17, #3150
+    hlt #0x5846
+    ret
+    .size eglCreateDRMImageMESA, .-eglCreateDRMImageMESA
+    .globl eglExportDRMImageMESA
+    .type eglExportDRMImageMESA, %function
+    .p2align 2
+eglExportDRMImageMESA:
+    mov x17, #3151
+    hlt #0x5846
+    ret
+    .size eglExportDRMImageMESA, .-eglExportDRMImageMESA
+    .globl eglExportDMABUFImageQueryMESA
+    .type eglExportDMABUFImageQueryMESA, %function
+    .p2align 2
+eglExportDMABUFImageQueryMESA:
+    mov x17, #3152
+    hlt #0x5846
+    ret
+    .size eglExportDMABUFImageQueryMESA, .-eglExportDMABUFImageQueryMESA
+    .globl eglExportDMABUFImageMESA
+    .type eglExportDMABUFImageMESA, %function
+    .p2align 2
+eglExportDMABUFImageMESA:
+    mov x17, #3153
+    hlt #0x5846
+    ret
+    .size eglExportDMABUFImageMESA, .-eglExportDMABUFImageMESA
+    .globl eglGetDisplayDriverConfig
+    .type eglGetDisplayDriverConfig, %function
+    .p2align 2
+eglGetDisplayDriverConfig:
+    mov x17, #3154
+    hlt #0x5846
+    ret
+    .size eglGetDisplayDriverConfig, .-eglGetDisplayDriverConfig
+    .globl eglGetDisplayDriverName
+    .type eglGetDisplayDriverName, %function
+    .p2align 2
+eglGetDisplayDriverName:
+    mov x17, #3155
+    hlt #0x5846
+    ret
+    .size eglGetDisplayDriverName, .-eglGetDisplayDriverName
+    .globl eglSwapBuffersRegionNOK
+    .type eglSwapBuffersRegionNOK, %function
+    .p2align 2
+eglSwapBuffersRegionNOK:
+    mov x17, #3156
+    hlt #0x5846
+    ret
+    .size eglSwapBuffersRegionNOK, .-eglSwapBuffersRegionNOK
+    .globl eglSwapBuffersRegion2NOK
+    .type eglSwapBuffersRegion2NOK, %function
+    .p2align 2
+eglSwapBuffersRegion2NOK:
+    mov x17, #3157
+    hlt #0x5846
+    ret
+    .size eglSwapBuffersRegion2NOK, .-eglSwapBuffersRegion2NOK
+    .globl eglQueryNativeDisplayNV
+    .type eglQueryNativeDisplayNV, %function
+    .p2align 2
+eglQueryNativeDisplayNV:
+    mov x17, #3158
+    hlt #0x5846
+    ret
+    .size eglQueryNativeDisplayNV, .-eglQueryNativeDisplayNV
+    .globl eglQueryNativeWindowNV
+    .type eglQueryNativeWindowNV, %function
+    .p2align 2
+eglQueryNativeWindowNV:
+    mov x17, #3159
+    hlt #0x5846
+    ret
+    .size eglQueryNativeWindowNV, .-eglQueryNativeWindowNV
+    .globl eglQueryNativePixmapNV
+    .type eglQueryNativePixmapNV, %function
+    .p2align 2
+eglQueryNativePixmapNV:
+    mov x17, #3160
+    hlt #0x5846
+    ret
+    .size eglQueryNativePixmapNV, .-eglQueryNativePixmapNV
+    .globl eglPostSubBufferNV
+    .type eglPostSubBufferNV, %function
+    .p2align 2
+eglPostSubBufferNV:
+    mov x17, #3161
+    hlt #0x5846
+    ret
+    .size eglPostSubBufferNV, .-eglPostSubBufferNV
+    .globl eglStreamImageConsumerConnectNV
+    .type eglStreamImageConsumerConnectNV, %function
+    .p2align 2
+eglStreamImageConsumerConnectNV:
+    mov x17, #3162
+    hlt #0x5846
+    ret
+    .size eglStreamImageConsumerConnectNV, .-eglStreamImageConsumerConnectNV
+    .globl eglQueryStreamConsumerEventNV
+    .type eglQueryStreamConsumerEventNV, %function
+    .p2align 2
+eglQueryStreamConsumerEventNV:
+    mov x17, #3163
+    hlt #0x5846
+    ret
+    .size eglQueryStreamConsumerEventNV, .-eglQueryStreamConsumerEventNV
+    .globl eglStreamAcquireImageNV
+    .type eglStreamAcquireImageNV, %function
+    .p2align 2
+eglStreamAcquireImageNV:
+    mov x17, #3164
+    hlt #0x5846
+    ret
+    .size eglStreamAcquireImageNV, .-eglStreamAcquireImageNV
+    .globl eglStreamReleaseImageNV
+    .type eglStreamReleaseImageNV, %function
+    .p2align 2
+eglStreamReleaseImageNV:
+    mov x17, #3165
+    hlt #0x5846
+    ret
+    .size eglStreamReleaseImageNV, .-eglStreamReleaseImageNV
+    .globl eglStreamConsumerGLTextureExternalAttribsNV
+    .type eglStreamConsumerGLTextureExternalAttribsNV, %function
+    .p2align 2
+eglStreamConsumerGLTextureExternalAttribsNV:
+    mov x17, #3166
+    hlt #0x5846
+    ret
+    .size eglStreamConsumerGLTextureExternalAttribsNV, .-eglStreamConsumerGLTextureExternalAttribsNV
+    .globl eglStreamFlushNV
+    .type eglStreamFlushNV, %function
+    .p2align 2
+eglStreamFlushNV:
+    mov x17, #3167
+    hlt #0x5846
+    ret
+    .size eglStreamFlushNV, .-eglStreamFlushNV
+    .globl eglQueryDisplayAttribNV
+    .type eglQueryDisplayAttribNV, %function
+    .p2align 2
+eglQueryDisplayAttribNV:
+    mov x17, #3168
+    hlt #0x5846
+    ret
+    .size eglQueryDisplayAttribNV, .-eglQueryDisplayAttribNV
+    .globl eglSetStreamMetadataNV
+    .type eglSetStreamMetadataNV, %function
+    .p2align 2
+eglSetStreamMetadataNV:
+    mov x17, #3169
+    hlt #0x5846
+    ret
+    .size eglSetStreamMetadataNV, .-eglSetStreamMetadataNV
+    .globl eglQueryStreamMetadataNV
+    .type eglQueryStreamMetadataNV, %function
+    .p2align 2
+eglQueryStreamMetadataNV:
+    mov x17, #3170
+    hlt #0x5846
+    ret
+    .size eglQueryStreamMetadataNV, .-eglQueryStreamMetadataNV
+    .globl eglResetStreamNV
+    .type eglResetStreamNV, %function
+    .p2align 2
+eglResetStreamNV:
+    mov x17, #3171
+    hlt #0x5846
+    ret
+    .size eglResetStreamNV, .-eglResetStreamNV
+    .globl eglCreateStreamSyncNV
+    .type eglCreateStreamSyncNV, %function
+    .p2align 2
+eglCreateStreamSyncNV:
+    mov x17, #3172
+    hlt #0x5846
+    ret
+    .size eglCreateStreamSyncNV, .-eglCreateStreamSyncNV
+    .globl eglCreateFenceSyncNV
+    .type eglCreateFenceSyncNV, %function
+    .p2align 2
+eglCreateFenceSyncNV:
+    mov x17, #3173
+    hlt #0x5846
+    ret
+    .size eglCreateFenceSyncNV, .-eglCreateFenceSyncNV
+    .globl eglDestroySyncNV
+    .type eglDestroySyncNV, %function
+    .p2align 2
+eglDestroySyncNV:
+    mov x17, #3174
+    hlt #0x5846
+    ret
+    .size eglDestroySyncNV, .-eglDestroySyncNV
+    .globl eglFenceNV
+    .type eglFenceNV, %function
+    .p2align 2
+eglFenceNV:
+    mov x17, #3175
+    hlt #0x5846
+    ret
+    .size eglFenceNV, .-eglFenceNV
+    .globl eglClientWaitSyncNV
+    .type eglClientWaitSyncNV, %function
+    .p2align 2
+eglClientWaitSyncNV:
+    mov x17, #3176
+    hlt #0x5846
+    ret
+    .size eglClientWaitSyncNV, .-eglClientWaitSyncNV
+    .globl eglSignalSyncNV
+    .type eglSignalSyncNV, %function
+    .p2align 2
+eglSignalSyncNV:
+    mov x17, #3177
+    hlt #0x5846
+    ret
+    .size eglSignalSyncNV, .-eglSignalSyncNV
+    .globl eglGetSyncAttribNV
+    .type eglGetSyncAttribNV, %function
+    .p2align 2
+eglGetSyncAttribNV:
+    mov x17, #3178
+    hlt #0x5846
+    ret
+    .size eglGetSyncAttribNV, .-eglGetSyncAttribNV
+    .globl eglGetSystemTimeFrequencyNV
+    .type eglGetSystemTimeFrequencyNV, %function
+    .p2align 2
+eglGetSystemTimeFrequencyNV:
+    mov x17, #3179
+    hlt #0x5846
+    ret
+    .size eglGetSystemTimeFrequencyNV, .-eglGetSystemTimeFrequencyNV
+    .globl eglGetSystemTimeNV
+    .type eglGetSystemTimeNV, %function
+    .p2align 2
+eglGetSystemTimeNV:
+    mov x17, #3180
+    hlt #0x5846
+    ret
+    .size eglGetSystemTimeNV, .-eglGetSystemTimeNV
+    .globl eglBindWaylandDisplayWL
+    .type eglBindWaylandDisplayWL, %function
+    .p2align 2
+eglBindWaylandDisplayWL:
+    mov x17, #3181
+    hlt #0x5846
+    ret
+    .size eglBindWaylandDisplayWL, .-eglBindWaylandDisplayWL
+    .globl eglUnbindWaylandDisplayWL
+    .type eglUnbindWaylandDisplayWL, %function
+    .p2align 2
+eglUnbindWaylandDisplayWL:
+    mov x17, #3182
+    hlt #0x5846
+    ret
+    .size eglUnbindWaylandDisplayWL, .-eglUnbindWaylandDisplayWL
+    .globl eglQueryWaylandBufferWL
+    .type eglQueryWaylandBufferWL, %function
+    .p2align 2
+eglQueryWaylandBufferWL:
+    mov x17, #3183
+    hlt #0x5846
+    ret
+    .size eglQueryWaylandBufferWL, .-eglQueryWaylandBufferWL
+    .globl eglCreateWaylandBufferFromImageWL
+    .type eglCreateWaylandBufferFromImageWL, %function
+    .p2align 2
+eglCreateWaylandBufferFromImageWL:
+    mov x17, #3184
+    hlt #0x5846
+    ret
+    .size eglCreateWaylandBufferFromImageWL, .-eglCreateWaylandBufferFromImageWL
     .globl glXCreateContextAttribsARB
     .type glXCreateContextAttribsARB, %function
     .p2align 2
 glXCreateContextAttribsARB:
-    mov x17, #3028
+    mov x17, #3185
     hlt #0x5846
     ret
     .size glXCreateContextAttribsARB, .-glXCreateContextAttribsARB
@@ -24308,7 +25648,7 @@ glXCreateContextAttribsARB:
     .type glXGetGPUIDsAMD, %function
     .p2align 2
 glXGetGPUIDsAMD:
-    mov x17, #3029
+    mov x17, #3186
     hlt #0x5846
     ret
     .size glXGetGPUIDsAMD, .-glXGetGPUIDsAMD
@@ -24316,7 +25656,7 @@ glXGetGPUIDsAMD:
     .type glXGetGPUInfoAMD, %function
     .p2align 2
 glXGetGPUInfoAMD:
-    mov x17, #3030
+    mov x17, #3187
     hlt #0x5846
     ret
     .size glXGetGPUInfoAMD, .-glXGetGPUInfoAMD
@@ -24324,7 +25664,7 @@ glXGetGPUInfoAMD:
     .type glXGetContextGPUIDAMD, %function
     .p2align 2
 glXGetContextGPUIDAMD:
-    mov x17, #3031
+    mov x17, #3188
     hlt #0x5846
     ret
     .size glXGetContextGPUIDAMD, .-glXGetContextGPUIDAMD
@@ -24332,7 +25672,7 @@ glXGetContextGPUIDAMD:
     .type glXCreateAssociatedContextAMD, %function
     .p2align 2
 glXCreateAssociatedContextAMD:
-    mov x17, #3032
+    mov x17, #3189
     hlt #0x5846
     ret
     .size glXCreateAssociatedContextAMD, .-glXCreateAssociatedContextAMD
@@ -24340,7 +25680,7 @@ glXCreateAssociatedContextAMD:
     .type glXCreateAssociatedContextAttribsAMD, %function
     .p2align 2
 glXCreateAssociatedContextAttribsAMD:
-    mov x17, #3033
+    mov x17, #3190
     hlt #0x5846
     ret
     .size glXCreateAssociatedContextAttribsAMD, .-glXCreateAssociatedContextAttribsAMD
@@ -24348,7 +25688,7 @@ glXCreateAssociatedContextAttribsAMD:
     .type glXDeleteAssociatedContextAMD, %function
     .p2align 2
 glXDeleteAssociatedContextAMD:
-    mov x17, #3034
+    mov x17, #3191
     hlt #0x5846
     ret
     .size glXDeleteAssociatedContextAMD, .-glXDeleteAssociatedContextAMD
@@ -24356,7 +25696,7 @@ glXDeleteAssociatedContextAMD:
     .type glXMakeAssociatedContextCurrentAMD, %function
     .p2align 2
 glXMakeAssociatedContextCurrentAMD:
-    mov x17, #3035
+    mov x17, #3192
     hlt #0x5846
     ret
     .size glXMakeAssociatedContextCurrentAMD, .-glXMakeAssociatedContextCurrentAMD
@@ -24364,7 +25704,7 @@ glXMakeAssociatedContextCurrentAMD:
     .type glXGetCurrentAssociatedContextAMD, %function
     .p2align 2
 glXGetCurrentAssociatedContextAMD:
-    mov x17, #3036
+    mov x17, #3193
     hlt #0x5846
     ret
     .size glXGetCurrentAssociatedContextAMD, .-glXGetCurrentAssociatedContextAMD
@@ -24372,7 +25712,7 @@ glXGetCurrentAssociatedContextAMD:
     .type glXBlitContextFramebufferAMD, %function
     .p2align 2
 glXBlitContextFramebufferAMD:
-    mov x17, #3037
+    mov x17, #3194
     hlt #0x5846
     ret
     .size glXBlitContextFramebufferAMD, .-glXBlitContextFramebufferAMD
@@ -24380,7 +25720,7 @@ glXBlitContextFramebufferAMD:
     .type glXGetCurrentDisplayEXT, %function
     .p2align 2
 glXGetCurrentDisplayEXT:
-    mov x17, #3038
+    mov x17, #3195
     hlt #0x5846
     ret
     .size glXGetCurrentDisplayEXT, .-glXGetCurrentDisplayEXT
@@ -24388,7 +25728,7 @@ glXGetCurrentDisplayEXT:
     .type glXQueryContextInfoEXT, %function
     .p2align 2
 glXQueryContextInfoEXT:
-    mov x17, #3039
+    mov x17, #3196
     hlt #0x5846
     ret
     .size glXQueryContextInfoEXT, .-glXQueryContextInfoEXT
@@ -24396,7 +25736,7 @@ glXQueryContextInfoEXT:
     .type glXGetContextIDEXT, %function
     .p2align 2
 glXGetContextIDEXT:
-    mov x17, #3040
+    mov x17, #3197
     hlt #0x5846
     ret
     .size glXGetContextIDEXT, .-glXGetContextIDEXT
@@ -24404,7 +25744,7 @@ glXGetContextIDEXT:
     .type glXImportContextEXT, %function
     .p2align 2
 glXImportContextEXT:
-    mov x17, #3041
+    mov x17, #3198
     hlt #0x5846
     ret
     .size glXImportContextEXT, .-glXImportContextEXT
@@ -24412,7 +25752,7 @@ glXImportContextEXT:
     .type glXFreeContextEXT, %function
     .p2align 2
 glXFreeContextEXT:
-    mov x17, #3042
+    mov x17, #3199
     hlt #0x5846
     ret
     .size glXFreeContextEXT, .-glXFreeContextEXT
@@ -24420,7 +25760,7 @@ glXFreeContextEXT:
     .type glXSwapIntervalEXT, %function
     .p2align 2
 glXSwapIntervalEXT:
-    mov x17, #3043
+    mov x17, #3200
     hlt #0x5846
     ret
     .size glXSwapIntervalEXT, .-glXSwapIntervalEXT
@@ -24428,7 +25768,7 @@ glXSwapIntervalEXT:
     .type glXGetAGPOffsetMESA, %function
     .p2align 2
 glXGetAGPOffsetMESA:
-    mov x17, #3044
+    mov x17, #3201
     hlt #0x5846
     ret
     .size glXGetAGPOffsetMESA, .-glXGetAGPOffsetMESA
@@ -24436,7 +25776,7 @@ glXGetAGPOffsetMESA:
     .type glXCopySubBufferMESA, %function
     .p2align 2
 glXCopySubBufferMESA:
-    mov x17, #3045
+    mov x17, #3202
     hlt #0x5846
     ret
     .size glXCopySubBufferMESA, .-glXCopySubBufferMESA
@@ -24444,7 +25784,7 @@ glXCopySubBufferMESA:
     .type glXCreateGLXPixmapMESA, %function
     .p2align 2
 glXCreateGLXPixmapMESA:
-    mov x17, #3046
+    mov x17, #3203
     hlt #0x5846
     ret
     .size glXCreateGLXPixmapMESA, .-glXCreateGLXPixmapMESA
@@ -24452,7 +25792,7 @@ glXCreateGLXPixmapMESA:
     .type glXQueryCurrentRendererIntegerMESA, %function
     .p2align 2
 glXQueryCurrentRendererIntegerMESA:
-    mov x17, #3047
+    mov x17, #3204
     hlt #0x5846
     ret
     .size glXQueryCurrentRendererIntegerMESA, .-glXQueryCurrentRendererIntegerMESA
@@ -24460,7 +25800,7 @@ glXQueryCurrentRendererIntegerMESA:
     .type glXQueryCurrentRendererStringMESA, %function
     .p2align 2
 glXQueryCurrentRendererStringMESA:
-    mov x17, #3048
+    mov x17, #3205
     hlt #0x5846
     ret
     .size glXQueryCurrentRendererStringMESA, .-glXQueryCurrentRendererStringMESA
@@ -24468,7 +25808,7 @@ glXQueryCurrentRendererStringMESA:
     .type glXQueryRendererIntegerMESA, %function
     .p2align 2
 glXQueryRendererIntegerMESA:
-    mov x17, #3049
+    mov x17, #3206
     hlt #0x5846
     ret
     .size glXQueryRendererIntegerMESA, .-glXQueryRendererIntegerMESA
@@ -24476,7 +25816,7 @@ glXQueryRendererIntegerMESA:
     .type glXQueryRendererStringMESA, %function
     .p2align 2
 glXQueryRendererStringMESA:
-    mov x17, #3050
+    mov x17, #3207
     hlt #0x5846
     ret
     .size glXQueryRendererStringMESA, .-glXQueryRendererStringMESA
@@ -24484,7 +25824,7 @@ glXQueryRendererStringMESA:
     .type glXReleaseBuffersMESA, %function
     .p2align 2
 glXReleaseBuffersMESA:
-    mov x17, #3051
+    mov x17, #3208
     hlt #0x5846
     ret
     .size glXReleaseBuffersMESA, .-glXReleaseBuffersMESA
@@ -24492,7 +25832,7 @@ glXReleaseBuffersMESA:
     .type glXSet3DfxModeMESA, %function
     .p2align 2
 glXSet3DfxModeMESA:
-    mov x17, #3052
+    mov x17, #3209
     hlt #0x5846
     ret
     .size glXSet3DfxModeMESA, .-glXSet3DfxModeMESA
@@ -24500,7 +25840,7 @@ glXSet3DfxModeMESA:
     .type glXCopyBufferSubDataNV, %function
     .p2align 2
 glXCopyBufferSubDataNV:
-    mov x17, #3053
+    mov x17, #3210
     hlt #0x5846
     ret
     .size glXCopyBufferSubDataNV, .-glXCopyBufferSubDataNV
@@ -24508,7 +25848,7 @@ glXCopyBufferSubDataNV:
     .type glXNamedCopyBufferSubDataNV, %function
     .p2align 2
 glXNamedCopyBufferSubDataNV:
-    mov x17, #3054
+    mov x17, #3211
     hlt #0x5846
     ret
     .size glXNamedCopyBufferSubDataNV, .-glXNamedCopyBufferSubDataNV
@@ -24516,7 +25856,7 @@ glXNamedCopyBufferSubDataNV:
     .type glXCopyImageSubDataNV, %function
     .p2align 2
 glXCopyImageSubDataNV:
-    mov x17, #3055
+    mov x17, #3212
     hlt #0x5846
     ret
     .size glXCopyImageSubDataNV, .-glXCopyImageSubDataNV
@@ -24524,7 +25864,7 @@ glXCopyImageSubDataNV:
     .type glXDelayBeforeSwapNV, %function
     .p2align 2
 glXDelayBeforeSwapNV:
-    mov x17, #3056
+    mov x17, #3213
     hlt #0x5846
     ret
     .size glXDelayBeforeSwapNV, .-glXDelayBeforeSwapNV
@@ -24532,7 +25872,7 @@ glXDelayBeforeSwapNV:
     .type glXEnumerateVideoDevicesNV, %function
     .p2align 2
 glXEnumerateVideoDevicesNV:
-    mov x17, #3057
+    mov x17, #3214
     hlt #0x5846
     ret
     .size glXEnumerateVideoDevicesNV, .-glXEnumerateVideoDevicesNV
@@ -24540,7 +25880,7 @@ glXEnumerateVideoDevicesNV:
     .type glXBindVideoDeviceNV, %function
     .p2align 2
 glXBindVideoDeviceNV:
-    mov x17, #3058
+    mov x17, #3215
     hlt #0x5846
     ret
     .size glXBindVideoDeviceNV, .-glXBindVideoDeviceNV
@@ -24548,7 +25888,7 @@ glXBindVideoDeviceNV:
     .type glXJoinSwapGroupNV, %function
     .p2align 2
 glXJoinSwapGroupNV:
-    mov x17, #3059
+    mov x17, #3216
     hlt #0x5846
     ret
     .size glXJoinSwapGroupNV, .-glXJoinSwapGroupNV
@@ -24556,7 +25896,7 @@ glXJoinSwapGroupNV:
     .type glXBindSwapBarrierNV, %function
     .p2align 2
 glXBindSwapBarrierNV:
-    mov x17, #3060
+    mov x17, #3217
     hlt #0x5846
     ret
     .size glXBindSwapBarrierNV, .-glXBindSwapBarrierNV
@@ -24564,7 +25904,7 @@ glXBindSwapBarrierNV:
     .type glXQuerySwapGroupNV, %function
     .p2align 2
 glXQuerySwapGroupNV:
-    mov x17, #3061
+    mov x17, #3218
     hlt #0x5846
     ret
     .size glXQuerySwapGroupNV, .-glXQuerySwapGroupNV
@@ -24572,7 +25912,7 @@ glXQuerySwapGroupNV:
     .type glXQueryMaxSwapGroupsNV, %function
     .p2align 2
 glXQueryMaxSwapGroupsNV:
-    mov x17, #3062
+    mov x17, #3219
     hlt #0x5846
     ret
     .size glXQueryMaxSwapGroupsNV, .-glXQueryMaxSwapGroupsNV
@@ -24580,7 +25920,7 @@ glXQueryMaxSwapGroupsNV:
     .type glXQueryFrameCountNV, %function
     .p2align 2
 glXQueryFrameCountNV:
-    mov x17, #3063
+    mov x17, #3220
     hlt #0x5846
     ret
     .size glXQueryFrameCountNV, .-glXQueryFrameCountNV
@@ -24588,7 +25928,7 @@ glXQueryFrameCountNV:
     .type glXResetFrameCountNV, %function
     .p2align 2
 glXResetFrameCountNV:
-    mov x17, #3064
+    mov x17, #3221
     hlt #0x5846
     ret
     .size glXResetFrameCountNV, .-glXResetFrameCountNV
@@ -24596,7 +25936,7 @@ glXResetFrameCountNV:
     .type glXBindVideoCaptureDeviceNV, %function
     .p2align 2
 glXBindVideoCaptureDeviceNV:
-    mov x17, #3065
+    mov x17, #3222
     hlt #0x5846
     ret
     .size glXBindVideoCaptureDeviceNV, .-glXBindVideoCaptureDeviceNV
@@ -24604,7 +25944,7 @@ glXBindVideoCaptureDeviceNV:
     .type glXEnumerateVideoCaptureDevicesNV, %function
     .p2align 2
 glXEnumerateVideoCaptureDevicesNV:
-    mov x17, #3066
+    mov x17, #3223
     hlt #0x5846
     ret
     .size glXEnumerateVideoCaptureDevicesNV, .-glXEnumerateVideoCaptureDevicesNV
@@ -24612,7 +25952,7 @@ glXEnumerateVideoCaptureDevicesNV:
     .type glXLockVideoCaptureDeviceNV, %function
     .p2align 2
 glXLockVideoCaptureDeviceNV:
-    mov x17, #3067
+    mov x17, #3224
     hlt #0x5846
     ret
     .size glXLockVideoCaptureDeviceNV, .-glXLockVideoCaptureDeviceNV
@@ -24620,7 +25960,7 @@ glXLockVideoCaptureDeviceNV:
     .type glXQueryVideoCaptureDeviceNV, %function
     .p2align 2
 glXQueryVideoCaptureDeviceNV:
-    mov x17, #3068
+    mov x17, #3225
     hlt #0x5846
     ret
     .size glXQueryVideoCaptureDeviceNV, .-glXQueryVideoCaptureDeviceNV
@@ -24628,7 +25968,7 @@ glXQueryVideoCaptureDeviceNV:
     .type glXReleaseVideoCaptureDeviceNV, %function
     .p2align 2
 glXReleaseVideoCaptureDeviceNV:
-    mov x17, #3069
+    mov x17, #3226
     hlt #0x5846
     ret
     .size glXReleaseVideoCaptureDeviceNV, .-glXReleaseVideoCaptureDeviceNV
@@ -24636,7 +25976,7 @@ glXReleaseVideoCaptureDeviceNV:
     .type glXGetVideoDeviceNV, %function
     .p2align 2
 glXGetVideoDeviceNV:
-    mov x17, #3070
+    mov x17, #3227
     hlt #0x5846
     ret
     .size glXGetVideoDeviceNV, .-glXGetVideoDeviceNV
@@ -24644,7 +25984,7 @@ glXGetVideoDeviceNV:
     .type glXReleaseVideoDeviceNV, %function
     .p2align 2
 glXReleaseVideoDeviceNV:
-    mov x17, #3071
+    mov x17, #3228
     hlt #0x5846
     ret
     .size glXReleaseVideoDeviceNV, .-glXReleaseVideoDeviceNV
@@ -24652,7 +25992,7 @@ glXReleaseVideoDeviceNV:
     .type glXBindVideoImageNV, %function
     .p2align 2
 glXBindVideoImageNV:
-    mov x17, #3072
+    mov x17, #3229
     hlt #0x5846
     ret
     .size glXBindVideoImageNV, .-glXBindVideoImageNV
@@ -24660,7 +26000,7 @@ glXBindVideoImageNV:
     .type glXReleaseVideoImageNV, %function
     .p2align 2
 glXReleaseVideoImageNV:
-    mov x17, #3073
+    mov x17, #3230
     hlt #0x5846
     ret
     .size glXReleaseVideoImageNV, .-glXReleaseVideoImageNV
@@ -24668,7 +26008,7 @@ glXReleaseVideoImageNV:
     .type glXSendPbufferToVideoNV, %function
     .p2align 2
 glXSendPbufferToVideoNV:
-    mov x17, #3074
+    mov x17, #3231
     hlt #0x5846
     ret
     .size glXSendPbufferToVideoNV, .-glXSendPbufferToVideoNV
@@ -24676,7 +26016,7 @@ glXSendPbufferToVideoNV:
     .type glXGetVideoInfoNV, %function
     .p2align 2
 glXGetVideoInfoNV:
-    mov x17, #3075
+    mov x17, #3232
     hlt #0x5846
     ret
     .size glXGetVideoInfoNV, .-glXGetVideoInfoNV
@@ -24684,7 +26024,7 @@ glXGetVideoInfoNV:
     .type glXGetSyncValuesOML, %function
     .p2align 2
 glXGetSyncValuesOML:
-    mov x17, #3076
+    mov x17, #3233
     hlt #0x5846
     ret
     .size glXGetSyncValuesOML, .-glXGetSyncValuesOML
@@ -24692,7 +26032,7 @@ glXGetSyncValuesOML:
     .type glXGetMscRateOML, %function
     .p2align 2
 glXGetMscRateOML:
-    mov x17, #3077
+    mov x17, #3234
     hlt #0x5846
     ret
     .size glXGetMscRateOML, .-glXGetMscRateOML
@@ -24700,7 +26040,7 @@ glXGetMscRateOML:
     .type glXSwapBuffersMscOML, %function
     .p2align 2
 glXSwapBuffersMscOML:
-    mov x17, #3078
+    mov x17, #3235
     hlt #0x5846
     ret
     .size glXSwapBuffersMscOML, .-glXSwapBuffersMscOML
@@ -24708,7 +26048,7 @@ glXSwapBuffersMscOML:
     .type glXWaitForMscOML, %function
     .p2align 2
 glXWaitForMscOML:
-    mov x17, #3079
+    mov x17, #3236
     hlt #0x5846
     ret
     .size glXWaitForMscOML, .-glXWaitForMscOML
@@ -24716,7 +26056,7 @@ glXWaitForMscOML:
     .type glXWaitForSbcOML, %function
     .p2align 2
 glXWaitForSbcOML:
-    mov x17, #3080
+    mov x17, #3237
     hlt #0x5846
     ret
     .size glXWaitForSbcOML, .-glXWaitForSbcOML
@@ -24724,7 +26064,7 @@ glXWaitForSbcOML:
     .type glXGetFBConfigAttribSGIX, %function
     .p2align 2
 glXGetFBConfigAttribSGIX:
-    mov x17, #3081
+    mov x17, #3238
     hlt #0x5846
     ret
     .size glXGetFBConfigAttribSGIX, .-glXGetFBConfigAttribSGIX
@@ -24732,7 +26072,7 @@ glXGetFBConfigAttribSGIX:
     .type xef_raw_glXChooseFBConfigSGIX, %function
     .p2align 2
 xef_raw_glXChooseFBConfigSGIX:
-    mov x17, #3082
+    mov x17, #3239
     hlt #0x5846
     ret
     .size xef_raw_glXChooseFBConfigSGIX, .-xef_raw_glXChooseFBConfigSGIX
@@ -24752,7 +26092,7 @@ glXCreateGLXPixmapWithConfigSGIX:
     ldp x4, x5, [sp, #48]
     ldp x6, x7, [sp, #64]
     ldp x29, x30, [sp], #80
-    mov x17, #3083
+    mov x17, #3240
     hlt #0x5846
     ret
     .size glXCreateGLXPixmapWithConfigSGIX, .-glXCreateGLXPixmapWithConfigSGIX
@@ -24760,7 +26100,7 @@ glXCreateGLXPixmapWithConfigSGIX:
     .type glXCreateContextWithConfigSGIX, %function
     .p2align 2
 glXCreateContextWithConfigSGIX:
-    mov x17, #3084
+    mov x17, #3241
     hlt #0x5846
     ret
     .size glXCreateContextWithConfigSGIX, .-glXCreateContextWithConfigSGIX
@@ -24768,7 +26108,7 @@ glXCreateContextWithConfigSGIX:
     .type xef_raw_glXGetVisualFromFBConfigSGIX, %function
     .p2align 2
 xef_raw_glXGetVisualFromFBConfigSGIX:
-    mov x17, #3085
+    mov x17, #3242
     hlt #0x5846
     ret
     .size xef_raw_glXGetVisualFromFBConfigSGIX, .-xef_raw_glXGetVisualFromFBConfigSGIX
@@ -24776,7 +26116,7 @@ xef_raw_glXGetVisualFromFBConfigSGIX:
     .type glXGetFBConfigFromVisualSGIX, %function
     .p2align 2
 glXGetFBConfigFromVisualSGIX:
-    mov x17, #3086
+    mov x17, #3243
     hlt #0x5846
     ret
     .size glXGetFBConfigFromVisualSGIX, .-glXGetFBConfigFromVisualSGIX
@@ -24784,7 +26124,7 @@ glXGetFBConfigFromVisualSGIX:
     .type glXQueryHyperpipeNetworkSGIX, %function
     .p2align 2
 glXQueryHyperpipeNetworkSGIX:
-    mov x17, #3087
+    mov x17, #3244
     hlt #0x5846
     ret
     .size glXQueryHyperpipeNetworkSGIX, .-glXQueryHyperpipeNetworkSGIX
@@ -24792,7 +26132,7 @@ glXQueryHyperpipeNetworkSGIX:
     .type glXHyperpipeConfigSGIX, %function
     .p2align 2
 glXHyperpipeConfigSGIX:
-    mov x17, #3088
+    mov x17, #3245
     hlt #0x5846
     ret
     .size glXHyperpipeConfigSGIX, .-glXHyperpipeConfigSGIX
@@ -24800,7 +26140,7 @@ glXHyperpipeConfigSGIX:
     .type glXQueryHyperpipeConfigSGIX, %function
     .p2align 2
 glXQueryHyperpipeConfigSGIX:
-    mov x17, #3089
+    mov x17, #3246
     hlt #0x5846
     ret
     .size glXQueryHyperpipeConfigSGIX, .-glXQueryHyperpipeConfigSGIX
@@ -24808,7 +26148,7 @@ glXQueryHyperpipeConfigSGIX:
     .type glXDestroyHyperpipeConfigSGIX, %function
     .p2align 2
 glXDestroyHyperpipeConfigSGIX:
-    mov x17, #3090
+    mov x17, #3247
     hlt #0x5846
     ret
     .size glXDestroyHyperpipeConfigSGIX, .-glXDestroyHyperpipeConfigSGIX
@@ -24816,7 +26156,7 @@ glXDestroyHyperpipeConfigSGIX:
     .type glXBindHyperpipeSGIX, %function
     .p2align 2
 glXBindHyperpipeSGIX:
-    mov x17, #3091
+    mov x17, #3248
     hlt #0x5846
     ret
     .size glXBindHyperpipeSGIX, .-glXBindHyperpipeSGIX
@@ -24824,7 +26164,7 @@ glXBindHyperpipeSGIX:
     .type glXQueryHyperpipeBestAttribSGIX, %function
     .p2align 2
 glXQueryHyperpipeBestAttribSGIX:
-    mov x17, #3092
+    mov x17, #3249
     hlt #0x5846
     ret
     .size glXQueryHyperpipeBestAttribSGIX, .-glXQueryHyperpipeBestAttribSGIX
@@ -24832,7 +26172,7 @@ glXQueryHyperpipeBestAttribSGIX:
     .type glXHyperpipeAttribSGIX, %function
     .p2align 2
 glXHyperpipeAttribSGIX:
-    mov x17, #3093
+    mov x17, #3250
     hlt #0x5846
     ret
     .size glXHyperpipeAttribSGIX, .-glXHyperpipeAttribSGIX
@@ -24840,7 +26180,7 @@ glXHyperpipeAttribSGIX:
     .type glXQueryHyperpipeAttribSGIX, %function
     .p2align 2
 glXQueryHyperpipeAttribSGIX:
-    mov x17, #3094
+    mov x17, #3251
     hlt #0x5846
     ret
     .size glXQueryHyperpipeAttribSGIX, .-glXQueryHyperpipeAttribSGIX
@@ -24848,7 +26188,7 @@ glXQueryHyperpipeAttribSGIX:
     .type glXCreateGLXPbufferSGIX, %function
     .p2align 2
 glXCreateGLXPbufferSGIX:
-    mov x17, #3095
+    mov x17, #3252
     hlt #0x5846
     ret
     .size glXCreateGLXPbufferSGIX, .-glXCreateGLXPbufferSGIX
@@ -24856,7 +26196,7 @@ glXCreateGLXPbufferSGIX:
     .type glXDestroyGLXPbufferSGIX, %function
     .p2align 2
 glXDestroyGLXPbufferSGIX:
-    mov x17, #3096
+    mov x17, #3253
     hlt #0x5846
     ret
     .size glXDestroyGLXPbufferSGIX, .-glXDestroyGLXPbufferSGIX
@@ -24864,7 +26204,7 @@ glXDestroyGLXPbufferSGIX:
     .type glXQueryGLXPbufferSGIX, %function
     .p2align 2
 glXQueryGLXPbufferSGIX:
-    mov x17, #3097
+    mov x17, #3254
     hlt #0x5846
     ret
     .size glXQueryGLXPbufferSGIX, .-glXQueryGLXPbufferSGIX
@@ -24872,7 +26212,7 @@ glXQueryGLXPbufferSGIX:
     .type glXSelectEventSGIX, %function
     .p2align 2
 glXSelectEventSGIX:
-    mov x17, #3098
+    mov x17, #3255
     hlt #0x5846
     ret
     .size glXSelectEventSGIX, .-glXSelectEventSGIX
@@ -24880,7 +26220,7 @@ glXSelectEventSGIX:
     .type glXGetSelectedEventSGIX, %function
     .p2align 2
 glXGetSelectedEventSGIX:
-    mov x17, #3099
+    mov x17, #3256
     hlt #0x5846
     ret
     .size glXGetSelectedEventSGIX, .-glXGetSelectedEventSGIX
@@ -24888,7 +26228,7 @@ glXGetSelectedEventSGIX:
     .type glXBindSwapBarrierSGIX, %function
     .p2align 2
 glXBindSwapBarrierSGIX:
-    mov x17, #3100
+    mov x17, #3257
     hlt #0x5846
     ret
     .size glXBindSwapBarrierSGIX, .-glXBindSwapBarrierSGIX
@@ -24896,7 +26236,7 @@ glXBindSwapBarrierSGIX:
     .type glXQueryMaxSwapBarriersSGIX, %function
     .p2align 2
 glXQueryMaxSwapBarriersSGIX:
-    mov x17, #3101
+    mov x17, #3258
     hlt #0x5846
     ret
     .size glXQueryMaxSwapBarriersSGIX, .-glXQueryMaxSwapBarriersSGIX
@@ -24904,7 +26244,7 @@ glXQueryMaxSwapBarriersSGIX:
     .type glXJoinSwapGroupSGIX, %function
     .p2align 2
 glXJoinSwapGroupSGIX:
-    mov x17, #3102
+    mov x17, #3259
     hlt #0x5846
     ret
     .size glXJoinSwapGroupSGIX, .-glXJoinSwapGroupSGIX
@@ -24912,7 +26252,7 @@ glXJoinSwapGroupSGIX:
     .type glXBindChannelToWindowSGIX, %function
     .p2align 2
 glXBindChannelToWindowSGIX:
-    mov x17, #3103
+    mov x17, #3260
     hlt #0x5846
     ret
     .size glXBindChannelToWindowSGIX, .-glXBindChannelToWindowSGIX
@@ -24920,7 +26260,7 @@ glXBindChannelToWindowSGIX:
     .type glXChannelRectSGIX, %function
     .p2align 2
 glXChannelRectSGIX:
-    mov x17, #3104
+    mov x17, #3261
     hlt #0x5846
     ret
     .size glXChannelRectSGIX, .-glXChannelRectSGIX
@@ -24928,7 +26268,7 @@ glXChannelRectSGIX:
     .type glXQueryChannelRectSGIX, %function
     .p2align 2
 glXQueryChannelRectSGIX:
-    mov x17, #3105
+    mov x17, #3262
     hlt #0x5846
     ret
     .size glXQueryChannelRectSGIX, .-glXQueryChannelRectSGIX
@@ -24936,7 +26276,7 @@ glXQueryChannelRectSGIX:
     .type glXQueryChannelDeltasSGIX, %function
     .p2align 2
 glXQueryChannelDeltasSGIX:
-    mov x17, #3106
+    mov x17, #3263
     hlt #0x5846
     ret
     .size glXQueryChannelDeltasSGIX, .-glXQueryChannelDeltasSGIX
@@ -24944,7 +26284,7 @@ glXQueryChannelDeltasSGIX:
     .type glXChannelRectSyncSGIX, %function
     .p2align 2
 glXChannelRectSyncSGIX:
-    mov x17, #3107
+    mov x17, #3264
     hlt #0x5846
     ret
     .size glXChannelRectSyncSGIX, .-glXChannelRectSyncSGIX
@@ -24952,7 +26292,7 @@ glXChannelRectSyncSGIX:
     .type glXDestroyGLXVideoSourceSGIX, %function
     .p2align 2
 glXDestroyGLXVideoSourceSGIX:
-    mov x17, #3108
+    mov x17, #3265
     hlt #0x5846
     ret
     .size glXDestroyGLXVideoSourceSGIX, .-glXDestroyGLXVideoSourceSGIX
@@ -24960,7 +26300,7 @@ glXDestroyGLXVideoSourceSGIX:
     .type glXCushionSGI, %function
     .p2align 2
 glXCushionSGI:
-    mov x17, #3109
+    mov x17, #3266
     hlt #0x5846
     ret
     .size glXCushionSGI, .-glXCushionSGI
@@ -24980,7 +26320,7 @@ glXMakeCurrentReadSGI:
     ldp x4, x5, [sp, #48]
     ldp x6, x7, [sp, #64]
     ldp x29, x30, [sp], #80
-    mov x17, #3110
+    mov x17, #3267
     hlt #0x5846
     ret
     .size glXMakeCurrentReadSGI, .-glXMakeCurrentReadSGI
@@ -24988,7 +26328,7 @@ glXMakeCurrentReadSGI:
     .type glXGetCurrentReadDrawableSGI, %function
     .p2align 2
 glXGetCurrentReadDrawableSGI:
-    mov x17, #3111
+    mov x17, #3268
     hlt #0x5846
     ret
     .size glXGetCurrentReadDrawableSGI, .-glXGetCurrentReadDrawableSGI
@@ -24996,7 +26336,7 @@ glXGetCurrentReadDrawableSGI:
     .type glXSwapIntervalSGI, %function
     .p2align 2
 glXSwapIntervalSGI:
-    mov x17, #3112
+    mov x17, #3269
     hlt #0x5846
     ret
     .size glXSwapIntervalSGI, .-glXSwapIntervalSGI
@@ -25004,7 +26344,7 @@ glXSwapIntervalSGI:
     .type glXGetVideoSyncSGI, %function
     .p2align 2
 glXGetVideoSyncSGI:
-    mov x17, #3113
+    mov x17, #3270
     hlt #0x5846
     ret
     .size glXGetVideoSyncSGI, .-glXGetVideoSyncSGI
@@ -25012,7 +26352,7 @@ glXGetVideoSyncSGI:
     .type glXWaitVideoSyncSGI, %function
     .p2align 2
 glXWaitVideoSyncSGI:
-    mov x17, #3114
+    mov x17, #3271
     hlt #0x5846
     ret
     .size glXWaitVideoSyncSGI, .-glXWaitVideoSyncSGI
@@ -25020,7 +26360,7 @@ glXWaitVideoSyncSGI:
     .type glXGetTransparentIndexSUN, %function
     .p2align 2
 glXGetTransparentIndexSUN:
-    mov x17, #3115
+    mov x17, #3272
     hlt #0x5846
     ret
     .size glXGetTransparentIndexSUN, .-glXGetTransparentIndexSUN
@@ -25028,7 +26368,7 @@ glXGetTransparentIndexSUN:
     .type xef_host_XFree, %function
     .p2align 2
 xef_host_XFree:
-    mov x17, #3116
+    mov x17, #3273
     hlt #0x5846
     ret
     .size xef_host_XFree, .-xef_host_XFree

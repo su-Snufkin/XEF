@@ -88,3 +88,32 @@ void* glXGetProcAddressARB(const unsigned char* name) {
     return 0;
 }
 void* glXGetProcAddress(const unsigned char* name) { return glXGetProcAddressARB(name); }
+
+// ---- EGL: remember the guest's X display so window-surface calls can XSync it first
+static void* g_egl_xdpy;
+void xef_guest_xsync_egl(void) { xef_guest_xsync(g_egl_xdpy); }
+
+void* xef_raw_eglGetDisplay(void* native);
+void* xef_raw_eglGetPlatformDisplay(unsigned platform, void* native, const long* attribs);
+void* xef_raw_eglGetPlatformDisplayEXT(unsigned platform, void* native, const int* attribs);
+
+void* eglGetDisplay(void* native) {
+    if (native) g_egl_xdpy = native;
+    return xef_raw_eglGetDisplay(native);
+}
+void* eglGetPlatformDisplay(unsigned platform, void* native, const long* attribs) {
+    if (platform == 0x31D5 && native) g_egl_xdpy = native;
+    return xef_raw_eglGetPlatformDisplay(platform, native, attribs);
+}
+void* eglGetPlatformDisplayEXT(unsigned platform, void* native, const int* attribs) {
+    if (platform == 0x31D5 && native) g_egl_xdpy = native;
+    return xef_raw_eglGetPlatformDisplayEXT(platform, native, attribs);
+}
+void* eglGetProcAddress(const char* name) {
+    if (!name) return 0;
+    if (!strcmp(name, "eglGetDisplay")) return (void*)eglGetDisplay;
+    if (!strcmp(name, "eglGetPlatformDisplay")) return (void*)eglGetPlatformDisplay;
+    if (!strcmp(name, "eglGetPlatformDisplayEXT")) return (void*)eglGetPlatformDisplayEXT;
+    if (!strcmp(name, "eglGetProcAddress")) return (void*)eglGetProcAddress;
+    return glXGetProcAddressARB((const unsigned char*)name);
+}
