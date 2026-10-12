@@ -84,6 +84,10 @@ static void* thread_trampoline(void* arg) {
     ThreadCtx* t = ts->t;
     int tid = (int)syscall(SYS_gettid);
     t->tid = tid;
+    // like the kernel: both tid stores happen before the new thread runs guest code. (glibc passes
+    // the same address as ptid and ctid; a parent-side store after the child started could
+    // overwrite the 0 written when the thread exits, and pthread_join would wait forever.)
+    if (ts->flags & kCloneParentSettid) *(u32*)ts->ptid = (u32)tid;
     if (ts->flags & kCloneChildSettid) *(u32*)ts->ctid = (u32)tid;
     if (ts->flags & kCloneChildCleartid) t->clear_child_tid = ts->ctid;
     __atomic_store_n(&ts->tid, tid, __ATOMIC_RELEASE);
@@ -117,7 +121,6 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         }
         while (__atomic_load_n(&ts.tid, __ATOMIC_ACQUIRE) == 0)
             syscall(SYS_futex, &ts.tid, FUTEX_WAIT, 0, nullptr, nullptr, 0);
-        if (flags & kCloneParentSettid) *(u32*)ptid = (u32)ts.tid;
         return ts.tid;
     }
     // fork / vfork: a separate process. vfork's shared address space is emulated with a copy
