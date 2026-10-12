@@ -65,6 +65,8 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   (skalarne i NEON/FP przez `vec_ref`; atomiki/helpery/rejestry systemowe pomijane; tier 2 wyłączony), potem JIT bez linkowania; raportuje różnice
   rejestrów/NZCV/pc/zapisów. Najszybsza droga do błędnego bloku — tak znaleziony błąd slotów spill
   (X25519/TLS). `XEF_SPLIT` przyjmuje listę zakresów (`0-a,b-7fffffffffff` = dziel wszystko poza [a,b)).
+- `XEF_CHECK_NZCV=1` — szybka klasyfikacja NZCV w lookahead (`quick_flags`, translate.cpp) porównywana z
+  translatorem przy każdym bloku; uruchom z nią fuzzer i duże programy po zmianach w dekoderze.
 - `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64); fuzzer go ustawia.
 
 ## Następne kroki (priorytet)

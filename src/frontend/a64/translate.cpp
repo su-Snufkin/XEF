@@ -905,10 +905,106 @@ static bool abi_kills_flags(Op op) {
     return g_abi_flags && (op == Op::ExitCall || op == Op::ExitCallIndirect || op == Op::ExitRet);
 }
 
+// Fast NZCV classification of the commonest encodings for the lookahead below (translating each
+// peeked instruction to IR was ~30% of translation time). Anything not listed, or an encoding the
+// translator would reject, is Q_UNKNOWN and goes through the translator. Q_NONE / Q_WRITE must only
+// be returned for encodings the translator accepts (an undefined one makes NZCV live).
+enum QuickFlags { Q_UNKNOWN, Q_NONE, Q_READ, Q_WRITE, Q_B, Q_BL, Q_RET, Q_CB };
+static QuickFlags quick_flags(u32 i, GuestAddr pc, GuestAddr* t1, GuestAddr* t2) {
+    u32 sf = i >> 31;
+    if ((i & 0x3B000000) == 0x39000000) {           // load/store, unsigned immediate
+        u32 size = i >> 30, opc = (i >> 22) & 3;
+        if (i & (1u << 26)) return ((((opc & 2) << 1) | size) <= 4) ? Q_NONE : Q_UNKNOWN;
+        return (opc == 3 && size >= 2) ? Q_UNKNOWN : Q_NONE;
+    }
+    if ((i & 0x3A000000) == 0x28000000) {           // load/store pair (all addressing modes)
+        u32 opc = i >> 30;
+        bool v = i & (1u << 26), l = i & (1u << 22);
+        if (opc == 3) return Q_UNKNOWN;
+        if (!v && opc == 1 && !l) return Q_UNKNOWN;  // STGP
+        return Q_NONE;
+    }
+    if ((i & 0x1F800000) == 0x11000000) return (i & (1u << 29)) ? Q_WRITE : Q_NONE;   // ADD/SUB(S) imm
+    if ((i & 0x1F800000) == 0x12800000) {           // MOVN/MOVZ/MOVK
+        u32 opc = (i >> 29) & 3, hw = (i >> 21) & 3;
+        return (opc == 1 || (!sf && hw >= 2)) ? Q_UNKNOWN : Q_NONE;
+    }
+    if ((i & 0x1F000000) == 0x10000000) return Q_NONE;                 // ADR / ADRP
+    if ((i & 0x1F000000) == 0x0A000000) {           // logical, shifted register
+        if (!sf && (i & (1u << 15))) return Q_UNKNOWN;
+        return ((i >> 29) & 3) == 3 ? Q_WRITE : Q_NONE;
+    }
+    if ((i & 0x1F200000) == 0x0B000000) {           // ADD/SUB(S), shifted register
+        if (((i >> 22) & 3) == 3 || (!sf && (i & (1u << 15)))) return Q_UNKNOWN;
+        return (i & (1u << 29)) ? Q_WRITE : Q_NONE;
+    }
+    if ((i & 0x7C000000) == 0x14000000) {           // B / BL
+        *t1 = pc + (GuestAddr)(sext(i & 0x3FFFFFF, 26) * 4);
+        return sf ? Q_BL : Q_B;
+    }
+    if ((i & 0xFFFFFC1F) == 0xD65F0000) return Q_RET;
+    // conditions AL/NV (14, 15) do not read NZCV: b.al is a plain branch
+    if ((i & 0xFF000010) == 0x54000000) {                              // B.cond
+        if ((i & 0xF) < 14) return Q_READ;
+        *t1 = pc + (GuestAddr)(sext((i >> 5) & 0x7FFFF, 19) * 4);
+        return Q_B;
+    }
+    if ((i & 0x1FE00000) == 0x1A800000)                                // CSEL/CSINC/CSINV/CSNEG
+        return ((i >> 12) & 0xF) < 14 ? Q_READ : Q_UNKNOWN;
+    if ((i & 0x7E000000) == 0x34000000) {           // CBZ / CBNZ
+        *t1 = pc + (GuestAddr)(sext((i >> 5) & 0x7FFFF, 19) * 4);
+        *t2 = pc + 4;
+        return Q_CB;
+    }
+    if ((i & 0x7E000000) == 0x36000000) {           // TBZ / TBNZ
+        *t1 = pc + (GuestAddr)(sext((i >> 5) & 0x3FFF, 14) * 4);
+        *t2 = pc + 4;
+        return Q_CB;
+    }
+    return Q_UNKNOWN;
+}
+
+static bool nzcv_live_slow(GuestAddr pc, int depth, int budget = 24);
+static bool nzcv_live_fast(GuestAddr pc, int depth);
+
 // Returns true if NZCV may be read at `pc` before being overwritten.
 bool nzcv_live_at(GuestAddr pc, int depth) {
-    static thread_local ir::Block* scratch = new ir::Block();
+    // XEF_CHECK_NZCV=1: debugging aid, compares the fast classification with the translator's
+    static const bool check = getenv("XEF_CHECK_NZCV") != nullptr;
+    bool r = nzcv_live_fast(pc, depth);
+    if (check && r != nzcv_live_slow(pc, depth)) {
+        fatal("nzcv lookahead mismatch at %#lx (fast says %s): %08x %08x %08x %08x", (unsigned long)pc,
+              r ? "live" : "dead", ((const u32*)pc)[0], ((const u32*)pc)[1], ((const u32*)pc)[2], ((const u32*)pc)[3]);
+    }
+    return r;
+}
+
+static bool nzcv_live_fast(GuestAddr pc, int depth) {
     for (int i = 0; i < 24; i++) {
+        if (!guest_readable(pc)) return true;
+        GuestAddr t1 = 0, t2 = 0;
+        QuickFlags q = quick_flags(*(const u32*)pc, pc, &t1, &t2);
+        if (q == Q_UNKNOWN) return nzcv_live_slow(pc, depth, 24 - i);   // continues from this instruction
+        if (tls_peek) tls_peek->add(pc, pc + 4);
+        switch (q) {
+        case Q_READ: return true;
+        case Q_WRITE: return false;
+        case Q_B: pc = t1; continue;
+        case Q_BL: return !abi_kills_flags(Op::ExitCall);
+        case Q_RET: return !abi_kills_flags(Op::ExitRet);
+        case Q_CB:
+            if (depth >= 2) return true;
+            return nzcv_live_fast(t1, depth + 1) || nzcv_live_fast(t2, depth + 1);
+        default: break;
+        }
+        pc += 4;
+    }
+    return true;
+}
+
+static bool nzcv_live_slow(GuestAddr pc, int depth, int budget) {
+    static thread_local ir::Block* scratch = new ir::Block();
+    for (int i = 0; i < budget; i++) {
         if (!guest_readable(pc)) return true;
         if (tls_peek) tls_peek->add(pc, pc + 4);
         scratch->clear(pc);
@@ -931,7 +1027,7 @@ bool nzcv_live_at(GuestAddr pc, int depth) {
                 if (depth >= 2) return true;
                 // read both targets first: the recursion reuses `scratch`, which `term` points into
                 GuestAddr t1 = term->imm, t2 = term->imm2;
-                return nzcv_live_at(t1, depth + 1) || nzcv_live_at(t2, depth + 1);
+                return nzcv_live_slow(t1, depth + 1) || nzcv_live_slow(t2, depth + 1);
             }
             default: return !abi_kills_flags(term->op);  // indirect branches, syscalls: conservative
             }
