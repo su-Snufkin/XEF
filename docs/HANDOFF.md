@@ -5,7 +5,7 @@ Specyfikacja projektu (od użytkownika): szybki translator AArch64 → x86-64, u
 wydajność jest priorytetem zaraz po poprawności. Użytkownik akceptuje każdy plan, a celem
 jest „rozwijaj XEF dopóki nie skończą się tokeny”.
 
-**Zasady repo:** commity BEZ stopki „Co-Authored-By: Claude” (wyraźne życzenie użytkownika).
+**Zasady repo:** commity BEZ stopki „Co-Authored-By: Claude”; autor zawsze `su-Snufkin <341201482+su-Snufkin@users.noreply.github.com>` (ustawione w `git config` repo; nie podawaj `-c user.email`).
 Remote: `git@github.com:su-Snufkin/XEF.git`, gałąź `main`.
 
 ## Szybki start (nowa maszyna / cloud)
@@ -38,6 +38,17 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 ## Wydajność (ostatnie pomiary, i7-13620H VM)
 CoreMark 200k: natywnie ~4,7 s, XEF ~7,9–8,4 s, qemu ~28,7 s (≈55% natywnej, ≈3,5× qemu).
 zstd -6 (48 MB): natywnie ~0,55 s, XEF ~1,3–1,5 s, qemu ~4,8 s. Szczegóły w `docs/benchmarks.md`.
+
+## PRIORYTET 1: regresja / niedeterministyczny crash w t_malloc
+Po commicie z sygnałami `tests/guest/run.sh` daje 24–25/27: `t_malloc` (static -O2/-O3, dyn -O3)
+czasem kończy się SIGSEGV w kodzie JIT (np. blok gościa 0x25e134..0x25e14c w malloc glibc,
+fault addr 0x3969 — wygląda na zły rejestr bazowy). Commit „Threads …” przechodził 27/27.
+Kroki:
+1. bisekcja: `git stash`/checkout poprzedniego commita, test wielokrotny (`for i in $(seq 20)`),
+2. `--no-tier2` i `--tier2-threshold 1`, żeby oddzielić tier 1 od tier 2,
+3. podejrzani: zmiany w stubie `enter` (sprawdzanie `pending_signal` przed pushami),
+   `g_actions`/handlery, a z wcześniejszych zmian zapis zwrotny tylko modyfikowanych rejestrów
+   w xfer regionu (`RegionXfer::written`) — błąd zależny od czasu kompilacji regionów pasuje do tier 2.
 
 ## PRACA W TOKU: sygnały (nie skończone, niezacommitowane testy w `tests/guest/wip/`)
 Zaimplementowane w `src/os/signals.cpp`:
