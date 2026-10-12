@@ -134,7 +134,9 @@ void code_invalidate_range(GuestAddr start, u64 len) {
     }
 }
 
-[[noreturn]] void cpu_loop(ThreadCtx* t) {
+// Runs guest code on this thread. Nested runs (host -> guest calls, thunks.cpp) return when the
+// guest returns to the callback trampoline (HLT #0x5847); the outermost run never returns.
+static void run_guest(ThreadCtx* t, bool nested) {
     CpuState* st = t->st;
     EnterFn enter = (EnterFn)g_cache.stubs.enter;
     IbtcEntry* ibtc = (IbtcEntry*)st->ibtc;
@@ -173,7 +175,10 @@ void code_invalidate_range(GuestAddr start, u64 len) {
         case EXIT_SYSCALL:
             if (g_opt.stats) g_stats.exits_syscall++;
             if (st->exit_info == kThunkExit) thunk_dispatch(st);
-            else do_syscall(st);
+            else if (st->exit_info == kCallbackRetExit) {
+                if (nested) return;
+                fatal("guest returned to the host-callback trampoline outside a callback");
+            } else do_syscall(st);
             if (st->pending_signal) signals_deliver_pending(st);
             host = get_or_translate(t, st->pc);
             break;
@@ -190,6 +195,13 @@ void code_invalidate_range(GuestAddr start, u64 len) {
         }
     }
 }
+
+[[noreturn]] void cpu_loop(ThreadCtx* t) {
+    run_guest(t, false);
+    __builtin_unreachable();
+}
+
+void cpu_run_nested(ThreadCtx* t) { run_guest(t, true); }
 
 // ---- helpers called from JIT code ----
 

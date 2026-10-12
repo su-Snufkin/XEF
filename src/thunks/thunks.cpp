@@ -10,6 +10,7 @@
 #include "thunks/thunks.h"
 
 #include <dlfcn.h>
+#include <sys/mman.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -18,7 +19,10 @@
 #include <mutex>
 #include <string>
 
+#include "os/signals.h"
+#include "os/thread.h"
 #include "runtime/cpu_state.h"
+#include "runtime/dispatch.h"
 
 extern "C" xef::u64 xef_call_sysv(void* fn, const xef::u64* iregs, const xef::u64* fregs, const xef::u64* stack,
                                   xef::u64 nstack, xef::u64* xmm0_out);
@@ -167,7 +171,50 @@ int vk_strip_debug(u64 create_info, VkChainEdit* edits, int max) {
     return n;
 }
 
+// glDebugMessageCallback: the host calls this, which calls the guest's callback
+struct GuestCallback { u64 fn, user; };
+void host_gl_debug(u32 source, u32 type, u32 id, u32 severity, i32 length, const char* message, const void* user) {
+    const GuestCallback* cb = (const GuestCallback*)user;
+    u64 a[7] = {source, type, id, severity, (u64)(u32)length, (u64)message, cb->user};
+    guest_call(cb->fn, 7, a);
+}
+
 }  // namespace
+
+// Host -> guest call on the current guest thread. The guest frame is placed below the guest stack
+// pointer of the interrupted thunk call; the guest returns to a trampoline (HLT #0x5847) that ends
+// the nested run, and the thread's state is restored afterwards.
+u64 guest_call(u64 fn, int nargs, const u64* args) {
+    ThreadCtx* t = tls_thread;
+    if (!t || !fn) return 0;
+    static u64 tramp = [] {
+        void* p = mmap(nullptr, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (p == MAP_FAILED) fatal("guest_call: cannot map the return trampoline");
+        *(u32*)p = 0xD4400000u | (kCallbackRetHlt << 5);   // hlt #0x5847
+        mprotect(p, 4096, PROT_READ | PROT_EXEC);
+        return (u64)p;
+    }();
+    CpuState* st = t->st;
+    CpuState* saved = (CpuState*)aligned_alloc(alignof(CpuState), sizeof(CpuState));
+    memcpy(saved, st, sizeof(CpuState));
+    u64 sp = (st->x[kGuestSP] - 256) & ~15ull;
+    int nstack = nargs > 8 ? nargs - 8 : 0;
+    sp -= ((u64)nstack * 8 + 15) & ~15ull;
+    for (int i = 0; i < nargs; i++) {
+        if (i < 8) st->x[i] = args[i];
+        else ((u64*)sp)[i - 8] = args[i];
+    }
+    st->x[kGuestSP] = sp;
+    st->x[30] = tramp;
+    st->pc = fn;
+    cpu_run_nested(t);
+    u64 r = st->x[0];
+    u32 pend = st->pending_signal;
+    memcpy(st, saved, sizeof(CpuState));
+    free(saved);
+    if (pend) st->pending_signal = pend;
+    return r;
+}
 
 // --host-gl: the guest's GL libraries are replaced by the thunk shim (built next to the xef binary).
 const char* thunk_lib_redirect(const char* path) {
@@ -200,7 +247,17 @@ void thunk_dispatch(CpuState* st) {
     u64 id = st->x[17];
     if (id >= (u64)kCount) fatal("bad host thunk id %lu at %#lx", (unsigned long)id, (unsigned long)st->pc);
     const Entry& e = kTable[id];
-    if (e.flags & 1) { st->x[0] = 0; return; }   // callbacks into the guest are not forwarded
+    if (e.flags & 1) {   // takes a guest callback
+        if (!strncmp(e.name, "glDebugMessageCallback", 22) && strcmp(e.name, "glDebugMessageCallbackAMD")) {
+            using Fn = void (*)(void*, const void*);
+            Fn host = (Fn)(__atomic_load_n(&g_fn[id], __ATOMIC_ACQUIRE) ?: resolve((int)id));
+            GuestCallback* cb = nullptr;
+            if (st->x[0]) cb = new GuestCallback{st->x[0], st->x[1]};   // leaked: callbacks may stay installed
+            host(cb ? (void*)&host_gl_debug : nullptr, cb);
+        }
+        st->x[0] = 0;
+        return;
+    }
     void* fn = __atomic_load_n(&g_fn[id], __ATOMIC_ACQUIRE);
     if (!fn) fn = resolve((int)id);
     u64 ir[6] = {}, fr[8] = {}, stk[32];
