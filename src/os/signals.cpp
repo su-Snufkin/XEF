@@ -106,6 +106,13 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
             n = snprintf(buf, sizeof buf, "  %-3s=%016lx%s", kGuestRegNames[g], (unsigned long)v, (g % 4 == 3) ? "\n" : "");
             write(2, buf, n);
         }
+        // block temporaries (unmapped guest values may live there) and the faulting host instruction
+        const greg_t* gr = uc->uc_mcontext.gregs;
+        n = snprintf(buf, sizeof buf, "  host rax=%016lx rcx=%016lx r11=%016lx  code:", (unsigned long)gr[REG_RAX],
+                     (unsigned long)gr[REG_RCX], (unsigned long)gr[REG_R11]);
+        for (int k = 0; k < 12 && n < (int)sizeof buf - 4; k++) n += snprintf(buf + n, sizeof buf - n, " %02x", rip[k]);
+        buf[n++] = '\n';
+        write(2, buf, n);
     }
     _exit(128 + sig);
 }
