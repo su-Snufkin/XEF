@@ -1,6 +1,7 @@
 // XEF — guest signals. Milestone-1 version: handlers are recorded, SIG_DFL/SIG_IGN
 // are forwarded to the host; delivery to guest handlers comes with milestone 4.
 #include "os/signals.h"
+#include "runtime/verify.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -145,6 +146,7 @@ void signals_report_on_interrupt() {
 }
 
 void signals_flush_output() {
+    if (verify_enabled()) verify_report();
     if (g_opt.stats) stats_print();
     if (g_opt.profile) profile_report();
 }
