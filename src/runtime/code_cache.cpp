@@ -189,6 +189,7 @@ bool CodeCache::invalidate_range(GuestAddr lo, GuestAddr hi) {
 void CodeCache::invalidate_block(BlockMeta* b) {
     if (b->flags & BF_DEAD) return;
     b->flags |= BF_DEAD;
+    killed_.push_back(b->start);
     if (lookup(b->start) == b) unpublish(b->start);
     // exits of other blocks that jump here go back to their link stubs
     for (ExitInfo* e = b->incoming; e; e = e->next_in) {
@@ -210,10 +211,12 @@ void CodeCache::kill_region(RegionInfo* ri) {
     ri->demoted = true;
     invalidate_block(ri->entry);
     if (ri->head_t1 && lookup(ri->head_t1->start) == ri->head_t1) unpublish(ri->head_t1->start);
+    if (ri->head_t1) killed_.push_back(ri->head_t1->start);
     u8* stub[64];
     for (int i = 0; i < ri->nblocks && i < 64; i++) {
         BlockMeta* m = ri->blocks[i];
         m->flags |= BF_DEAD;
+        killed_.push_back(m->start);
         u8* s = alloc_code(64);
         x64::Assembler as(s, 64);
         as.mov_imm(x64::RAX, m->start);   // rax is free at block boundaries
@@ -231,15 +234,19 @@ void CodeCache::kill_region(RegionInfo* ri) {
 }
 
 void CodeCache::scrub_ibtcs() {
+    // an IBTC entry for pc can only sit in slot (pc >> 2) & mask, so only the killed blocks' slots
+    // need a look (a full scan of every thread's table made code-writing JITs crawl)
     std::lock_guard<std::mutex> g(ibtc_lock_);
-    for (IbtcEntry* t : ibtcs_)
-        for (int i = 0; i < kIbtcEntries; i++) {
-            GuestAddr pc = __atomic_load_n(&t[i].guest, __ATOMIC_ACQUIRE);
-            if (pc == 1) continue;
+    for (GuestAddr pc : killed_) {
+        size_t slot = (pc >> 2) & (kIbtcEntries - 1);
+        for (IbtcEntry* t : ibtcs_) {
+            if (__atomic_load_n(&t[slot].guest, __ATOMIC_ACQUIRE) != pc) continue;
             BlockMeta* b = lookup(pc);
-            if (!b || b->code != (u8*)__atomic_load_n(&t[i].host, __ATOMIC_ACQUIRE))
-                __atomic_store_n(&t[i].guest, 1ull, __ATOMIC_RELEASE);
+            if (!b || b->code != (u8*)__atomic_load_n(&t[slot].host, __ATOMIC_ACQUIRE))
+                __atomic_store_n(&t[slot].guest, 1ull, __ATOMIC_RELEASE);
         }
+    }
+    killed_.clear();
 }
 
 void link_exit(ExitInfo* e, u8* host) {

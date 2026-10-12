@@ -158,7 +158,7 @@ public:
     // Kills every translation depending on [lo, hi). Returns true if any was found.
     bool invalidate_range(GuestAddr lo, GuestAddr hi);
     void invalidate_block(BlockMeta* b);
-    // Drops IBTC entries whose block is no longer published (after invalidation).
+    // Drops IBTC entries of the blocks killed since the last scrub (after invalidation).
     void scrub_ibtcs();
     // Bumped by every invalidation: translations that started earlier must not be published.
     std::atomic<u64> epoch{0};
@@ -183,6 +183,7 @@ private:
     std::unordered_map<u64, std::vector<Dep>> deps_;   // guest page -> translations depending on it
     void kill_region(RegionInfo* ri);
     std::vector<IbtcEntry*> ibtcs_;
+    std::vector<GuestAddr> killed_;   // start pcs of blocks killed since the last scrub_ibtcs
     std::mutex ibtc_lock_;
     PcMapEntry* pcmap_ = nullptr;
     u32 npcmap_ = 0, cap_pcmap_ = 0;
