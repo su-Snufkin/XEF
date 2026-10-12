@@ -8,6 +8,10 @@
 // only on region entry/exit. The region is then made live by re-pointing the
 // head block's incoming links to the region entry.
 #include "runtime/tier2.h"
+#include "os/signals.h"
+#include "os/thread.h"
+#include <sys/syscall.h>
+#include <time.h>
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -404,16 +408,38 @@ static void start_compiler_thread() {
     if (pthread_create(&th, &attr, compiler_thread, nullptr) != 0) fatal("tier2: thread");
 }
 
-void tier2_after_fork() {
+// Sampling (tier-2 hotness, --profile) uses one CPU-time timer per guest thread that signals that
+// very thread: a process-wide ITIMER_PROF delivers SIGPROF to an arbitrary thread, often one
+// sleeping in a syscall, which starved busy threads of samples.
+static bool g_sampling;
+
+void tier2_thread_start(ThreadCtx* t) {
+    if (!g_sampling || !t || t->prof_timer_ok) return;
+    struct sigevent sev {};
+    sev.sigev_notify = SIGEV_THREAD_ID;
+    sev.sigev_signo = SIGPROF;
+    sev._sigev_un._tid = (int)syscall(SYS_gettid);
+    timer_t tm;
+    if (syscall(SYS_timer_create, CLOCK_THREAD_CPUTIME_ID, &sev, &tm) != 0) return;
+    struct itimerspec its {};
+    its.it_interval.tv_nsec = 1000000;
+    its.it_value.tv_nsec = 1000000;
+    syscall(SYS_timer_settime, tm, 0, &its, nullptr);
+    t->prof_timer = tm;
+    t->prof_timer_ok = true;
+}
+
+void tier2_thread_stop(ThreadCtx* t) {
+    if (t && t->prof_timer_ok) { syscall(SYS_timer_delete, t->prof_timer); t->prof_timer_ok = false; }
+}
+
+void tier2_after_fork(ThreadCtx* t) {
+    if (t) t->prof_timer_ok = false;   // POSIX timers are not inherited by fork
+    tier2_thread_start(t);
     if (!g_t2_enabled) return;
     close(g_pipe[0]);
     close(g_pipe[1]);
     start_compiler_thread();
-    // the ITIMER_PROF timer is not inherited by fork
-    struct itimerval it {};
-    it.it_interval.tv_usec = 1000;
-    it.it_value.tv_usec = 1000;
-    setitimer(ITIMER_PROF, &it, nullptr);
 }
 
 void tier2_init(bool enable) {
@@ -425,10 +451,8 @@ void tier2_init(bool enable) {
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
     sa.sa_flags |= SA_ONSTACK;
     sigaction(SIGPROF, &sa, nullptr);
-    struct itimerval it {};
-    it.it_interval.tv_usec = 1000;
-    it.it_value.tv_usec = 1000;
-    setitimer(ITIMER_PROF, &it, nullptr);
+    g_sampling = true;
+    tier2_thread_start(tls_thread);   // the main thread; others start theirs in thread_trampoline
 }
 
 }  // namespace xef

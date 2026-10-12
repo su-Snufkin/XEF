@@ -61,6 +61,7 @@ void thread_exit(CpuState* st, int code) {
         signals_flush_output();
         syscall(SYS_exit_group, code);
     }
+    tier2_thread_stop(t);
     if (t && t->clear_child_tid) {
         __atomic_store_n((u32*)t->clear_child_tid, 0, __ATOMIC_SEQ_CST);
         syscall(SYS_futex, t->clear_child_tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
@@ -95,6 +96,7 @@ static void* thread_trampoline(void* arg) {
     syscall(SYS_futex, &ts->tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
     // ts is owned by the parent's stack from here on: don't touch it
     signals_thread_init(t);
+    tier2_thread_start(t);
     cpu_loop(t);
 }
 
@@ -139,7 +141,7 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         if (flags & kCloneSettls) st->tpidr_el0 = tls;
         g_live_threads.store(1);
         if (st->thread) st->thread->tid = (int)syscall(SYS_gettid);
-        tier2_after_fork();
+        tier2_after_fork(st->thread);
         return 0;
     }
     return r;
