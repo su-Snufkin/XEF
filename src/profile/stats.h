@@ -13,6 +13,7 @@ struct Stats {
     u64 translate_ns = 0;
     u64 exits_link = 0, exits_lookup = 0, exits_syscall = 0;
     u64 regions = 0, regions_demoted = 0;
+    u64 invalidations = 0;
 };
 extern Stats g_stats;
 

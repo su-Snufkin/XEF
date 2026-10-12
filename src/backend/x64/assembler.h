@@ -390,6 +390,12 @@ public:
         nop(pad);
     }
     void align(int a) { align_field(0, a); }
+    // Pads only if a 4-byte field at cur()+skip would straddle a cache line (stores that stay
+    // within a line are atomic on x86, so it can be patched while other threads execute it).
+    void keep_field_in_line(int skip) {
+        uintptr_t x = (uintptr_t)(p_ + skip) & 63;
+        if (x > 60) nop((int)(64 - x));
+    }
 
     // ---- atomics / barriers ----
     void lock() { db(0xF0); }

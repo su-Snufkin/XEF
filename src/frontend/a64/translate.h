@@ -1,8 +1,12 @@
 // XEF — AArch64 → IR translator (frontend).
 #pragma once
 #include "ir/builder.h"
+#include "runtime/code_cache.h"
 
 namespace xef::a64 {
+
+// While set, decode-ahead records the guest ranges it reads (code invalidation dependencies).
+void set_peek_log(PeekLog* log);
 
 struct TranslateOpts {
     int max_insts = 128;          // max guest instructions per block

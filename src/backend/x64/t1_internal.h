@@ -190,6 +190,10 @@ private:
     void free_reg(Reg r) { owner_[r] = 0; }
     void evict(Reg r);
     void take_reg(Reg r) { if (owner_[r]) evict(r); }
+    int free_spill_slot() const {   // slot 15 is reserved for flags restore
+        for (int i = 0; i < 15; i++) if (!(spill_used_ & (1u << i))) return i;
+        return -1;
+    }
     void assign_reg(Val v, Reg r) {
         vi_[v].k = L_REG;
         vi_[v].reg = r;
@@ -296,7 +300,8 @@ private:
     }
     void exit_jmp(GuestAddr target) {
         if (ctx_ && ctx_->region) {
-            if (internal(target)) { as_.db(0xE9); as_.dd(0); add_fix(target); return; }
+            // rel32 retargeted atomically when the region is invalidated
+            if (internal(target)) { as_.keep_field_in_line(1); as_.db(0xE9); as_.dd(0); add_fix(target); return; }
             XEF_ASSERT(nrstubs_ < 64);
             RegionStub& r = rstubs_[nrstubs_++];
             r.l = Label(); r.target = target;
@@ -307,7 +312,12 @@ private:
     }
     void exit_jcc(Cond c, GuestAddr target) {
         if (ctx_ && ctx_->region) {
-            if (internal(target)) { as_.db(0x0F); as_.db((u8)(0x80 | c)); as_.dd(0); add_fix(target); return; }
+            if (internal(target)) {
+                as_.keep_field_in_line(2);
+                as_.db(0x0F); as_.db((u8)(0x80 | c)); as_.dd(0);
+                add_fix(target);
+                return;
+            }
             XEF_ASSERT(nrstubs_ < 64);
             RegionStub& r = rstubs_[nrstubs_++];
             r.l = Label(); r.target = target;

@@ -389,7 +389,13 @@ bool Translator::system(u32 i) {
             for (int k = 0; k < 64; k += 8) ir_.store(ir_.add(Type::I64, addr, ir_.c64(k)), z, 8);
             return true;
         }
-        // IC IVAU / DC CVAU / DC CIVAC / DC CVAC ...: no-ops; SMC is detected by page protection.
+        // IC IVAU: op1=3 crn=7 crm=5 op2=1 -> drop translations of that cache line
+        if (!l && op1 == 3 && crn == 7 && crm == 5 && op2 == 1) {
+            Val h = ir_.emit(Op::Helper, Type::None, X(rt, Type::I64));
+            ir_.inst(h).sub = 2;  // helper id: IC IVAU
+            return true;
+        }
+        // DC CVAU / DC CIVAC / DC CVAC ...: no-ops (x86 caches are coherent)
         return !l;
     }
     if (op0 >= 2) {  // MRS / MSR (register)
@@ -874,11 +880,15 @@ static bool guest_readable(GuestAddr pc) {
     return true;
 }
 
+static thread_local PeekLog* tls_peek;
+void set_peek_log(PeekLog* log) { tls_peek = log; }
+
 // Returns true if NZCV may be read at `pc` before being overwritten.
 bool nzcv_live_at(GuestAddr pc, int depth) {
     static thread_local ir::Block* scratch = new ir::Block();
     for (int i = 0; i < 24; i++) {
         if (!guest_readable(pc)) return true;
+        if (tls_peek) tls_peek->add(pc, pc + 4);
         scratch->clear(pc);
         Translator tr(*scratch);
         tr.step(pc, *(const u32*)pc);

@@ -42,9 +42,22 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     ir::Block& blk = *t->blk;
     a64::TranslateOpts topt;
     topt.max_insts = g_opt.max_block_insts;
-    a64::translate_block(pc, blk, topt);
+    PeekLog peeks;
+    u64 ep;
+    std::unique_lock<std::mutex> lk(g_cache.lock, std::defer_lock);
+    for (;;) {
+        ep = g_cache.epoch.load(std::memory_order_seq_cst);
+        peeks.n = 0;
+        peeks.overflow = false;
+        a64::set_peek_log(&peeks);
+        a64::translate_block(pc, blk, topt);
+        a64::set_peek_log(nullptr);
+        if (peeks.overflow) blk.flags_live_out = true;   // don't depend on code we can't track
+        lk.lock();
+        if (g_cache.epoch.load(std::memory_order_seq_cst) == ep) break;
+        lk.unlock();   // code was invalidated meanwhile: decode again
+    }
     if (g_opt.dump_ir) ir::dump(blk, stderr);
-    std::lock_guard<std::mutex> lk(g_cache.lock);
     if (BlockMeta* b = g_cache.lookup(pc)) return b;  // raced with another thread
     int nexits = backend::count_exits(blk);
     BlockMeta* meta = g_cache.alloc_meta(nexits);
@@ -71,6 +84,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         }
     }
     g_cache.register_block(meta);
+    g_cache.add_deps(meta, pc, blk.end, peeks.overflow ? nullptr : &peeks);
     g_cache.publish(meta);
     if (g_opt.stats) {
         g_stats.blocks_t1++;
@@ -88,9 +102,11 @@ u8* get_or_translate(ThreadCtx* t, GuestAddr pc) {
 }
 
 void code_invalidate_range(GuestAddr start, u64 len) {
-    // TODO(milestone 3): page-indexed block lists; unpublish + unlink affected blocks.
-    (void)start;
-    (void)len;
+    std::lock_guard<std::mutex> lk(g_cache.lock);
+    if (g_cache.invalidate_range(start, start + len)) {
+        g_cache.scrub_ibtcs();
+        if (g_opt.stats) g_stats.invalidations++;
+    }
 }
 
 [[noreturn]] void cpu_loop(ThreadCtx* t) {
@@ -109,7 +125,8 @@ void code_invalidate_range(GuestAddr start, u64 len) {
             if (!tb) tb = translate(t, e->target);
             {
                 std::lock_guard<std::mutex> lk(g_cache.lock);
-                if (!e->linked) {
+                // neither link from nor into code that was invalidated meanwhile
+                if (!e->linked && !(tb->flags & BF_DEAD) && !(e->owner->flags & BF_DEAD)) {
                     link_exit(e, tb->code);
                     e->next_in = tb->incoming;
                     tb->incoming = e;
@@ -122,6 +139,9 @@ void code_invalidate_range(GuestAddr start, u64 len) {
             if (g_opt.stats) g_stats.exits_lookup++;
             host = get_or_translate(t, st->pc);
             g_cache.ibtc_insert(ibtc, st->pc, host);
+            // an invalidation between lookup and insert may have missed this entry
+            if (BlockMeta* nb = g_cache.lookup(st->pc); !nb || nb->code != host)
+                __atomic_store_n(&ibtc[(st->pc >> 2) & (kIbtcEntries - 1)].guest, 1ull, __ATOMIC_SEQ_CST);
             break;
         }
         case EXIT_SYSCALL:
@@ -167,6 +187,12 @@ static void crc_init() {
             crc_table[t][i] = c;
         }
     }
+}
+
+// IC IVAU Xt: the guest finished writing code in this cache line (CTR_EL0.IminLine = 64 bytes).
+extern "C" u64 xef_helper_ic_ivau(u64 addr, u64, u64) {
+    code_invalidate_range(addr & ~63ull, 64);
+    return 0;
 }
 
 extern "C" u64 xef_helper_crc32(u64 crc, u64 data, u64 size_and_c) {

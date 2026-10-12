@@ -78,6 +78,12 @@ static bool compile_region(GuestAddr head) {
     BlockMeta* hm = g_cache.lookup(head);
     if (!hm || hm->tier != 1) return false;
     hm->tier = 3;  // "tried": don't retry on failure
+    // every guest range decoded ahead while forming the region becomes an invalidation dependency
+    static PeekLog peeks;
+    peeks.n = 0;
+    peeks.overflow = false;
+    a64::set_peek_log(&peeks);
+    struct ClearPeek { ~ClearPeek() { a64::set_peek_log(nullptr); } } clear_peek;
     ir::Block& blk = *g_t2_blk;
     a64::TranslateOpts topt;
     topt.max_insts = g_opt.max_block_insts;
@@ -192,6 +198,11 @@ static bool compile_region(GuestAddr head) {
     // ---- runtime feedback record
     RegionInfo* ri = new RegionInfo();
     ri->head_t1 = hm;
+    ri->blocks = new BlockMeta*[R.n];
+    ri->nblocks = 0;
+    ri->branches = nullptr;
+    ri->nbranches = 0;
+    ri->killed = false;
     for (int g = 0; g < 32; g++) ri->map[g] = (u8)map[g];
     ri->exit_counter = (u64*)g_cache.alloc_data(8);
     *ri->exit_counter = 0;
@@ -267,6 +278,7 @@ static bool compile_region(GuestAddr head) {
         meta->nexits = (u16)out.nexits;
         code_of[i] = code;
         metas[i] = meta;
+        ri->blocks[ri->nblocks++] = meta;
         for (int k = 0; k < out.nfixes; k++) fixes[nfix++] = {out.fixes[k].field, out.fixes[k].target};
     }
     auto code_for = [&](GuestAddr pc) -> u8* {
@@ -274,6 +286,11 @@ static bool compile_region(GuestAddr head) {
         return nullptr;
     };
     for (int k = 0; k < nfix; k++) Assembler::patch_rel32(fixes[k].field, code_for(fixes[k].target));
+    ri->branches = new RegionInfo::Branch[nfix];
+    ri->nbranches = 0;
+    for (int k = 0; k < nfix; k++)
+        for (int i = 0; i < R.n; i++)
+            if (R.pcs[i] == fixes[k].target) ri->branches[ri->nbranches++] = {fixes[k].field, i};
     Assembler::patch_rel32(entry_fix, code_of[0]);
     // link external exits whose targets exist
     for (int i = 0; i < R.n; i++) {
@@ -287,6 +304,8 @@ static bool compile_region(GuestAddr head) {
             }
         }
     }
+    if (peeks.overflow) return false;   // dependencies not trackable (abandoned code stays unpublished)
+    for (int i = 0; i < R.n; i++) g_cache.add_deps(entry, metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
     // ---- go live: publish the entry and re-point incoming links of the tier-1 head
     entry->incoming = hm->incoming;
     hm->incoming = nullptr;
@@ -303,7 +322,7 @@ static bool compile_region(GuestAddr head) {
 
 // Region exits too often relative to time spent in it: re-point links back to tier 1.
 static void demote_region(RegionInfo* ri) {
-    if (ri->demoted) return;
+    if (ri->demoted || ri->killed) return;
     ri->demoted = true;
     BlockMeta* hm = ri->head_t1;
     BlockMeta* entry = ri->entry;
@@ -311,7 +330,7 @@ static void demote_region(RegionInfo* ri) {
     entry->incoming = nullptr;
     for (ExitInfo* e = hm->incoming; e; e = e->next_in) link_exit(e, hm->code);
     hm->tier = 4;  // never promote again
-    g_cache.publish(hm);
+    if (!(hm->flags & BF_DEAD)) g_cache.publish(hm);
     if (g_opt.stats) g_stats.regions_demoted++;
     XEF_LOG(1, "tier2: demoted region %#lx (exits=%lu samples=%lu)", (unsigned long)hm->start,
             (unsigned long)*ri->exit_counter, (unsigned long)ri->samples);

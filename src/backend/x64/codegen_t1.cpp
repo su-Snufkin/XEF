@@ -14,6 +14,7 @@ namespace xef::backend {
 
 extern "C" u64 xef_helper_sysreg(u64, u64, u64 id);
 extern "C" u64 xef_helper_crc32(u64 crc, u64 data, u64 size_and_c);
+extern "C" u64 xef_helper_ic_ivau(u64 addr, u64, u64);
 
 int count_exits(const Block& b) {
     int n = 0;
@@ -212,9 +213,15 @@ void T1::evict(Reg r) {
         if (mapped(g)) { x.k = L_GREG; x.reg = host(g); x.g = (u8)g; }
         else { x.k = L_GMEM; x.g = (u8)g; }
     } else {
-        int s = -1;
-        for (int i = 0; i < 15; i++) if (!(spill_used_ & (1u << i))) { s = i; break; }  // slot 15: flags restore
-        if (s < 0) fatal("codegen: out of spill slots");
+        int s = free_spill_slot();
+        if (s < 0) {
+            // slots of values whose last use did not release them (e.g. consumed through flag
+            // rematerialization) are reclaimed lazily
+            for (int v = 1; v < cur_; v++)
+                if (vi_[v].k == L_SPILL && vi_[v].last < cur_) spill_used_ &= ~(1u << vi_[v].slot);
+            s = free_spill_slot();
+        }
+        if (s < 0) fatal("codegen: out of spill slots (block %#lx, ir %d)", (unsigned long)b_.start, cur_);
         spill_used_ |= 1u << s;
         as_.mov(8, mem(R15, XEF_ST(spill) + s * 8), r);
         x.k = L_SPILL;
@@ -566,6 +573,10 @@ void T1::emit_inst(Val v) {
     case Op::VConst: case Op::VSelect: case Op::FToI: case Op::IToF:
         emit_vec(v); return;
     case Op::Helper: {
+        if (in.sub == 2) {   // IC IVAU
+            emit_call_c((void*)&xef_helper_ic_ivau, 0, in.a, 0, 0);
+            return;
+        }
         // sub=1: CRC32/CRC32C (size in .size, aux=1 for the Castagnoli polynomial)
         if (in.sub == 1 && in.aux == 1 && g_host.sse42) {
             pin(in.a); pin(in.b);

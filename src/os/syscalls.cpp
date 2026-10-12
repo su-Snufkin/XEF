@@ -307,12 +307,17 @@ void do_syscall(CpuState* st) {
     }
     case G_mprotect:
         r = raw(SYS_mprotect, a0, a1, prot_g2h(a2));
+        // code made writable or non-executable will change before it runs again (W^X JITs)
+        if (r == 0 && ((a2 & PROT_WRITE) || !(a2 & PROT_EXEC))) code_invalidate_range(a0, a1);
         break;
     case G_munmap:
         r = raw(SYS_munmap, a0, a1);
         if (r == 0) code_invalidate_range(a0, a1);
         break;
-    case G_mremap: r = raw(SYS_mremap, a0, a1, a2, a3, a4); break;
+    case G_mremap:
+        r = raw(SYS_mremap, a0, a1, a2, a3, a4);
+        if (r >= 0) code_invalidate_range(a0, a1);
+        break;
     case G_uname: {
         r = raw(SYS_uname, a0);
         if (r == 0) {
