@@ -36,6 +36,8 @@ Verified with `--host-gl`:
 | Scorched3D | wxWidgets launcher starting the SDL client; tutorial match against bots | `scorched3d-hostgl.jpg` |
 | BZFlag, Widelands, Endless Sky | menus | |
 | LibreOffice 24.2 Writer | GTK3; ready in ~15 s; typing, spell checking (no --host-gl needed) | `libreoffice-writer.jpg` |
+| OpenSCAD 2021 | Qt 5 + CGAL (needs FP rounding modes: FPCR -> MXCSR); CSG preview on host GL | `openscad-hostgl.jpg` |
+| Inkscape 1.2 | GTK3 welcome dialog | `inkscape.jpg` |
 | vkmark (Vulkan) | 300 points vs 360 natively (llvmpipe/lavapipe) | |
 
 (screenshots in `docs/screenshots/`)

@@ -159,6 +159,13 @@ static void run_guest(ThreadCtx* t, bool nested) {
     IbtcEntry* ibtc = (IbtcEntry*)st->ibtc;
     u8* host = get_or_translate(t, st->pc);
     for (;;) {
+        // a signal that arrived while this thread was in the runtime (not in translated code, so
+        // no single-step to a block boundary) is only marked pending: deliver it before re-entering
+        // the JIT, or a linked hot loop could run forever without seeing it
+        if (__atomic_load_n(&st->pending_signal, __ATOMIC_ACQUIRE)) {
+            signals_deliver_pending(st);
+            host = get_or_translate(t, st->pc);
+        }
         bool vf = verify_wants(st->pc) && verify_before(t, st);
         enter(st, host);
         if (vf) verify_after(st);

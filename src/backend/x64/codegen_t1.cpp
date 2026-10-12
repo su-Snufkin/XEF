@@ -1602,7 +1602,32 @@ void T1::emit_sys(Val v) {
         Reg r = to_reg(in.a); pinned_ |= 1 << r;
         switch (in.aux) {
         case SYS_TPIDR_EL0: as_.mov(8, mem(R15, XEF_ST(tpidr_el0)), r); return;
-        case SYS_FPCR: as_.mov(4, mem(R15, XEF_ST(fpcr)), r); return;  // TODO: MXCSR rounding
+        case SYS_FPCR: {
+            // the host MXCSR follows FPCR: RMode -> RC (RN 0, RP 2, RM 1, RZ 3), FZ -> FTZ|DAZ
+            as_.mov(4, mem(R15, XEF_ST(fpcr)), r);
+            clobber_flags();
+            Reg t = alloc_temp(); pinned_ |= 1 << t;
+            Reg u = alloc_temp(); pinned_ |= 1 << u;
+            as_.mov(4, t, r);
+            as_.shift_imm(SHR, 4, t, 22);
+            as_.alu_imm(AND, 4, t, 3);
+            as_.mov(4, u, t);
+            as_.alu_imm(AND, 4, u, 1);
+            as_.shift_imm(SHL, 4, u, 1);
+            as_.shift_imm(SHR, 4, t, 1);
+            as_.alu(OR, 4, t, u);                  // RC
+            as_.shift_imm(SHL, 4, t, 13);
+            as_.alu_imm(OR, 4, t, 0x1F80);         // all exceptions masked
+            as_.mov(4, u, r);
+            as_.shift_imm(SHR, 4, u, 24);
+            as_.alu_imm(AND, 4, u, 1);
+            as_.neg(4, u);
+            as_.alu_imm(AND, 4, u, 0x8040);        // FTZ | DAZ
+            as_.alu(OR, 4, t, u);
+            as_.mov(4, mem(R15, XEF_ST(host_mxcsr_saved)), t);
+            as_.op_rm(4, {0x0F, 0xAE}, 2, mem(R15, XEF_ST(host_mxcsr_saved)));   // ldmxcsr
+            return;
+        }
         case SYS_FPSR: as_.mov(4, mem(R15, XEF_ST(fpsr)), r); return;
         default: fatal("setsys");
         }

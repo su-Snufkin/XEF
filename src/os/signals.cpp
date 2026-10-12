@@ -292,7 +292,7 @@ static void host_setmask(u64 m) {
     syscall(SYS_rt_sigprocmask, SIG_SETMASK, &m, nullptr, 8);
 }
 
-i64 sig_rt_sigprocmask(CpuState*, int how, u64 set, u64 oset, u64 sigsetsize) {
+i64 sig_rt_sigprocmask(CpuState* st, int how, u64 set, u64 oset, u64 sigsetsize) {
     // Signals XEF itself depends on (faults, profiling) are never blocked on the host.
     u64 m;
     u64 hset = 0;
@@ -300,7 +300,11 @@ i64 sig_rt_sigprocmask(CpuState*, int how, u64 set, u64 oset, u64 sigsetsize) {
         m = *(u64*)set & ~kInternalSigs;
         hset = (u64)&m;
     }
-    return syscall(SYS_rt_sigprocmask, how, hset, oset, sigsetsize) < 0 ? -errno : 0;
+    if (syscall(SYS_rt_sigprocmask, how, hset, oset, sigsetsize) < 0) return -errno;
+    // signals received earlier and held back by the guest mask may be deliverable now
+    if (set && st && st->thread && (__atomic_load_n(&st->thread->pending, __ATOMIC_SEQ_CST) & ~host_blocked()))
+        st->pending_signal = 1;
+    return 0;
 }
 
 // --- AArch64 signal frame layout (arch/arm64/include/uapi/asm/{sigcontext,ucontext}.h) ---
@@ -399,9 +403,9 @@ static void deliver_pending_masked(CpuState* st, u64 saved_mask, u64 blocked) {
     int sig = __builtin_ctzll(p) + 1;
     __atomic_and_fetch(&t->pending, ~sigbit(sig), __ATOMIC_SEQ_CST);
     siginfo_t si = t->pending_info[sig];
-    if (g_actions[sig].handler <= 1) return;  // action changed meanwhile
-    deliver_one(st, sig, si, saved_mask);
-    if (__atomic_load_n(&t->pending, __ATOMIC_SEQ_CST)) st->pending_signal = 1;
+    deliver_one(st, sig, si, saved_mask);   // also handles an action changed to SIG_IGN / SIG_DFL
+    // more to deliver now? (signals still blocked are re-checked when the mask changes)
+    if (__atomic_load_n(&t->pending, __ATOMIC_SEQ_CST) & ~host_blocked()) st->pending_signal = 1;
 }
 
 void signals_deliver_pending(CpuState* st) {
@@ -429,6 +433,10 @@ void sig_rt_sigreturn(CpuState* st) {
     if (hd[0] == FPSIMD_MAGIC) {
         st->fpsr = hd[2];
         st->fpcr = hd[3];
+        // the host MXCSR follows FPCR (see emit_sys: RMode -> RC, FZ -> FTZ|DAZ)
+        u32 rm = (st->fpcr >> 22) & 3, rc = ((rm & 1) << 1) | (rm >> 1);
+        u32 mx = 0x1F80 | (rc << 13) | ((st->fpcr >> 24) & 1 ? 0x8040 : 0);
+        __builtin_ia32_ldmxcsr(mx);
         memcpy(st->v, mc.reserved + 16, 512);
     }
     host_setmask(f->uc.uc_sigmask);
