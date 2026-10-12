@@ -1651,10 +1651,12 @@ void T1::emit_call_c(void* fn, Val v, Val a, Val b, u64 imm) {
 
 void T1::emit_terminator(Val v) {
     const Inst& in = I(v);
-    // every other value is dead now; release temps not holding the operand
+    // release temps of dead values; operands of the live-out flags stay (rematerialization)
     {
         Val keep = in.a ? resolve(in.a) : 0;
-        for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) if (owner_[r] && owner_[r] != keep) owner_[r] = 0;
+        for (int ti_ = 0; ti_ < ntemps_; ti_++)
+            if (Reg r = temps_[ti_]; true)
+                if (owner_[r] && owner_[r] != keep && vi_[owner_[r]].last < cur_) owner_[r] = 0;
     }
     // All terminators: guest NZCV must be in EFLAGS.
     auto ensure_flags = [&]() { if (live_out_ && final_flags_ != eflags_) need_flags(final_flags_); };
@@ -1678,8 +1680,8 @@ void T1::emit_terminator(Val v) {
         int s = sz(I(in.a).ty);
         take_reg(RCX);
         pinned_ |= 1 << RCX;
+        ensure_flags();   // first: may read values from registers the load below reuses
         load_into(RCX, in.a, s);
-        ensure_flags();
         bool nz = in.aux;
         u8* j = as_.jrcxz_fwd();
         // not zero
