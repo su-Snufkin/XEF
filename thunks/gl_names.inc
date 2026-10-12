@@ -3260,3 +3260,4 @@
 {"glXWaitGL", (void*)glXWaitGL},
 {"glXWaitVideoSyncSGI", (void*)glXWaitVideoSyncSGI},
 {"glXWaitX", (void*)glXWaitX},
+{"xef_selftest_mix", (void*)xef_selftest_mix},

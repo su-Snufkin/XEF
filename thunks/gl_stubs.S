@@ -26372,4 +26372,12 @@ xef_host_XFree:
     hlt #0x5846
     ret
     .size xef_host_XFree, .-xef_host_XFree
+    .globl xef_selftest_mix
+    .type xef_selftest_mix, %function
+    .p2align 2
+xef_selftest_mix:
+    mov x17, #3901
+    hlt #0x5846
+    ret
+    .size xef_selftest_mix, .-xef_selftest_mix
     .section .note.GNU-stack,"",%progbits
