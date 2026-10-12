@@ -24,6 +24,10 @@ build/xef -L $R $R/usr/games/minetest
 `tools/guishot.sh SECONDS OUT.png -- /usr/games/supertuxkart --race-now --track=lighthouse` runs a
 program from the rootfs with these settings and takes a screenshot of the X server.
 
+`mkrootfs.sh` also generates what package maintainer scripts normally would (gdk-pixbuf loader
+cache, compiled GSettings schemas, icon caches, fontconfig cache) by running the guest's own tools
+under XEF.
+
 ## Verified (2026-10-12, i7 cloud VM, Xvfb)
 
 | Program | Result |
@@ -38,6 +42,7 @@ program from the rootfs with these settings and takes a screenshot of the X serv
 | OpenArena (ioquake3, launched through its shell script) | menus, deathmatch with bots (`docs/screenshots/openarena-game.png`) |
 | Minetest (Irrlicht + LuaJIT) | world creation and gameplay (`docs/screenshots/minetest-game.png`) |
 | SuperTuxKart 1.4 | race on Lighthouse (`--race-now`, `docs/screenshots/supertuxkart-race.png`) |
+| GIMP 2.10 | UI (`docs/screenshots/gimp.png`); Script-Fu batch: fill, selection, Gaussian blur plug-in, PNG export (`docs/screenshots/gimp-batch-output.png`) |
 | FeatherPad (Qt) | works (`docs/screenshots/qt-featherpad.png`) |
 | WebKitGTK MiniBrowser (multi-process, JavaScriptCore JIT) | page with CSS gradients, canvas, JS (`docs/screenshots/webkit-minibrowser.png`), WebGL cube at ~22 FPS (`docs/screenshots/webkit-webgl.png`); needs `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` (bubblewrap/seccomp sandbox is not emulated) |
 
