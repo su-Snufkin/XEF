@@ -1,4 +1,6 @@
 // XEF — AArch64 → x86-64 user-mode binary translator.
+#include <chrono>
+#include <thread>
 #include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -115,6 +117,16 @@ int main(int argc, char** argv, char** envp) {
     st->pc = img.entry;
     st->eflags = 0x203;   // canonical NZCV=0000 -> CF=1
     if (g_opt.profile) profile_start();
+    // XEF_PROFILE_AT=N: print the statistics / profile after N seconds (for programs that do not
+    // exit cleanly, e.g. GUI applications handling SIGINT themselves)
+    if (const char* e = getenv("XEF_PROFILE_AT"); e && (g_opt.profile || g_opt.stats)) {
+        static int secs = atoi(e);
+        std::thread([] {
+            std::this_thread::sleep_for(std::chrono::seconds(secs));
+            if (g_opt.stats) stats_print();
+            if (g_opt.profile) profile_report();
+        }).detach();
+    }
     if (g_opt.profile || g_opt.stats) signals_report_on_interrupt();
     if (getenv("XEF_NO_TIER2")) g_opt.tier2 = false;
     if (verify_enabled()) { g_opt.trace = true; g_opt.tier2 = false; }   // one block per JIT entry

@@ -214,6 +214,20 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     self[sl] = 0;
     std::vector<char*> av;
     av.push_back(self);
+    // the new image runs with the same XEF options
+    static char o_stats[] = "--stats", o_prof[] = "--profile", o_not2[] = "--no-tier2", o_trace[] = "--trace",
+                o_ir[] = "--dump-ir", o_code[] = "--dump-code", o_mb[] = "--max-block", o_t2t[] = "--tier2-threshold";
+    std::string mb = std::to_string(g_opt.max_block_insts), t2t = std::to_string(g_tier2_threshold);
+    if (g_opt.stats) av.push_back(o_stats);
+    if (g_opt.profile) av.push_back(o_prof);
+    if (g_opt.trace) av.push_back(o_trace);
+    else if (!g_opt.tier2) av.push_back(o_not2);
+    if (g_opt.dump_ir) av.push_back(o_ir);
+    if (g_opt.dump_code) av.push_back(o_code);
+    av.push_back(o_mb);
+    av.push_back((char*)mb.c_str());
+    av.push_back(o_t2t);
+    av.push_back((char*)t2t.c_str());
     av.push_back((char*)"--");
     av.push_back((char*)guest_exe.c_str());
     for (size_t i = 1; i < args.size(); i++) av.push_back((char*)args[i].c_str());

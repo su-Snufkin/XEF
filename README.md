@@ -43,7 +43,7 @@ SuperTuxKart, Warzone 2100, GIMP, WebKitGTK with WebGL, vkcube, ...) with screen
 | `-L DIR` / `XEF_ROOTFS` | guest root filesystem (absolute guest paths resolve there first) |
 | `--host-gl` / `XEF_HOST_GL=1` | native host OpenGL/GLX/EGL/GLES/Vulkan |
 | `--stats` | translation and runtime statistics at exit |
-| `--profile` | hottest translated blocks and time outside translated code |
+| `--profile` | hottest translated blocks and time outside translated code (`XEF_PROFILE_AT=N`: report after N seconds) |
 | `--no-tier2`, `--tier2-threshold N` | tier-2 region compiler control |
 | `--trace` | debugging: no block linking, show the last blocks on a jump to unmapped code |
 | `--dump-ir`, `--dump-code` | IR / host code of every block |
