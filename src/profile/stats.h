@@ -21,5 +21,7 @@ inline u64 stats_now() {
     return (u64)ts.tv_sec * 1000000000ull + ts.tv_nsec;
 }
 void stats_print();
+void profile_start();
+void profile_report();
 
 }  // namespace xef

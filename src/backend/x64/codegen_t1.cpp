@@ -74,6 +74,7 @@ void T1::analyze() {
         if (in.op == Op::Zext && in.size == 32 && in.ty == Type::I32) x.clean32 = vi_[in.a].clean32;
     }
     // final guest flags value
+    live_out_ = b_.flags_live_out;
     final_flags_ = kEntryFlags;
     for (int v = 1; v < n; v++)
         if (I(v).op == Op::SetFlags) final_flags_ = fid(I(v).a);
@@ -83,7 +84,7 @@ void T1::analyze() {
         VI& x = vi_[v];
         if (!has_side_effects(in) && x.uses == 0 && in.op != Op::SetFlags) {
             // a flags value that is the final guest flags is live at exit
-            if (!(in.ty == Type::Flags && fid(v) == final_flags_)) { x.dead = true; continue; }
+            if (!(live_out_ && in.ty == Type::Flags && fid(v) == final_flags_)) { x.dead = true; continue; }
         }
         if (in.op == Op::SetFlags) continue;  // bookkeeping, not a use
         i32 mylast = x.last ? x.last : v;
@@ -97,13 +98,37 @@ void T1::analyze() {
     }
     // terminator keeps final flags alive
     int term = n - 1;
-    if (final_flags_ == kEntryFlags) entry_flags_last_ = term;
-    else {
-        if (vi_[final_flags_].last < term) vi_[final_flags_].last = term;
-        entry_flags_last_ = 0;
+    entry_flags_last_ = 0;
+    if (live_out_) {
+        if (final_flags_ == kEntryFlags) entry_flags_last_ = term;
+        else if (vi_[final_flags_].last < term) vi_[final_flags_].last = term;
     }
     for (int v = 1; v < n; v++)
         if (I(v).op == Op::GetFlags && vi_[v].last > entry_flags_last_) entry_flags_last_ = vi_[v].last;
+
+    // flag rematerialization: keep the operands of cheap flag producers alive until the last
+    // consumer so clobbered EFLAGS can be recomputed (cmp/test) instead of pushf/popf.
+    for (int v = 1; v < n; v++) {
+        const Inst& in = I(v);
+        VI& x = vi_[v];
+        x.rres = 0;
+        if (x.dead || !(in.op == Op::FlagsSub || in.op == Op::FlagsAdd || in.op == Op::FlagsLogic)) continue;
+        if (in.op == Op::FlagsLogic) x.rres = in.a;
+        else if (v > 1 && I(v - 1).op == (in.op == Op::FlagsSub ? Op::Sub : Op::Add) && I(v - 1).a == in.a &&
+                 I(v - 1).b == in.b && !vi_[v - 1].dead)
+            x.rres = (Val)(v - 1);
+        i32 L = x.last;
+        auto extend = [&](Val o) {
+            while (o) {
+                if (vi_[o].last < L) vi_[o].last = L;
+                if (!is_alias_op(I(o))) break;
+                o = I(o).a;
+            }
+        };
+        if (in.a) extend(in.a);
+        if (in.b) extend(in.b);
+        if (x.rres) extend(x.rres);
+    }
 
     // address folding: Load/Store(addr = Add(base, const|reg|Shl(reg,k))) with single use
     for (int v = 1; v < n; v++) {
@@ -142,7 +167,21 @@ Reg T1::alloc_temp(Reg prefer) {
         int score = vi_[o].last + (vi_[o].home >= 0 ? 100000 : 0);
         if (score > best_score) { best_score = score; best = r; }
     }
-    if (best == NOREG) fatal("codegen: out of temporaries at ir %d", cur_);
+    if (best == NOREG) {
+        // All temporaries are pinned by this instruction: borrow a mapped guest register.
+        // Its guest value is saved to CpuState and restored after the instruction.
+        static const Reg cands[] = {RBP, RBX, R9, R8, R10, R12, R13, R14, RSI, RDI, RDX};
+        for (Reg r : cands) {
+            if (pinned_ & (1 << r)) continue;
+            int g = -1;
+            for (int k = 0; k < 32; k++) if (host(k) == r) g = k;
+            as_.mov(8, gmem(g), r);
+            borrowed_ |= 1 << r;
+            pinned_ |= 1 << r;
+            return r;
+        }
+        fatal("codegen: out of temporaries at ir %d", cur_);
+    }
     evict(best);
     return best;
 }
@@ -273,6 +312,7 @@ Reg T1::dest_hint(Val v) {
     if (nx < b_.n && vi_[v].uses == 1) {
         const Inst& s = I(nx);
         if (s.op == Op::SetReg && mapped(s.aux) && s.a == v) {
+            pinned_ |= 1 << host(s.aux);
             evacuate_guest(s.aux, cur_);
             return host(s.aux);
         }
@@ -283,12 +323,14 @@ Reg T1::dest_hint(Val v) {
 Reg T1::dest_for(Val v, int size) {
     (void)size;
     Reg h = dest_hint(v);
-    return h != NOREG ? h : alloc_temp();
+    Reg r = h != NOREG ? h : alloc_temp();
+    pinned_ |= 1 << r;
+    return r;
 }
 
 void T1::finish_def(Val v, Reg r) {
     // r is either a temp (owned) or a mapped guest host register (dest hint)
-    bool is_temp = (r == RAX || r == RCX || r == R11);
+    bool is_temp = (r == RAX || r == RCX || r == R11) || (borrowed_ & (1 << r));
     if (is_temp) assign_reg(v, r);
     else {
         // value now lives in the guest register's host register; the following SetReg is a no-op
@@ -337,6 +379,7 @@ bool T1::run() {
         if (vi_[v].dead || vi_[v].folded) continue;
         if (as_.overflow()) return false;
         emit_inst((Val)v);
+        if (borrowed_) restore_borrowed();
         if (!is_terminator(I(v).op)) release_operands(I(v));
         // free dead results immediately (e.g. results whose only use was folded away)
         VI& x = vi_[v];
@@ -383,6 +426,7 @@ void T1::emit_inst(Val v) {
                 if (x.k == L_GREG) x.g = (u8)g;
                 return;
             }
+            pinned_ |= 1 << h;
             evacuate_guest(g, cur_);
             pin(src);
             Opnd o = opnd(src, true, true, 8);
@@ -1026,6 +1070,37 @@ void T1::emit_flags(Val v, bool, Reg) {
     eflags_ = v;
 }
 
+void T1::remat_flags(Val f, u8 cond) {
+    const Inst& in = I(f);
+    int s = in.size / 8;
+    bool nz_only = cond == ir::EQ || cond == ir::NE || cond == ir::MI || cond == ir::PL;
+    if (in.op == Op::FlagsLogic || (nz_only && vi_[f].rres)) {
+        Reg r = to_reg(vi_[f].rres, s);
+        as_.test(s, r, r);
+        if (in.op == Op::FlagsLogic) as_.stc();
+        return;
+    }
+    if (in.op == Op::FlagsSub) {
+        Opnd ob = opnd(in.b, true, true, s);
+        if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
+        Opnd oa = opnd(in.a, ob.k != Opnd::M, false, s);
+        if (oa.k == Opnd::M) {
+            if (ob.k == Opnd::I) as_.alu_imm(CMP, s, oa.m, (i32)ob.imm);
+            else as_.alu(CMP, s, oa.m, ob.r);
+        } else emit_alu(CMP, s, oa.r, ob);
+        return;
+    }
+    // FlagsAdd
+    Opnd ob = opnd(in.b, true, true, s);
+    if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
+    Opnd oa = opnd(in.a, true, true, s);
+    if (oa.k == Opnd::R) pinned_ |= 1 << oa.r;
+    Reg t = alloc_temp();
+    emit_mov_opnd(s, t, oa);
+    emit_alu(ADD, s, t, ob);
+    as_.cmc();
+}
+
 void T1::emit_adc_sbc(Val v, bool flags_out, Val) {
     const Inst& in = I(v);
     bool sub = in.op == Op::Sbc || in.op == Op::FlagsSbc;
@@ -1085,7 +1160,7 @@ void T1::emit_select(Val v) {
         u64 tv = cv(in.b), fv = cv(in.c);
         u64 m = s == 4 ? 0xffffffffull : ~0ull;
         if ((tv & m) == 1 && fv == 0) {
-            need_flags(in.a);
+            need_flags(in.a, in.aux);
             Reg d = dest_for(v, s);
             as_.setcc(c, d);
             as_.movzx8(d, d);
@@ -1093,7 +1168,7 @@ void T1::emit_select(Val v) {
             return;
         }
         if ((tv & m) == m && fv == 0) {  // csetm
-            need_flags(in.a);
+            need_flags(in.a, in.aux);
             Reg d = dest_for(v, s);
             as_.setcc(c, d);
             as_.movzx8(d, d);
@@ -1116,13 +1191,13 @@ void T1::emit_select(Val v) {
             as_.mov_imm(t, (u64)of.imm);
             of.k = Opnd::R; of.r = t;
         }
-        need_flags(in.a);
+        need_flags(in.a, in.aux);
         if (of.k == Opnd::R) as_.cmov(invert(c), s, d, of.r); else as_.cmov(invert(c), s, d, of.m);
         if (s == 4 && false) {}
     } else {
         if (of.k == Opnd::R && of.r == d) {
         } else emit_mov_opnd(s, d, of);  // mov does not touch flags
-        need_flags(in.a);
+        need_flags(in.a, in.aux);
         if (ot.k == Opnd::R) as_.cmov(c, s, d, ot.r); else as_.cmov(c, s, d, ot.m);
     }
     finish_def(v, d);
@@ -1399,7 +1474,7 @@ void T1::emit_terminator(Val v) {
         for (Reg r : kTemps) if (owner_[r] && owner_[r] != keep) owner_[r] = 0;
     }
     // All terminators: guest NZCV must be in EFLAGS.
-    auto ensure_flags = [&]() { if (final_flags_ != eflags_) need_flags(final_flags_ == kEntryFlags ? kEntryFlags : final_flags_); };
+    auto ensure_flags = [&]() { if (live_out_ && final_flags_ != eflags_) need_flags(final_flags_); };
     switch (in.op) {
     case Op::ExitJump:
         ensure_flags();
@@ -1410,7 +1485,7 @@ void T1::emit_terminator(Val v) {
         // the branch condition must test the guest flags value it references; this is also
         // the final flags value unless something set flags after (impossible: B.cond ends block)
         ensure_flags();
-        XEF_ASSERT(eflags_ == f || f == final_flags_);
+        need_flags(f, in.aux);
         exit_jcc(x86_cond((ir::Cond)in.aux), in.imm);
         exit_jmp(in.imm2);
         return;

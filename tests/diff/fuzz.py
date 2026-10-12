@@ -12,7 +12,15 @@ import argparse, os, random, re, struct, subprocess, sys, collections
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 QEMU = os.path.join(ROOT, '.tools/qemu/usr/bin/qemu-aarch64')
 XEF = os.environ.get('XEF', os.path.join(ROOT, 'build/xef'))
-RUNNER = os.environ.get('RUNNER', '/tmp/runner')
+RUNNER = os.environ.get('RUNNER', os.path.join(ROOT, 'build/fuzz-runner-aarch64'))
+
+def build_runner():
+    here = os.path.dirname(os.path.abspath(__file__))
+    srcs = [os.path.join(here, 'runner.c'), os.path.join(here, 'tramp.S')]
+    if os.path.exists(RUNNER) and all(os.path.getmtime(RUNNER) > os.path.getmtime(x) for x in srcs):
+        return
+    subprocess.run(['clang', '--target=aarch64-linux-gnu', '--sysroot=' + os.path.join(ROOT, '.tools/sysroot-aarch64'),
+                    '-fuse-ld=lld', '-static', '-O2'] + srcs + ['-o', RUNNER], check=True)
 MATTR = '+neon,+crc,+aes,+sha2,+lse,+rcpc'
 
 BAD = re.compile(r'\b(x28|x29|x30|w28|w29|w30|sp|wsp|fpcr|fpsr|nzcv)\b|\[|^\s*(b|bl|br|blr|ret|cbn?z|tbn?z|svc|hvc|smc|brk|hlt|'
@@ -111,6 +119,7 @@ def main():
     ap.add_argument('--strict-nan', action='store_true')
     ap.add_argument('--tmpl', action='append', help='VALUE:FIXEDMASK (hex); other bits random')
     args = ap.parse_args()
+    build_runner()
     rng = random.Random(args.seed)
     if args.tmpl:
         cands = []
@@ -134,7 +143,7 @@ def main():
         tests.append((w, d))
         if len(tests) >= args.n:
             break
-    path = '/tmp/xef_fuzz_tests.bin'
+    path = os.path.join(ROOT, 'build/xef_fuzz_tests.bin')
     with open(path, 'wb') as f:
         for w, _ in tests:
             f.write(struct.pack('<I', w))

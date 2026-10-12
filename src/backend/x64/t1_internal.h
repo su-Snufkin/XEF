@@ -27,6 +27,7 @@ struct VI {
     i8 home = -1;      // guest reg whose current value equals this value
     i8 slot = -1;      // spill slot
     i8 vhome = -1;     // vector register whose CpuState slot holds this value
+    Val rres = 0;      // flags values: result value usable for test-based remat (Z/N)
     bool dead = false;
     bool folded = false;
     bool clean32 = false;
@@ -57,11 +58,21 @@ private:
     Val owner_[16] = {};        // owned temp regs: which value holds it
     Val xowner_[16] = {};
     u16 pinned_ = 0;            // host regs that must not be evicted in current inst
+    u16 borrowed_ = 0;          // mapped guest regs borrowed as temporaries in current inst
+    void restore_borrowed() {
+        for (int r = 0; r < 16; r++)
+            if ((borrowed_ & (1 << r)) && owner_[r]) evict((Reg)r);
+        for (int r = 0; r < 16; r++)
+            if (borrowed_ & (1 << r))
+                for (int g = 0; g < 32; g++) if (host(g) == (Reg)r) as_.mov(8, (Reg)r, gmem(g));
+        borrowed_ = 0;
+    }
     u16 xpinned_ = 0;
     int cur_ = 0;
     Val eflags_ = kEntryFlags;  // flags value currently in EFLAGS (0 = garbage)
     Val spilled_flags_ = 0;
     Val final_flags_ = kEntryFlags;
+    bool live_out_ = true;
     i32 entry_flags_last_ = 0;
     u32 spill_used_ = 0;
     int nexits_ = 0;
@@ -111,26 +122,34 @@ private:
     // ---- locations ----
     bool flags_needed_after(int i) const {
         if (!eflags_) return false;
-        if (eflags_ == final_flags_) return true;
+        if (live_out_ && eflags_ == final_flags_) return true;
         if (eflags_ == kEntryFlags) return entry_flags_last_ > i;
         return vi_[eflags_].last > i;
     }
+    bool remat_ok(Val f) const {
+        if (!f || f == kEntryFlags) return false;
+        Op o = I(f).op;
+        return o == Op::FlagsSub || o == Op::FlagsAdd || o == Op::FlagsLogic;
+    }
     void clobber_flags() {
-        if (flags_needed_after(cur_)) {
+        if (flags_needed_after(cur_) && !remat_ok(eflags_)) {
             as_.pushfq();
             as_.pop(mem(R15, XEF_ST(flags_spill)));
             spilled_flags_ = eflags_;
         }
         eflags_ = 0;
     }
-    void need_flags(Val f) {
+    // cond: ARM condition the consumer evaluates (0xff = needs all flags)
+    void need_flags(Val f, u8 cond = 0xff) {
         f = fid(f);
         if (eflags_ == f) return;
+        if (remat_ok(f)) { remat_flags(f, cond); eflags_ = f; return; }
         XEF_ASSERT(spilled_flags_ == f);
         as_.push(mem(R15, XEF_ST(flags_spill)));
         as_.popfq();
         eflags_ = f;
     }
+    void remat_flags(Val f, u8 cond);
     Val resolve(Val v) const {
         while (vi_[v].k == L_ALIAS) v = I(v).a;
         return v;

@@ -132,11 +132,12 @@ struct Block {
     GuestAddr end = 0;           // address after last guest instruction
     int n = 1;                   // insts[0] is reserved
     int guest_insts = 0;
+    bool flags_live_out = true;  // false: no successor reads NZCV before writing it
     Inst insts[kMaxBlockInsts];
     // guest PC of the guest instruction each IR inst belongs to (for fault mapping)
     u32 pc_off[kMaxBlockInsts];
 
-    void clear(GuestAddr s) { start = end = s; n = 1; guest_insts = 0; }
+    void clear(GuestAddr s) { start = end = s; n = 1; guest_insts = 0; flags_live_out = true; }
     Inst& operator[](Val v) { return insts[v]; }
     const Inst& operator[](Val v) const { return insts[v]; }
 };

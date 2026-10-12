@@ -8,6 +8,7 @@
 #include "os/signals.h"
 #include "os/syscalls.h"
 #include "os/thread.h"
+#include "profile/stats.h"
 #include "runtime/dispatch.h"
 
 using namespace xef;
@@ -18,6 +19,7 @@ static void usage() {
             "  -L, --rootfs DIR   guest root filesystem (default: $XEF_ROOTFS)\n"
             "  -v                 verbose (repeat for more)\n"
             "  --stats            print translation/runtime statistics at exit\n"
+            "  --profile          sample host PC (1 kHz) and print the hottest translated blocks\n"
             "  --dump-ir          dump IR of every translated block\n"
             "  --dump-code        write host code of every block to /tmp/xef-<pc>.bin\n"
             "  --max-block N      max guest instructions per block (default 128)\n");
@@ -33,6 +35,7 @@ int main(int argc, char** argv, char** envp) {
         else if (a == "-v") g_verbose++;
         else if (a == "-vv") g_verbose += 2;
         else if (a == "--stats") g_opt.stats = true;
+        else if (a == "--profile") g_opt.profile = true;
         else if (a == "--dump-ir") g_opt.dump_ir = true;
         else if (a == "--dump-code") g_opt.dump_code = true;
         else if (a == "--max-block" && i + 1 < argc) g_opt.max_block_insts = atoi(argv[++i]);
@@ -59,5 +62,6 @@ int main(int argc, char** argv, char** envp) {
     st->x[kGuestSP] = sp;
     st->pc = img.entry;
     st->eflags = 0x203;   // canonical NZCV=0000 -> CF=1
+    if (g_opt.profile) profile_start();
     cpu_loop(t);
 }

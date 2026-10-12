@@ -77,6 +77,7 @@ void signals_init() {
 
 void signals_flush_output() {
     if (g_opt.stats) stats_print();
+    if (g_opt.profile) profile_report();
 }
 
 i64 sig_rt_sigaction(CpuState*, int sig, u64 act, u64 oact, u64 sigsetsize) {
@@ -96,7 +97,16 @@ i64 sig_rt_sigaction(CpuState*, int sig, u64 act, u64 oact, u64 sigsetsize) {
 }
 
 i64 sig_rt_sigprocmask(CpuState*, int how, u64 set, u64 oset, u64 sigsetsize) {
-    return syscall(SYS_rt_sigprocmask, how, set, oset, sigsetsize) < 0 ? -errno : 0;
+    // Signals XEF itself depends on (faults, profiling) are never blocked on the host.
+    u64 m;
+    u64 hset = 0;
+    if (set) {
+        m = *(u64*)set;
+        m &= ~((1ull << (SIGSEGV - 1)) | (1ull << (SIGBUS - 1)) | (1ull << (SIGILL - 1)) | (1ull << (SIGFPE - 1)) |
+               (1ull << (SIGPROF - 1)));
+        hset = (u64)&m;
+    }
+    return syscall(SYS_rt_sigprocmask, how, hset, oset, sigsetsize) < 0 ? -errno : 0;
 }
 
 void sig_rt_sigreturn(CpuState*) { fatal("rt_sigreturn: signal delivery not implemented yet"); }

@@ -1,6 +1,8 @@
 // XEF — AArch64 base (integer / branch / load-store / system) translation.
 #include "frontend/a64/translate.h"
 
+#include <sys/mman.h>
+
 namespace xef::a64 {
 
 using namespace ir;
@@ -858,6 +860,64 @@ bool Translator::dp_reg(u32 i) {
 
 // ---------------------------------------------------------------- block
 
+// ---------------------------------------------------------------- NZCV liveness lookahead
+
+static bool guest_readable(GuestAddr pc) {
+    static thread_local GuestAddr last_ok = 1;
+    GuestAddr page = pc & ~0xfffull;
+    if (page == last_ok) return true;
+    unsigned char v;
+    if (mincore((void*)page, 4096, &v) != 0) return false;
+    last_ok = page;
+    return true;
+}
+
+// Returns true if NZCV may be read at `pc` before being overwritten.
+static bool nzcv_live_at(GuestAddr pc, int depth) {
+    static thread_local ir::Block* scratch = new ir::Block();
+    for (int i = 0; i < 24; i++) {
+        if (!guest_readable(pc)) return true;
+        scratch->clear(pc);
+        Translator tr(*scratch);
+        tr.step(pc, *(const u32*)pc);
+        bool reads = false, writes = false;
+        const Inst* term = nullptr;
+        for (int v = 1; v < scratch->n; v++) {
+            const Inst& in = scratch->insts[v];
+            if (in.op == Op::GetFlags) reads = true;
+            if (in.op == Op::SetFlags) writes = true;
+            if (is_terminator(in.op)) term = &in;
+        }
+        if (reads) return true;
+        if (writes) return false;
+        if (term) {
+            switch (term->op) {
+            case Op::ExitJump: pc = term->imm; continue;
+            case Op::ExitCbz: case Op::ExitTbz:
+                if (depth >= 2) return true;
+                return nzcv_live_at(term->imm, depth + 1) || nzcv_live_at(term->imm2, depth + 1);
+            default: return true;  // calls, returns, indirect branches, syscalls: conservative
+            }
+        }
+        pc += 4;
+    }
+    return true;
+}
+
+static void compute_flags_liveness(ir::Block& blk) {
+    const Inst* term = nullptr;
+    for (int v = blk.n - 1; v >= 1; v--)
+        if (is_terminator(blk.insts[v].op)) { term = &blk.insts[v]; break; }
+    if (!term) return;
+    switch (term->op) {
+    case Op::ExitJump: blk.flags_live_out = nzcv_live_at(term->imm, 0); break;
+    case Op::ExitCond: case Op::ExitCbz: case Op::ExitTbz:
+        blk.flags_live_out = nzcv_live_at(term->imm, 0) || nzcv_live_at(term->imm2, 0);
+        break;
+    default: blk.flags_live_out = true; break;
+    }
+}
+
 void translate_block(GuestAddr pc, ir::Block& blk, const TranslateOpts& opts) {
     blk.clear(pc);
     Translator tr(blk);
@@ -875,6 +935,7 @@ void translate_block(GuestAddr pc, ir::Block& blk, const TranslateOpts& opts) {
         if (!cont) break;
     }
     blk.end = cur;
+    compute_flags_liveness(blk);
 }
 
 }  // namespace xef::a64

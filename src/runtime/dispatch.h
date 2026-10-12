@@ -9,6 +9,7 @@ struct Options {
     bool dump_ir = false;
     bool dump_code = false;
     bool stats = false;
+    bool profile = false;
     int max_block_insts = 128;
 };
 extern Options g_opt;

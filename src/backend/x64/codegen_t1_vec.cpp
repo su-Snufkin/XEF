@@ -318,7 +318,7 @@ void T1::emit_vec(Val v) {
         Xmm xf = xreg(in.c);
         Xmm d = new_x(v);
         as_.movaps(d, xf);
-        need_flags(in.a);
+        need_flags(in.a, in.aux);
         u8* j = as_.jcc_fwd8(invert(x86_cond((ir::Cond)in.aux)));
         as_.movaps(d, xt);
         as_.patch_rel8_here(j);
