@@ -2,6 +2,8 @@
 #include <unistd.h>
 
 #include <string>
+#include <vector>
+#include <cstring>
 
 #include "common/cpu_features.h"
 #include "loader/elf_loader.h"
@@ -57,6 +59,38 @@ int main(int argc, char** argv, char** envp) {
     detect_host_features();
     runtime_init();
     signals_init();
+
+    // scripts: "#!interp [arg]" -> run the (guest) interpreter, like execve does
+    std::vector<std::string> sargs;
+    std::vector<char*> sargv;
+    for (int depth = 0; depth < 4; depth++) {
+        char hdr[256] = {0};
+        std::string hp = resolve_guest_path(argv[i]);
+        FILE* f = fopen(hp.c_str(), "rb");
+        if (!f) break;
+        size_t n = fread(hdr, 1, sizeof hdr - 1, f);
+        fclose(f);
+        if (n < 2 || hdr[0] != '#' || hdr[1] != '!') break;
+        std::string line(hdr + 2, strcspn(hdr + 2, "\n"));
+        size_t b = line.find_first_not_of(" \t");
+        if (b == std::string::npos) break;
+        line = line.substr(b);
+        size_t sp = line.find_first_of(" \t");
+        std::vector<std::string> na{line.substr(0, sp)};
+        if (sp != std::string::npos) {
+            std::string arg = line.substr(line.find_first_not_of(" \t", sp));
+            while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t' || arg.back() == '\r')) arg.pop_back();
+            if (!arg.empty()) na.push_back(arg);
+        }
+        for (int k = i; k < argc; k++) na.push_back(argv[k]);
+        sargs = na;
+        sargv.clear();
+        for (auto& s2 : sargs) sargv.push_back((char*)s2.c_str());
+        sargv.push_back(nullptr);
+        argv = sargv.data();
+        argc = (int)sargs.size();
+        i = 0;
+    }
 
     LoadedImage img;
     if (!load_elf(argv[i], img)) fatal("cannot load %s", argv[i]);
