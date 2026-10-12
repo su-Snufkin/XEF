@@ -125,3 +125,5 @@ exists (not an XEF issue).
   benchmark (recursion, collections, streams, sorting, 10k NullPointerExceptions, 4 threads) runs
   correctly in 1.6 s vs 0.4 s natively (`tests/java/run.sh`). Swing / Java2D with antialiasing
   renders (`tests/java/SwingDemo.java`, `docs/screenshots/java-swing.jpg`).
+- Node.js 18 (V8 JIT, `tests/node/run.sh`): the same output as the host's node; 1.8 s vs 0.26 s,
+  most of it translating V8's large one-shot code (140k blocks).
