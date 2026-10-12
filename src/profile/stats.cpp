@@ -18,27 +18,15 @@ static constexpr int kMaxSamples = 1 << 22;
 static u64* g_samples;
 static volatile int g_nsamples;
 
-static void prof_handler(int, siginfo_t*, void* ctx) {
+void profile_sample(u8* rip) {
     int i = g_nsamples;
-    if (i < kMaxSamples) { g_samples[i] = (u64)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP]; g_nsamples = i + 1; }
+    if (g_samples && i < kMaxSamples) { g_samples[i] = (u64)rip; g_nsamples = i + 1; }
 }
 
-void profile_start() {
-    g_samples = new u64[kMaxSamples];
-    struct sigaction sa {};
-    sa.sa_sigaction = prof_handler;
-    sa.sa_flags = SA_SIGINFO | SA_RESTART;
-    sigaction(SIGPROF, &sa, nullptr);
-    struct itimerval it {};
-    it.it_interval.tv_usec = 1000;
-    it.it_value.tv_usec = 1000;
-    setitimer(ITIMER_PROF, &it, nullptr);
-}
+void profile_start() { g_samples = new u64[kMaxSamples]; }
 
 void profile_report() {
     if (!g_samples) return;
-    struct itimerval it {};
-    setitimer(ITIMER_PROF, &it, nullptr);
     int n = g_nsamples, in_jit = 0;
     std::vector<std::pair<BlockMeta*, int>> counts;
     std::vector<BlockMeta*> blocks;
@@ -73,12 +61,13 @@ void stats_print() {
             "  guest insts         : %lu (%.1f per block)\n"
             "  host code           : %lu bytes (%.1f bytes/guest insn)\n"
             "  translation time    : %.3f ms (%.0f ns/block)\n"
-            "  exits: link %lu, lookup(ibtc miss) %lu, syscall %lu\n",
+            "  exits: link %lu, lookup(ibtc miss) %lu, syscall %lu\n"
+            "  tier-2 regions      : %lu\n",
             (unsigned long)s.blocks_t1, (unsigned long)s.blocks_t2, (unsigned long)s.guest_insts_translated,
             s.blocks_t1 ? (double)s.guest_insts_translated / s.blocks_t1 : 0.0, (unsigned long)s.host_bytes,
             s.guest_insts_translated ? (double)s.host_bytes / s.guest_insts_translated : 0.0, s.translate_ns / 1e6,
             s.blocks_t1 ? (double)s.translate_ns / s.blocks_t1 : 0.0, (unsigned long)s.exits_link,
-            (unsigned long)s.exits_lookup, (unsigned long)s.exits_syscall);
+            (unsigned long)s.exits_lookup, (unsigned long)s.exits_syscall, (unsigned long)s.regions);
 }
 
 }  // namespace xef

@@ -12,6 +12,7 @@ struct Stats {
     u64 host_bytes = 0;
     u64 translate_ns = 0;
     u64 exits_link = 0, exits_lookup = 0, exits_syscall = 0;
+    u64 regions = 0;
 };
 extern Stats g_stats;
 
@@ -22,6 +23,7 @@ inline u64 stats_now() {
 }
 void stats_print();
 void profile_start();
+void profile_sample(u8* rip);
 void profile_report();
 
 }  // namespace xef

@@ -57,7 +57,6 @@ static u8 sahf_byte(u32 nzcv) {
 }
 
 namespace t1 {
-constexpr Reg T1::kTemps[3];
 
 
 // ------------------------------------------------------------------ analysis
@@ -118,6 +117,21 @@ void T1::analyze() {
                  I(v - 1).b == in.b && !vi_[v - 1].dead)
             x.rres = (Val)(v - 1);
         i32 L = x.last;
+        // do all consumers only need N/Z? then the result value alone suffices
+        bool full = in.op != Op::FlagsLogic && !x.rres;
+        if (!full && in.op != Op::FlagsLogic) {
+            if (live_out_ && fid(v) == final_flags_) full = true;
+            for (int u = v + 1; u < n && !full; u++) {
+                const Inst& c = I(u);
+                if (vi_[u].dead || c.op == Op::SetFlags) continue;
+                bool uses_f = false;
+                for_operands(c, [&](Val o) { if (o == v) uses_f = true; });
+                if (!uses_f) continue;
+                bool cond_ok = (c.op == Op::ExitCond || c.op == Op::Select || c.op == Op::VSelect) &&
+                               (c.aux == ir::EQ || c.aux == ir::NE || c.aux == ir::MI || c.aux == ir::PL);
+                if (!cond_ok) full = true;
+            }
+        }
         auto extend = [&](Val o) {
             while (o) {
                 if (vi_[o].last < L) vi_[o].last = L;
@@ -125,8 +139,10 @@ void T1::analyze() {
                 o = I(o).a;
             }
         };
-        if (in.a) extend(in.a);
-        if (in.b) extend(in.b);
+        if (full || in.op == Op::FlagsLogic) {
+            if (in.a) extend(in.a);
+            if (in.b) extend(in.b);
+        }
         if (x.rres) extend(x.rres);
     }
 
@@ -156,12 +172,12 @@ void T1::analyze() {
 
 Reg T1::alloc_temp(Reg prefer) {
     if (prefer != NOREG && !owner_[prefer] && !(pinned_ & (1 << prefer))) return prefer;
-    for (Reg r : kTemps)
+    for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true)
         if (!owner_[r] && !(pinned_ & (1 << r))) return r;
     // evict: prefer values with a valid home (free), else furthest last use
     Reg best = NOREG;
     int best_score = -1;
-    for (Reg r : kTemps) {
+    for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) {
         if (pinned_ & (1 << r)) continue;
         Val o = owner_[r];
         int score = vi_[o].last + (vi_[o].home >= 0 ? 100000 : 0);
@@ -175,6 +191,7 @@ Reg T1::alloc_temp(Reg prefer) {
             if (pinned_ & (1 << r)) continue;
             int g = -1;
             for (int k = 0; k < 32; k++) if (host(k) == r) g = k;
+            if (g < 0) continue;
             as_.mov(8, gmem(g), r);
             borrowed_ |= 1 << r;
             pinned_ |= 1 << r;
@@ -245,7 +262,7 @@ Opnd T1::opnd(Val v, bool allow_mem, bool allow_imm, int size) {
     }
     // materialize into a temp register
     Reg t = alloc_temp();
-    if (x.k == L_GMEM) as_.mov(8, t, gmem(x.g));
+    if (x.k == L_GMEM) { as_.mov(8, t, gmem(x.g)); x.home = (i8)x.g; }
     else if (x.k == L_SPILL) { as_.mov(8, t, mem(R15, XEF_ST(spill) + x.slot * 8)); spill_used_ &= ~(1u << x.slot); }
     else fatal("codegen: bad loc");
     assign_reg(r, t);
@@ -330,7 +347,7 @@ Reg T1::dest_for(Val v, int size) {
 
 void T1::finish_def(Val v, Reg r) {
     // r is either a temp (owned) or a mapped guest host register (dest hint)
-    bool is_temp = (r == RAX || r == RCX || r == R11) || (borrowed_ & (1 << r));
+    bool is_temp = is_temp_reg(r) || (borrowed_ & (1 << r));
     if (is_temp) assign_reg(v, r);
     else {
         // value now lives in the guest register's host register; the following SetReg is a no-op
@@ -385,6 +402,12 @@ bool T1::run() {
         VI& x = vi_[v];
         if (x.k == L_REG && x.last <= v && owner_[x.reg] == v) owner_[x.reg] = 0;
         if (x.k == L_XMM && x.last <= v && xowner_[x.reg] == v) xowner_[x.reg] = 0;
+    }
+    // region exits: transfer back to the canonical mapping, then a normal patchable exit
+    for (int i = 0; i < nrstubs_; i++) {
+        as_.bind(rstubs_[i].l);
+        emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, false);
+        raw_exit_jmp(rstubs_[i].target);
     }
     // link stubs (cold)
     for (int i = 0; i < nstubs_; i++) {
@@ -1441,10 +1464,9 @@ void T1::emit_sys(Val v) {
 void T1::emit_call_c(void* fn, Val v, Val a, Val b, u64 imm) {
     // load arguments into temps first (they may alias registers we are about to clobber)
     pin(a); pin(b);
-    for (Reg r : kTemps) if (owner_[r] && !(pinned_ & (1 << r))) evict(r);
+    for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) if (owner_[r] && !(pinned_ & (1 << r))) evict(r);
     for (int x = 0; x < 16; x++) if (xowner_[x] && vi_[xowner_[x]].last > cur_) evict_x(x);
-    static const int caller_saved_guests[] = {0, 1, 2, 3, 4, 5};
-    for (int g : caller_saved_guests) as_.mov(8, gmem(g), host(g));
+    save_caller_saved_guests();
     // arguments: fetch from current locations (registers hold correct values still)
     // move to rcx/r11 staging to avoid clobber conflicts
     if (a) { Opnd o = opnd(a, true, true, 8); emit_mov_opnd(8, RAX, o); as_.push(RAX); }
@@ -1457,8 +1479,8 @@ void T1::emit_call_c(void* fn, Val v, Val a, Val b, u64 imm) {
     eflags_ = 0;
     as_.mov_imm(RAX, (u64)fn);
     as_.call(RAX);
-    for (int g : caller_saved_guests) as_.mov(8, host(g), gmem(g));
-    for (Reg r : kTemps) owner_[r] = 0;
+    restore_caller_saved_guests();
+    for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) owner_[r] = 0;
     if (v) {
         Reg d = alloc_temp(RAX);
         if (d != RAX) as_.mov(8, d, RAX);
@@ -1471,7 +1493,7 @@ void T1::emit_terminator(Val v) {
     // every other value is dead now; release temps not holding the operand
     {
         Val keep = in.a ? resolve(in.a) : 0;
-        for (Reg r : kTemps) if (owner_[r] && owner_[r] != keep) owner_[r] = 0;
+        for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) if (owner_[r] && owner_[r] != keep) owner_[r] = 0;
     }
     // All terminators: guest NZCV must be in EFLAGS.
     auto ensure_flags = [&]() { if (live_out_ && final_flags_ != eflags_) need_flags(final_flags_); };
@@ -1601,12 +1623,21 @@ void T1::emit_terminator(Val v) {
 
 }  // namespace t1
 
-bool emit_tier1(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out) {
+void emit_region_xfer(Assembler& as, const RegionXfer* x, int n, bool enter) {
+    for (int i = 0; i < n; i++) {
+        const RegionXfer& r = x[i];
+        int from = enter ? r.g_canon : r.g_region, to = enter ? r.g_region : r.g_canon;
+        if (from >= 0) as.mov(8, mem(R15, st_x(from)), r.h);
+        if (to >= 0) as.mov(8, r.h, mem(R15, st_x(to)));
+    }
+}
+
+bool emit_tier1(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out, const CodegenCtx* ctx) {
     using t1::T1;
     static thread_local T1* t = nullptr;
     // T1 is large (per-value table); allocate once per thread
     alignas(T1) static thread_local u8 storage[sizeof(T1)];
-    t = new (storage) T1(b, as, meta, out);
+    t = new (storage) T1(b, as, meta, out, ctx);
     as.avx = g_host.avx;
     bool ok = t->run();
     out.size = as.size();

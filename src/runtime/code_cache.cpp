@@ -73,19 +73,21 @@ IbtcEntry* CodeCache::new_ibtc() {
 }
 
 void CodeCache::register_block(BlockMeta* b) {
-    if (nby_host_ == cap_by_host_) {
-        size_t nc = cap_by_host_ ? cap_by_host_ * 2 : 65536;
-        void* p = mmap(nullptr, nc * sizeof(BlockMeta*), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // fixed-size index (no reallocation: read lock-free from the SIGPROF sampler)
+    if (!by_host_) {
+        cap_by_host_ = 1 << 24;
+        void* p = mmap(nullptr, cap_by_host_ * sizeof(BlockMeta*), PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (p == MAP_FAILED) fatal("block index alloc");
-        if (by_host_) { memcpy(p, by_host_, nby_host_ * sizeof(BlockMeta*)); munmap(by_host_, cap_by_host_ * sizeof(BlockMeta*)); }
         by_host_ = (BlockMeta**)p;
-        cap_by_host_ = nc;
     }
-    by_host_[nby_host_++] = b;
+    if (nby_host_ >= cap_by_host_) fatal("block index full");
+    by_host_[nby_host_] = b;
+    __atomic_store_n(&nby_host_, nby_host_ + 1, __ATOMIC_RELEASE);
 }
 
 BlockMeta* CodeCache::find_by_host(const u8* p) const {
-    size_t lo = 0, hi = nby_host_;
+    size_t lo = 0, hi = __atomic_load_n(&nby_host_, __ATOMIC_ACQUIRE);
     while (lo < hi) {
         size_t mid = (lo + hi) / 2;
         if (by_host_[mid]->code <= p) lo = mid + 1; else hi = mid;

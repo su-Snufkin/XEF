@@ -10,6 +10,7 @@ struct Options {
     bool dump_code = false;
     bool stats = false;
     bool profile = false;
+    bool tier2 = true;
     int max_block_insts = 128;
 };
 extern Options g_opt;

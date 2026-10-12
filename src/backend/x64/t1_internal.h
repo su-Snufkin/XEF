@@ -10,8 +10,6 @@ namespace xef::backend {
 
 using namespace x64;
 using namespace ir;
-using regmap::host;
-using regmap::mapped;
 using x64::Cond;
 
 Cond x86_cond(ir::Cond c);
@@ -46,7 +44,14 @@ struct Opnd {
 
 class T1 {
 public:
-    T1(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out) : b_(b), as_(as), meta_(meta), out_(out) {}
+    T1(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out, const CodegenCtx* ctx)
+        : b_(b), as_(as), meta_(meta), out_(out), ctx_(ctx) {
+        if (ctx && ctx->map) {
+            map_ = ctx->map;
+            ntemps_ = 0;
+            for (int i = 0; i < ctx->ntemps; i++) temps_[ntemps_++] = ctx->temps[i];
+        }
+    }
     bool run();
 
 private:
@@ -54,6 +59,7 @@ private:
     Assembler& as_;
     BlockMeta* meta_;
     CodegenOut& out_;
+    const CodegenCtx* ctx_;
     VI vi_[kMaxBlockInsts];
     Val owner_[16] = {};        // owned temp regs: which value holds it
     Val xowner_[16] = {};
@@ -87,7 +93,22 @@ private:
     ConstFix consts_[256];
     int nconsts_ = 0;
 
-    static constexpr Reg kTemps[3] = {RAX, RCX, R11};
+    // register model (canonical for tier 1, region-specific for tier 2)
+    const Reg* map_ = regmap::kMap;
+    Reg temps_[12] = {RAX, RCX, R11};
+    int ntemps_ = 3;
+    Reg host(int g) const { return map_[g]; }
+    bool mapped(int g) const { return map_[g] != NOREG; }
+    bool is_temp_reg(Reg r) const { for (int i = 0; i < ntemps_; i++) if (temps_[i] == r) return true; return false; }
+    static bool caller_saved(Reg r) {
+        return r == RAX || r == RCX || r == RDX || r == RSI || r == RDI || r == R8 || r == R9 || r == R10 || r == R11;
+    }
+    void save_caller_saved_guests() {
+        for (int g = 0; g < 32; g++) if (mapped(g) && caller_saved(host(g))) as_.mov(8, gmem(g), host(g));
+    }
+    void restore_caller_saved_guests() {
+        for (int g = 0; g < 32; g++) if (mapped(g) && caller_saved(host(g))) as_.mov(8, host(g), gmem(g));
+    }
 
     const Inst& I(Val v) const { return b_.insts[v]; }
     static int sz(Type t) { return t == Type::I32 ? 4 : 8; }
@@ -245,14 +266,43 @@ private:
         stubs_[nstubs_++].e = e;
         return e;
     }
-    void exit_jmp(GuestAddr target) {
+    struct RegionStub { Label l; GuestAddr target; };
+    RegionStub rstubs_[64];
+    int nrstubs_ = 0;
+    bool internal(GuestAddr t) const { return ctx_ && ctx_->region && ctx_->is_internal(ctx_->user, t); }
+    void raw_exit_jmp(GuestAddr target) {
         as_.align_field(1, 4);
         ExitInfo* e = new_exit(EK_JMP, target);
         as_.db(0xE9);
         e->site = as_.cur();
         as_.dd(0);
     }
+    void add_fix(GuestAddr target) {
+        XEF_ASSERT(out_.nfixes < 64);
+        out_.fixes[out_.nfixes].field = as_.cur() - 4;
+        out_.fixes[out_.nfixes].target = target;
+        out_.nfixes++;
+    }
+    void exit_jmp(GuestAddr target) {
+        if (ctx_ && ctx_->region) {
+            if (internal(target)) { as_.db(0xE9); as_.dd(0); add_fix(target); return; }
+            XEF_ASSERT(nrstubs_ < 64);
+            RegionStub& r = rstubs_[nrstubs_++];
+            r.l = Label(); r.target = target;
+            as_.jmp(r.l);
+            return;
+        }
+        raw_exit_jmp(target);
+    }
     void exit_jcc(Cond c, GuestAddr target) {
+        if (ctx_ && ctx_->region) {
+            if (internal(target)) { as_.db(0x0F); as_.db((u8)(0x80 | c)); as_.dd(0); add_fix(target); return; }
+            XEF_ASSERT(nrstubs_ < 64);
+            RegionStub& r = rstubs_[nrstubs_++];
+            r.l = Label(); r.target = target;
+            as_.jcc(c, r.l);
+            return;
+        }
         as_.align_field(2, 4);
         ExitInfo* e = new_exit(EK_JCC, target);
         as_.db(0x0F); as_.db((u8)(0x80 | c));
@@ -290,7 +340,7 @@ private:
         as_.jmp(mem(R11, 8));
     }
     void record_pc() {
-        if (npc_ < 1024) {
+        if (npc_ < 1024) {  // host->guest pc map for faults
             pcmap_[npc_].host_off = (u32)as_.offset();
             pcmap_[npc_].guest_off = b_.pc_off[cur_];
             npc_++;

@@ -157,14 +157,13 @@ void T1::zero_upper(Xmm x, int bytes) {
 
 // Spill state for a C call: operands are written by the caller beforehand.
 void T1::call_prepare(Val, Val, Val) {
-    for (Reg r : kTemps) if (owner_[r] && vi_[owner_[r]].last > cur_) evict(r);
-    for (Reg r : kTemps) owner_[r] = 0;
+    for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) if (owner_[r] && vi_[owner_[r]].last > cur_) evict(r);
+    for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) owner_[r] = 0;
     for (int x = 0; x < 16; x++) {
         if (xowner_[x] && vi_[xowner_[x]].last > cur_) evict_x(x);
         xowner_[x] = 0;
     }
-    static const int caller_saved_guests[] = {0, 1, 2, 3, 4, 5};
-    for (int g : caller_saved_guests) as_.mov(8, gmem(g), host(g));
+    save_caller_saved_guests();
     if (eflags_ && flags_needed_after(cur_)) {
         as_.pushfq();
         as_.pop(mem(R15, XEF_ST(flags_spill)));
@@ -188,8 +187,7 @@ void T1::emit_vec_helper(Val v) {
     as_.mov_imm(RDX, in.imm);
     as_.mov_imm(RAX, (u64)&xef_vec_helper);
     as_.call(RAX);
-    static const int caller_saved_guests[] = {0, 1, 2, 3, 4, 5};
-    for (int g : caller_saved_guests) as_.mov(8, host(g), gmem(g));
+    restore_caller_saved_guests();
     xpinned_ = 0;
     Xmm d = new_x(v);
     as_.movdqu_load(d, mem(R15, XEF_ST(vtmp) + 3 * 16));
@@ -399,10 +397,9 @@ void T1::emit_ftoi(Val v) {
         // stash into a spill-free path: use emit_call_c with a synthetic operand: move to rax first
         u64 desc = (u64)fs | ((u64)rnd << 8) | ((u64)sgn << 12) | ((u64)is << 16);
         // emit_call_c takes Val operands; build the call by hand
-        for (Reg r : kTemps) if (r != t && owner_[r] && vi_[owner_[r]].last > cur_) evict(r);
+        for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) if (r != t && owner_[r] && vi_[owner_[r]].last > cur_) evict(r);
         for (int xx = 0; xx < 16; xx++) { if (xowner_[xx] && vi_[xowner_[xx]].last > cur_) evict_x(xx); xowner_[xx] = 0; }
-        static const int cs[] = {0, 1, 2, 3, 4, 5};
-        for (int g : cs) as_.mov(8, gmem(g), host(g));
+        save_caller_saved_guests();
         if (eflags_ && flags_needed_after(cur_)) { as_.pushfq(); as_.pop(mem(R15, XEF_ST(flags_spill))); spilled_flags_ = eflags_; }
         eflags_ = 0;
         as_.mov(8, RDI, t);
@@ -410,8 +407,8 @@ void T1::emit_ftoi(Val v) {
         as_.mov_imm(RDX, in.imm);
         as_.mov_imm(RAX, (u64)&xef_ftoi_helper);
         as_.call(RAX);
-        for (int g : cs) as_.mov(8, host(g), gmem(g));
-        for (Reg r : kTemps) owner_[r] = 0;
+        restore_caller_saved_guests();
+        for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) owner_[r] = 0;
         pinned_ = 0;
         Reg d = alloc_temp(RAX);
         if (d != RAX) as_.mov(8, d, RAX);
@@ -485,10 +482,9 @@ void T1::emit_itof(Val v) {
         Reg t = alloc_temp(); pinned_ |= 1 << t;
         if (src64) as_.mov(8, t, r); else as_.mov(4, t, r);
         u64 desc = (u64)fs | ((u64)sgn << 12) | ((u64)(src64 ? 8 : 4) << 16);
-        for (Reg rr : kTemps) if (rr != t && owner_[rr] && vi_[owner_[rr]].last > cur_) evict(rr);
+        for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg rr = temps_[ti_]; true) if (rr != t && owner_[rr] && vi_[owner_[rr]].last > cur_) evict(rr);
         for (int xx = 0; xx < 16; xx++) { if (xowner_[xx] && vi_[xowner_[xx]].last > cur_) evict_x(xx); xowner_[xx] = 0; }
-        static const int cs[] = {0, 1, 2, 3, 4, 5};
-        for (int g : cs) as_.mov(8, gmem(g), host(g));
+        save_caller_saved_guests();
         if (eflags_ && flags_needed_after(cur_)) { as_.pushfq(); as_.pop(mem(R15, XEF_ST(flags_spill))); spilled_flags_ = eflags_; }
         eflags_ = 0;
         as_.mov(8, RDI, t);
@@ -496,8 +492,8 @@ void T1::emit_itof(Val v) {
         as_.mov_imm(RDX, in.imm);
         as_.mov_imm(RAX, (u64)&xef_itof_helper);
         as_.call(RAX);
-        for (int g : cs) as_.mov(8, host(g), gmem(g));
-        for (Reg rr : kTemps) owner_[rr] = 0;
+        restore_caller_saved_guests();
+        for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg rr = temps_[ti_]; true) owner_[rr] = 0;
         pinned_ = 0;
         xpinned_ = 0;
         Xmm d = new_x(v);
