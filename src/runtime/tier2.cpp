@@ -222,7 +222,10 @@ static bool compile_region(GuestAddr head) {
     entry->code_size = (u32)eas.size();
     entry->region = ri;
     ri->entry = entry;
-    {   // signal-delivery exit for region-internal block entries
+    g_cache.commit_code(ecode, eas.size());
+    g_cache.register_block(entry);
+    {   // signal-delivery exit for region-internal block entries. alloc_code() only reserves, so
+        // this must come after the entry stub is committed or the two would overlap.
         u8* sc = g_cache.alloc_code(1024);
         Assembler sas(sc, 1024);
         backend::emit_region_xfer(sas, xfer, nxfer, false);
@@ -230,8 +233,6 @@ static bool compile_region(GuestAddr head) {
         g_cache.commit_code(sc, sas.size());
         ri->sig_exit = sc;
     }
-    g_cache.commit_code(ecode, eas.size());
-    g_cache.register_block(entry);
 
     u8* code_of[kMaxRegionBlocks];
     struct Fix { u8* field; GuestAddr target; };
