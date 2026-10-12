@@ -54,6 +54,12 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     ir::Block& blk = *t->blk;
     a64::TranslateOpts topt;
     topt.max_insts = g_opt.max_block_insts;
+    {   // debugging aid: XEF_SPLIT=lo-hi translates blocks starting there one instruction at a time
+        static u64 lo = 1, hi = 0;
+        static bool init = [] { if (const char* e = getenv("XEF_SPLIT")) sscanf(e, "%lx-%lx", &lo, &hi); return true; }();
+        (void)init;
+        if (pc >= lo && pc < hi) topt.max_insts = 1;
+    }
     if (!a64::guest_readable(pc)) {
         char lr[512];
         CpuState* st = t->st;

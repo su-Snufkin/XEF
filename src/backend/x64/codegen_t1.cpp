@@ -81,7 +81,8 @@ void T1::analyze() {
     // backward: liveness, DCE, alias last-use propagation
     // vset_later[g]: guest V register g is written again later in the block with nothing in
     // between that reads its CpuState slot or may fault (a signal handler must see it)
-    bool vset_later[32] = {};
+    // set_later[g]: the same for guest X registers kept in CpuState (not in a host register)
+    bool vset_later[32] = {}, set_later[32] = {};
     for (int v = n - 1; v >= 1; v--) {
         const Inst& in = I(v);
         VI& x = vi_[v];
@@ -91,11 +92,21 @@ void T1::analyze() {
             vset_later[in.aux & 31] = true;
             break;
         case Op::VGet: vset_later[in.aux & 31] = false; break;
-        case Op::Load: case Op::Store: case Op::VLoad: case Op::VStore: case Op::LoadExcl: case Op::StoreExcl:
-        case Op::AtomicRMW: case Op::Cas: case Op::Helper:
-            memset(vset_later, 0, sizeof vset_later);
+        case Op::SetReg:
+            if (in.aux < 32 && !mapped(in.aux)) {
+                if (set_later[in.aux]) { x.dead = true; continue; }
+                set_later[in.aux] = true;
+            }
             break;
-        default: break;
+        case Op::GetReg: if (in.aux < 32) set_later[in.aux] = false; break;
+        case Op::Load: case Op::Store: case Op::VLoad: case Op::VStore: case Op::LoadExcl: case Op::StoreExcl:
+        case Op::AtomicRMW: case Op::Cas: case Op::Helper: case Op::Barrier: case Op::GetSys: case Op::SetSys:
+            memset(vset_later, 0, sizeof vset_later);
+            memset(set_later, 0, sizeof set_later);
+            break;
+        default:
+            if (is_terminator(in.op)) { memset(vset_later, 0, sizeof vset_later); memset(set_later, 0, sizeof set_later); }
+            break;
         }
         if (!has_side_effects(in) && x.uses == 0 && in.op != Op::SetFlags) {
             // a flags value that is the final guest flags is live at exit
@@ -211,6 +222,13 @@ Reg T1::alloc_temp(Reg prefer) {
             as_.mov(8, gmem(g), r);
             borrowed_ |= 1 << r;
             pinned_ |= 1 << r;
+            // values that read guest g from r (including not yet touched GetRegs) read the saved copy
+            for (int v = 1; v < b_.n; v++) {
+                VI& x = vi_[v];
+                if (x.dead || x.last < cur_) continue;
+                bool untouched = x.k == L_NONE && v <= cur_ && I(v).op == Op::GetReg && I(v).aux == g;
+                if (untouched || (x.k == L_GREG && x.reg == r)) { x.k = L_GMEM; x.g = (u8)g; }
+            }
             return r;
         }
         fatal("codegen: out of temporaries at ir %d", cur_);
@@ -299,6 +317,7 @@ Reg T1::to_reg(Val v, int size) {
 }
 
 void T1::load_into(Reg dst, Val v, int size) {
+    if (is_c(v) && size == 8) { as_.mov_imm(dst, cv(v)); return; }   // no temporary for 64-bit constants
     Opnd o = opnd(v, true, true, size);
     emit_mov_opnd(size, dst, o);
 }
