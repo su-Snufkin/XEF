@@ -21,6 +21,9 @@ with AVX2 here, or the GPU driver on a real machine.
 | glmark2 (build, phong, texture, refract) | 174 | 387 | 350 |
 | SuperTuxKart, Lighthouse race | 2.2 FPS | 9.4 FPS | 7.4 FPS |
 
+Neverball, Extreme Tux Racer, OpenArena, Minetest, Warzone 2100 and glxgears all run with
+`--host-gl` (`docs/screenshots/hostgl-games.png`).
+
 Limits: callbacks from the host into guest code (`glDebugMessageCallback`) are dropped; EGL is
 not thunked yet (programs using EGL keep the guest Mesa); X errors on the host connection are
 ignored instead of reaching the guest's handler.
