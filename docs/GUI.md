@@ -21,14 +21,20 @@ with AVX2 here, or the GPU driver on a real machine.
 | glmark2 (build, phong, texture, refract) | 174 | 387 | 350 |
 | SuperTuxKart, Lighthouse race | 2.2 FPS | 9.4 FPS | 7.4 FPS |
 
-Neverball, Extreme Tux Racer, OpenArena, Minetest, Warzone 2100 and glxgears all run with
-`--host-gl` (`docs/screenshots/hostgl-games.png`), and so does Blender 4.0 (libepoxy, GL 4.5 core:
-`docs/screenshots/blender-hostgl.png`), Stellarium 24.4 (Qt 6, 13 FPS:
-`docs/screenshots/stellarium-hostgl.png`) and Godot 3.5 — the editor and a GLES3 3D scene with
-shadows at 28 FPS, where the time goes to the host's llvmpipe, not to translated code
-(`docs/screenshots/godot3-hostgl.png`). Red Eclipse (GL 4.5 core) plays a bot match (`redeclipse "-xstart abuse 2 0"`) and Trigger
-Rally races (driven with xdotool). TORCS races against four AI cars at 25 FPS; MegaGlest,
-Armagetron Advanced and X-Moto run too (`docs/screenshots/hostgl-games2.jpg`) (`docs/screenshots/redeclipse-hostgl.png`, `trigger-rally-hostgl.png`).
+Verified with `--host-gl`:
+
+| Program | Notes | Screenshot |
+|---|---|---|
+| Neverball, Extreme Tux Racer, OpenArena, Minetest, Warzone 2100, glxgears | | `hostgl-games.png` |
+| Blender 4.0 | libepoxy, GL 4.5 core | `blender-hostgl.png` |
+| Stellarium 24.4 | Qt 6, 17 FPS | `stellarium-hostgl.png` |
+| Godot 3.5 | editor; GLES3 3D scene with shadows at 28 FPS (time goes to the host's llvmpipe) | `godot3-hostgl.png` |
+| Red Eclipse 1.6 | GL 4.5 core, bot match: `redeclipse "-xstart abuse 2 0"` | `redeclipse-hostgl.png` |
+| Trigger Rally | race (driven with xdotool) | `trigger-rally-hostgl.png` |
+| TORCS | quick race against four AI cars, 25 FPS | `hostgl-games2.jpg` |
+| MegaGlest, Armagetron Advanced, X-Moto | menus / animated 3D menu | `hostgl-games2.jpg` |
+
+(screenshots in `docs/screenshots/`)
 
 EGL (X11 platform) and GLES go through the same shim (`libEGL.so.1`, `libGLESv2.so.2`,
 `libGLESv1_CM.so.1` are redirected too): eglinfo, eglgears_x11, and WebGL in WebKitGTK (22 → 41
