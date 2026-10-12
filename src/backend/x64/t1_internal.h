@@ -1,6 +1,7 @@
 // XEF — tier-1 code generator internals (shared by codegen_t1*.cpp).
 #pragma once
 #include <cstddef>
+#include <new>
 
 #include "backend/x64/codegen.h"
 #include "common/cpu_features.h"
@@ -46,6 +47,7 @@ class T1 {
 public:
     T1(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out, const CodegenCtx* ctx)
         : b_(b), as_(as), meta_(meta), out_(out), ctx_(ctx) {
+        for (int v = 0; v < b.n; v++) new (&vi_[v]) VI();
         if (ctx && ctx->map) {
             map_ = ctx->map;
             ntemps_ = 0;
@@ -60,7 +62,10 @@ private:
     BlockMeta* meta_;
     CodegenOut& out_;
     const CodegenCtx* ctx_;
-    VI vi_[kMaxBlockInsts];
+    // Only the first b_.n entries are used: constructing all kMaxBlockInsts per block was ~10% of
+    // run time for programs that translate a lot (e.g. Mesa llvmpipe JIT-ing shaders).
+    alignas(VI) unsigned char vi_raw_[sizeof(VI) * kMaxBlockInsts];
+    VI* const vi_ = reinterpret_cast<VI*>(vi_raw_);
     Val owner_[16] = {};        // owned temp regs: which value holds it
     Val xowner_[16] = {};
     u16 pinned_ = 0;            // host regs that must not be evicted in current inst

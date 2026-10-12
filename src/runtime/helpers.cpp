@@ -5,6 +5,7 @@
 #include "ir/ir.h"
 #include "runtime/code_cache.h"
 #include "runtime/cpu_state.h"
+#include "runtime/dispatch.h"
 
 namespace xef {
 
@@ -35,7 +36,13 @@ u8* vconst_pool_get(u64 lo, u64 hi) {
     return p;
 }
 
+u64 g_vec_helper_calls[4096];   // per (op, log2 element size) when --stats
+
 extern "C" void xef_vec_helper(CpuState* st, u64 desc, u64 imm) {
+    if (g_opt.stats) {
+        u32 k = (u32)(desc & 0xffff) * 8 + (u32)__builtin_ctz(((desc >> 16) & 0xff) | 0x80);
+        __atomic_fetch_add(&g_vec_helper_calls[k & 4095], 1, __ATOMIC_RELAXED);
+    }
     V128 a, b, c, r;
     memcpy(&a, st->vtmp[0], 16);
     memcpy(&b, st->vtmp[1], 16);

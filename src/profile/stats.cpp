@@ -1,3 +1,7 @@
+#include <map>
+#include <string>
+#include <cstring>
+#include <unistd.h>
 #include "profile/stats.h"
 
 #include <signal.h>
@@ -7,8 +11,10 @@
 #include <algorithm>
 #include <vector>
 
+#include "ir/ir.h"
 #include "runtime/code_cache.h"
 
+extern "C" char __executable_start, __etext;
 namespace xef {
 
 Stats g_stats;
@@ -51,6 +57,43 @@ void profile_report() {
         fprintf(stderr, "  %5.1f%%  guest %#lx..%#lx  (%d insns, host %u bytes @%p)\n", 100.0 * counts[i].second / n,
                 (unsigned long)b->start, (unsigned long)b->end, (int)((b->end - b->start) / 4), b->code_size, b->code);
     }
+    // outside translated code: XEF functions via addr2line, everything else by mapping
+    std::map<std::string, int> where;
+    std::vector<u64> own;
+    u64 lo = (u64)&__executable_start, hi = (u64)&__etext;
+    for (int i = 0; i < n; i++) {
+        u64 p = g_samples[i];
+        if (g_cache.contains((u8*)p)) continue;
+        if (p >= lo && p < hi) { own.push_back(p - lo); continue; }
+        char d[512];
+        describe_addr(p, d, sizeof d);
+        const char* paren = strchr(d, '(');
+        std::string lib = paren ? std::string(paren + 1) : std::string("?");
+        size_t plus = lib.rfind('+');
+        if (plus != std::string::npos) lib.resize(plus);
+        where[lib]++;
+    }
+    if (!own.empty()) {
+        char cmd[256];
+        snprintf(cmd, sizeof cmd, "addr2line -f -C -e /proc/%d/exe > /tmp/xef-prof-sym.txt", (int)getpid());
+        if (FILE* f = popen(cmd, "w")) {
+            for (u64 o : own) fprintf(f, "%#lx\n", (unsigned long)o);
+            pclose(f);
+            if (FILE* r = fopen("/tmp/xef-prof-sym.txt", "r")) {
+                char fn[1024], loc[1024];
+                while (fgets(fn, sizeof fn, r) && fgets(loc, sizeof loc, r)) {
+                    fn[strcspn(fn, "\n")] = 0;
+                    where[std::string("xef: ") + fn]++;
+                }
+                fclose(r);
+            }
+        }
+    }
+    std::vector<std::pair<std::string, int>> w(where.begin(), where.end());
+    std::sort(w.begin(), w.end(), [](auto& a, auto& b) { return a.second > b.second; });
+    fprintf(stderr, "  outside translated code:\n");
+    for (size_t i = 0; i < w.size() && i < 20; i++)
+        fprintf(stderr, "  %5.1f%%  %s\n", 100.0 * w[i].second / n, w[i].first.c_str());
 }
 
 void stats_print() {
@@ -70,6 +113,14 @@ void stats_print() {
             s.blocks_t1 ? (double)s.translate_ns / s.blocks_t1 : 0.0, (unsigned long)s.exits_link,
             (unsigned long)s.exits_lookup, (unsigned long)s.exits_syscall, (unsigned long)s.regions, (unsigned long)s.regions_demoted,
             (unsigned long)s.invalidations);
+    extern u64 g_vec_helper_calls[4096];
+    std::vector<std::pair<u64, int>> vh;
+    for (int k = 0; k < 4096; k++) if (g_vec_helper_calls[k]) vh.push_back({g_vec_helper_calls[k], k});
+    std::sort(vh.begin(), vh.end(), [](auto& a, auto& b) { return a.first > b.first; });
+    if (!vh.empty()) fprintf(stderr, "  vector ops via C helper (op/esize: calls):\n");
+    for (size_t k = 0; k < vh.size() && k < 15; k++)
+        fprintf(stderr, "    %-12s e%d: %lu\n", xef::ir::vec_op_name((u16)(vh[k].second / 8)), 1 << (vh[k].second % 8),
+                (unsigned long)vh[k].first);
 }
 
 }  // namespace xef
