@@ -283,7 +283,7 @@ static bool compile_region(GuestAddr head) {
         meta->code_size = (u32)out.size;
         g_cache.commit_code(code, out.size);
         g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
-        if (g_opt.dump_code) {
+        if (g_opt.dump_code && g_opt.dump_wants(R.pcs[i])) {
             char path[64];
             snprintf(path, sizeof path, "/tmp/xef-t2-%lx.bin", (unsigned long)R.pcs[i]);
             if (FILE* f = fopen(path, "wb")) { fwrite(code, 1, out.size, f); fclose(f); }

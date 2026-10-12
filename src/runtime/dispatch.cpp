@@ -98,7 +98,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         if (g_cache.epoch.load(std::memory_order_seq_cst) == ep) break;
         lk.unlock();   // code was invalidated meanwhile: decode again
     }
-    if (g_opt.dump_ir) ir::dump(blk, stderr);
+    if (g_opt.dump_ir && g_opt.dump_wants(pc)) ir::dump(blk, stderr);
     if (BlockMeta* b = g_cache.lookup(pc)) return b;  // raced with another thread
     int nexits = backend::count_exits(blk);
     BlockMeta* meta = g_cache.alloc_meta(nexits);
@@ -114,7 +114,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     meta->tier = 1;
     g_cache.commit_code(code, out.size);
     g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
-    if (g_opt.dump_code) dump_code(code, out.size, pc);
+    if (g_opt.dump_code && g_opt.dump_wants(pc)) dump_code(code, out.size, pc);
     // link exits whose targets already exist
     for (int i = 0; i < out.nexits; i++) {
         ExitInfo* e = &meta->exits[i];

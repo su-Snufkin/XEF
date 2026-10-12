@@ -58,6 +58,10 @@ int main(int argc, char** argv, char** envp) {
         else if (a == "--") { i++; break; }
         else usage();
     }
+    if (const char* e = getenv("XEF_DUMP")) {   // --dump-ir / --dump-code only for blocks in [lo, hi)
+        unsigned long lo, hi;
+        if (sscanf(e, "%lx-%lx", &lo, &hi) == 2) { g_opt.dump_lo = lo; g_opt.dump_hi = hi; }
+    }
     if (i >= argc) usage();
     if (getenv("XEF_STATS")) g_opt.stats = true;
     if (getenv("XEF_HOST_GL")) g_host_gl = true;

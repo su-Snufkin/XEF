@@ -213,7 +213,7 @@ Reg T1::alloc_temp(Reg prefer) {
     if (best == NOREG) {
         // All temporaries are pinned by this instruction: borrow a mapped guest register.
         // Its guest value is saved to CpuState and restored after the instruction.
-        static const Reg cands[] = {RBP, RBX, R9, R8, R10, R12, R13, R14, RSI, RDI, RDX};
+        static const Reg cands[] = {R9, R8, R10, R13, R12, RBP, RBX, R14, RSI, RDI, RDX};   // rarest guests first
         for (Reg r : cands) {
             if (pinned_ & (1 << r)) continue;
             int g = -1;

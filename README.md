@@ -49,6 +49,7 @@ SuperTuxKart, Warzone 2100, GIMP, WebKitGTK with WebGL, vkcube, ...) with screen
 | `--dump-ir`, `--dump-code` | IR / host code of every block |
 | `XEF_VERIFY=lo-hi` | debugging: check every scalar block starting in the range against a reference IR interpreter |
 | `XEF_SPLIT=lo-hi[,lo-hi]` | debugging: translate blocks starting there one instruction at a time (bisecting translation bugs) |
+| `XEF_DUMP=lo-hi` | limit `--dump-ir` / `--dump-code` to blocks starting in the range |
 | `XEF_STRICT_FLAGS=1` | do not assume NZCV is dead at calls/returns (hand-written asm passing flags) |
 
 ## Documentation
