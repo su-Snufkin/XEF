@@ -5,6 +5,26 @@ own Mesa (llvmpipe: LLVM JIT-compiles shaders to AArch64 code at run time, which
 translates; this relies on code invalidation via `IC IVAU`), and the window goes to the host
 X server over the normal X11 socket.
 
+## Native host OpenGL (`--host-gl`)
+
+With `--host-gl` (or `XEF_HOST_GL=1`) the guest's `libGL.so.1` / `libGLX.so.0` / `libOpenGL.so.0`
+are replaced by a small AArch64 shim (`tools/build_thunks.sh` → `build/thunks/libGL.so.1`). Every
+GL/GLX entry point (≈3100, generated from the host's GL headers by `tools/gen_glthunks.py`) is a
+stub `mov x17,#id; hlt #0x5846; ret`; XEF turns it into a call of the host's native libGL with
+the arguments moved from AAPCS64 to SysV. Pointers pass unchanged (shared address space, same
+LP64 layouts). GLX runs on a host Xlib connection to the same X server: window XIDs are
+server-side, so the host renders into the guest's windows. Rendering is then native — llvmpipe
+with AVX2 here, or the GPU driver on a real machine.
+
+| Workload | guest Mesa (emulated) | `--host-gl` | native x86 on the same host |
+|---|---|---|---|
+| glmark2 (build, phong, texture, refract) | 174 | 387 | 350 |
+| SuperTuxKart, Lighthouse race | 2.2 FPS | 9.4 FPS | 7.4 FPS |
+
+Limits: callbacks from the host into guest code (`glDebugMessageCallback`) are dropped; EGL is
+not thunked yet (programs using EGL keep the guest Mesa); X errors on the host connection are
+ignored instead of reaching the guest's handler.
+
 ## Setup
 
 ```sh

@@ -1,5 +1,6 @@
 // XEF — guest threads and processes.
 #include "os/thread.h"
+#include "thunks/thunks.h"
 
 #include <errno.h>
 #include <sys/mman.h>
@@ -170,6 +171,8 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
         if (strncmp(*e, "XEF_ROOTFS=", 11)) envp.push_back(*e);   // ours (below) must be the one seen
     std::string rootenv;
     if (!g_rootfs.empty()) { rootenv = "XEF_ROOTFS=" + g_rootfs; envp.push_back((char*)rootenv.c_str()); }
+    static char hostgl[] = "XEF_HOST_GL=1";
+    if (g_host_gl) envp.push_back(hostgl);
     envp.push_back(nullptr);
     std::string guest_exe = path;
     if (hdr[0] == '#' && hdr[1] == '!') {

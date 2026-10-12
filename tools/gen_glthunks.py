@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Generates the OpenGL/GLX host-thunk tables from the host's GL headers.
+
+Outputs:
+  src/thunks/gl_table.inc      host side: X(name, signature, flags) per function, id = position
+  thunks/gl_stubs.S            guest side: one exported AArch64 stub per function
+  thunks/gl_names.inc          guest side: {name, stub} table for glXGetProcAddress
+
+Signature: "<ret>:<args>", one letter per value (AAPCS64 -> SysV marshalling in src/thunks):
+  v void, i 32-bit int, l 64-bit int/pointer, b u8, c s8, s s16, S u16, f float, d double,
+  D Display* (replaced by the host connection).
+Flags: 1 = takes a callback (not forwarded), 2 = implemented by the guest shim (raw thunk only).
+
+usage: gen_glthunks.py [include-dir]   (default /usr/include)
+"""
+import os, re, sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+INC = sys.argv[1] if len(sys.argv) > 1 else '/usr/include'
+
+INT32 = {'GLenum', 'GLbitfield', 'GLuint', 'GLint', 'GLsizei', 'GLfixed', 'GLhandleARB', 'GLclampx', 'int',
+         'unsigned int', 'unsigned', 'Bool', 'Status', 'GLuint', 'GLXVideoDeviceNV', 'uint32_t', 'int32_t'}
+U8 = {'GLboolean', 'GLubyte', 'unsigned char'}
+S8 = {'GLbyte', 'GLchar', 'char', 'GLcharARB'}
+S16 = {'GLshort', 'short'}
+U16 = {'GLushort', 'GLhalf', 'GLhalfNV', 'GLhalfARB', 'unsigned short'}
+F32 = {'GLfloat', 'GLclampf', 'float'}
+F64 = {'GLdouble', 'GLclampd', 'double'}
+I64 = {'GLintptr', 'GLsizeiptr', 'GLintptrARB', 'GLsizeiptrARB', 'GLint64', 'GLuint64', 'GLint64EXT',
+       'GLuint64EXT', 'GLsync', 'GLvdpauSurfaceNV', 'GLeglImageOES', 'GLeglClientBufferEXT', 'long',
+       'unsigned long', 'int64_t', 'uint64_t', 'XID', 'GLXDrawable', 'GLXPixmap', 'GLXWindow',
+       'GLXPbuffer', 'GLXContextID', 'GLXFBConfigID', 'GLXVideoSourceSGIX', 'GLXFBConfigIDSGIX',
+       'GLXPbufferSGIX', 'Window', 'Pixmap', 'Font', 'Colormap', 'GLXContext', 'GLXFBConfig',
+       'GLXFBConfigSGIX', 'GLXVideoCaptureDeviceNV', 'GLXHyperpipeNetworkSGIX', '__GLXextFuncPtr',
+       'GLXVideoDeviceNV*', 'size_t', 'ssize_t', 'GLXFBConfig*'}
+CALLBACK = {'GLDEBUGPROC', 'GLDEBUGPROCARB', 'GLDEBUGPROCKHR', 'GLDEBUGPROCAMD', 'GLVULKANPROCNV'}
+# the guest's pending X requests must reach the server before these (drawables created by the guest)
+SYNC = {'glXMakeCurrent', 'glXMakeContextCurrent', 'glXMakeCurrentReadSGI', 'glXCreateWindow', 'glXCreatePixmap',
+        'glXCreateGLXPixmap', 'glXCreateGLXPixmapWithConfigSGIX', 'glXSwapBuffers'}
+# implemented in the guest shim (memory the guest frees with XFree, guest function pointers)
+SHIM = {'glXChooseVisual', 'glXGetVisualFromFBConfig', 'glXChooseFBConfig', 'glXGetFBConfigs',
+        'glXGetProcAddress', 'glXGetProcAddressARB', 'glXChooseFBConfigSGIX', 'glXGetVisualFromFBConfigSGIX'}
+
+def classify(t):
+    t = t.replace('const', ' ').replace('struct', ' ').strip()
+    t = re.sub(r'\s+', ' ', t)
+    if '*' in t:
+        base = t.replace('*', '').strip()
+        if base == 'Display' and t.count('*') == 1:
+            return 'D'
+        return 'l'
+    if t in CALLBACK:
+        return 'CB'
+    if t in INT32: return 'i'
+    if t in U8: return 'b'
+    if t in S8: return 'c'
+    if t in S16: return 's'
+    if t in U16: return 'S'
+    if t in F32: return 'f'
+    if t in F64: return 'd'
+    if t in I64: return 'l'
+    if t == 'void': return 'v'
+    return None
+
+def split_param(p):
+    p = p.strip()
+    if p in ('', 'void'): return None
+    p = re.sub(r'\[\s*\d*\s*\]', '*', p)              # arrays decay to pointers
+    m = re.match(r'(.*?)([A-Za-z_]\w*)$', p)
+    if m and m.group(1).strip() and not m.group(1).strip().endswith(('unsigned', 'const')):
+        return m.group(1)
+    return p                                           # unnamed parameter
+
+def parse(text, pattern):
+    out = []
+    for m in re.finditer(pattern, text, re.S):
+        ret, name, params = m.group(1), m.group(2), m.group(3)
+        out.append((name, ret, params))
+    return out
+
+funcs = {}
+order = []
+def add(name, ret, params):
+    if name in funcs: return
+    rc = classify(ret)
+    if rc is None or rc == 'D': rc = 'l'
+    args, flags = [], 0
+    for p in params.split(','):
+        t = split_param(p)
+        if t is None: continue
+        c = classify(t)
+        if c is None:
+            if '(' in p: c = 'l'                      # function pointer parameter
+            else: return                              # unknown type: skip function
+        if c == 'CB': c, flags = 'l', flags | 1
+        args.append(c)
+    if name in SHIM: flags |= 2
+    funcs[name] = (rc, ''.join(args), flags)
+    order.append(name)
+
+def read(f):
+    with open(os.path.join(INC, f)) as fh: return fh.read()
+
+for f in ('GL/gl.h', 'GL/glext.h'):
+    for name, ret, params in parse(read(f), r'GLAPI\s+([^;()]+?)\s*(?:GL)?APIENTRY\s+(gl\w+)\s*\((.*?)\)\s*;'):
+        add(name, ret, params)
+glx = read('GL/glx.h')
+for name, ret, params in parse(glx, r'extern\s+([\w\s\*]+?)\s*\b(glX\w+)\s*\((.*?)\)\s*;'):
+    add(name, ret, params)
+add('glXGetProcAddress', 'void*', 'const GLubyte *procname')
+glxext = read('GL/glxext.h')
+for blk in re.findall(r'#ifdef GLX_GLXEXT_PROTOTYPES\n(.*?)#endif', glxext, re.S):
+    for name, ret, params in parse(blk, r'([\w\s\*]+?)\s*\b(glX\w+)\s*\((.*?)\)\s*;'):
+        add(name, ret.strip(), params)
+
+# host helpers used by the guest shim (resolved in the host libX11)
+funcs['xef_host_XFree'] = ('i', 'l', 2); order.append('xef_host_XFree')
+
+os.makedirs(os.path.join(ROOT, 'src/thunks'), exist_ok=True)
+os.makedirs(os.path.join(ROOT, 'thunks'), exist_ok=True)
+with open(os.path.join(ROOT, 'src/thunks/gl_table.inc'), 'w') as f:
+    f.write('// Generated by tools/gen_glthunks.py from the host GL headers. Do not edit.\n')
+    for n in order:
+        rc, a, fl = funcs[n]
+        f.write('X(%s, "%s:%s", %d)\n' % (n, rc, a, fl))
+with open(os.path.join(ROOT, 'thunks/gl_stubs.S'), 'w') as f:
+    f.write('// Generated by tools/gen_glthunks.py. Guest stubs: x17 = thunk id, HLT #0x5846 calls the host.\n')
+    f.write('    .text\n')
+    for i, n in enumerate(order):
+        rc, a, fl = funcs[n]
+        sym = n if n.startswith('xef_') else ('xef_raw_' + n) if fl & 2 else n
+        f.write('    .globl %s\n    .type %s, %%function\n    .p2align 2\n%s:\n' % (sym, sym, sym))
+        if n in SYNC:   # guest XSync(dpy) first: the guest's own X requests (window creation) must be done
+            f.write('    stp x29, x30, [sp, #-80]!\n    mov x29, sp\n    stp x0, x1, [sp, #16]\n'
+                    '    stp x2, x3, [sp, #32]\n    stp x4, x5, [sp, #48]\n    stp x6, x7, [sp, #64]\n'
+                    '    bl xef_guest_xsync\n'
+                    '    ldp x0, x1, [sp, #16]\n    ldp x2, x3, [sp, #32]\n    ldp x4, x5, [sp, #48]\n'
+                    '    ldp x6, x7, [sp, #64]\n    ldp x29, x30, [sp], #80\n')
+        f.write('    mov x17, #%d\n    hlt #0x5846\n    ret\n' % i)
+        f.write('    .size %s, .-%s\n' % (sym, sym))
+    f.write('    .section .note.GNU-stack,"",%progbits\n')
+with open(os.path.join(ROOT, 'thunks/gl_decls.inc'), 'w') as f:
+    f.write('// Generated by tools/gen_glthunks.py.\n')
+    for n in order:
+        if not funcs[n][2] & 2: f.write('DECL(%s)\n' % n)
+with open(os.path.join(ROOT, 'thunks/gl_names.inc'), 'w') as f:
+    f.write('// Generated by tools/gen_glthunks.py.\n')
+    for n in sorted(order):
+        rc, a, fl = funcs[n]
+        if not fl & 2:
+            f.write('{"%s", (void*)%s},\n' % (n, n))
+print('%d functions (%d gl, %d glX)' % (len(order), sum(1 for n in order if not n.startswith('glX')),
+                                       sum(1 for n in order if n.startswith('glX'))))

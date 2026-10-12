@@ -1,5 +1,6 @@
 // XEF — translation driver and per-thread execution loop.
 #include "runtime/dispatch.h"
+#include "thunks/thunks.h"
 
 #include <sys/mman.h>
 #include <time.h>
@@ -171,7 +172,8 @@ void code_invalidate_range(GuestAddr start, u64 len) {
         }
         case EXIT_SYSCALL:
             if (g_opt.stats) g_stats.exits_syscall++;
-            do_syscall(st);
+            if (st->exit_info == kThunkExit) thunk_dispatch(st);
+            else do_syscall(st);
             if (st->pending_signal) signals_deliver_pending(st);
             host = get_or_translate(t, st->pc);
             break;

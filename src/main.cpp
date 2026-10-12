@@ -15,6 +15,7 @@
 #include "profile/stats.h"
 #include "runtime/dispatch.h"
 #include "runtime/tier2.h"
+#include "thunks/thunks.h"
 
 using namespace xef;
 
@@ -29,7 +30,8 @@ static void usage() {
             "  --dump-ir          dump IR of every translated block\n"
             "  --dump-code        write host code of every block to /tmp/xef-<pc>.bin\n"
             "  --max-block N      max guest instructions per block (default 128)\n"
-           "  --trace            debug: no block linking, print the last blocks on a bad jump\n");
+           "  --trace            debug: no block linking, print the last blocks on a bad jump\n"
+           "  --host-gl          run the guest's OpenGL/GLX calls on the host's native libGL\n");
     exit(1);
 }
 
@@ -44,6 +46,7 @@ int main(int argc, char** argv, char** envp) {
         else if (a == "--stats") g_opt.stats = true;
         else if (a == "--profile") g_opt.profile = true;
         else if (a == "--no-tier2") g_opt.tier2 = false;
+        else if (a == "--host-gl") g_host_gl = true;
         else if (a == "--trace") { g_opt.trace = true; g_opt.tier2 = false; }
         else if (a == "--tier2-threshold" && i + 1 < argc) g_tier2_threshold = atoi(argv[++i]);
         else if (a == "--dump-ir") g_opt.dump_ir = true;
@@ -54,6 +57,7 @@ int main(int argc, char** argv, char** envp) {
     }
     if (i >= argc) usage();
     if (getenv("XEF_STATS")) g_opt.stats = true;
+    if (getenv("XEF_HOST_GL")) g_host_gl = true;
     while (!g_rootfs.empty() && g_rootfs.back() == '/') g_rootfs.pop_back();
     if (!g_rootfs.empty()) {   // absolute: guest chdir() into the rootfs must not break later lookups
         char abs[PATH_MAX];

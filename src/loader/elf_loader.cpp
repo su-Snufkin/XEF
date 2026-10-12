@@ -1,4 +1,5 @@
 #include "loader/elf_loader.h"
+#include "thunks/thunks.h"
 
 #include <elf.h>
 #include <fcntl.h>
@@ -13,6 +14,7 @@ namespace xef {
 std::string g_rootfs;
 
 std::string resolve_guest_path(const char* path) {
+    if (const char* shim = thunk_lib_redirect(path)) return shim;
     if (!path || path[0] != '/' || g_rootfs.empty()) return path ? path : "";
     std::string p = g_rootfs + path;
     struct stat st;

@@ -281,6 +281,12 @@ bool Translator::branch_sys(u32 i) {
             ended_ = true;
             return true;
         }
+        if (opc == 2 && ll == 0 && imm16 == 0x5846) {  // HLT #0x5846: host library thunk (thunks.h)
+            Val v = ir_.emit(Op::ExitSyscall, Type::None, kNone, kNone, kNone, pc + 4);
+            ir_.inst(v).imm2 = 0x10000 | imm16;
+            ended_ = true;
+            return true;
+        }
         if (opc == 2 && ll == 0) {  // HLT
             Val v = ir_.emit(Op::ExitBrk, Type::None, kNone, kNone, kNone, pc);
             ir_.inst(v).imm2 = 0x10000 | imm16;
