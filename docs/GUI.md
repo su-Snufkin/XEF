@@ -62,6 +62,15 @@ program from the rootfs with these settings and takes a screenshot of the X serv
 cache, compiled GSettings schemas, icon caches, fontconfig cache) by running the guest's own tools
 under XEF.
 
+## Sound
+
+Guest programs talk to the host's PulseAudio / PipeWire-Pulse server over its Unix socket (the
+protocol is architecture-independent): with `XDG_RUNTIME_DIR` (or `PULSE_SERVER`) pointing at the
+host session, aarch64 `paplay`, SDL2 games (`SDL_AUDIODRIVER=pulseaudio`) and OpenAL games
+(`ALSOFT_DRIVERS=pulse`) play sound. Verified by recording a null sink's monitor: a 440 Hz tone
+from `paplay` and Neverball's menu music arrive intact. Without a sound server use the
+`dummy` / `null` drivers shown above.
+
 ## Verified (2026-10-12, i7 cloud VM, Xvfb)
 
 | Program | Result |
