@@ -5,7 +5,7 @@ Generates random A64 encodings (data-processing / SIMD&FP), keeps the ones
 llvm-mc decodes as valid and register-safe, runs them through tests/diff/runner
 under qemu and XEF and reports differing register state.
 
-usage: fuzz.py [-n COUNT] [--seed S] [--class int|simd|fp|all] [--grep REGEX]
+usage: fuzz.py [-n COUNT] [--seed S] [--class int|simd|fp|crypto|all] [--grep REGEX]
 """
 import argparse, os, random, re, struct, subprocess, sys, collections
 
@@ -26,13 +26,13 @@ MATTR = '+neon,+crc,+aes,+sha2,+lse,+rcpc'
 BAD = re.compile(r'\b(x28|x29|x30|w28|w29|w30|sp|wsp|fpcr|fpsr|nzcv)\b|\[|^\s*(b|bl|br|blr|ret|cbn?z|tbn?z|svc|hvc|smc|brk|hlt|'
                  r'hint|msr|mrs|sys|sysl|dmb|dsb|isb|clrex|nop|yield|wfe|wfi|sev|udf|b\.\w+|bti|pac\w*|aut\w*|xpac\w*|'
                  r'eret\w*|drps|dcps\d|tbl|tbx|ld\w+|st\w+|prfm|casp?\w*|swp\w*|cfinv|rmif|setf\w+|axflag|xaflag|'
-                 r'sha\w+|adrp?)\b')
+                 r'adrp?)\b')
 
 def gen_candidates(rng, n, cls):
     out = []
     for _ in range(n):
         w = rng.getrandbits(32)
-        c = cls if cls != 'all' else rng.choice(['int', 'int', 'simd', 'simd', 'fp'])
+        c = cls if cls != 'all' else rng.choice(['int', 'int', 'simd', 'simd', 'fp', 'crypto'])
         if c == 'int':
             # op0 = 100x (dp imm) or x101 (dp reg)
             if rng.random() < 0.4:
@@ -42,11 +42,17 @@ def gen_candidates(rng, n, cls):
         elif c == 'simd':
             w = (w & ~(0x7 << 25)) | (0x7 << 25)
             w &= ~(1 << 31)
+        elif c == 'crypto':
+            # AES (0x4E28xx08), SHA 3-reg (0x5E00xxxx, bit15=0, 11:10=00), SHA 2-reg (0x5E28xx08)
+            k = rng.randrange(3)
+            if k == 0: w = 0x4E280800 | (rng.randrange(4, 8) << 12) | (w & 0x3FF)
+            elif k == 1: w = 0x5E000000 | (w & 0x1F03FF) | (rng.randrange(7) << 12)
+            else: w = 0x5E280800 | (rng.randrange(3) << 12) | (w & 0x3FF)
         else:  # scalar fp: bits 28:24 = 11110, bit 30=0, 29=0, 31 either
             w = (w & ~(0x1F << 24)) | (0x1E << 24)
             w &= ~(3 << 29)
         # bias register fields away from 28..31 most of the time
-        for sh in (0, 5, 16, 10):
+        for sh in (() if c == 'crypto' else (0, 5, 16, 10)):
             if rng.random() < 0.85:
                 r = rng.randrange(28)
                 w = (w & ~(0x1F << sh)) | (r << sh)

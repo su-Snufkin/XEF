@@ -1315,7 +1315,7 @@ void T1::emit_atomic(Val v) {
         as_.mov_imm(8, mem(R15, XEF_ST(excl_addr)), -1);
         return;
     case Op::LoadExcl: {
-        if (in.aux != 0) fatal("LDXP not implemented yet");
+        if (in.aux != 0) { emit_pair_atomic(v); return; }
         pin(in.a);
         Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
         Reg d = dest_for(v, s);
@@ -1327,7 +1327,7 @@ void T1::emit_atomic(Val v) {
         return;
     }
     case Op::StoreExcl: {
-        if (in.aux != 0) fatal("STXP not implemented yet");
+        if (in.aux != 0) { emit_pair_atomic(v); return; }
         clobber_flags();
         take_reg(RAX); pinned_ |= 1 << RAX;
         pin(in.a); pin(in.b);
@@ -1353,7 +1353,7 @@ void T1::emit_atomic(Val v) {
         return;
     }
     case Op::Cas: {
-        if (in.aux != 0) fatal("CASP not implemented yet");
+        if (in.aux != 0) { emit_pair_atomic(v); return; }
         clobber_flags();
         take_reg(RAX); pinned_ |= 1 << RAX;
         pin(in.a); pin(in.b); pin(in.c);
@@ -1374,9 +1374,11 @@ void T1::emit_atomic(Val v) {
     }
     case Op::AtomicRMW: {
         clobber_flags();
+        u8 aop = in.aux;
+        // the CMPXCHG loop needs RAX: claim it before the address can be placed there
+        if (aop != AT_ADD && aop != AT_SWP) { take_reg(RAX); pinned_ |= 1 << RAX; }
         pin(in.a); pin(in.b);
         Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
-        u8 aop = in.aux;
         if (aop == AT_ADD || aop == AT_SWP) {
             Reg t = alloc_temp(); pinned_ |= 1 << t;
             load_into(t, in.b, s);
@@ -1388,7 +1390,6 @@ void T1::emit_atomic(Val v) {
             assign_reg(v, t);
             return;
         }
-        take_reg(RAX); pinned_ |= 1 << RAX;
         if (ra == RAX) fatal("rmw regs");
         Reg rv = to_reg(in.b); pinned_ |= 1 << rv;
         Reg t = alloc_temp(); pinned_ |= 1 << t;
@@ -1434,6 +1435,100 @@ void T1::emit_atomic(Val v) {
     }
     default: fatal("atomic");
     }
+}
+
+// Pair atomics: LDXP/STXP (LoadExcl/StoreExcl aux 1/2) and CASP (Cas aux 1/2); element size is
+// in.size / 2. The 2x64-bit forms use LOCK CMPXCHG16B, which needs RAX/RBX/RCX/RDX: operands are
+// staged in CpuState::vtmp first, and RBX/RCX/RDX/R11 are preserved around the instruction since
+// they may hold guest registers (tier 2) or live temps. LDXP loads the halves separately; a torn
+// read is caught by STXP, which compares memory against both halves recorded in the monitor.
+void T1::emit_pair_atomic(Val v) {
+    const Inst& in = I(v);
+    const int esz = in.size / 2;
+    const int V0 = XEF_ST(vtmp), V1 = V0 + 16, V2 = V0 + 32, V3 = V0 + 48;
+    if (in.op == Op::LoadExcl) {
+        pin(in.a);
+        Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
+        Reg d = dest_for(v, esz);
+        if (in.aux == 1) {
+            record_pc();
+            as_.mov(8, d, mem(ra, 0));
+            as_.mov(8, mem(R15, XEF_ST(excl_addr)), ra);
+            as_.mov(8, mem(R15, XEF_ST(excl_val)), d);
+            if (esz == 4) as_.mov(4, d, d);
+        } else if (esz == 4) {          // high word comes from the same 64-bit snapshot
+            as_.mov(8, d, mem(R15, XEF_ST(excl_val)));
+            as_.shift_imm(SHR, 8, d, 32);
+        } else {
+            record_pc();
+            as_.mov(8, d, mem(ra, 8));
+            as_.mov(8, mem(R15, XEF_ST(excl_val2)), d);
+        }
+        finish_def(v, d);
+        return;
+    }
+    if (in.op == Op::Cas && in.aux == 2) {  // high half of the CASP result, left in vtmp by aux 1
+        Reg d = dest_for(v, esz);
+        as_.mov(esz, d, mem(R15, V3 + esz));
+        finish_def(v, d);
+        return;
+    }
+    clobber_flags();
+    take_reg(RAX); pinned_ |= 1 << RAX;
+    for_operands(in, [&](Val o) { pin(o); });
+    auto stage = [&](Val x, int size, int off) { load_into(RAX, x, size); as_.mov(size, mem(R15, off), RAX); };
+    stage(in.a, 8, V2);
+    bool cas = in.op == Op::Cas;
+    if (cas) {
+        stage(in.b, esz, V0);
+        stage((Val)(in.imm & 0xffff), esz, V0 + esz);
+        stage(in.c, esz, V1);
+        stage((Val)((in.imm >> 16) & 0xffff), esz, V1 + esz);
+    } else {
+        stage(in.b, esz, V1);
+        stage(in.c, esz, V1 + esz);
+    }
+    Label fail, done;
+    if (!cas) {
+        as_.mov(8, RAX, mem(R15, V2));
+        as_.alu(CMP, 8, RAX, mem(R15, XEF_ST(excl_addr)));
+        as_.jcc(CNE, fail);
+    }
+    if (esz == 4) {
+        as_.push(RCX); as_.push(R11);
+        as_.mov(8, RAX, cas ? mem(R15, V0) : mem(R15, XEF_ST(excl_val)));
+        as_.mov(8, RCX, mem(R15, V1));
+        as_.mov(8, R11, mem(R15, V2));
+        record_pc();
+        as_.cmpxchg(8, mem(R11, 0), RCX);
+        as_.pop(R11); as_.pop(RCX);
+        if (cas) as_.mov(8, mem(R15, V3), RAX);
+    } else {
+        as_.push(RBX); as_.push(RCX); as_.push(RDX); as_.push(R11);
+        as_.mov(8, RAX, cas ? mem(R15, V0) : mem(R15, XEF_ST(excl_val)));
+        as_.mov(8, RDX, cas ? mem(R15, V0 + 8) : mem(R15, XEF_ST(excl_val2)));
+        as_.mov(8, RBX, mem(R15, V1));
+        as_.mov(8, RCX, mem(R15, V1 + 8));
+        as_.mov(8, R11, mem(R15, V2));
+        record_pc();
+        as_.cmpxchg16b(mem(R11, 0));
+        if (cas) { as_.mov(8, mem(R15, V3), RAX); as_.mov(8, mem(R15, V3 + 8), RDX); }
+        as_.pop(R11); as_.pop(RDX); as_.pop(RCX); as_.pop(RBX);
+    }
+    if (cas) {
+        if (esz == 4) as_.mov(4, RAX, RAX);   // old low word
+    } else {
+        // STXP status: 0 = stored, 1 = failed. POP/MOV keep ZF from the compare-exchange.
+        as_.setcc(CNE, RAX);
+        as_.movzx8(RAX, RAX);
+        as_.jmp(done);
+        as_.bind(fail);
+        as_.mov_imm(RAX, 1);
+        as_.bind(done);
+        as_.mov_imm(8, mem(R15, XEF_ST(excl_addr)), -1);
+    }
+    pinned_ &= ~(1 << RAX);
+    assign_reg(v, RAX);
 }
 
 void T1::emit_sys(Val v) {

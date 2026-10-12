@@ -239,6 +239,7 @@ private:
     void emit_ext(Val v);
     void emit_adc_sbc(Val v, bool with_flags_val, Val flags_v);
     void emit_atomic(Val v);
+    void emit_pair_atomic(Val v);
     void emit_sys(Val v);
     void emit_vec(Val v);
     // vector helpers (codegen_t1_vec.cpp)

@@ -590,6 +590,8 @@ bool Translator::ldst_reg(u32 i) {
     bool v = bit(i, 26);
     int rt = bits(i, 4, 0), rn = bits(i, 9, 5);
     u32 b2524 = bits(i, 25, 24);
+    // LSE atomics: bits 23:22 are the A/R ordering bits there, not opc
+    if (!v && b2524 == 0 && bit(i, 21) && bits(i, 11, 10) == 0) return ldst_atomic(i);
     // Determine access properties.
     int sz;
     bool load, sign = false, prfm = false;

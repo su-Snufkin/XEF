@@ -27,7 +27,11 @@ enum : u64 {
     HWCAP_ATOMICS = 1 << 8, HWCAP_FPHP = 1 << 9, HWCAP_ASIMDHP = 1 << 10, HWCAP_CPUID = 1 << 11,
 };
 
-u64 guest_hwcap() { return HWCAP_FP | HWCAP_ASIMD; }
+// Advertise only what the frontend implements end to end (FP16 arithmetic is still missing).
+u64 guest_hwcap() {
+    return HWCAP_FP | HWCAP_ASIMD | HWCAP_AES | HWCAP_PMULL | HWCAP_SHA1 | HWCAP_SHA2 | HWCAP_CRC32 |
+           HWCAP_ATOMICS;
+}
 u64 guest_hwcap2() { return 0; }
 
 static constexpr u64 kPage = 4096;
