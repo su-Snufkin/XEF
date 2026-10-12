@@ -16,6 +16,7 @@ struct RegionInfo {
     u64* exit_counter;    // incremented (flag-free) by every region exit stub; lives in the code cache
     u64 samples;
     bool demoted;
+    u8* sig_exit;         // region -> canonical transfer + exit_to_runtime (signal delivery)
 };
 
 enum ExitKind : u8 {

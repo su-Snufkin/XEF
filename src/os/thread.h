@@ -1,5 +1,7 @@
 // XEF — guest threads and processes.
 #pragma once
+#include <signal.h>
+
 #include "common/common.h"
 #include "ir/ir.h"
 #include "runtime/code_cache.h"
@@ -14,6 +16,11 @@ struct ThreadCtx {
     size_t jit_stack_size = 0;
     int tid = 0;
     u64 clear_child_tid = 0;
+    // signals
+    u64 pending = 0;
+    siginfo_t pending_info[65];
+    volatile bool stepping = false;
+    u64 ss_sp = 0, ss_size = 0;
 };
 
 ThreadCtx* thread_create(CpuState* parent);

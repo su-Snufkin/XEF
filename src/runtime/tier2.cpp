@@ -222,6 +222,14 @@ static bool compile_region(GuestAddr head) {
     entry->code_size = (u32)eas.size();
     entry->region = ri;
     ri->entry = entry;
+    {   // signal-delivery exit for region-internal block entries
+        u8* sc = g_cache.alloc_code(1024);
+        Assembler sas(sc, 1024);
+        backend::emit_region_xfer(sas, xfer, nxfer, false);
+        sas.jmp_rel32(g_cache.stubs.exit_to_runtime);
+        g_cache.commit_code(sc, sas.size());
+        ri->sig_exit = sc;
+    }
     g_cache.commit_code(ecode, eas.size());
     g_cache.register_block(entry);
 

@@ -5,6 +5,11 @@
 
 namespace xef {
 
+struct ThreadCtx;
+void signals_thread_init(ThreadCtx* t);
+u32 eflags_to_nzcv(u64 e);
+u64 nzcv_to_eflags(u32 nzcv);
+
 void signals_init();
 void signals_flush_output();
 i64 sig_rt_sigaction(CpuState* st, int sig, u64 act, u64 oact, u64 sigsetsize);

@@ -1,4 +1,6 @@
 // XEF — shared runtime stubs (JIT entry/exit), generated once into the code cache.
+#include <cstddef>
+
 #include "backend/x64/codegen.h"
 #include "runtime/cpu_state.h"
 
@@ -21,6 +23,14 @@ void emit_runtime_stubs(Assembler& as, RuntimeStubs& s) {
     // ---- enter(CpuState* rdi, void* host rsi) ----
     as.align(16);
     s.enter = as.cur();
+    // pending guest signal: return immediately with EXIT_SIGNAL (st->pc unchanged). A signal that
+    // arrives after this check finds RIP inside the code cache and is caught by single-stepping.
+    as.alu_imm(CMP, 4, mem(RDI, (i32)offsetof(CpuState, pending_signal)), 0);
+    Label nosig;
+    as.jcc(CE, nosig);
+    as.mov_imm(8, mem(RDI, (i32)offsetof(CpuState, exit_reason)), EXIT_SIGNAL);
+    as.ret();
+    as.bind(nosig);
     as.push(RBX); as.push(RBP); as.push(R12); as.push(R13); as.push(R14); as.push(R15);
     as.alu_imm(SUB, 8, RSP, 8);
     as.lea(8, R15, mem(RDI, kStateBias));

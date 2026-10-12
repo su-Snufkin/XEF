@@ -129,6 +129,10 @@ void code_invalidate_range(GuestAddr start, u64 len) {
             if (st->pending_signal) signals_deliver_pending(st);
             host = get_or_translate(t, st->pc);
             break;
+        case EXIT_SIGNAL:
+            signals_deliver_pending(st);
+            host = get_or_translate(t, st->pc);
+            break;
         case EXIT_UNDEF:
             fatal("unsupported instruction at %#lx: %08x", (unsigned long)st->pc, (u32)st->exit_info);
         case EXIT_BRK:

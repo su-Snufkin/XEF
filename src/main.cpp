@@ -63,6 +63,7 @@ int main(int argc, char** argv, char** envp) {
 
     ThreadCtx* t = thread_create(nullptr);
     CpuState* st = t->st;
+    signals_thread_init(t);
     st->x[kGuestSP] = sp;
     st->pc = img.entry;
     st->eflags = 0x203;   // canonical NZCV=0000 -> CF=1

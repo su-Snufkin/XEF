@@ -89,6 +89,7 @@ static void* thread_trampoline(void* arg) {
     __atomic_store_n(&ts->tid, tid, __ATOMIC_RELEASE);
     syscall(SYS_futex, &ts->tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
     // ts is owned by the parent's stack from here on: don't touch it
+    signals_thread_init(t);
     cpu_loop(t);
 }
 
@@ -96,6 +97,7 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
     if (flags & kCloneVM && !(flags & kCloneVfork)) {
         if (!(flags & kCloneThread)) return -EINVAL;  // CLONE_VM without CLONE_THREAD: not supported yet
         ThreadCtx* t = thread_create(st);
+        t->ss_sp = t->ss_size = 0;   // new threads start without an alternate stack
         CpuState* cs = t->st;
         cs->x[0] = 0;
         if (stack) cs->x[kGuestSP] = stack;
