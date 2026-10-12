@@ -1,6 +1,7 @@
 // XEF — AArch64 base (integer / branch / load-store / system) translation.
 #include "frontend/a64/translate.h"
 
+#include <stdlib.h>
 #include <sys/mman.h>
 
 namespace xef::a64 {
@@ -895,6 +896,15 @@ bool guest_readable(GuestAddr pc) {
 static thread_local PeekLog* tls_peek;
 void set_peek_log(PeekLog* log) { tls_peek = log; }
 
+// AAPCS64 does not preserve NZCV across calls, and compiled code never passes values in it, so
+// flags are dead at calls and returns. XEF_STRICT_FLAGS=1 drops this assumption (hand-written
+// assembly with flag-passing subroutines).
+bool g_abi_flags = !getenv("XEF_STRICT_FLAGS");
+
+static bool abi_kills_flags(Op op) {
+    return g_abi_flags && (op == Op::ExitCall || op == Op::ExitCallIndirect || op == Op::ExitRet);
+}
+
 // Returns true if NZCV may be read at `pc` before being overwritten.
 bool nzcv_live_at(GuestAddr pc, int depth) {
     static thread_local ir::Block* scratch = new ir::Block();
@@ -920,7 +930,7 @@ bool nzcv_live_at(GuestAddr pc, int depth) {
             case Op::ExitCbz: case Op::ExitTbz:
                 if (depth >= 2) return true;
                 return nzcv_live_at(term->imm, depth + 1) || nzcv_live_at(term->imm2, depth + 1);
-            default: return true;  // calls, returns, indirect branches, syscalls: conservative
+            default: return !abi_kills_flags(term->op);  // indirect branches, syscalls: conservative
             }
         }
         pc += 4;
@@ -938,7 +948,7 @@ static void compute_flags_liveness(ir::Block& blk) {
     case Op::ExitCond: case Op::ExitCbz: case Op::ExitTbz:
         blk.flags_live_out = nzcv_live_at(term->imm, 0) || nzcv_live_at(term->imm2, 0);
         break;
-    default: blk.flags_live_out = true; break;
+    default: blk.flags_live_out = !abi_kills_flags(term->op); break;
     }
 }
 

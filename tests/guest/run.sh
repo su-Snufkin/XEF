@@ -11,6 +11,8 @@ pass=0; fail=0
 for src in "$ROOT"/tests/guest/t_*.c "$ROOT"/tests/guest/t_*.cpp; do
   name=$(basename "$src"); name=${name%.*}
   case "$src" in *.cpp) CC=clang++;; *) CC=clang;; esac
+  # NZCV live across a return (not AAPCS64): exercise the rematerialization with strict flags
+  case $name in t_ret_flags) export XEF_STRICT_FLAGS=1;; *) unset XEF_STRICT_FLAGS;; esac
   for variant in "static -O2" "dyn -O3" "static -O3"; do
     set -- $variant
     link=$1; opt=$2

@@ -83,8 +83,12 @@ def disasm_batch(words, chunk=400):
         res.extend(disasm(words[i:i + chunk]))
     return res
 
+# The runner calls each test snippet and reads NZCV after it returns: flags passed across a
+# return, which XEF otherwise treats as dead (AAPCS64).
+ENV = dict(os.environ, XEF_STRICT_FLAGS='1')
+
 def run(cmd, start=0):
-    p = subprocess.run(cmd + [str(start)], capture_output=True, text=True)
+    p = subprocess.run(cmd + [str(start)], capture_output=True, text=True, env=ENV)
     return p.stdout, p.stderr, p.returncode
 
 def parse(out):
