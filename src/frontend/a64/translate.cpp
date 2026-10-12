@@ -870,7 +870,7 @@ bool Translator::dp_reg(u32 i) {
 
 // ---------------------------------------------------------------- NZCV liveness lookahead
 
-static bool guest_readable(GuestAddr pc) {
+bool guest_readable(GuestAddr pc) {
     static thread_local GuestAddr last_ok = 1;
     GuestAddr page = pc & ~0xfffull;
     if (page == last_ok) return true;

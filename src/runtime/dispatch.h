@@ -11,6 +11,7 @@ struct Options {
     bool stats = false;
     bool profile = false;
     bool tier2 = true;
+    bool trace = false;   // debugging: no block linking / IBTC, remember the last blocks entered
     int max_block_insts = 128;
 };
 extern Options g_opt;

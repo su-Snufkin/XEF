@@ -16,6 +16,9 @@ struct TranslateOpts {
 // Reads guest code at `pc` and fills `blk`. Always produces a terminated block.
 void translate_block(GuestAddr pc, ir::Block& blk, const TranslateOpts& opts);
 
+// True if the guest page holding pc is mapped (cheap; caches the last page per thread).
+bool guest_readable(GuestAddr pc);
+
 // True if NZCV may be read at pc before being written (bounded decode-ahead scan).
 bool nzcv_live_at(GuestAddr pc, int depth = 0);
 

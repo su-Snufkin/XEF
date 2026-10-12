@@ -1670,6 +1670,7 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitIndirect: {
         take_reg(RAX);
+        pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
         emit_ibtc_probe();
@@ -1688,6 +1689,7 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitCallIndirect: {
         take_reg(RAX);
+        pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
         as_.mov_imm(RCX, in.imm2);
@@ -1702,6 +1704,7 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitRet: {
         take_reg(RAX);
+        pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
         // compare guest return address on the native stack with target (flag-free)

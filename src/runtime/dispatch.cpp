@@ -36,12 +36,35 @@ static void dump_code(const u8* p, size_t n, GuestAddr pc) {
     fprintf(stderr, "host code for %#lx: %zu bytes -> %s\n", (unsigned long)pc, n, path);
 }
 
+// --trace: ring of the last guest blocks entered by this thread
+static thread_local GuestAddr tls_trace[64];
+static thread_local unsigned tls_trace_n;
+static void trace_dump() {
+    unsigned n = tls_trace_n < 64 ? tls_trace_n : 64;
+    for (unsigned i = n; i > 0; i--) {
+        char d[512];
+        log_msg("  trace[-%u] %s", i, describe_addr(tls_trace[(tls_trace_n - i) & 63], d, sizeof d));
+    }
+}
+
 // Translate the block at pc (caller holds no lock). Returns host entry.
 static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     u64 t0 = g_opt.stats ? stats_now() : 0;
     ir::Block& blk = *t->blk;
     a64::TranslateOpts topt;
     topt.max_insts = g_opt.max_block_insts;
+    if (!a64::guest_readable(pc)) {
+        char lr[512];
+        CpuState* st = t->st;
+        if (g_opt.trace) trace_dump();
+        if (st->exit_reason == EXIT_LINK) {
+            ExitInfo* e = (ExitInfo*)st->exit_info;
+            log_msg("  via exit of block %#lx..%#lx (kind %d)", (unsigned long)e->owner->start,
+                    (unsigned long)e->owner->end, e->kind);
+        }
+        fatal("guest jumped to unmapped address %#lx (lr=%s, exit reason %lu)", (unsigned long)pc,
+              describe_addr(st->x[30], lr, sizeof lr), (unsigned long)st->exit_reason);
+    }
     PeekLog peeks;
     u64 ep;
     std::unique_lock<std::mutex> lk(g_cache.lock, std::defer_lock);
@@ -96,6 +119,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
 }
 
 u8* get_or_translate(ThreadCtx* t, GuestAddr pc) {
+    if (g_opt.trace) tls_trace[tls_trace_n++ & 63] = pc;
     BlockMeta* b = g_cache.lookup(pc);
     if (!b) b = translate(t, pc);
     return b->code;
@@ -126,19 +150,20 @@ void code_invalidate_range(GuestAddr start, u64 len) {
             {
                 std::lock_guard<std::mutex> lk(g_cache.lock);
                 // neither link from nor into code that was invalidated meanwhile
-                if (!e->linked && !(tb->flags & BF_DEAD) && !(e->owner->flags & BF_DEAD)) {
+                if (!e->linked && !(tb->flags & BF_DEAD) && !(e->owner->flags & BF_DEAD) && !g_opt.trace) {
                     link_exit(e, tb->code);
                     e->next_in = tb->incoming;
                     tb->incoming = e;
                 }
             }
             host = tb->code;
+            if (g_opt.trace) tls_trace[tls_trace_n++ & 63] = e->target;
             break;
         }
         case EXIT_LOOKUP: {
             if (g_opt.stats) g_stats.exits_lookup++;
             host = get_or_translate(t, st->pc);
-            g_cache.ibtc_insert(ibtc, st->pc, host);
+            if (!g_opt.trace) g_cache.ibtc_insert(ibtc, st->pc, host);
             // an invalidation between lookup and insert may have missed this entry
             if (BlockMeta* nb = g_cache.lookup(st->pc); !nb || nb->code != host)
                 __atomic_store_n(&ibtc[(st->pc >> 2) & (kIbtcEntries - 1)].guest, 1ull, __ATOMIC_SEQ_CST);

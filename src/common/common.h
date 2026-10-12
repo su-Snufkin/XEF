@@ -25,6 +25,7 @@ using GuestAddr = u64;
 #define XEF_COLD __attribute__((cold, noinline))
 
 [[noreturn]] void fatal(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+const char* describe_addr(u64 addr, char* out, size_t outsz);
 void log_msg(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
 extern int g_verbose;  // 0 = quiet, 1 = info, 2 = debug, 3 = trace
