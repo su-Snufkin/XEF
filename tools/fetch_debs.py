@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Fetch Debian/Ubuntu packages (no root) and extract into a directory.
 usage: fetch_debs.py [--deps] <mirror-url> <outdir> <Packages.xz>[,<Packages.xz>...] pkg1 pkg2 ..
-Later indexes override earlier ones (e.g. "noble,noble-updates").
+Later indexes override earlier ones (e.g. "noble,noble-updates"). An index given as
+<Packages.xz>@<url> belongs to another repository (a PPA): its packages are fetched from there.
 --deps: also fetch (recursively) everything the packages Depend / Pre-Depend on."""
 import lzma, sys, os, re, subprocess, urllib.request
 args = sys.argv[1:]
@@ -10,8 +11,9 @@ args = [a for a in args if a != '--deps']
 base, out, idxs, pkgs = args[0].rstrip('/') + '/', args[1], args[2].split(','), args[3:]
 db, provides = {}, {}
 for idx in idxs:
+    idx, _, repo = idx.partition('@')
     for stanza in lzma.open(idx, 'rt').read().split('\n\n'):
-        d = {}
+        d = {'_base': repo.rstrip('/') + '/'} if repo else {}
         for line in stanza.split('\n'):
             if ': ' in line and not line.startswith(' '):
                 k, v = line.split(': ', 1); d[k] = v
@@ -52,13 +54,13 @@ for p in pkgs:
 os.makedirs(out, exist_ok=True)
 stamp = os.path.join(out, '.xef-packages')
 done = set(open(stamp).read().split()) if os.path.exists(stamp) else set()
-dl = os.path.dirname(idxs[0])
+dl = os.path.dirname(idxs[0].partition('@')[0])
 for p in order:
     if p in done: continue
     f = db[p]['Filename']
     deb = os.path.join(dl, os.path.basename(f))
     if not os.path.exists(deb):
-        urllib.request.urlretrieve(base + f, deb)
+        urllib.request.urlretrieve(db[p].get('_base', base) + f, deb)
     tmp = deb + '.x'; os.makedirs(tmp, exist_ok=True)
     subprocess.check_call(['bsdtar', '-xf', deb, '-C', tmp])
     data = [x for x in os.listdir(tmp) if x.startswith('data.tar')][0]

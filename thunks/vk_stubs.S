@@ -4,7 +4,7 @@
     .type vkCreateInstance, %function
     .p2align 2
 vkCreateInstance:
-    mov x17, #3273
+    mov x17, #3274
     hlt #0x5846
     ret
     .size vkCreateInstance, .-vkCreateInstance
@@ -12,7 +12,7 @@ vkCreateInstance:
     .type vkDestroyInstance, %function
     .p2align 2
 vkDestroyInstance:
-    mov x17, #3274
+    mov x17, #3275
     hlt #0x5846
     ret
     .size vkDestroyInstance, .-vkDestroyInstance
@@ -20,7 +20,7 @@ vkDestroyInstance:
     .type vkEnumeratePhysicalDevices, %function
     .p2align 2
 vkEnumeratePhysicalDevices:
-    mov x17, #3275
+    mov x17, #3276
     hlt #0x5846
     ret
     .size vkEnumeratePhysicalDevices, .-vkEnumeratePhysicalDevices
@@ -28,7 +28,7 @@ vkEnumeratePhysicalDevices:
     .type vkGetPhysicalDeviceFeatures, %function
     .p2align 2
 vkGetPhysicalDeviceFeatures:
-    mov x17, #3276
+    mov x17, #3277
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceFeatures, .-vkGetPhysicalDeviceFeatures
@@ -36,7 +36,7 @@ vkGetPhysicalDeviceFeatures:
     .type vkGetPhysicalDeviceFormatProperties, %function
     .p2align 2
 vkGetPhysicalDeviceFormatProperties:
-    mov x17, #3277
+    mov x17, #3278
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceFormatProperties, .-vkGetPhysicalDeviceFormatProperties
@@ -44,7 +44,7 @@ vkGetPhysicalDeviceFormatProperties:
     .type vkGetPhysicalDeviceImageFormatProperties, %function
     .p2align 2
 vkGetPhysicalDeviceImageFormatProperties:
-    mov x17, #3278
+    mov x17, #3279
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceImageFormatProperties, .-vkGetPhysicalDeviceImageFormatProperties
@@ -52,7 +52,7 @@ vkGetPhysicalDeviceImageFormatProperties:
     .type vkGetPhysicalDeviceProperties, %function
     .p2align 2
 vkGetPhysicalDeviceProperties:
-    mov x17, #3279
+    mov x17, #3280
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceProperties, .-vkGetPhysicalDeviceProperties
@@ -60,7 +60,7 @@ vkGetPhysicalDeviceProperties:
     .type vkGetPhysicalDeviceQueueFamilyProperties, %function
     .p2align 2
 vkGetPhysicalDeviceQueueFamilyProperties:
-    mov x17, #3280
+    mov x17, #3281
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceQueueFamilyProperties, .-vkGetPhysicalDeviceQueueFamilyProperties
@@ -68,7 +68,7 @@ vkGetPhysicalDeviceQueueFamilyProperties:
     .type vkGetPhysicalDeviceMemoryProperties, %function
     .p2align 2
 vkGetPhysicalDeviceMemoryProperties:
-    mov x17, #3281
+    mov x17, #3282
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceMemoryProperties, .-vkGetPhysicalDeviceMemoryProperties
@@ -76,7 +76,7 @@ vkGetPhysicalDeviceMemoryProperties:
     .type xef_raw_vkGetInstanceProcAddr, %function
     .p2align 2
 xef_raw_vkGetInstanceProcAddr:
-    mov x17, #3282
+    mov x17, #3283
     hlt #0x5846
     ret
     .size xef_raw_vkGetInstanceProcAddr, .-xef_raw_vkGetInstanceProcAddr
@@ -84,7 +84,7 @@ xef_raw_vkGetInstanceProcAddr:
     .type xef_raw_vkGetDeviceProcAddr, %function
     .p2align 2
 xef_raw_vkGetDeviceProcAddr:
-    mov x17, #3283
+    mov x17, #3284
     hlt #0x5846
     ret
     .size xef_raw_vkGetDeviceProcAddr, .-xef_raw_vkGetDeviceProcAddr
@@ -92,7 +92,7 @@ xef_raw_vkGetDeviceProcAddr:
     .type vkCreateDevice, %function
     .p2align 2
 vkCreateDevice:
-    mov x17, #3284
+    mov x17, #3285
     hlt #0x5846
     ret
     .size vkCreateDevice, .-vkCreateDevice
@@ -100,7 +100,7 @@ vkCreateDevice:
     .type vkDestroyDevice, %function
     .p2align 2
 vkDestroyDevice:
-    mov x17, #3285
+    mov x17, #3286
     hlt #0x5846
     ret
     .size vkDestroyDevice, .-vkDestroyDevice
@@ -108,7 +108,7 @@ vkDestroyDevice:
     .type vkEnumerateInstanceExtensionProperties, %function
     .p2align 2
 vkEnumerateInstanceExtensionProperties:
-    mov x17, #3286
+    mov x17, #3287
     hlt #0x5846
     ret
     .size vkEnumerateInstanceExtensionProperties, .-vkEnumerateInstanceExtensionProperties
@@ -116,7 +116,7 @@ vkEnumerateInstanceExtensionProperties:
     .type vkEnumerateDeviceExtensionProperties, %function
     .p2align 2
 vkEnumerateDeviceExtensionProperties:
-    mov x17, #3287
+    mov x17, #3288
     hlt #0x5846
     ret
     .size vkEnumerateDeviceExtensionProperties, .-vkEnumerateDeviceExtensionProperties
@@ -124,7 +124,7 @@ vkEnumerateDeviceExtensionProperties:
     .type vkEnumerateInstanceLayerProperties, %function
     .p2align 2
 vkEnumerateInstanceLayerProperties:
-    mov x17, #3288
+    mov x17, #3289
     hlt #0x5846
     ret
     .size vkEnumerateInstanceLayerProperties, .-vkEnumerateInstanceLayerProperties
@@ -132,7 +132,7 @@ vkEnumerateInstanceLayerProperties:
     .type vkEnumerateDeviceLayerProperties, %function
     .p2align 2
 vkEnumerateDeviceLayerProperties:
-    mov x17, #3289
+    mov x17, #3290
     hlt #0x5846
     ret
     .size vkEnumerateDeviceLayerProperties, .-vkEnumerateDeviceLayerProperties
@@ -140,7 +140,7 @@ vkEnumerateDeviceLayerProperties:
     .type vkGetDeviceQueue, %function
     .p2align 2
 vkGetDeviceQueue:
-    mov x17, #3290
+    mov x17, #3291
     hlt #0x5846
     ret
     .size vkGetDeviceQueue, .-vkGetDeviceQueue
@@ -148,7 +148,7 @@ vkGetDeviceQueue:
     .type vkQueueSubmit, %function
     .p2align 2
 vkQueueSubmit:
-    mov x17, #3291
+    mov x17, #3292
     hlt #0x5846
     ret
     .size vkQueueSubmit, .-vkQueueSubmit
@@ -156,7 +156,7 @@ vkQueueSubmit:
     .type vkQueueWaitIdle, %function
     .p2align 2
 vkQueueWaitIdle:
-    mov x17, #3292
+    mov x17, #3293
     hlt #0x5846
     ret
     .size vkQueueWaitIdle, .-vkQueueWaitIdle
@@ -164,7 +164,7 @@ vkQueueWaitIdle:
     .type vkDeviceWaitIdle, %function
     .p2align 2
 vkDeviceWaitIdle:
-    mov x17, #3293
+    mov x17, #3294
     hlt #0x5846
     ret
     .size vkDeviceWaitIdle, .-vkDeviceWaitIdle
@@ -172,7 +172,7 @@ vkDeviceWaitIdle:
     .type vkAllocateMemory, %function
     .p2align 2
 vkAllocateMemory:
-    mov x17, #3294
+    mov x17, #3295
     hlt #0x5846
     ret
     .size vkAllocateMemory, .-vkAllocateMemory
@@ -180,7 +180,7 @@ vkAllocateMemory:
     .type vkFreeMemory, %function
     .p2align 2
 vkFreeMemory:
-    mov x17, #3295
+    mov x17, #3296
     hlt #0x5846
     ret
     .size vkFreeMemory, .-vkFreeMemory
@@ -188,7 +188,7 @@ vkFreeMemory:
     .type vkMapMemory, %function
     .p2align 2
 vkMapMemory:
-    mov x17, #3296
+    mov x17, #3297
     hlt #0x5846
     ret
     .size vkMapMemory, .-vkMapMemory
@@ -196,7 +196,7 @@ vkMapMemory:
     .type vkUnmapMemory, %function
     .p2align 2
 vkUnmapMemory:
-    mov x17, #3297
+    mov x17, #3298
     hlt #0x5846
     ret
     .size vkUnmapMemory, .-vkUnmapMemory
@@ -204,7 +204,7 @@ vkUnmapMemory:
     .type vkFlushMappedMemoryRanges, %function
     .p2align 2
 vkFlushMappedMemoryRanges:
-    mov x17, #3298
+    mov x17, #3299
     hlt #0x5846
     ret
     .size vkFlushMappedMemoryRanges, .-vkFlushMappedMemoryRanges
@@ -212,7 +212,7 @@ vkFlushMappedMemoryRanges:
     .type vkInvalidateMappedMemoryRanges, %function
     .p2align 2
 vkInvalidateMappedMemoryRanges:
-    mov x17, #3299
+    mov x17, #3300
     hlt #0x5846
     ret
     .size vkInvalidateMappedMemoryRanges, .-vkInvalidateMappedMemoryRanges
@@ -220,7 +220,7 @@ vkInvalidateMappedMemoryRanges:
     .type vkGetDeviceMemoryCommitment, %function
     .p2align 2
 vkGetDeviceMemoryCommitment:
-    mov x17, #3300
+    mov x17, #3301
     hlt #0x5846
     ret
     .size vkGetDeviceMemoryCommitment, .-vkGetDeviceMemoryCommitment
@@ -228,7 +228,7 @@ vkGetDeviceMemoryCommitment:
     .type vkBindBufferMemory, %function
     .p2align 2
 vkBindBufferMemory:
-    mov x17, #3301
+    mov x17, #3302
     hlt #0x5846
     ret
     .size vkBindBufferMemory, .-vkBindBufferMemory
@@ -236,7 +236,7 @@ vkBindBufferMemory:
     .type vkBindImageMemory, %function
     .p2align 2
 vkBindImageMemory:
-    mov x17, #3302
+    mov x17, #3303
     hlt #0x5846
     ret
     .size vkBindImageMemory, .-vkBindImageMemory
@@ -244,7 +244,7 @@ vkBindImageMemory:
     .type vkGetBufferMemoryRequirements, %function
     .p2align 2
 vkGetBufferMemoryRequirements:
-    mov x17, #3303
+    mov x17, #3304
     hlt #0x5846
     ret
     .size vkGetBufferMemoryRequirements, .-vkGetBufferMemoryRequirements
@@ -252,7 +252,7 @@ vkGetBufferMemoryRequirements:
     .type vkGetImageMemoryRequirements, %function
     .p2align 2
 vkGetImageMemoryRequirements:
-    mov x17, #3304
+    mov x17, #3305
     hlt #0x5846
     ret
     .size vkGetImageMemoryRequirements, .-vkGetImageMemoryRequirements
@@ -260,7 +260,7 @@ vkGetImageMemoryRequirements:
     .type vkGetImageSparseMemoryRequirements, %function
     .p2align 2
 vkGetImageSparseMemoryRequirements:
-    mov x17, #3305
+    mov x17, #3306
     hlt #0x5846
     ret
     .size vkGetImageSparseMemoryRequirements, .-vkGetImageSparseMemoryRequirements
@@ -268,7 +268,7 @@ vkGetImageSparseMemoryRequirements:
     .type vkGetPhysicalDeviceSparseImageFormatProperties, %function
     .p2align 2
 vkGetPhysicalDeviceSparseImageFormatProperties:
-    mov x17, #3306
+    mov x17, #3307
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSparseImageFormatProperties, .-vkGetPhysicalDeviceSparseImageFormatProperties
@@ -276,7 +276,7 @@ vkGetPhysicalDeviceSparseImageFormatProperties:
     .type vkQueueBindSparse, %function
     .p2align 2
 vkQueueBindSparse:
-    mov x17, #3307
+    mov x17, #3308
     hlt #0x5846
     ret
     .size vkQueueBindSparse, .-vkQueueBindSparse
@@ -284,7 +284,7 @@ vkQueueBindSparse:
     .type vkCreateFence, %function
     .p2align 2
 vkCreateFence:
-    mov x17, #3308
+    mov x17, #3309
     hlt #0x5846
     ret
     .size vkCreateFence, .-vkCreateFence
@@ -292,7 +292,7 @@ vkCreateFence:
     .type vkDestroyFence, %function
     .p2align 2
 vkDestroyFence:
-    mov x17, #3309
+    mov x17, #3310
     hlt #0x5846
     ret
     .size vkDestroyFence, .-vkDestroyFence
@@ -300,7 +300,7 @@ vkDestroyFence:
     .type vkResetFences, %function
     .p2align 2
 vkResetFences:
-    mov x17, #3310
+    mov x17, #3311
     hlt #0x5846
     ret
     .size vkResetFences, .-vkResetFences
@@ -308,7 +308,7 @@ vkResetFences:
     .type vkGetFenceStatus, %function
     .p2align 2
 vkGetFenceStatus:
-    mov x17, #3311
+    mov x17, #3312
     hlt #0x5846
     ret
     .size vkGetFenceStatus, .-vkGetFenceStatus
@@ -316,7 +316,7 @@ vkGetFenceStatus:
     .type vkWaitForFences, %function
     .p2align 2
 vkWaitForFences:
-    mov x17, #3312
+    mov x17, #3313
     hlt #0x5846
     ret
     .size vkWaitForFences, .-vkWaitForFences
@@ -324,7 +324,7 @@ vkWaitForFences:
     .type vkCreateSemaphore, %function
     .p2align 2
 vkCreateSemaphore:
-    mov x17, #3313
+    mov x17, #3314
     hlt #0x5846
     ret
     .size vkCreateSemaphore, .-vkCreateSemaphore
@@ -332,7 +332,7 @@ vkCreateSemaphore:
     .type vkDestroySemaphore, %function
     .p2align 2
 vkDestroySemaphore:
-    mov x17, #3314
+    mov x17, #3315
     hlt #0x5846
     ret
     .size vkDestroySemaphore, .-vkDestroySemaphore
@@ -340,7 +340,7 @@ vkDestroySemaphore:
     .type vkCreateEvent, %function
     .p2align 2
 vkCreateEvent:
-    mov x17, #3315
+    mov x17, #3316
     hlt #0x5846
     ret
     .size vkCreateEvent, .-vkCreateEvent
@@ -348,7 +348,7 @@ vkCreateEvent:
     .type vkDestroyEvent, %function
     .p2align 2
 vkDestroyEvent:
-    mov x17, #3316
+    mov x17, #3317
     hlt #0x5846
     ret
     .size vkDestroyEvent, .-vkDestroyEvent
@@ -356,7 +356,7 @@ vkDestroyEvent:
     .type vkGetEventStatus, %function
     .p2align 2
 vkGetEventStatus:
-    mov x17, #3317
+    mov x17, #3318
     hlt #0x5846
     ret
     .size vkGetEventStatus, .-vkGetEventStatus
@@ -364,7 +364,7 @@ vkGetEventStatus:
     .type vkSetEvent, %function
     .p2align 2
 vkSetEvent:
-    mov x17, #3318
+    mov x17, #3319
     hlt #0x5846
     ret
     .size vkSetEvent, .-vkSetEvent
@@ -372,7 +372,7 @@ vkSetEvent:
     .type vkResetEvent, %function
     .p2align 2
 vkResetEvent:
-    mov x17, #3319
+    mov x17, #3320
     hlt #0x5846
     ret
     .size vkResetEvent, .-vkResetEvent
@@ -380,7 +380,7 @@ vkResetEvent:
     .type vkCreateQueryPool, %function
     .p2align 2
 vkCreateQueryPool:
-    mov x17, #3320
+    mov x17, #3321
     hlt #0x5846
     ret
     .size vkCreateQueryPool, .-vkCreateQueryPool
@@ -388,7 +388,7 @@ vkCreateQueryPool:
     .type vkDestroyQueryPool, %function
     .p2align 2
 vkDestroyQueryPool:
-    mov x17, #3321
+    mov x17, #3322
     hlt #0x5846
     ret
     .size vkDestroyQueryPool, .-vkDestroyQueryPool
@@ -396,7 +396,7 @@ vkDestroyQueryPool:
     .type vkGetQueryPoolResults, %function
     .p2align 2
 vkGetQueryPoolResults:
-    mov x17, #3322
+    mov x17, #3323
     hlt #0x5846
     ret
     .size vkGetQueryPoolResults, .-vkGetQueryPoolResults
@@ -404,7 +404,7 @@ vkGetQueryPoolResults:
     .type vkCreateBuffer, %function
     .p2align 2
 vkCreateBuffer:
-    mov x17, #3323
+    mov x17, #3324
     hlt #0x5846
     ret
     .size vkCreateBuffer, .-vkCreateBuffer
@@ -412,7 +412,7 @@ vkCreateBuffer:
     .type vkDestroyBuffer, %function
     .p2align 2
 vkDestroyBuffer:
-    mov x17, #3324
+    mov x17, #3325
     hlt #0x5846
     ret
     .size vkDestroyBuffer, .-vkDestroyBuffer
@@ -420,7 +420,7 @@ vkDestroyBuffer:
     .type vkCreateBufferView, %function
     .p2align 2
 vkCreateBufferView:
-    mov x17, #3325
+    mov x17, #3326
     hlt #0x5846
     ret
     .size vkCreateBufferView, .-vkCreateBufferView
@@ -428,7 +428,7 @@ vkCreateBufferView:
     .type vkDestroyBufferView, %function
     .p2align 2
 vkDestroyBufferView:
-    mov x17, #3326
+    mov x17, #3327
     hlt #0x5846
     ret
     .size vkDestroyBufferView, .-vkDestroyBufferView
@@ -436,7 +436,7 @@ vkDestroyBufferView:
     .type vkCreateImage, %function
     .p2align 2
 vkCreateImage:
-    mov x17, #3327
+    mov x17, #3328
     hlt #0x5846
     ret
     .size vkCreateImage, .-vkCreateImage
@@ -444,7 +444,7 @@ vkCreateImage:
     .type vkDestroyImage, %function
     .p2align 2
 vkDestroyImage:
-    mov x17, #3328
+    mov x17, #3329
     hlt #0x5846
     ret
     .size vkDestroyImage, .-vkDestroyImage
@@ -452,7 +452,7 @@ vkDestroyImage:
     .type vkGetImageSubresourceLayout, %function
     .p2align 2
 vkGetImageSubresourceLayout:
-    mov x17, #3329
+    mov x17, #3330
     hlt #0x5846
     ret
     .size vkGetImageSubresourceLayout, .-vkGetImageSubresourceLayout
@@ -460,7 +460,7 @@ vkGetImageSubresourceLayout:
     .type vkCreateImageView, %function
     .p2align 2
 vkCreateImageView:
-    mov x17, #3330
+    mov x17, #3331
     hlt #0x5846
     ret
     .size vkCreateImageView, .-vkCreateImageView
@@ -468,7 +468,7 @@ vkCreateImageView:
     .type vkDestroyImageView, %function
     .p2align 2
 vkDestroyImageView:
-    mov x17, #3331
+    mov x17, #3332
     hlt #0x5846
     ret
     .size vkDestroyImageView, .-vkDestroyImageView
@@ -476,7 +476,7 @@ vkDestroyImageView:
     .type vkCreateShaderModule, %function
     .p2align 2
 vkCreateShaderModule:
-    mov x17, #3332
+    mov x17, #3333
     hlt #0x5846
     ret
     .size vkCreateShaderModule, .-vkCreateShaderModule
@@ -484,7 +484,7 @@ vkCreateShaderModule:
     .type vkDestroyShaderModule, %function
     .p2align 2
 vkDestroyShaderModule:
-    mov x17, #3333
+    mov x17, #3334
     hlt #0x5846
     ret
     .size vkDestroyShaderModule, .-vkDestroyShaderModule
@@ -492,7 +492,7 @@ vkDestroyShaderModule:
     .type vkCreatePipelineCache, %function
     .p2align 2
 vkCreatePipelineCache:
-    mov x17, #3334
+    mov x17, #3335
     hlt #0x5846
     ret
     .size vkCreatePipelineCache, .-vkCreatePipelineCache
@@ -500,7 +500,7 @@ vkCreatePipelineCache:
     .type vkDestroyPipelineCache, %function
     .p2align 2
 vkDestroyPipelineCache:
-    mov x17, #3335
+    mov x17, #3336
     hlt #0x5846
     ret
     .size vkDestroyPipelineCache, .-vkDestroyPipelineCache
@@ -508,7 +508,7 @@ vkDestroyPipelineCache:
     .type vkGetPipelineCacheData, %function
     .p2align 2
 vkGetPipelineCacheData:
-    mov x17, #3336
+    mov x17, #3337
     hlt #0x5846
     ret
     .size vkGetPipelineCacheData, .-vkGetPipelineCacheData
@@ -516,7 +516,7 @@ vkGetPipelineCacheData:
     .type vkMergePipelineCaches, %function
     .p2align 2
 vkMergePipelineCaches:
-    mov x17, #3337
+    mov x17, #3338
     hlt #0x5846
     ret
     .size vkMergePipelineCaches, .-vkMergePipelineCaches
@@ -524,7 +524,7 @@ vkMergePipelineCaches:
     .type vkCreateGraphicsPipelines, %function
     .p2align 2
 vkCreateGraphicsPipelines:
-    mov x17, #3338
+    mov x17, #3339
     hlt #0x5846
     ret
     .size vkCreateGraphicsPipelines, .-vkCreateGraphicsPipelines
@@ -532,7 +532,7 @@ vkCreateGraphicsPipelines:
     .type vkCreateComputePipelines, %function
     .p2align 2
 vkCreateComputePipelines:
-    mov x17, #3339
+    mov x17, #3340
     hlt #0x5846
     ret
     .size vkCreateComputePipelines, .-vkCreateComputePipelines
@@ -540,7 +540,7 @@ vkCreateComputePipelines:
     .type vkDestroyPipeline, %function
     .p2align 2
 vkDestroyPipeline:
-    mov x17, #3340
+    mov x17, #3341
     hlt #0x5846
     ret
     .size vkDestroyPipeline, .-vkDestroyPipeline
@@ -548,7 +548,7 @@ vkDestroyPipeline:
     .type vkCreatePipelineLayout, %function
     .p2align 2
 vkCreatePipelineLayout:
-    mov x17, #3341
+    mov x17, #3342
     hlt #0x5846
     ret
     .size vkCreatePipelineLayout, .-vkCreatePipelineLayout
@@ -556,7 +556,7 @@ vkCreatePipelineLayout:
     .type vkDestroyPipelineLayout, %function
     .p2align 2
 vkDestroyPipelineLayout:
-    mov x17, #3342
+    mov x17, #3343
     hlt #0x5846
     ret
     .size vkDestroyPipelineLayout, .-vkDestroyPipelineLayout
@@ -564,7 +564,7 @@ vkDestroyPipelineLayout:
     .type vkCreateSampler, %function
     .p2align 2
 vkCreateSampler:
-    mov x17, #3343
+    mov x17, #3344
     hlt #0x5846
     ret
     .size vkCreateSampler, .-vkCreateSampler
@@ -572,7 +572,7 @@ vkCreateSampler:
     .type vkDestroySampler, %function
     .p2align 2
 vkDestroySampler:
-    mov x17, #3344
+    mov x17, #3345
     hlt #0x5846
     ret
     .size vkDestroySampler, .-vkDestroySampler
@@ -580,7 +580,7 @@ vkDestroySampler:
     .type vkCreateDescriptorSetLayout, %function
     .p2align 2
 vkCreateDescriptorSetLayout:
-    mov x17, #3345
+    mov x17, #3346
     hlt #0x5846
     ret
     .size vkCreateDescriptorSetLayout, .-vkCreateDescriptorSetLayout
@@ -588,7 +588,7 @@ vkCreateDescriptorSetLayout:
     .type vkDestroyDescriptorSetLayout, %function
     .p2align 2
 vkDestroyDescriptorSetLayout:
-    mov x17, #3346
+    mov x17, #3347
     hlt #0x5846
     ret
     .size vkDestroyDescriptorSetLayout, .-vkDestroyDescriptorSetLayout
@@ -596,7 +596,7 @@ vkDestroyDescriptorSetLayout:
     .type vkCreateDescriptorPool, %function
     .p2align 2
 vkCreateDescriptorPool:
-    mov x17, #3347
+    mov x17, #3348
     hlt #0x5846
     ret
     .size vkCreateDescriptorPool, .-vkCreateDescriptorPool
@@ -604,7 +604,7 @@ vkCreateDescriptorPool:
     .type vkDestroyDescriptorPool, %function
     .p2align 2
 vkDestroyDescriptorPool:
-    mov x17, #3348
+    mov x17, #3349
     hlt #0x5846
     ret
     .size vkDestroyDescriptorPool, .-vkDestroyDescriptorPool
@@ -612,7 +612,7 @@ vkDestroyDescriptorPool:
     .type vkResetDescriptorPool, %function
     .p2align 2
 vkResetDescriptorPool:
-    mov x17, #3349
+    mov x17, #3350
     hlt #0x5846
     ret
     .size vkResetDescriptorPool, .-vkResetDescriptorPool
@@ -620,7 +620,7 @@ vkResetDescriptorPool:
     .type vkAllocateDescriptorSets, %function
     .p2align 2
 vkAllocateDescriptorSets:
-    mov x17, #3350
+    mov x17, #3351
     hlt #0x5846
     ret
     .size vkAllocateDescriptorSets, .-vkAllocateDescriptorSets
@@ -628,7 +628,7 @@ vkAllocateDescriptorSets:
     .type vkFreeDescriptorSets, %function
     .p2align 2
 vkFreeDescriptorSets:
-    mov x17, #3351
+    mov x17, #3352
     hlt #0x5846
     ret
     .size vkFreeDescriptorSets, .-vkFreeDescriptorSets
@@ -636,7 +636,7 @@ vkFreeDescriptorSets:
     .type vkUpdateDescriptorSets, %function
     .p2align 2
 vkUpdateDescriptorSets:
-    mov x17, #3352
+    mov x17, #3353
     hlt #0x5846
     ret
     .size vkUpdateDescriptorSets, .-vkUpdateDescriptorSets
@@ -644,7 +644,7 @@ vkUpdateDescriptorSets:
     .type vkCreateFramebuffer, %function
     .p2align 2
 vkCreateFramebuffer:
-    mov x17, #3353
+    mov x17, #3354
     hlt #0x5846
     ret
     .size vkCreateFramebuffer, .-vkCreateFramebuffer
@@ -652,7 +652,7 @@ vkCreateFramebuffer:
     .type vkDestroyFramebuffer, %function
     .p2align 2
 vkDestroyFramebuffer:
-    mov x17, #3354
+    mov x17, #3355
     hlt #0x5846
     ret
     .size vkDestroyFramebuffer, .-vkDestroyFramebuffer
@@ -660,7 +660,7 @@ vkDestroyFramebuffer:
     .type vkCreateRenderPass, %function
     .p2align 2
 vkCreateRenderPass:
-    mov x17, #3355
+    mov x17, #3356
     hlt #0x5846
     ret
     .size vkCreateRenderPass, .-vkCreateRenderPass
@@ -668,7 +668,7 @@ vkCreateRenderPass:
     .type vkDestroyRenderPass, %function
     .p2align 2
 vkDestroyRenderPass:
-    mov x17, #3356
+    mov x17, #3357
     hlt #0x5846
     ret
     .size vkDestroyRenderPass, .-vkDestroyRenderPass
@@ -676,7 +676,7 @@ vkDestroyRenderPass:
     .type vkGetRenderAreaGranularity, %function
     .p2align 2
 vkGetRenderAreaGranularity:
-    mov x17, #3357
+    mov x17, #3358
     hlt #0x5846
     ret
     .size vkGetRenderAreaGranularity, .-vkGetRenderAreaGranularity
@@ -684,7 +684,7 @@ vkGetRenderAreaGranularity:
     .type vkCreateCommandPool, %function
     .p2align 2
 vkCreateCommandPool:
-    mov x17, #3358
+    mov x17, #3359
     hlt #0x5846
     ret
     .size vkCreateCommandPool, .-vkCreateCommandPool
@@ -692,7 +692,7 @@ vkCreateCommandPool:
     .type vkDestroyCommandPool, %function
     .p2align 2
 vkDestroyCommandPool:
-    mov x17, #3359
+    mov x17, #3360
     hlt #0x5846
     ret
     .size vkDestroyCommandPool, .-vkDestroyCommandPool
@@ -700,7 +700,7 @@ vkDestroyCommandPool:
     .type vkResetCommandPool, %function
     .p2align 2
 vkResetCommandPool:
-    mov x17, #3360
+    mov x17, #3361
     hlt #0x5846
     ret
     .size vkResetCommandPool, .-vkResetCommandPool
@@ -708,7 +708,7 @@ vkResetCommandPool:
     .type vkAllocateCommandBuffers, %function
     .p2align 2
 vkAllocateCommandBuffers:
-    mov x17, #3361
+    mov x17, #3362
     hlt #0x5846
     ret
     .size vkAllocateCommandBuffers, .-vkAllocateCommandBuffers
@@ -716,7 +716,7 @@ vkAllocateCommandBuffers:
     .type vkFreeCommandBuffers, %function
     .p2align 2
 vkFreeCommandBuffers:
-    mov x17, #3362
+    mov x17, #3363
     hlt #0x5846
     ret
     .size vkFreeCommandBuffers, .-vkFreeCommandBuffers
@@ -724,7 +724,7 @@ vkFreeCommandBuffers:
     .type vkBeginCommandBuffer, %function
     .p2align 2
 vkBeginCommandBuffer:
-    mov x17, #3363
+    mov x17, #3364
     hlt #0x5846
     ret
     .size vkBeginCommandBuffer, .-vkBeginCommandBuffer
@@ -732,7 +732,7 @@ vkBeginCommandBuffer:
     .type vkEndCommandBuffer, %function
     .p2align 2
 vkEndCommandBuffer:
-    mov x17, #3364
+    mov x17, #3365
     hlt #0x5846
     ret
     .size vkEndCommandBuffer, .-vkEndCommandBuffer
@@ -740,7 +740,7 @@ vkEndCommandBuffer:
     .type vkResetCommandBuffer, %function
     .p2align 2
 vkResetCommandBuffer:
-    mov x17, #3365
+    mov x17, #3366
     hlt #0x5846
     ret
     .size vkResetCommandBuffer, .-vkResetCommandBuffer
@@ -748,7 +748,7 @@ vkResetCommandBuffer:
     .type vkCmdBindPipeline, %function
     .p2align 2
 vkCmdBindPipeline:
-    mov x17, #3366
+    mov x17, #3367
     hlt #0x5846
     ret
     .size vkCmdBindPipeline, .-vkCmdBindPipeline
@@ -756,7 +756,7 @@ vkCmdBindPipeline:
     .type vkCmdSetViewport, %function
     .p2align 2
 vkCmdSetViewport:
-    mov x17, #3367
+    mov x17, #3368
     hlt #0x5846
     ret
     .size vkCmdSetViewport, .-vkCmdSetViewport
@@ -764,7 +764,7 @@ vkCmdSetViewport:
     .type vkCmdSetScissor, %function
     .p2align 2
 vkCmdSetScissor:
-    mov x17, #3368
+    mov x17, #3369
     hlt #0x5846
     ret
     .size vkCmdSetScissor, .-vkCmdSetScissor
@@ -772,7 +772,7 @@ vkCmdSetScissor:
     .type vkCmdSetLineWidth, %function
     .p2align 2
 vkCmdSetLineWidth:
-    mov x17, #3369
+    mov x17, #3370
     hlt #0x5846
     ret
     .size vkCmdSetLineWidth, .-vkCmdSetLineWidth
@@ -780,7 +780,7 @@ vkCmdSetLineWidth:
     .type vkCmdSetDepthBias, %function
     .p2align 2
 vkCmdSetDepthBias:
-    mov x17, #3370
+    mov x17, #3371
     hlt #0x5846
     ret
     .size vkCmdSetDepthBias, .-vkCmdSetDepthBias
@@ -788,7 +788,7 @@ vkCmdSetDepthBias:
     .type vkCmdSetBlendConstants, %function
     .p2align 2
 vkCmdSetBlendConstants:
-    mov x17, #3371
+    mov x17, #3372
     hlt #0x5846
     ret
     .size vkCmdSetBlendConstants, .-vkCmdSetBlendConstants
@@ -796,7 +796,7 @@ vkCmdSetBlendConstants:
     .type vkCmdSetDepthBounds, %function
     .p2align 2
 vkCmdSetDepthBounds:
-    mov x17, #3372
+    mov x17, #3373
     hlt #0x5846
     ret
     .size vkCmdSetDepthBounds, .-vkCmdSetDepthBounds
@@ -804,7 +804,7 @@ vkCmdSetDepthBounds:
     .type vkCmdSetStencilCompareMask, %function
     .p2align 2
 vkCmdSetStencilCompareMask:
-    mov x17, #3373
+    mov x17, #3374
     hlt #0x5846
     ret
     .size vkCmdSetStencilCompareMask, .-vkCmdSetStencilCompareMask
@@ -812,7 +812,7 @@ vkCmdSetStencilCompareMask:
     .type vkCmdSetStencilWriteMask, %function
     .p2align 2
 vkCmdSetStencilWriteMask:
-    mov x17, #3374
+    mov x17, #3375
     hlt #0x5846
     ret
     .size vkCmdSetStencilWriteMask, .-vkCmdSetStencilWriteMask
@@ -820,7 +820,7 @@ vkCmdSetStencilWriteMask:
     .type vkCmdSetStencilReference, %function
     .p2align 2
 vkCmdSetStencilReference:
-    mov x17, #3375
+    mov x17, #3376
     hlt #0x5846
     ret
     .size vkCmdSetStencilReference, .-vkCmdSetStencilReference
@@ -828,7 +828,7 @@ vkCmdSetStencilReference:
     .type vkCmdBindDescriptorSets, %function
     .p2align 2
 vkCmdBindDescriptorSets:
-    mov x17, #3376
+    mov x17, #3377
     hlt #0x5846
     ret
     .size vkCmdBindDescriptorSets, .-vkCmdBindDescriptorSets
@@ -836,7 +836,7 @@ vkCmdBindDescriptorSets:
     .type vkCmdBindIndexBuffer, %function
     .p2align 2
 vkCmdBindIndexBuffer:
-    mov x17, #3377
+    mov x17, #3378
     hlt #0x5846
     ret
     .size vkCmdBindIndexBuffer, .-vkCmdBindIndexBuffer
@@ -844,7 +844,7 @@ vkCmdBindIndexBuffer:
     .type vkCmdBindVertexBuffers, %function
     .p2align 2
 vkCmdBindVertexBuffers:
-    mov x17, #3378
+    mov x17, #3379
     hlt #0x5846
     ret
     .size vkCmdBindVertexBuffers, .-vkCmdBindVertexBuffers
@@ -852,7 +852,7 @@ vkCmdBindVertexBuffers:
     .type vkCmdDraw, %function
     .p2align 2
 vkCmdDraw:
-    mov x17, #3379
+    mov x17, #3380
     hlt #0x5846
     ret
     .size vkCmdDraw, .-vkCmdDraw
@@ -860,7 +860,7 @@ vkCmdDraw:
     .type vkCmdDrawIndexed, %function
     .p2align 2
 vkCmdDrawIndexed:
-    mov x17, #3380
+    mov x17, #3381
     hlt #0x5846
     ret
     .size vkCmdDrawIndexed, .-vkCmdDrawIndexed
@@ -868,7 +868,7 @@ vkCmdDrawIndexed:
     .type vkCmdDrawIndirect, %function
     .p2align 2
 vkCmdDrawIndirect:
-    mov x17, #3381
+    mov x17, #3382
     hlt #0x5846
     ret
     .size vkCmdDrawIndirect, .-vkCmdDrawIndirect
@@ -876,7 +876,7 @@ vkCmdDrawIndirect:
     .type vkCmdDrawIndexedIndirect, %function
     .p2align 2
 vkCmdDrawIndexedIndirect:
-    mov x17, #3382
+    mov x17, #3383
     hlt #0x5846
     ret
     .size vkCmdDrawIndexedIndirect, .-vkCmdDrawIndexedIndirect
@@ -884,7 +884,7 @@ vkCmdDrawIndexedIndirect:
     .type vkCmdDispatch, %function
     .p2align 2
 vkCmdDispatch:
-    mov x17, #3383
+    mov x17, #3384
     hlt #0x5846
     ret
     .size vkCmdDispatch, .-vkCmdDispatch
@@ -892,7 +892,7 @@ vkCmdDispatch:
     .type vkCmdDispatchIndirect, %function
     .p2align 2
 vkCmdDispatchIndirect:
-    mov x17, #3384
+    mov x17, #3385
     hlt #0x5846
     ret
     .size vkCmdDispatchIndirect, .-vkCmdDispatchIndirect
@@ -900,7 +900,7 @@ vkCmdDispatchIndirect:
     .type vkCmdCopyBuffer, %function
     .p2align 2
 vkCmdCopyBuffer:
-    mov x17, #3385
+    mov x17, #3386
     hlt #0x5846
     ret
     .size vkCmdCopyBuffer, .-vkCmdCopyBuffer
@@ -908,7 +908,7 @@ vkCmdCopyBuffer:
     .type vkCmdCopyImage, %function
     .p2align 2
 vkCmdCopyImage:
-    mov x17, #3386
+    mov x17, #3387
     hlt #0x5846
     ret
     .size vkCmdCopyImage, .-vkCmdCopyImage
@@ -916,7 +916,7 @@ vkCmdCopyImage:
     .type vkCmdBlitImage, %function
     .p2align 2
 vkCmdBlitImage:
-    mov x17, #3387
+    mov x17, #3388
     hlt #0x5846
     ret
     .size vkCmdBlitImage, .-vkCmdBlitImage
@@ -924,7 +924,7 @@ vkCmdBlitImage:
     .type vkCmdCopyBufferToImage, %function
     .p2align 2
 vkCmdCopyBufferToImage:
-    mov x17, #3388
+    mov x17, #3389
     hlt #0x5846
     ret
     .size vkCmdCopyBufferToImage, .-vkCmdCopyBufferToImage
@@ -932,7 +932,7 @@ vkCmdCopyBufferToImage:
     .type vkCmdCopyImageToBuffer, %function
     .p2align 2
 vkCmdCopyImageToBuffer:
-    mov x17, #3389
+    mov x17, #3390
     hlt #0x5846
     ret
     .size vkCmdCopyImageToBuffer, .-vkCmdCopyImageToBuffer
@@ -940,7 +940,7 @@ vkCmdCopyImageToBuffer:
     .type vkCmdUpdateBuffer, %function
     .p2align 2
 vkCmdUpdateBuffer:
-    mov x17, #3390
+    mov x17, #3391
     hlt #0x5846
     ret
     .size vkCmdUpdateBuffer, .-vkCmdUpdateBuffer
@@ -948,7 +948,7 @@ vkCmdUpdateBuffer:
     .type vkCmdFillBuffer, %function
     .p2align 2
 vkCmdFillBuffer:
-    mov x17, #3391
+    mov x17, #3392
     hlt #0x5846
     ret
     .size vkCmdFillBuffer, .-vkCmdFillBuffer
@@ -956,7 +956,7 @@ vkCmdFillBuffer:
     .type vkCmdClearColorImage, %function
     .p2align 2
 vkCmdClearColorImage:
-    mov x17, #3392
+    mov x17, #3393
     hlt #0x5846
     ret
     .size vkCmdClearColorImage, .-vkCmdClearColorImage
@@ -964,7 +964,7 @@ vkCmdClearColorImage:
     .type vkCmdClearDepthStencilImage, %function
     .p2align 2
 vkCmdClearDepthStencilImage:
-    mov x17, #3393
+    mov x17, #3394
     hlt #0x5846
     ret
     .size vkCmdClearDepthStencilImage, .-vkCmdClearDepthStencilImage
@@ -972,7 +972,7 @@ vkCmdClearDepthStencilImage:
     .type vkCmdClearAttachments, %function
     .p2align 2
 vkCmdClearAttachments:
-    mov x17, #3394
+    mov x17, #3395
     hlt #0x5846
     ret
     .size vkCmdClearAttachments, .-vkCmdClearAttachments
@@ -980,7 +980,7 @@ vkCmdClearAttachments:
     .type vkCmdResolveImage, %function
     .p2align 2
 vkCmdResolveImage:
-    mov x17, #3395
+    mov x17, #3396
     hlt #0x5846
     ret
     .size vkCmdResolveImage, .-vkCmdResolveImage
@@ -988,7 +988,7 @@ vkCmdResolveImage:
     .type vkCmdSetEvent, %function
     .p2align 2
 vkCmdSetEvent:
-    mov x17, #3396
+    mov x17, #3397
     hlt #0x5846
     ret
     .size vkCmdSetEvent, .-vkCmdSetEvent
@@ -996,7 +996,7 @@ vkCmdSetEvent:
     .type vkCmdResetEvent, %function
     .p2align 2
 vkCmdResetEvent:
-    mov x17, #3397
+    mov x17, #3398
     hlt #0x5846
     ret
     .size vkCmdResetEvent, .-vkCmdResetEvent
@@ -1004,7 +1004,7 @@ vkCmdResetEvent:
     .type vkCmdWaitEvents, %function
     .p2align 2
 vkCmdWaitEvents:
-    mov x17, #3398
+    mov x17, #3399
     hlt #0x5846
     ret
     .size vkCmdWaitEvents, .-vkCmdWaitEvents
@@ -1012,7 +1012,7 @@ vkCmdWaitEvents:
     .type vkCmdPipelineBarrier, %function
     .p2align 2
 vkCmdPipelineBarrier:
-    mov x17, #3399
+    mov x17, #3400
     hlt #0x5846
     ret
     .size vkCmdPipelineBarrier, .-vkCmdPipelineBarrier
@@ -1020,7 +1020,7 @@ vkCmdPipelineBarrier:
     .type vkCmdBeginQuery, %function
     .p2align 2
 vkCmdBeginQuery:
-    mov x17, #3400
+    mov x17, #3401
     hlt #0x5846
     ret
     .size vkCmdBeginQuery, .-vkCmdBeginQuery
@@ -1028,7 +1028,7 @@ vkCmdBeginQuery:
     .type vkCmdEndQuery, %function
     .p2align 2
 vkCmdEndQuery:
-    mov x17, #3401
+    mov x17, #3402
     hlt #0x5846
     ret
     .size vkCmdEndQuery, .-vkCmdEndQuery
@@ -1036,7 +1036,7 @@ vkCmdEndQuery:
     .type vkCmdResetQueryPool, %function
     .p2align 2
 vkCmdResetQueryPool:
-    mov x17, #3402
+    mov x17, #3403
     hlt #0x5846
     ret
     .size vkCmdResetQueryPool, .-vkCmdResetQueryPool
@@ -1044,7 +1044,7 @@ vkCmdResetQueryPool:
     .type vkCmdWriteTimestamp, %function
     .p2align 2
 vkCmdWriteTimestamp:
-    mov x17, #3403
+    mov x17, #3404
     hlt #0x5846
     ret
     .size vkCmdWriteTimestamp, .-vkCmdWriteTimestamp
@@ -1052,7 +1052,7 @@ vkCmdWriteTimestamp:
     .type vkCmdCopyQueryPoolResults, %function
     .p2align 2
 vkCmdCopyQueryPoolResults:
-    mov x17, #3404
+    mov x17, #3405
     hlt #0x5846
     ret
     .size vkCmdCopyQueryPoolResults, .-vkCmdCopyQueryPoolResults
@@ -1060,7 +1060,7 @@ vkCmdCopyQueryPoolResults:
     .type vkCmdPushConstants, %function
     .p2align 2
 vkCmdPushConstants:
-    mov x17, #3405
+    mov x17, #3406
     hlt #0x5846
     ret
     .size vkCmdPushConstants, .-vkCmdPushConstants
@@ -1068,7 +1068,7 @@ vkCmdPushConstants:
     .type vkCmdBeginRenderPass, %function
     .p2align 2
 vkCmdBeginRenderPass:
-    mov x17, #3406
+    mov x17, #3407
     hlt #0x5846
     ret
     .size vkCmdBeginRenderPass, .-vkCmdBeginRenderPass
@@ -1076,7 +1076,7 @@ vkCmdBeginRenderPass:
     .type vkCmdNextSubpass, %function
     .p2align 2
 vkCmdNextSubpass:
-    mov x17, #3407
+    mov x17, #3408
     hlt #0x5846
     ret
     .size vkCmdNextSubpass, .-vkCmdNextSubpass
@@ -1084,7 +1084,7 @@ vkCmdNextSubpass:
     .type vkCmdEndRenderPass, %function
     .p2align 2
 vkCmdEndRenderPass:
-    mov x17, #3408
+    mov x17, #3409
     hlt #0x5846
     ret
     .size vkCmdEndRenderPass, .-vkCmdEndRenderPass
@@ -1092,7 +1092,7 @@ vkCmdEndRenderPass:
     .type vkCmdExecuteCommands, %function
     .p2align 2
 vkCmdExecuteCommands:
-    mov x17, #3409
+    mov x17, #3410
     hlt #0x5846
     ret
     .size vkCmdExecuteCommands, .-vkCmdExecuteCommands
@@ -1100,7 +1100,7 @@ vkCmdExecuteCommands:
     .type vkEnumerateInstanceVersion, %function
     .p2align 2
 vkEnumerateInstanceVersion:
-    mov x17, #3410
+    mov x17, #3411
     hlt #0x5846
     ret
     .size vkEnumerateInstanceVersion, .-vkEnumerateInstanceVersion
@@ -1108,7 +1108,7 @@ vkEnumerateInstanceVersion:
     .type vkBindBufferMemory2, %function
     .p2align 2
 vkBindBufferMemory2:
-    mov x17, #3411
+    mov x17, #3412
     hlt #0x5846
     ret
     .size vkBindBufferMemory2, .-vkBindBufferMemory2
@@ -1116,7 +1116,7 @@ vkBindBufferMemory2:
     .type vkBindImageMemory2, %function
     .p2align 2
 vkBindImageMemory2:
-    mov x17, #3412
+    mov x17, #3413
     hlt #0x5846
     ret
     .size vkBindImageMemory2, .-vkBindImageMemory2
@@ -1124,7 +1124,7 @@ vkBindImageMemory2:
     .type vkGetDeviceGroupPeerMemoryFeatures, %function
     .p2align 2
 vkGetDeviceGroupPeerMemoryFeatures:
-    mov x17, #3413
+    mov x17, #3414
     hlt #0x5846
     ret
     .size vkGetDeviceGroupPeerMemoryFeatures, .-vkGetDeviceGroupPeerMemoryFeatures
@@ -1132,7 +1132,7 @@ vkGetDeviceGroupPeerMemoryFeatures:
     .type vkCmdSetDeviceMask, %function
     .p2align 2
 vkCmdSetDeviceMask:
-    mov x17, #3414
+    mov x17, #3415
     hlt #0x5846
     ret
     .size vkCmdSetDeviceMask, .-vkCmdSetDeviceMask
@@ -1140,7 +1140,7 @@ vkCmdSetDeviceMask:
     .type vkCmdDispatchBase, %function
     .p2align 2
 vkCmdDispatchBase:
-    mov x17, #3415
+    mov x17, #3416
     hlt #0x5846
     ret
     .size vkCmdDispatchBase, .-vkCmdDispatchBase
@@ -1148,7 +1148,7 @@ vkCmdDispatchBase:
     .type vkEnumeratePhysicalDeviceGroups, %function
     .p2align 2
 vkEnumeratePhysicalDeviceGroups:
-    mov x17, #3416
+    mov x17, #3417
     hlt #0x5846
     ret
     .size vkEnumeratePhysicalDeviceGroups, .-vkEnumeratePhysicalDeviceGroups
@@ -1156,7 +1156,7 @@ vkEnumeratePhysicalDeviceGroups:
     .type vkGetImageMemoryRequirements2, %function
     .p2align 2
 vkGetImageMemoryRequirements2:
-    mov x17, #3417
+    mov x17, #3418
     hlt #0x5846
     ret
     .size vkGetImageMemoryRequirements2, .-vkGetImageMemoryRequirements2
@@ -1164,7 +1164,7 @@ vkGetImageMemoryRequirements2:
     .type vkGetBufferMemoryRequirements2, %function
     .p2align 2
 vkGetBufferMemoryRequirements2:
-    mov x17, #3418
+    mov x17, #3419
     hlt #0x5846
     ret
     .size vkGetBufferMemoryRequirements2, .-vkGetBufferMemoryRequirements2
@@ -1172,7 +1172,7 @@ vkGetBufferMemoryRequirements2:
     .type vkGetImageSparseMemoryRequirements2, %function
     .p2align 2
 vkGetImageSparseMemoryRequirements2:
-    mov x17, #3419
+    mov x17, #3420
     hlt #0x5846
     ret
     .size vkGetImageSparseMemoryRequirements2, .-vkGetImageSparseMemoryRequirements2
@@ -1180,7 +1180,7 @@ vkGetImageSparseMemoryRequirements2:
     .type vkGetPhysicalDeviceFeatures2, %function
     .p2align 2
 vkGetPhysicalDeviceFeatures2:
-    mov x17, #3420
+    mov x17, #3421
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceFeatures2, .-vkGetPhysicalDeviceFeatures2
@@ -1188,7 +1188,7 @@ vkGetPhysicalDeviceFeatures2:
     .type vkGetPhysicalDeviceProperties2, %function
     .p2align 2
 vkGetPhysicalDeviceProperties2:
-    mov x17, #3421
+    mov x17, #3422
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceProperties2, .-vkGetPhysicalDeviceProperties2
@@ -1196,7 +1196,7 @@ vkGetPhysicalDeviceProperties2:
     .type vkGetPhysicalDeviceFormatProperties2, %function
     .p2align 2
 vkGetPhysicalDeviceFormatProperties2:
-    mov x17, #3422
+    mov x17, #3423
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceFormatProperties2, .-vkGetPhysicalDeviceFormatProperties2
@@ -1204,7 +1204,7 @@ vkGetPhysicalDeviceFormatProperties2:
     .type vkGetPhysicalDeviceImageFormatProperties2, %function
     .p2align 2
 vkGetPhysicalDeviceImageFormatProperties2:
-    mov x17, #3423
+    mov x17, #3424
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceImageFormatProperties2, .-vkGetPhysicalDeviceImageFormatProperties2
@@ -1212,7 +1212,7 @@ vkGetPhysicalDeviceImageFormatProperties2:
     .type vkGetPhysicalDeviceQueueFamilyProperties2, %function
     .p2align 2
 vkGetPhysicalDeviceQueueFamilyProperties2:
-    mov x17, #3424
+    mov x17, #3425
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceQueueFamilyProperties2, .-vkGetPhysicalDeviceQueueFamilyProperties2
@@ -1220,7 +1220,7 @@ vkGetPhysicalDeviceQueueFamilyProperties2:
     .type vkGetPhysicalDeviceMemoryProperties2, %function
     .p2align 2
 vkGetPhysicalDeviceMemoryProperties2:
-    mov x17, #3425
+    mov x17, #3426
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceMemoryProperties2, .-vkGetPhysicalDeviceMemoryProperties2
@@ -1228,7 +1228,7 @@ vkGetPhysicalDeviceMemoryProperties2:
     .type vkGetPhysicalDeviceSparseImageFormatProperties2, %function
     .p2align 2
 vkGetPhysicalDeviceSparseImageFormatProperties2:
-    mov x17, #3426
+    mov x17, #3427
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSparseImageFormatProperties2, .-vkGetPhysicalDeviceSparseImageFormatProperties2
@@ -1236,7 +1236,7 @@ vkGetPhysicalDeviceSparseImageFormatProperties2:
     .type vkTrimCommandPool, %function
     .p2align 2
 vkTrimCommandPool:
-    mov x17, #3427
+    mov x17, #3428
     hlt #0x5846
     ret
     .size vkTrimCommandPool, .-vkTrimCommandPool
@@ -1244,7 +1244,7 @@ vkTrimCommandPool:
     .type vkGetDeviceQueue2, %function
     .p2align 2
 vkGetDeviceQueue2:
-    mov x17, #3428
+    mov x17, #3429
     hlt #0x5846
     ret
     .size vkGetDeviceQueue2, .-vkGetDeviceQueue2
@@ -1252,7 +1252,7 @@ vkGetDeviceQueue2:
     .type vkCreateSamplerYcbcrConversion, %function
     .p2align 2
 vkCreateSamplerYcbcrConversion:
-    mov x17, #3429
+    mov x17, #3430
     hlt #0x5846
     ret
     .size vkCreateSamplerYcbcrConversion, .-vkCreateSamplerYcbcrConversion
@@ -1260,7 +1260,7 @@ vkCreateSamplerYcbcrConversion:
     .type vkDestroySamplerYcbcrConversion, %function
     .p2align 2
 vkDestroySamplerYcbcrConversion:
-    mov x17, #3430
+    mov x17, #3431
     hlt #0x5846
     ret
     .size vkDestroySamplerYcbcrConversion, .-vkDestroySamplerYcbcrConversion
@@ -1268,7 +1268,7 @@ vkDestroySamplerYcbcrConversion:
     .type vkCreateDescriptorUpdateTemplate, %function
     .p2align 2
 vkCreateDescriptorUpdateTemplate:
-    mov x17, #3431
+    mov x17, #3432
     hlt #0x5846
     ret
     .size vkCreateDescriptorUpdateTemplate, .-vkCreateDescriptorUpdateTemplate
@@ -1276,7 +1276,7 @@ vkCreateDescriptorUpdateTemplate:
     .type vkDestroyDescriptorUpdateTemplate, %function
     .p2align 2
 vkDestroyDescriptorUpdateTemplate:
-    mov x17, #3432
+    mov x17, #3433
     hlt #0x5846
     ret
     .size vkDestroyDescriptorUpdateTemplate, .-vkDestroyDescriptorUpdateTemplate
@@ -1284,7 +1284,7 @@ vkDestroyDescriptorUpdateTemplate:
     .type vkUpdateDescriptorSetWithTemplate, %function
     .p2align 2
 vkUpdateDescriptorSetWithTemplate:
-    mov x17, #3433
+    mov x17, #3434
     hlt #0x5846
     ret
     .size vkUpdateDescriptorSetWithTemplate, .-vkUpdateDescriptorSetWithTemplate
@@ -1292,7 +1292,7 @@ vkUpdateDescriptorSetWithTemplate:
     .type vkGetPhysicalDeviceExternalBufferProperties, %function
     .p2align 2
 vkGetPhysicalDeviceExternalBufferProperties:
-    mov x17, #3434
+    mov x17, #3435
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceExternalBufferProperties, .-vkGetPhysicalDeviceExternalBufferProperties
@@ -1300,7 +1300,7 @@ vkGetPhysicalDeviceExternalBufferProperties:
     .type vkGetPhysicalDeviceExternalFenceProperties, %function
     .p2align 2
 vkGetPhysicalDeviceExternalFenceProperties:
-    mov x17, #3435
+    mov x17, #3436
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceExternalFenceProperties, .-vkGetPhysicalDeviceExternalFenceProperties
@@ -1308,7 +1308,7 @@ vkGetPhysicalDeviceExternalFenceProperties:
     .type vkGetPhysicalDeviceExternalSemaphoreProperties, %function
     .p2align 2
 vkGetPhysicalDeviceExternalSemaphoreProperties:
-    mov x17, #3436
+    mov x17, #3437
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceExternalSemaphoreProperties, .-vkGetPhysicalDeviceExternalSemaphoreProperties
@@ -1316,7 +1316,7 @@ vkGetPhysicalDeviceExternalSemaphoreProperties:
     .type vkGetDescriptorSetLayoutSupport, %function
     .p2align 2
 vkGetDescriptorSetLayoutSupport:
-    mov x17, #3437
+    mov x17, #3438
     hlt #0x5846
     ret
     .size vkGetDescriptorSetLayoutSupport, .-vkGetDescriptorSetLayoutSupport
@@ -1324,7 +1324,7 @@ vkGetDescriptorSetLayoutSupport:
     .type vkCmdDrawIndirectCount, %function
     .p2align 2
 vkCmdDrawIndirectCount:
-    mov x17, #3438
+    mov x17, #3439
     hlt #0x5846
     ret
     .size vkCmdDrawIndirectCount, .-vkCmdDrawIndirectCount
@@ -1332,7 +1332,7 @@ vkCmdDrawIndirectCount:
     .type vkCmdDrawIndexedIndirectCount, %function
     .p2align 2
 vkCmdDrawIndexedIndirectCount:
-    mov x17, #3439
+    mov x17, #3440
     hlt #0x5846
     ret
     .size vkCmdDrawIndexedIndirectCount, .-vkCmdDrawIndexedIndirectCount
@@ -1340,7 +1340,7 @@ vkCmdDrawIndexedIndirectCount:
     .type vkCreateRenderPass2, %function
     .p2align 2
 vkCreateRenderPass2:
-    mov x17, #3440
+    mov x17, #3441
     hlt #0x5846
     ret
     .size vkCreateRenderPass2, .-vkCreateRenderPass2
@@ -1348,7 +1348,7 @@ vkCreateRenderPass2:
     .type vkCmdBeginRenderPass2, %function
     .p2align 2
 vkCmdBeginRenderPass2:
-    mov x17, #3441
+    mov x17, #3442
     hlt #0x5846
     ret
     .size vkCmdBeginRenderPass2, .-vkCmdBeginRenderPass2
@@ -1356,7 +1356,7 @@ vkCmdBeginRenderPass2:
     .type vkCmdNextSubpass2, %function
     .p2align 2
 vkCmdNextSubpass2:
-    mov x17, #3442
+    mov x17, #3443
     hlt #0x5846
     ret
     .size vkCmdNextSubpass2, .-vkCmdNextSubpass2
@@ -1364,7 +1364,7 @@ vkCmdNextSubpass2:
     .type vkCmdEndRenderPass2, %function
     .p2align 2
 vkCmdEndRenderPass2:
-    mov x17, #3443
+    mov x17, #3444
     hlt #0x5846
     ret
     .size vkCmdEndRenderPass2, .-vkCmdEndRenderPass2
@@ -1372,7 +1372,7 @@ vkCmdEndRenderPass2:
     .type vkResetQueryPool, %function
     .p2align 2
 vkResetQueryPool:
-    mov x17, #3444
+    mov x17, #3445
     hlt #0x5846
     ret
     .size vkResetQueryPool, .-vkResetQueryPool
@@ -1380,7 +1380,7 @@ vkResetQueryPool:
     .type vkGetSemaphoreCounterValue, %function
     .p2align 2
 vkGetSemaphoreCounterValue:
-    mov x17, #3445
+    mov x17, #3446
     hlt #0x5846
     ret
     .size vkGetSemaphoreCounterValue, .-vkGetSemaphoreCounterValue
@@ -1388,7 +1388,7 @@ vkGetSemaphoreCounterValue:
     .type vkWaitSemaphores, %function
     .p2align 2
 vkWaitSemaphores:
-    mov x17, #3446
+    mov x17, #3447
     hlt #0x5846
     ret
     .size vkWaitSemaphores, .-vkWaitSemaphores
@@ -1396,7 +1396,7 @@ vkWaitSemaphores:
     .type vkSignalSemaphore, %function
     .p2align 2
 vkSignalSemaphore:
-    mov x17, #3447
+    mov x17, #3448
     hlt #0x5846
     ret
     .size vkSignalSemaphore, .-vkSignalSemaphore
@@ -1404,7 +1404,7 @@ vkSignalSemaphore:
     .type vkGetBufferDeviceAddress, %function
     .p2align 2
 vkGetBufferDeviceAddress:
-    mov x17, #3448
+    mov x17, #3449
     hlt #0x5846
     ret
     .size vkGetBufferDeviceAddress, .-vkGetBufferDeviceAddress
@@ -1412,7 +1412,7 @@ vkGetBufferDeviceAddress:
     .type vkGetBufferOpaqueCaptureAddress, %function
     .p2align 2
 vkGetBufferOpaqueCaptureAddress:
-    mov x17, #3449
+    mov x17, #3450
     hlt #0x5846
     ret
     .size vkGetBufferOpaqueCaptureAddress, .-vkGetBufferOpaqueCaptureAddress
@@ -1420,7 +1420,7 @@ vkGetBufferOpaqueCaptureAddress:
     .type vkGetDeviceMemoryOpaqueCaptureAddress, %function
     .p2align 2
 vkGetDeviceMemoryOpaqueCaptureAddress:
-    mov x17, #3450
+    mov x17, #3451
     hlt #0x5846
     ret
     .size vkGetDeviceMemoryOpaqueCaptureAddress, .-vkGetDeviceMemoryOpaqueCaptureAddress
@@ -1428,7 +1428,7 @@ vkGetDeviceMemoryOpaqueCaptureAddress:
     .type vkGetPhysicalDeviceToolProperties, %function
     .p2align 2
 vkGetPhysicalDeviceToolProperties:
-    mov x17, #3451
+    mov x17, #3452
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceToolProperties, .-vkGetPhysicalDeviceToolProperties
@@ -1436,7 +1436,7 @@ vkGetPhysicalDeviceToolProperties:
     .type vkCreatePrivateDataSlot, %function
     .p2align 2
 vkCreatePrivateDataSlot:
-    mov x17, #3452
+    mov x17, #3453
     hlt #0x5846
     ret
     .size vkCreatePrivateDataSlot, .-vkCreatePrivateDataSlot
@@ -1444,7 +1444,7 @@ vkCreatePrivateDataSlot:
     .type vkDestroyPrivateDataSlot, %function
     .p2align 2
 vkDestroyPrivateDataSlot:
-    mov x17, #3453
+    mov x17, #3454
     hlt #0x5846
     ret
     .size vkDestroyPrivateDataSlot, .-vkDestroyPrivateDataSlot
@@ -1452,7 +1452,7 @@ vkDestroyPrivateDataSlot:
     .type vkSetPrivateData, %function
     .p2align 2
 vkSetPrivateData:
-    mov x17, #3454
+    mov x17, #3455
     hlt #0x5846
     ret
     .size vkSetPrivateData, .-vkSetPrivateData
@@ -1460,7 +1460,7 @@ vkSetPrivateData:
     .type vkGetPrivateData, %function
     .p2align 2
 vkGetPrivateData:
-    mov x17, #3455
+    mov x17, #3456
     hlt #0x5846
     ret
     .size vkGetPrivateData, .-vkGetPrivateData
@@ -1468,7 +1468,7 @@ vkGetPrivateData:
     .type vkCmdSetEvent2, %function
     .p2align 2
 vkCmdSetEvent2:
-    mov x17, #3456
+    mov x17, #3457
     hlt #0x5846
     ret
     .size vkCmdSetEvent2, .-vkCmdSetEvent2
@@ -1476,7 +1476,7 @@ vkCmdSetEvent2:
     .type vkCmdResetEvent2, %function
     .p2align 2
 vkCmdResetEvent2:
-    mov x17, #3457
+    mov x17, #3458
     hlt #0x5846
     ret
     .size vkCmdResetEvent2, .-vkCmdResetEvent2
@@ -1484,7 +1484,7 @@ vkCmdResetEvent2:
     .type vkCmdWaitEvents2, %function
     .p2align 2
 vkCmdWaitEvents2:
-    mov x17, #3458
+    mov x17, #3459
     hlt #0x5846
     ret
     .size vkCmdWaitEvents2, .-vkCmdWaitEvents2
@@ -1492,7 +1492,7 @@ vkCmdWaitEvents2:
     .type vkCmdPipelineBarrier2, %function
     .p2align 2
 vkCmdPipelineBarrier2:
-    mov x17, #3459
+    mov x17, #3460
     hlt #0x5846
     ret
     .size vkCmdPipelineBarrier2, .-vkCmdPipelineBarrier2
@@ -1500,7 +1500,7 @@ vkCmdPipelineBarrier2:
     .type vkCmdWriteTimestamp2, %function
     .p2align 2
 vkCmdWriteTimestamp2:
-    mov x17, #3460
+    mov x17, #3461
     hlt #0x5846
     ret
     .size vkCmdWriteTimestamp2, .-vkCmdWriteTimestamp2
@@ -1508,7 +1508,7 @@ vkCmdWriteTimestamp2:
     .type vkQueueSubmit2, %function
     .p2align 2
 vkQueueSubmit2:
-    mov x17, #3461
+    mov x17, #3462
     hlt #0x5846
     ret
     .size vkQueueSubmit2, .-vkQueueSubmit2
@@ -1516,7 +1516,7 @@ vkQueueSubmit2:
     .type vkCmdCopyBuffer2, %function
     .p2align 2
 vkCmdCopyBuffer2:
-    mov x17, #3462
+    mov x17, #3463
     hlt #0x5846
     ret
     .size vkCmdCopyBuffer2, .-vkCmdCopyBuffer2
@@ -1524,7 +1524,7 @@ vkCmdCopyBuffer2:
     .type vkCmdCopyImage2, %function
     .p2align 2
 vkCmdCopyImage2:
-    mov x17, #3463
+    mov x17, #3464
     hlt #0x5846
     ret
     .size vkCmdCopyImage2, .-vkCmdCopyImage2
@@ -1532,7 +1532,7 @@ vkCmdCopyImage2:
     .type vkCmdCopyBufferToImage2, %function
     .p2align 2
 vkCmdCopyBufferToImage2:
-    mov x17, #3464
+    mov x17, #3465
     hlt #0x5846
     ret
     .size vkCmdCopyBufferToImage2, .-vkCmdCopyBufferToImage2
@@ -1540,7 +1540,7 @@ vkCmdCopyBufferToImage2:
     .type vkCmdCopyImageToBuffer2, %function
     .p2align 2
 vkCmdCopyImageToBuffer2:
-    mov x17, #3465
+    mov x17, #3466
     hlt #0x5846
     ret
     .size vkCmdCopyImageToBuffer2, .-vkCmdCopyImageToBuffer2
@@ -1548,7 +1548,7 @@ vkCmdCopyImageToBuffer2:
     .type vkCmdBlitImage2, %function
     .p2align 2
 vkCmdBlitImage2:
-    mov x17, #3466
+    mov x17, #3467
     hlt #0x5846
     ret
     .size vkCmdBlitImage2, .-vkCmdBlitImage2
@@ -1556,7 +1556,7 @@ vkCmdBlitImage2:
     .type vkCmdResolveImage2, %function
     .p2align 2
 vkCmdResolveImage2:
-    mov x17, #3467
+    mov x17, #3468
     hlt #0x5846
     ret
     .size vkCmdResolveImage2, .-vkCmdResolveImage2
@@ -1564,7 +1564,7 @@ vkCmdResolveImage2:
     .type vkCmdBeginRendering, %function
     .p2align 2
 vkCmdBeginRendering:
-    mov x17, #3468
+    mov x17, #3469
     hlt #0x5846
     ret
     .size vkCmdBeginRendering, .-vkCmdBeginRendering
@@ -1572,7 +1572,7 @@ vkCmdBeginRendering:
     .type vkCmdEndRendering, %function
     .p2align 2
 vkCmdEndRendering:
-    mov x17, #3469
+    mov x17, #3470
     hlt #0x5846
     ret
     .size vkCmdEndRendering, .-vkCmdEndRendering
@@ -1580,7 +1580,7 @@ vkCmdEndRendering:
     .type vkCmdSetCullMode, %function
     .p2align 2
 vkCmdSetCullMode:
-    mov x17, #3470
+    mov x17, #3471
     hlt #0x5846
     ret
     .size vkCmdSetCullMode, .-vkCmdSetCullMode
@@ -1588,7 +1588,7 @@ vkCmdSetCullMode:
     .type vkCmdSetFrontFace, %function
     .p2align 2
 vkCmdSetFrontFace:
-    mov x17, #3471
+    mov x17, #3472
     hlt #0x5846
     ret
     .size vkCmdSetFrontFace, .-vkCmdSetFrontFace
@@ -1596,7 +1596,7 @@ vkCmdSetFrontFace:
     .type vkCmdSetPrimitiveTopology, %function
     .p2align 2
 vkCmdSetPrimitiveTopology:
-    mov x17, #3472
+    mov x17, #3473
     hlt #0x5846
     ret
     .size vkCmdSetPrimitiveTopology, .-vkCmdSetPrimitiveTopology
@@ -1604,7 +1604,7 @@ vkCmdSetPrimitiveTopology:
     .type vkCmdSetViewportWithCount, %function
     .p2align 2
 vkCmdSetViewportWithCount:
-    mov x17, #3473
+    mov x17, #3474
     hlt #0x5846
     ret
     .size vkCmdSetViewportWithCount, .-vkCmdSetViewportWithCount
@@ -1612,7 +1612,7 @@ vkCmdSetViewportWithCount:
     .type vkCmdSetScissorWithCount, %function
     .p2align 2
 vkCmdSetScissorWithCount:
-    mov x17, #3474
+    mov x17, #3475
     hlt #0x5846
     ret
     .size vkCmdSetScissorWithCount, .-vkCmdSetScissorWithCount
@@ -1620,7 +1620,7 @@ vkCmdSetScissorWithCount:
     .type vkCmdBindVertexBuffers2, %function
     .p2align 2
 vkCmdBindVertexBuffers2:
-    mov x17, #3475
+    mov x17, #3476
     hlt #0x5846
     ret
     .size vkCmdBindVertexBuffers2, .-vkCmdBindVertexBuffers2
@@ -1628,7 +1628,7 @@ vkCmdBindVertexBuffers2:
     .type vkCmdSetDepthTestEnable, %function
     .p2align 2
 vkCmdSetDepthTestEnable:
-    mov x17, #3476
+    mov x17, #3477
     hlt #0x5846
     ret
     .size vkCmdSetDepthTestEnable, .-vkCmdSetDepthTestEnable
@@ -1636,7 +1636,7 @@ vkCmdSetDepthTestEnable:
     .type vkCmdSetDepthWriteEnable, %function
     .p2align 2
 vkCmdSetDepthWriteEnable:
-    mov x17, #3477
+    mov x17, #3478
     hlt #0x5846
     ret
     .size vkCmdSetDepthWriteEnable, .-vkCmdSetDepthWriteEnable
@@ -1644,7 +1644,7 @@ vkCmdSetDepthWriteEnable:
     .type vkCmdSetDepthCompareOp, %function
     .p2align 2
 vkCmdSetDepthCompareOp:
-    mov x17, #3478
+    mov x17, #3479
     hlt #0x5846
     ret
     .size vkCmdSetDepthCompareOp, .-vkCmdSetDepthCompareOp
@@ -1652,7 +1652,7 @@ vkCmdSetDepthCompareOp:
     .type vkCmdSetDepthBoundsTestEnable, %function
     .p2align 2
 vkCmdSetDepthBoundsTestEnable:
-    mov x17, #3479
+    mov x17, #3480
     hlt #0x5846
     ret
     .size vkCmdSetDepthBoundsTestEnable, .-vkCmdSetDepthBoundsTestEnable
@@ -1660,7 +1660,7 @@ vkCmdSetDepthBoundsTestEnable:
     .type vkCmdSetStencilTestEnable, %function
     .p2align 2
 vkCmdSetStencilTestEnable:
-    mov x17, #3480
+    mov x17, #3481
     hlt #0x5846
     ret
     .size vkCmdSetStencilTestEnable, .-vkCmdSetStencilTestEnable
@@ -1668,7 +1668,7 @@ vkCmdSetStencilTestEnable:
     .type vkCmdSetStencilOp, %function
     .p2align 2
 vkCmdSetStencilOp:
-    mov x17, #3481
+    mov x17, #3482
     hlt #0x5846
     ret
     .size vkCmdSetStencilOp, .-vkCmdSetStencilOp
@@ -1676,7 +1676,7 @@ vkCmdSetStencilOp:
     .type vkCmdSetRasterizerDiscardEnable, %function
     .p2align 2
 vkCmdSetRasterizerDiscardEnable:
-    mov x17, #3482
+    mov x17, #3483
     hlt #0x5846
     ret
     .size vkCmdSetRasterizerDiscardEnable, .-vkCmdSetRasterizerDiscardEnable
@@ -1684,7 +1684,7 @@ vkCmdSetRasterizerDiscardEnable:
     .type vkCmdSetDepthBiasEnable, %function
     .p2align 2
 vkCmdSetDepthBiasEnable:
-    mov x17, #3483
+    mov x17, #3484
     hlt #0x5846
     ret
     .size vkCmdSetDepthBiasEnable, .-vkCmdSetDepthBiasEnable
@@ -1692,7 +1692,7 @@ vkCmdSetDepthBiasEnable:
     .type vkCmdSetPrimitiveRestartEnable, %function
     .p2align 2
 vkCmdSetPrimitiveRestartEnable:
-    mov x17, #3484
+    mov x17, #3485
     hlt #0x5846
     ret
     .size vkCmdSetPrimitiveRestartEnable, .-vkCmdSetPrimitiveRestartEnable
@@ -1700,7 +1700,7 @@ vkCmdSetPrimitiveRestartEnable:
     .type vkGetDeviceBufferMemoryRequirements, %function
     .p2align 2
 vkGetDeviceBufferMemoryRequirements:
-    mov x17, #3485
+    mov x17, #3486
     hlt #0x5846
     ret
     .size vkGetDeviceBufferMemoryRequirements, .-vkGetDeviceBufferMemoryRequirements
@@ -1708,7 +1708,7 @@ vkGetDeviceBufferMemoryRequirements:
     .type vkGetDeviceImageMemoryRequirements, %function
     .p2align 2
 vkGetDeviceImageMemoryRequirements:
-    mov x17, #3486
+    mov x17, #3487
     hlt #0x5846
     ret
     .size vkGetDeviceImageMemoryRequirements, .-vkGetDeviceImageMemoryRequirements
@@ -1716,7 +1716,7 @@ vkGetDeviceImageMemoryRequirements:
     .type vkGetDeviceImageSparseMemoryRequirements, %function
     .p2align 2
 vkGetDeviceImageSparseMemoryRequirements:
-    mov x17, #3487
+    mov x17, #3488
     hlt #0x5846
     ret
     .size vkGetDeviceImageSparseMemoryRequirements, .-vkGetDeviceImageSparseMemoryRequirements
@@ -1724,7 +1724,7 @@ vkGetDeviceImageSparseMemoryRequirements:
     .type vkDestroySurfaceKHR, %function
     .p2align 2
 vkDestroySurfaceKHR:
-    mov x17, #3488
+    mov x17, #3489
     hlt #0x5846
     ret
     .size vkDestroySurfaceKHR, .-vkDestroySurfaceKHR
@@ -1732,7 +1732,7 @@ vkDestroySurfaceKHR:
     .type vkGetPhysicalDeviceSurfaceSupportKHR, %function
     .p2align 2
 vkGetPhysicalDeviceSurfaceSupportKHR:
-    mov x17, #3489
+    mov x17, #3490
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSurfaceSupportKHR, .-vkGetPhysicalDeviceSurfaceSupportKHR
@@ -1740,7 +1740,7 @@ vkGetPhysicalDeviceSurfaceSupportKHR:
     .type vkGetPhysicalDeviceSurfaceCapabilitiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceSurfaceCapabilitiesKHR:
-    mov x17, #3490
+    mov x17, #3491
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSurfaceCapabilitiesKHR, .-vkGetPhysicalDeviceSurfaceCapabilitiesKHR
@@ -1748,7 +1748,7 @@ vkGetPhysicalDeviceSurfaceCapabilitiesKHR:
     .type vkGetPhysicalDeviceSurfaceFormatsKHR, %function
     .p2align 2
 vkGetPhysicalDeviceSurfaceFormatsKHR:
-    mov x17, #3491
+    mov x17, #3492
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSurfaceFormatsKHR, .-vkGetPhysicalDeviceSurfaceFormatsKHR
@@ -1756,7 +1756,7 @@ vkGetPhysicalDeviceSurfaceFormatsKHR:
     .type vkGetPhysicalDeviceSurfacePresentModesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceSurfacePresentModesKHR:
-    mov x17, #3492
+    mov x17, #3493
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSurfacePresentModesKHR, .-vkGetPhysicalDeviceSurfacePresentModesKHR
@@ -1764,7 +1764,7 @@ vkGetPhysicalDeviceSurfacePresentModesKHR:
     .type vkCreateSwapchainKHR, %function
     .p2align 2
 vkCreateSwapchainKHR:
-    mov x17, #3493
+    mov x17, #3494
     hlt #0x5846
     ret
     .size vkCreateSwapchainKHR, .-vkCreateSwapchainKHR
@@ -1772,7 +1772,7 @@ vkCreateSwapchainKHR:
     .type vkDestroySwapchainKHR, %function
     .p2align 2
 vkDestroySwapchainKHR:
-    mov x17, #3494
+    mov x17, #3495
     hlt #0x5846
     ret
     .size vkDestroySwapchainKHR, .-vkDestroySwapchainKHR
@@ -1780,7 +1780,7 @@ vkDestroySwapchainKHR:
     .type vkGetSwapchainImagesKHR, %function
     .p2align 2
 vkGetSwapchainImagesKHR:
-    mov x17, #3495
+    mov x17, #3496
     hlt #0x5846
     ret
     .size vkGetSwapchainImagesKHR, .-vkGetSwapchainImagesKHR
@@ -1788,7 +1788,7 @@ vkGetSwapchainImagesKHR:
     .type vkAcquireNextImageKHR, %function
     .p2align 2
 vkAcquireNextImageKHR:
-    mov x17, #3496
+    mov x17, #3497
     hlt #0x5846
     ret
     .size vkAcquireNextImageKHR, .-vkAcquireNextImageKHR
@@ -1796,7 +1796,7 @@ vkAcquireNextImageKHR:
     .type vkQueuePresentKHR, %function
     .p2align 2
 vkQueuePresentKHR:
-    mov x17, #3497
+    mov x17, #3498
     hlt #0x5846
     ret
     .size vkQueuePresentKHR, .-vkQueuePresentKHR
@@ -1804,7 +1804,7 @@ vkQueuePresentKHR:
     .type vkGetDeviceGroupPresentCapabilitiesKHR, %function
     .p2align 2
 vkGetDeviceGroupPresentCapabilitiesKHR:
-    mov x17, #3498
+    mov x17, #3499
     hlt #0x5846
     ret
     .size vkGetDeviceGroupPresentCapabilitiesKHR, .-vkGetDeviceGroupPresentCapabilitiesKHR
@@ -1812,7 +1812,7 @@ vkGetDeviceGroupPresentCapabilitiesKHR:
     .type vkGetDeviceGroupSurfacePresentModesKHR, %function
     .p2align 2
 vkGetDeviceGroupSurfacePresentModesKHR:
-    mov x17, #3499
+    mov x17, #3500
     hlt #0x5846
     ret
     .size vkGetDeviceGroupSurfacePresentModesKHR, .-vkGetDeviceGroupSurfacePresentModesKHR
@@ -1820,7 +1820,7 @@ vkGetDeviceGroupSurfacePresentModesKHR:
     .type vkGetPhysicalDevicePresentRectanglesKHR, %function
     .p2align 2
 vkGetPhysicalDevicePresentRectanglesKHR:
-    mov x17, #3500
+    mov x17, #3501
     hlt #0x5846
     ret
     .size vkGetPhysicalDevicePresentRectanglesKHR, .-vkGetPhysicalDevicePresentRectanglesKHR
@@ -1828,7 +1828,7 @@ vkGetPhysicalDevicePresentRectanglesKHR:
     .type vkAcquireNextImage2KHR, %function
     .p2align 2
 vkAcquireNextImage2KHR:
-    mov x17, #3501
+    mov x17, #3502
     hlt #0x5846
     ret
     .size vkAcquireNextImage2KHR, .-vkAcquireNextImage2KHR
@@ -1836,7 +1836,7 @@ vkAcquireNextImage2KHR:
     .type vkGetPhysicalDeviceDisplayPropertiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceDisplayPropertiesKHR:
-    mov x17, #3502
+    mov x17, #3503
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceDisplayPropertiesKHR, .-vkGetPhysicalDeviceDisplayPropertiesKHR
@@ -1844,7 +1844,7 @@ vkGetPhysicalDeviceDisplayPropertiesKHR:
     .type vkGetPhysicalDeviceDisplayPlanePropertiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceDisplayPlanePropertiesKHR:
-    mov x17, #3503
+    mov x17, #3504
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceDisplayPlanePropertiesKHR, .-vkGetPhysicalDeviceDisplayPlanePropertiesKHR
@@ -1852,7 +1852,7 @@ vkGetPhysicalDeviceDisplayPlanePropertiesKHR:
     .type vkGetDisplayPlaneSupportedDisplaysKHR, %function
     .p2align 2
 vkGetDisplayPlaneSupportedDisplaysKHR:
-    mov x17, #3504
+    mov x17, #3505
     hlt #0x5846
     ret
     .size vkGetDisplayPlaneSupportedDisplaysKHR, .-vkGetDisplayPlaneSupportedDisplaysKHR
@@ -1860,7 +1860,7 @@ vkGetDisplayPlaneSupportedDisplaysKHR:
     .type vkGetDisplayModePropertiesKHR, %function
     .p2align 2
 vkGetDisplayModePropertiesKHR:
-    mov x17, #3505
+    mov x17, #3506
     hlt #0x5846
     ret
     .size vkGetDisplayModePropertiesKHR, .-vkGetDisplayModePropertiesKHR
@@ -1868,7 +1868,7 @@ vkGetDisplayModePropertiesKHR:
     .type vkCreateDisplayModeKHR, %function
     .p2align 2
 vkCreateDisplayModeKHR:
-    mov x17, #3506
+    mov x17, #3507
     hlt #0x5846
     ret
     .size vkCreateDisplayModeKHR, .-vkCreateDisplayModeKHR
@@ -1876,7 +1876,7 @@ vkCreateDisplayModeKHR:
     .type vkGetDisplayPlaneCapabilitiesKHR, %function
     .p2align 2
 vkGetDisplayPlaneCapabilitiesKHR:
-    mov x17, #3507
+    mov x17, #3508
     hlt #0x5846
     ret
     .size vkGetDisplayPlaneCapabilitiesKHR, .-vkGetDisplayPlaneCapabilitiesKHR
@@ -1884,7 +1884,7 @@ vkGetDisplayPlaneCapabilitiesKHR:
     .type vkCreateDisplayPlaneSurfaceKHR, %function
     .p2align 2
 vkCreateDisplayPlaneSurfaceKHR:
-    mov x17, #3508
+    mov x17, #3509
     hlt #0x5846
     ret
     .size vkCreateDisplayPlaneSurfaceKHR, .-vkCreateDisplayPlaneSurfaceKHR
@@ -1892,7 +1892,7 @@ vkCreateDisplayPlaneSurfaceKHR:
     .type vkCreateSharedSwapchainsKHR, %function
     .p2align 2
 vkCreateSharedSwapchainsKHR:
-    mov x17, #3509
+    mov x17, #3510
     hlt #0x5846
     ret
     .size vkCreateSharedSwapchainsKHR, .-vkCreateSharedSwapchainsKHR
@@ -1900,7 +1900,7 @@ vkCreateSharedSwapchainsKHR:
     .type vkGetPhysicalDeviceVideoCapabilitiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceVideoCapabilitiesKHR:
-    mov x17, #3510
+    mov x17, #3511
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceVideoCapabilitiesKHR, .-vkGetPhysicalDeviceVideoCapabilitiesKHR
@@ -1908,7 +1908,7 @@ vkGetPhysicalDeviceVideoCapabilitiesKHR:
     .type vkGetPhysicalDeviceVideoFormatPropertiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceVideoFormatPropertiesKHR:
-    mov x17, #3511
+    mov x17, #3512
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceVideoFormatPropertiesKHR, .-vkGetPhysicalDeviceVideoFormatPropertiesKHR
@@ -1916,7 +1916,7 @@ vkGetPhysicalDeviceVideoFormatPropertiesKHR:
     .type vkCreateVideoSessionKHR, %function
     .p2align 2
 vkCreateVideoSessionKHR:
-    mov x17, #3512
+    mov x17, #3513
     hlt #0x5846
     ret
     .size vkCreateVideoSessionKHR, .-vkCreateVideoSessionKHR
@@ -1924,7 +1924,7 @@ vkCreateVideoSessionKHR:
     .type vkDestroyVideoSessionKHR, %function
     .p2align 2
 vkDestroyVideoSessionKHR:
-    mov x17, #3513
+    mov x17, #3514
     hlt #0x5846
     ret
     .size vkDestroyVideoSessionKHR, .-vkDestroyVideoSessionKHR
@@ -1932,7 +1932,7 @@ vkDestroyVideoSessionKHR:
     .type vkGetVideoSessionMemoryRequirementsKHR, %function
     .p2align 2
 vkGetVideoSessionMemoryRequirementsKHR:
-    mov x17, #3514
+    mov x17, #3515
     hlt #0x5846
     ret
     .size vkGetVideoSessionMemoryRequirementsKHR, .-vkGetVideoSessionMemoryRequirementsKHR
@@ -1940,7 +1940,7 @@ vkGetVideoSessionMemoryRequirementsKHR:
     .type vkBindVideoSessionMemoryKHR, %function
     .p2align 2
 vkBindVideoSessionMemoryKHR:
-    mov x17, #3515
+    mov x17, #3516
     hlt #0x5846
     ret
     .size vkBindVideoSessionMemoryKHR, .-vkBindVideoSessionMemoryKHR
@@ -1948,7 +1948,7 @@ vkBindVideoSessionMemoryKHR:
     .type vkCreateVideoSessionParametersKHR, %function
     .p2align 2
 vkCreateVideoSessionParametersKHR:
-    mov x17, #3516
+    mov x17, #3517
     hlt #0x5846
     ret
     .size vkCreateVideoSessionParametersKHR, .-vkCreateVideoSessionParametersKHR
@@ -1956,7 +1956,7 @@ vkCreateVideoSessionParametersKHR:
     .type vkUpdateVideoSessionParametersKHR, %function
     .p2align 2
 vkUpdateVideoSessionParametersKHR:
-    mov x17, #3517
+    mov x17, #3518
     hlt #0x5846
     ret
     .size vkUpdateVideoSessionParametersKHR, .-vkUpdateVideoSessionParametersKHR
@@ -1964,7 +1964,7 @@ vkUpdateVideoSessionParametersKHR:
     .type vkDestroyVideoSessionParametersKHR, %function
     .p2align 2
 vkDestroyVideoSessionParametersKHR:
-    mov x17, #3518
+    mov x17, #3519
     hlt #0x5846
     ret
     .size vkDestroyVideoSessionParametersKHR, .-vkDestroyVideoSessionParametersKHR
@@ -1972,7 +1972,7 @@ vkDestroyVideoSessionParametersKHR:
     .type vkCmdBeginVideoCodingKHR, %function
     .p2align 2
 vkCmdBeginVideoCodingKHR:
-    mov x17, #3519
+    mov x17, #3520
     hlt #0x5846
     ret
     .size vkCmdBeginVideoCodingKHR, .-vkCmdBeginVideoCodingKHR
@@ -1980,7 +1980,7 @@ vkCmdBeginVideoCodingKHR:
     .type vkCmdEndVideoCodingKHR, %function
     .p2align 2
 vkCmdEndVideoCodingKHR:
-    mov x17, #3520
+    mov x17, #3521
     hlt #0x5846
     ret
     .size vkCmdEndVideoCodingKHR, .-vkCmdEndVideoCodingKHR
@@ -1988,7 +1988,7 @@ vkCmdEndVideoCodingKHR:
     .type vkCmdControlVideoCodingKHR, %function
     .p2align 2
 vkCmdControlVideoCodingKHR:
-    mov x17, #3521
+    mov x17, #3522
     hlt #0x5846
     ret
     .size vkCmdControlVideoCodingKHR, .-vkCmdControlVideoCodingKHR
@@ -1996,7 +1996,7 @@ vkCmdControlVideoCodingKHR:
     .type vkCmdDecodeVideoKHR, %function
     .p2align 2
 vkCmdDecodeVideoKHR:
-    mov x17, #3522
+    mov x17, #3523
     hlt #0x5846
     ret
     .size vkCmdDecodeVideoKHR, .-vkCmdDecodeVideoKHR
@@ -2004,7 +2004,7 @@ vkCmdDecodeVideoKHR:
     .type vkCmdBeginRenderingKHR, %function
     .p2align 2
 vkCmdBeginRenderingKHR:
-    mov x17, #3523
+    mov x17, #3524
     hlt #0x5846
     ret
     .size vkCmdBeginRenderingKHR, .-vkCmdBeginRenderingKHR
@@ -2012,7 +2012,7 @@ vkCmdBeginRenderingKHR:
     .type vkCmdEndRenderingKHR, %function
     .p2align 2
 vkCmdEndRenderingKHR:
-    mov x17, #3524
+    mov x17, #3525
     hlt #0x5846
     ret
     .size vkCmdEndRenderingKHR, .-vkCmdEndRenderingKHR
@@ -2020,7 +2020,7 @@ vkCmdEndRenderingKHR:
     .type vkGetPhysicalDeviceFeatures2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceFeatures2KHR:
-    mov x17, #3525
+    mov x17, #3526
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceFeatures2KHR, .-vkGetPhysicalDeviceFeatures2KHR
@@ -2028,7 +2028,7 @@ vkGetPhysicalDeviceFeatures2KHR:
     .type vkGetPhysicalDeviceProperties2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceProperties2KHR:
-    mov x17, #3526
+    mov x17, #3527
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceProperties2KHR, .-vkGetPhysicalDeviceProperties2KHR
@@ -2036,7 +2036,7 @@ vkGetPhysicalDeviceProperties2KHR:
     .type vkGetPhysicalDeviceFormatProperties2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceFormatProperties2KHR:
-    mov x17, #3527
+    mov x17, #3528
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceFormatProperties2KHR, .-vkGetPhysicalDeviceFormatProperties2KHR
@@ -2044,7 +2044,7 @@ vkGetPhysicalDeviceFormatProperties2KHR:
     .type vkGetPhysicalDeviceImageFormatProperties2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceImageFormatProperties2KHR:
-    mov x17, #3528
+    mov x17, #3529
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceImageFormatProperties2KHR, .-vkGetPhysicalDeviceImageFormatProperties2KHR
@@ -2052,7 +2052,7 @@ vkGetPhysicalDeviceImageFormatProperties2KHR:
     .type vkGetPhysicalDeviceQueueFamilyProperties2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceQueueFamilyProperties2KHR:
-    mov x17, #3529
+    mov x17, #3530
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceQueueFamilyProperties2KHR, .-vkGetPhysicalDeviceQueueFamilyProperties2KHR
@@ -2060,7 +2060,7 @@ vkGetPhysicalDeviceQueueFamilyProperties2KHR:
     .type vkGetPhysicalDeviceMemoryProperties2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceMemoryProperties2KHR:
-    mov x17, #3530
+    mov x17, #3531
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceMemoryProperties2KHR, .-vkGetPhysicalDeviceMemoryProperties2KHR
@@ -2068,7 +2068,7 @@ vkGetPhysicalDeviceMemoryProperties2KHR:
     .type vkGetPhysicalDeviceSparseImageFormatProperties2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceSparseImageFormatProperties2KHR:
-    mov x17, #3531
+    mov x17, #3532
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSparseImageFormatProperties2KHR, .-vkGetPhysicalDeviceSparseImageFormatProperties2KHR
@@ -2076,7 +2076,7 @@ vkGetPhysicalDeviceSparseImageFormatProperties2KHR:
     .type vkGetDeviceGroupPeerMemoryFeaturesKHR, %function
     .p2align 2
 vkGetDeviceGroupPeerMemoryFeaturesKHR:
-    mov x17, #3532
+    mov x17, #3533
     hlt #0x5846
     ret
     .size vkGetDeviceGroupPeerMemoryFeaturesKHR, .-vkGetDeviceGroupPeerMemoryFeaturesKHR
@@ -2084,7 +2084,7 @@ vkGetDeviceGroupPeerMemoryFeaturesKHR:
     .type vkCmdSetDeviceMaskKHR, %function
     .p2align 2
 vkCmdSetDeviceMaskKHR:
-    mov x17, #3533
+    mov x17, #3534
     hlt #0x5846
     ret
     .size vkCmdSetDeviceMaskKHR, .-vkCmdSetDeviceMaskKHR
@@ -2092,7 +2092,7 @@ vkCmdSetDeviceMaskKHR:
     .type vkCmdDispatchBaseKHR, %function
     .p2align 2
 vkCmdDispatchBaseKHR:
-    mov x17, #3534
+    mov x17, #3535
     hlt #0x5846
     ret
     .size vkCmdDispatchBaseKHR, .-vkCmdDispatchBaseKHR
@@ -2100,7 +2100,7 @@ vkCmdDispatchBaseKHR:
     .type vkTrimCommandPoolKHR, %function
     .p2align 2
 vkTrimCommandPoolKHR:
-    mov x17, #3535
+    mov x17, #3536
     hlt #0x5846
     ret
     .size vkTrimCommandPoolKHR, .-vkTrimCommandPoolKHR
@@ -2108,7 +2108,7 @@ vkTrimCommandPoolKHR:
     .type vkEnumeratePhysicalDeviceGroupsKHR, %function
     .p2align 2
 vkEnumeratePhysicalDeviceGroupsKHR:
-    mov x17, #3536
+    mov x17, #3537
     hlt #0x5846
     ret
     .size vkEnumeratePhysicalDeviceGroupsKHR, .-vkEnumeratePhysicalDeviceGroupsKHR
@@ -2116,7 +2116,7 @@ vkEnumeratePhysicalDeviceGroupsKHR:
     .type vkGetPhysicalDeviceExternalBufferPropertiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceExternalBufferPropertiesKHR:
-    mov x17, #3537
+    mov x17, #3538
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceExternalBufferPropertiesKHR, .-vkGetPhysicalDeviceExternalBufferPropertiesKHR
@@ -2124,7 +2124,7 @@ vkGetPhysicalDeviceExternalBufferPropertiesKHR:
     .type vkGetMemoryFdKHR, %function
     .p2align 2
 vkGetMemoryFdKHR:
-    mov x17, #3538
+    mov x17, #3539
     hlt #0x5846
     ret
     .size vkGetMemoryFdKHR, .-vkGetMemoryFdKHR
@@ -2132,7 +2132,7 @@ vkGetMemoryFdKHR:
     .type vkGetMemoryFdPropertiesKHR, %function
     .p2align 2
 vkGetMemoryFdPropertiesKHR:
-    mov x17, #3539
+    mov x17, #3540
     hlt #0x5846
     ret
     .size vkGetMemoryFdPropertiesKHR, .-vkGetMemoryFdPropertiesKHR
@@ -2140,7 +2140,7 @@ vkGetMemoryFdPropertiesKHR:
     .type vkGetPhysicalDeviceExternalSemaphorePropertiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceExternalSemaphorePropertiesKHR:
-    mov x17, #3540
+    mov x17, #3541
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceExternalSemaphorePropertiesKHR, .-vkGetPhysicalDeviceExternalSemaphorePropertiesKHR
@@ -2148,7 +2148,7 @@ vkGetPhysicalDeviceExternalSemaphorePropertiesKHR:
     .type vkImportSemaphoreFdKHR, %function
     .p2align 2
 vkImportSemaphoreFdKHR:
-    mov x17, #3541
+    mov x17, #3542
     hlt #0x5846
     ret
     .size vkImportSemaphoreFdKHR, .-vkImportSemaphoreFdKHR
@@ -2156,7 +2156,7 @@ vkImportSemaphoreFdKHR:
     .type vkGetSemaphoreFdKHR, %function
     .p2align 2
 vkGetSemaphoreFdKHR:
-    mov x17, #3542
+    mov x17, #3543
     hlt #0x5846
     ret
     .size vkGetSemaphoreFdKHR, .-vkGetSemaphoreFdKHR
@@ -2164,7 +2164,7 @@ vkGetSemaphoreFdKHR:
     .type vkCmdPushDescriptorSetKHR, %function
     .p2align 2
 vkCmdPushDescriptorSetKHR:
-    mov x17, #3543
+    mov x17, #3544
     hlt #0x5846
     ret
     .size vkCmdPushDescriptorSetKHR, .-vkCmdPushDescriptorSetKHR
@@ -2172,7 +2172,7 @@ vkCmdPushDescriptorSetKHR:
     .type vkCmdPushDescriptorSetWithTemplateKHR, %function
     .p2align 2
 vkCmdPushDescriptorSetWithTemplateKHR:
-    mov x17, #3544
+    mov x17, #3545
     hlt #0x5846
     ret
     .size vkCmdPushDescriptorSetWithTemplateKHR, .-vkCmdPushDescriptorSetWithTemplateKHR
@@ -2180,7 +2180,7 @@ vkCmdPushDescriptorSetWithTemplateKHR:
     .type vkCreateDescriptorUpdateTemplateKHR, %function
     .p2align 2
 vkCreateDescriptorUpdateTemplateKHR:
-    mov x17, #3545
+    mov x17, #3546
     hlt #0x5846
     ret
     .size vkCreateDescriptorUpdateTemplateKHR, .-vkCreateDescriptorUpdateTemplateKHR
@@ -2188,7 +2188,7 @@ vkCreateDescriptorUpdateTemplateKHR:
     .type vkDestroyDescriptorUpdateTemplateKHR, %function
     .p2align 2
 vkDestroyDescriptorUpdateTemplateKHR:
-    mov x17, #3546
+    mov x17, #3547
     hlt #0x5846
     ret
     .size vkDestroyDescriptorUpdateTemplateKHR, .-vkDestroyDescriptorUpdateTemplateKHR
@@ -2196,7 +2196,7 @@ vkDestroyDescriptorUpdateTemplateKHR:
     .type vkUpdateDescriptorSetWithTemplateKHR, %function
     .p2align 2
 vkUpdateDescriptorSetWithTemplateKHR:
-    mov x17, #3547
+    mov x17, #3548
     hlt #0x5846
     ret
     .size vkUpdateDescriptorSetWithTemplateKHR, .-vkUpdateDescriptorSetWithTemplateKHR
@@ -2204,7 +2204,7 @@ vkUpdateDescriptorSetWithTemplateKHR:
     .type vkCreateRenderPass2KHR, %function
     .p2align 2
 vkCreateRenderPass2KHR:
-    mov x17, #3548
+    mov x17, #3549
     hlt #0x5846
     ret
     .size vkCreateRenderPass2KHR, .-vkCreateRenderPass2KHR
@@ -2212,7 +2212,7 @@ vkCreateRenderPass2KHR:
     .type vkCmdBeginRenderPass2KHR, %function
     .p2align 2
 vkCmdBeginRenderPass2KHR:
-    mov x17, #3549
+    mov x17, #3550
     hlt #0x5846
     ret
     .size vkCmdBeginRenderPass2KHR, .-vkCmdBeginRenderPass2KHR
@@ -2220,7 +2220,7 @@ vkCmdBeginRenderPass2KHR:
     .type vkCmdNextSubpass2KHR, %function
     .p2align 2
 vkCmdNextSubpass2KHR:
-    mov x17, #3550
+    mov x17, #3551
     hlt #0x5846
     ret
     .size vkCmdNextSubpass2KHR, .-vkCmdNextSubpass2KHR
@@ -2228,7 +2228,7 @@ vkCmdNextSubpass2KHR:
     .type vkCmdEndRenderPass2KHR, %function
     .p2align 2
 vkCmdEndRenderPass2KHR:
-    mov x17, #3551
+    mov x17, #3552
     hlt #0x5846
     ret
     .size vkCmdEndRenderPass2KHR, .-vkCmdEndRenderPass2KHR
@@ -2236,7 +2236,7 @@ vkCmdEndRenderPass2KHR:
     .type vkGetSwapchainStatusKHR, %function
     .p2align 2
 vkGetSwapchainStatusKHR:
-    mov x17, #3552
+    mov x17, #3553
     hlt #0x5846
     ret
     .size vkGetSwapchainStatusKHR, .-vkGetSwapchainStatusKHR
@@ -2244,7 +2244,7 @@ vkGetSwapchainStatusKHR:
     .type vkGetPhysicalDeviceExternalFencePropertiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceExternalFencePropertiesKHR:
-    mov x17, #3553
+    mov x17, #3554
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceExternalFencePropertiesKHR, .-vkGetPhysicalDeviceExternalFencePropertiesKHR
@@ -2252,7 +2252,7 @@ vkGetPhysicalDeviceExternalFencePropertiesKHR:
     .type vkImportFenceFdKHR, %function
     .p2align 2
 vkImportFenceFdKHR:
-    mov x17, #3554
+    mov x17, #3555
     hlt #0x5846
     ret
     .size vkImportFenceFdKHR, .-vkImportFenceFdKHR
@@ -2260,7 +2260,7 @@ vkImportFenceFdKHR:
     .type vkGetFenceFdKHR, %function
     .p2align 2
 vkGetFenceFdKHR:
-    mov x17, #3555
+    mov x17, #3556
     hlt #0x5846
     ret
     .size vkGetFenceFdKHR, .-vkGetFenceFdKHR
@@ -2268,7 +2268,7 @@ vkGetFenceFdKHR:
     .type vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR, %function
     .p2align 2
 vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR:
-    mov x17, #3556
+    mov x17, #3557
     hlt #0x5846
     ret
     .size vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR, .-vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR
@@ -2276,7 +2276,7 @@ vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR:
     .type vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR:
-    mov x17, #3557
+    mov x17, #3558
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR, .-vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR
@@ -2284,7 +2284,7 @@ vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR:
     .type vkAcquireProfilingLockKHR, %function
     .p2align 2
 vkAcquireProfilingLockKHR:
-    mov x17, #3558
+    mov x17, #3559
     hlt #0x5846
     ret
     .size vkAcquireProfilingLockKHR, .-vkAcquireProfilingLockKHR
@@ -2292,7 +2292,7 @@ vkAcquireProfilingLockKHR:
     .type vkReleaseProfilingLockKHR, %function
     .p2align 2
 vkReleaseProfilingLockKHR:
-    mov x17, #3559
+    mov x17, #3560
     hlt #0x5846
     ret
     .size vkReleaseProfilingLockKHR, .-vkReleaseProfilingLockKHR
@@ -2300,7 +2300,7 @@ vkReleaseProfilingLockKHR:
     .type vkGetPhysicalDeviceSurfaceCapabilities2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceSurfaceCapabilities2KHR:
-    mov x17, #3560
+    mov x17, #3561
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSurfaceCapabilities2KHR, .-vkGetPhysicalDeviceSurfaceCapabilities2KHR
@@ -2308,7 +2308,7 @@ vkGetPhysicalDeviceSurfaceCapabilities2KHR:
     .type vkGetPhysicalDeviceSurfaceFormats2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceSurfaceFormats2KHR:
-    mov x17, #3561
+    mov x17, #3562
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSurfaceFormats2KHR, .-vkGetPhysicalDeviceSurfaceFormats2KHR
@@ -2316,7 +2316,7 @@ vkGetPhysicalDeviceSurfaceFormats2KHR:
     .type vkGetPhysicalDeviceDisplayProperties2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceDisplayProperties2KHR:
-    mov x17, #3562
+    mov x17, #3563
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceDisplayProperties2KHR, .-vkGetPhysicalDeviceDisplayProperties2KHR
@@ -2324,7 +2324,7 @@ vkGetPhysicalDeviceDisplayProperties2KHR:
     .type vkGetPhysicalDeviceDisplayPlaneProperties2KHR, %function
     .p2align 2
 vkGetPhysicalDeviceDisplayPlaneProperties2KHR:
-    mov x17, #3563
+    mov x17, #3564
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceDisplayPlaneProperties2KHR, .-vkGetPhysicalDeviceDisplayPlaneProperties2KHR
@@ -2332,7 +2332,7 @@ vkGetPhysicalDeviceDisplayPlaneProperties2KHR:
     .type vkGetDisplayModeProperties2KHR, %function
     .p2align 2
 vkGetDisplayModeProperties2KHR:
-    mov x17, #3564
+    mov x17, #3565
     hlt #0x5846
     ret
     .size vkGetDisplayModeProperties2KHR, .-vkGetDisplayModeProperties2KHR
@@ -2340,7 +2340,7 @@ vkGetDisplayModeProperties2KHR:
     .type vkGetDisplayPlaneCapabilities2KHR, %function
     .p2align 2
 vkGetDisplayPlaneCapabilities2KHR:
-    mov x17, #3565
+    mov x17, #3566
     hlt #0x5846
     ret
     .size vkGetDisplayPlaneCapabilities2KHR, .-vkGetDisplayPlaneCapabilities2KHR
@@ -2348,7 +2348,7 @@ vkGetDisplayPlaneCapabilities2KHR:
     .type vkGetImageMemoryRequirements2KHR, %function
     .p2align 2
 vkGetImageMemoryRequirements2KHR:
-    mov x17, #3566
+    mov x17, #3567
     hlt #0x5846
     ret
     .size vkGetImageMemoryRequirements2KHR, .-vkGetImageMemoryRequirements2KHR
@@ -2356,7 +2356,7 @@ vkGetImageMemoryRequirements2KHR:
     .type vkGetBufferMemoryRequirements2KHR, %function
     .p2align 2
 vkGetBufferMemoryRequirements2KHR:
-    mov x17, #3567
+    mov x17, #3568
     hlt #0x5846
     ret
     .size vkGetBufferMemoryRequirements2KHR, .-vkGetBufferMemoryRequirements2KHR
@@ -2364,7 +2364,7 @@ vkGetBufferMemoryRequirements2KHR:
     .type vkGetImageSparseMemoryRequirements2KHR, %function
     .p2align 2
 vkGetImageSparseMemoryRequirements2KHR:
-    mov x17, #3568
+    mov x17, #3569
     hlt #0x5846
     ret
     .size vkGetImageSparseMemoryRequirements2KHR, .-vkGetImageSparseMemoryRequirements2KHR
@@ -2372,7 +2372,7 @@ vkGetImageSparseMemoryRequirements2KHR:
     .type vkCreateSamplerYcbcrConversionKHR, %function
     .p2align 2
 vkCreateSamplerYcbcrConversionKHR:
-    mov x17, #3569
+    mov x17, #3570
     hlt #0x5846
     ret
     .size vkCreateSamplerYcbcrConversionKHR, .-vkCreateSamplerYcbcrConversionKHR
@@ -2380,7 +2380,7 @@ vkCreateSamplerYcbcrConversionKHR:
     .type vkDestroySamplerYcbcrConversionKHR, %function
     .p2align 2
 vkDestroySamplerYcbcrConversionKHR:
-    mov x17, #3570
+    mov x17, #3571
     hlt #0x5846
     ret
     .size vkDestroySamplerYcbcrConversionKHR, .-vkDestroySamplerYcbcrConversionKHR
@@ -2388,7 +2388,7 @@ vkDestroySamplerYcbcrConversionKHR:
     .type vkBindBufferMemory2KHR, %function
     .p2align 2
 vkBindBufferMemory2KHR:
-    mov x17, #3571
+    mov x17, #3572
     hlt #0x5846
     ret
     .size vkBindBufferMemory2KHR, .-vkBindBufferMemory2KHR
@@ -2396,7 +2396,7 @@ vkBindBufferMemory2KHR:
     .type vkBindImageMemory2KHR, %function
     .p2align 2
 vkBindImageMemory2KHR:
-    mov x17, #3572
+    mov x17, #3573
     hlt #0x5846
     ret
     .size vkBindImageMemory2KHR, .-vkBindImageMemory2KHR
@@ -2404,7 +2404,7 @@ vkBindImageMemory2KHR:
     .type vkGetDescriptorSetLayoutSupportKHR, %function
     .p2align 2
 vkGetDescriptorSetLayoutSupportKHR:
-    mov x17, #3573
+    mov x17, #3574
     hlt #0x5846
     ret
     .size vkGetDescriptorSetLayoutSupportKHR, .-vkGetDescriptorSetLayoutSupportKHR
@@ -2412,7 +2412,7 @@ vkGetDescriptorSetLayoutSupportKHR:
     .type vkCmdDrawIndirectCountKHR, %function
     .p2align 2
 vkCmdDrawIndirectCountKHR:
-    mov x17, #3574
+    mov x17, #3575
     hlt #0x5846
     ret
     .size vkCmdDrawIndirectCountKHR, .-vkCmdDrawIndirectCountKHR
@@ -2420,7 +2420,7 @@ vkCmdDrawIndirectCountKHR:
     .type vkCmdDrawIndexedIndirectCountKHR, %function
     .p2align 2
 vkCmdDrawIndexedIndirectCountKHR:
-    mov x17, #3575
+    mov x17, #3576
     hlt #0x5846
     ret
     .size vkCmdDrawIndexedIndirectCountKHR, .-vkCmdDrawIndexedIndirectCountKHR
@@ -2428,7 +2428,7 @@ vkCmdDrawIndexedIndirectCountKHR:
     .type vkGetSemaphoreCounterValueKHR, %function
     .p2align 2
 vkGetSemaphoreCounterValueKHR:
-    mov x17, #3576
+    mov x17, #3577
     hlt #0x5846
     ret
     .size vkGetSemaphoreCounterValueKHR, .-vkGetSemaphoreCounterValueKHR
@@ -2436,7 +2436,7 @@ vkGetSemaphoreCounterValueKHR:
     .type vkWaitSemaphoresKHR, %function
     .p2align 2
 vkWaitSemaphoresKHR:
-    mov x17, #3577
+    mov x17, #3578
     hlt #0x5846
     ret
     .size vkWaitSemaphoresKHR, .-vkWaitSemaphoresKHR
@@ -2444,7 +2444,7 @@ vkWaitSemaphoresKHR:
     .type vkSignalSemaphoreKHR, %function
     .p2align 2
 vkSignalSemaphoreKHR:
-    mov x17, #3578
+    mov x17, #3579
     hlt #0x5846
     ret
     .size vkSignalSemaphoreKHR, .-vkSignalSemaphoreKHR
@@ -2452,7 +2452,7 @@ vkSignalSemaphoreKHR:
     .type vkGetPhysicalDeviceFragmentShadingRatesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceFragmentShadingRatesKHR:
-    mov x17, #3579
+    mov x17, #3580
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceFragmentShadingRatesKHR, .-vkGetPhysicalDeviceFragmentShadingRatesKHR
@@ -2460,7 +2460,7 @@ vkGetPhysicalDeviceFragmentShadingRatesKHR:
     .type vkCmdSetFragmentShadingRateKHR, %function
     .p2align 2
 vkCmdSetFragmentShadingRateKHR:
-    mov x17, #3580
+    mov x17, #3581
     hlt #0x5846
     ret
     .size vkCmdSetFragmentShadingRateKHR, .-vkCmdSetFragmentShadingRateKHR
@@ -2468,7 +2468,7 @@ vkCmdSetFragmentShadingRateKHR:
     .type vkWaitForPresentKHR, %function
     .p2align 2
 vkWaitForPresentKHR:
-    mov x17, #3581
+    mov x17, #3582
     hlt #0x5846
     ret
     .size vkWaitForPresentKHR, .-vkWaitForPresentKHR
@@ -2476,7 +2476,7 @@ vkWaitForPresentKHR:
     .type vkGetBufferDeviceAddressKHR, %function
     .p2align 2
 vkGetBufferDeviceAddressKHR:
-    mov x17, #3582
+    mov x17, #3583
     hlt #0x5846
     ret
     .size vkGetBufferDeviceAddressKHR, .-vkGetBufferDeviceAddressKHR
@@ -2484,7 +2484,7 @@ vkGetBufferDeviceAddressKHR:
     .type vkGetBufferOpaqueCaptureAddressKHR, %function
     .p2align 2
 vkGetBufferOpaqueCaptureAddressKHR:
-    mov x17, #3583
+    mov x17, #3584
     hlt #0x5846
     ret
     .size vkGetBufferOpaqueCaptureAddressKHR, .-vkGetBufferOpaqueCaptureAddressKHR
@@ -2492,7 +2492,7 @@ vkGetBufferOpaqueCaptureAddressKHR:
     .type vkGetDeviceMemoryOpaqueCaptureAddressKHR, %function
     .p2align 2
 vkGetDeviceMemoryOpaqueCaptureAddressKHR:
-    mov x17, #3584
+    mov x17, #3585
     hlt #0x5846
     ret
     .size vkGetDeviceMemoryOpaqueCaptureAddressKHR, .-vkGetDeviceMemoryOpaqueCaptureAddressKHR
@@ -2500,7 +2500,7 @@ vkGetDeviceMemoryOpaqueCaptureAddressKHR:
     .type vkCreateDeferredOperationKHR, %function
     .p2align 2
 vkCreateDeferredOperationKHR:
-    mov x17, #3585
+    mov x17, #3586
     hlt #0x5846
     ret
     .size vkCreateDeferredOperationKHR, .-vkCreateDeferredOperationKHR
@@ -2508,7 +2508,7 @@ vkCreateDeferredOperationKHR:
     .type vkDestroyDeferredOperationKHR, %function
     .p2align 2
 vkDestroyDeferredOperationKHR:
-    mov x17, #3586
+    mov x17, #3587
     hlt #0x5846
     ret
     .size vkDestroyDeferredOperationKHR, .-vkDestroyDeferredOperationKHR
@@ -2516,7 +2516,7 @@ vkDestroyDeferredOperationKHR:
     .type vkGetDeferredOperationMaxConcurrencyKHR, %function
     .p2align 2
 vkGetDeferredOperationMaxConcurrencyKHR:
-    mov x17, #3587
+    mov x17, #3588
     hlt #0x5846
     ret
     .size vkGetDeferredOperationMaxConcurrencyKHR, .-vkGetDeferredOperationMaxConcurrencyKHR
@@ -2524,7 +2524,7 @@ vkGetDeferredOperationMaxConcurrencyKHR:
     .type vkGetDeferredOperationResultKHR, %function
     .p2align 2
 vkGetDeferredOperationResultKHR:
-    mov x17, #3588
+    mov x17, #3589
     hlt #0x5846
     ret
     .size vkGetDeferredOperationResultKHR, .-vkGetDeferredOperationResultKHR
@@ -2532,7 +2532,7 @@ vkGetDeferredOperationResultKHR:
     .type vkDeferredOperationJoinKHR, %function
     .p2align 2
 vkDeferredOperationJoinKHR:
-    mov x17, #3589
+    mov x17, #3590
     hlt #0x5846
     ret
     .size vkDeferredOperationJoinKHR, .-vkDeferredOperationJoinKHR
@@ -2540,7 +2540,7 @@ vkDeferredOperationJoinKHR:
     .type vkGetPipelineExecutablePropertiesKHR, %function
     .p2align 2
 vkGetPipelineExecutablePropertiesKHR:
-    mov x17, #3590
+    mov x17, #3591
     hlt #0x5846
     ret
     .size vkGetPipelineExecutablePropertiesKHR, .-vkGetPipelineExecutablePropertiesKHR
@@ -2548,7 +2548,7 @@ vkGetPipelineExecutablePropertiesKHR:
     .type vkGetPipelineExecutableStatisticsKHR, %function
     .p2align 2
 vkGetPipelineExecutableStatisticsKHR:
-    mov x17, #3591
+    mov x17, #3592
     hlt #0x5846
     ret
     .size vkGetPipelineExecutableStatisticsKHR, .-vkGetPipelineExecutableStatisticsKHR
@@ -2556,7 +2556,7 @@ vkGetPipelineExecutableStatisticsKHR:
     .type vkGetPipelineExecutableInternalRepresentationsKHR, %function
     .p2align 2
 vkGetPipelineExecutableInternalRepresentationsKHR:
-    mov x17, #3592
+    mov x17, #3593
     hlt #0x5846
     ret
     .size vkGetPipelineExecutableInternalRepresentationsKHR, .-vkGetPipelineExecutableInternalRepresentationsKHR
@@ -2564,7 +2564,7 @@ vkGetPipelineExecutableInternalRepresentationsKHR:
     .type vkMapMemory2KHR, %function
     .p2align 2
 vkMapMemory2KHR:
-    mov x17, #3593
+    mov x17, #3594
     hlt #0x5846
     ret
     .size vkMapMemory2KHR, .-vkMapMemory2KHR
@@ -2572,7 +2572,7 @@ vkMapMemory2KHR:
     .type vkUnmapMemory2KHR, %function
     .p2align 2
 vkUnmapMemory2KHR:
-    mov x17, #3594
+    mov x17, #3595
     hlt #0x5846
     ret
     .size vkUnmapMemory2KHR, .-vkUnmapMemory2KHR
@@ -2580,7 +2580,7 @@ vkUnmapMemory2KHR:
     .type vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR:
-    mov x17, #3595
+    mov x17, #3596
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR, .-vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR
@@ -2588,7 +2588,7 @@ vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR:
     .type vkGetEncodedVideoSessionParametersKHR, %function
     .p2align 2
 vkGetEncodedVideoSessionParametersKHR:
-    mov x17, #3596
+    mov x17, #3597
     hlt #0x5846
     ret
     .size vkGetEncodedVideoSessionParametersKHR, .-vkGetEncodedVideoSessionParametersKHR
@@ -2596,7 +2596,7 @@ vkGetEncodedVideoSessionParametersKHR:
     .type vkCmdEncodeVideoKHR, %function
     .p2align 2
 vkCmdEncodeVideoKHR:
-    mov x17, #3597
+    mov x17, #3598
     hlt #0x5846
     ret
     .size vkCmdEncodeVideoKHR, .-vkCmdEncodeVideoKHR
@@ -2604,7 +2604,7 @@ vkCmdEncodeVideoKHR:
     .type vkCmdSetEvent2KHR, %function
     .p2align 2
 vkCmdSetEvent2KHR:
-    mov x17, #3598
+    mov x17, #3599
     hlt #0x5846
     ret
     .size vkCmdSetEvent2KHR, .-vkCmdSetEvent2KHR
@@ -2612,7 +2612,7 @@ vkCmdSetEvent2KHR:
     .type vkCmdResetEvent2KHR, %function
     .p2align 2
 vkCmdResetEvent2KHR:
-    mov x17, #3599
+    mov x17, #3600
     hlt #0x5846
     ret
     .size vkCmdResetEvent2KHR, .-vkCmdResetEvent2KHR
@@ -2620,7 +2620,7 @@ vkCmdResetEvent2KHR:
     .type vkCmdWaitEvents2KHR, %function
     .p2align 2
 vkCmdWaitEvents2KHR:
-    mov x17, #3600
+    mov x17, #3601
     hlt #0x5846
     ret
     .size vkCmdWaitEvents2KHR, .-vkCmdWaitEvents2KHR
@@ -2628,7 +2628,7 @@ vkCmdWaitEvents2KHR:
     .type vkCmdPipelineBarrier2KHR, %function
     .p2align 2
 vkCmdPipelineBarrier2KHR:
-    mov x17, #3601
+    mov x17, #3602
     hlt #0x5846
     ret
     .size vkCmdPipelineBarrier2KHR, .-vkCmdPipelineBarrier2KHR
@@ -2636,7 +2636,7 @@ vkCmdPipelineBarrier2KHR:
     .type vkCmdWriteTimestamp2KHR, %function
     .p2align 2
 vkCmdWriteTimestamp2KHR:
-    mov x17, #3602
+    mov x17, #3603
     hlt #0x5846
     ret
     .size vkCmdWriteTimestamp2KHR, .-vkCmdWriteTimestamp2KHR
@@ -2644,7 +2644,7 @@ vkCmdWriteTimestamp2KHR:
     .type vkQueueSubmit2KHR, %function
     .p2align 2
 vkQueueSubmit2KHR:
-    mov x17, #3603
+    mov x17, #3604
     hlt #0x5846
     ret
     .size vkQueueSubmit2KHR, .-vkQueueSubmit2KHR
@@ -2652,7 +2652,7 @@ vkQueueSubmit2KHR:
     .type vkCmdWriteBufferMarker2AMD, %function
     .p2align 2
 vkCmdWriteBufferMarker2AMD:
-    mov x17, #3604
+    mov x17, #3605
     hlt #0x5846
     ret
     .size vkCmdWriteBufferMarker2AMD, .-vkCmdWriteBufferMarker2AMD
@@ -2660,7 +2660,7 @@ vkCmdWriteBufferMarker2AMD:
     .type vkGetQueueCheckpointData2NV, %function
     .p2align 2
 vkGetQueueCheckpointData2NV:
-    mov x17, #3605
+    mov x17, #3606
     hlt #0x5846
     ret
     .size vkGetQueueCheckpointData2NV, .-vkGetQueueCheckpointData2NV
@@ -2668,7 +2668,7 @@ vkGetQueueCheckpointData2NV:
     .type vkCmdCopyBuffer2KHR, %function
     .p2align 2
 vkCmdCopyBuffer2KHR:
-    mov x17, #3606
+    mov x17, #3607
     hlt #0x5846
     ret
     .size vkCmdCopyBuffer2KHR, .-vkCmdCopyBuffer2KHR
@@ -2676,7 +2676,7 @@ vkCmdCopyBuffer2KHR:
     .type vkCmdCopyImage2KHR, %function
     .p2align 2
 vkCmdCopyImage2KHR:
-    mov x17, #3607
+    mov x17, #3608
     hlt #0x5846
     ret
     .size vkCmdCopyImage2KHR, .-vkCmdCopyImage2KHR
@@ -2684,7 +2684,7 @@ vkCmdCopyImage2KHR:
     .type vkCmdCopyBufferToImage2KHR, %function
     .p2align 2
 vkCmdCopyBufferToImage2KHR:
-    mov x17, #3608
+    mov x17, #3609
     hlt #0x5846
     ret
     .size vkCmdCopyBufferToImage2KHR, .-vkCmdCopyBufferToImage2KHR
@@ -2692,7 +2692,7 @@ vkCmdCopyBufferToImage2KHR:
     .type vkCmdCopyImageToBuffer2KHR, %function
     .p2align 2
 vkCmdCopyImageToBuffer2KHR:
-    mov x17, #3609
+    mov x17, #3610
     hlt #0x5846
     ret
     .size vkCmdCopyImageToBuffer2KHR, .-vkCmdCopyImageToBuffer2KHR
@@ -2700,7 +2700,7 @@ vkCmdCopyImageToBuffer2KHR:
     .type vkCmdBlitImage2KHR, %function
     .p2align 2
 vkCmdBlitImage2KHR:
-    mov x17, #3610
+    mov x17, #3611
     hlt #0x5846
     ret
     .size vkCmdBlitImage2KHR, .-vkCmdBlitImage2KHR
@@ -2708,7 +2708,7 @@ vkCmdBlitImage2KHR:
     .type vkCmdResolveImage2KHR, %function
     .p2align 2
 vkCmdResolveImage2KHR:
-    mov x17, #3611
+    mov x17, #3612
     hlt #0x5846
     ret
     .size vkCmdResolveImage2KHR, .-vkCmdResolveImage2KHR
@@ -2716,7 +2716,7 @@ vkCmdResolveImage2KHR:
     .type vkCmdTraceRaysIndirect2KHR, %function
     .p2align 2
 vkCmdTraceRaysIndirect2KHR:
-    mov x17, #3612
+    mov x17, #3613
     hlt #0x5846
     ret
     .size vkCmdTraceRaysIndirect2KHR, .-vkCmdTraceRaysIndirect2KHR
@@ -2724,7 +2724,7 @@ vkCmdTraceRaysIndirect2KHR:
     .type vkGetDeviceBufferMemoryRequirementsKHR, %function
     .p2align 2
 vkGetDeviceBufferMemoryRequirementsKHR:
-    mov x17, #3613
+    mov x17, #3614
     hlt #0x5846
     ret
     .size vkGetDeviceBufferMemoryRequirementsKHR, .-vkGetDeviceBufferMemoryRequirementsKHR
@@ -2732,7 +2732,7 @@ vkGetDeviceBufferMemoryRequirementsKHR:
     .type vkGetDeviceImageMemoryRequirementsKHR, %function
     .p2align 2
 vkGetDeviceImageMemoryRequirementsKHR:
-    mov x17, #3614
+    mov x17, #3615
     hlt #0x5846
     ret
     .size vkGetDeviceImageMemoryRequirementsKHR, .-vkGetDeviceImageMemoryRequirementsKHR
@@ -2740,7 +2740,7 @@ vkGetDeviceImageMemoryRequirementsKHR:
     .type vkGetDeviceImageSparseMemoryRequirementsKHR, %function
     .p2align 2
 vkGetDeviceImageSparseMemoryRequirementsKHR:
-    mov x17, #3615
+    mov x17, #3616
     hlt #0x5846
     ret
     .size vkGetDeviceImageSparseMemoryRequirementsKHR, .-vkGetDeviceImageSparseMemoryRequirementsKHR
@@ -2748,7 +2748,7 @@ vkGetDeviceImageSparseMemoryRequirementsKHR:
     .type vkCmdBindIndexBuffer2KHR, %function
     .p2align 2
 vkCmdBindIndexBuffer2KHR:
-    mov x17, #3616
+    mov x17, #3617
     hlt #0x5846
     ret
     .size vkCmdBindIndexBuffer2KHR, .-vkCmdBindIndexBuffer2KHR
@@ -2756,7 +2756,7 @@ vkCmdBindIndexBuffer2KHR:
     .type vkGetRenderingAreaGranularityKHR, %function
     .p2align 2
 vkGetRenderingAreaGranularityKHR:
-    mov x17, #3617
+    mov x17, #3618
     hlt #0x5846
     ret
     .size vkGetRenderingAreaGranularityKHR, .-vkGetRenderingAreaGranularityKHR
@@ -2764,7 +2764,7 @@ vkGetRenderingAreaGranularityKHR:
     .type vkGetDeviceImageSubresourceLayoutKHR, %function
     .p2align 2
 vkGetDeviceImageSubresourceLayoutKHR:
-    mov x17, #3618
+    mov x17, #3619
     hlt #0x5846
     ret
     .size vkGetDeviceImageSubresourceLayoutKHR, .-vkGetDeviceImageSubresourceLayoutKHR
@@ -2772,7 +2772,7 @@ vkGetDeviceImageSubresourceLayoutKHR:
     .type vkGetImageSubresourceLayout2KHR, %function
     .p2align 2
 vkGetImageSubresourceLayout2KHR:
-    mov x17, #3619
+    mov x17, #3620
     hlt #0x5846
     ret
     .size vkGetImageSubresourceLayout2KHR, .-vkGetImageSubresourceLayout2KHR
@@ -2780,7 +2780,7 @@ vkGetImageSubresourceLayout2KHR:
     .type vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR, %function
     .p2align 2
 vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR:
-    mov x17, #3620
+    mov x17, #3621
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR, .-vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR
@@ -2788,7 +2788,7 @@ vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR:
     .type vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, %function
     .p2align 2
 vkGetPhysicalDeviceCalibrateableTimeDomainsKHR:
-    mov x17, #3621
+    mov x17, #3622
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, .-vkGetPhysicalDeviceCalibrateableTimeDomainsKHR
@@ -2796,7 +2796,7 @@ vkGetPhysicalDeviceCalibrateableTimeDomainsKHR:
     .type vkGetCalibratedTimestampsKHR, %function
     .p2align 2
 vkGetCalibratedTimestampsKHR:
-    mov x17, #3622
+    mov x17, #3623
     hlt #0x5846
     ret
     .size vkGetCalibratedTimestampsKHR, .-vkGetCalibratedTimestampsKHR
@@ -2804,7 +2804,7 @@ vkGetCalibratedTimestampsKHR:
     .type vkCmdBindDescriptorSets2KHR, %function
     .p2align 2
 vkCmdBindDescriptorSets2KHR:
-    mov x17, #3623
+    mov x17, #3624
     hlt #0x5846
     ret
     .size vkCmdBindDescriptorSets2KHR, .-vkCmdBindDescriptorSets2KHR
@@ -2812,7 +2812,7 @@ vkCmdBindDescriptorSets2KHR:
     .type vkCmdPushConstants2KHR, %function
     .p2align 2
 vkCmdPushConstants2KHR:
-    mov x17, #3624
+    mov x17, #3625
     hlt #0x5846
     ret
     .size vkCmdPushConstants2KHR, .-vkCmdPushConstants2KHR
@@ -2820,7 +2820,7 @@ vkCmdPushConstants2KHR:
     .type vkCmdPushDescriptorSet2KHR, %function
     .p2align 2
 vkCmdPushDescriptorSet2KHR:
-    mov x17, #3625
+    mov x17, #3626
     hlt #0x5846
     ret
     .size vkCmdPushDescriptorSet2KHR, .-vkCmdPushDescriptorSet2KHR
@@ -2828,7 +2828,7 @@ vkCmdPushDescriptorSet2KHR:
     .type vkCmdPushDescriptorSetWithTemplate2KHR, %function
     .p2align 2
 vkCmdPushDescriptorSetWithTemplate2KHR:
-    mov x17, #3626
+    mov x17, #3627
     hlt #0x5846
     ret
     .size vkCmdPushDescriptorSetWithTemplate2KHR, .-vkCmdPushDescriptorSetWithTemplate2KHR
@@ -2836,7 +2836,7 @@ vkCmdPushDescriptorSetWithTemplate2KHR:
     .type vkCmdSetDescriptorBufferOffsets2EXT, %function
     .p2align 2
 vkCmdSetDescriptorBufferOffsets2EXT:
-    mov x17, #3627
+    mov x17, #3628
     hlt #0x5846
     ret
     .size vkCmdSetDescriptorBufferOffsets2EXT, .-vkCmdSetDescriptorBufferOffsets2EXT
@@ -2844,7 +2844,7 @@ vkCmdSetDescriptorBufferOffsets2EXT:
     .type vkCmdBindDescriptorBufferEmbeddedSamplers2EXT, %function
     .p2align 2
 vkCmdBindDescriptorBufferEmbeddedSamplers2EXT:
-    mov x17, #3628
+    mov x17, #3629
     hlt #0x5846
     ret
     .size vkCmdBindDescriptorBufferEmbeddedSamplers2EXT, .-vkCmdBindDescriptorBufferEmbeddedSamplers2EXT
@@ -2852,7 +2852,7 @@ vkCmdBindDescriptorBufferEmbeddedSamplers2EXT:
     .type xef_raw_vkCreateDebugReportCallbackEXT, %function
     .p2align 2
 xef_raw_vkCreateDebugReportCallbackEXT:
-    mov x17, #3629
+    mov x17, #3630
     hlt #0x5846
     ret
     .size xef_raw_vkCreateDebugReportCallbackEXT, .-xef_raw_vkCreateDebugReportCallbackEXT
@@ -2860,7 +2860,7 @@ xef_raw_vkCreateDebugReportCallbackEXT:
     .type xef_raw_vkDestroyDebugReportCallbackEXT, %function
     .p2align 2
 xef_raw_vkDestroyDebugReportCallbackEXT:
-    mov x17, #3630
+    mov x17, #3631
     hlt #0x5846
     ret
     .size xef_raw_vkDestroyDebugReportCallbackEXT, .-xef_raw_vkDestroyDebugReportCallbackEXT
@@ -2868,7 +2868,7 @@ xef_raw_vkDestroyDebugReportCallbackEXT:
     .type vkDebugReportMessageEXT, %function
     .p2align 2
 vkDebugReportMessageEXT:
-    mov x17, #3631
+    mov x17, #3632
     hlt #0x5846
     ret
     .size vkDebugReportMessageEXT, .-vkDebugReportMessageEXT
@@ -2876,7 +2876,7 @@ vkDebugReportMessageEXT:
     .type vkDebugMarkerSetObjectTagEXT, %function
     .p2align 2
 vkDebugMarkerSetObjectTagEXT:
-    mov x17, #3632
+    mov x17, #3633
     hlt #0x5846
     ret
     .size vkDebugMarkerSetObjectTagEXT, .-vkDebugMarkerSetObjectTagEXT
@@ -2884,7 +2884,7 @@ vkDebugMarkerSetObjectTagEXT:
     .type vkDebugMarkerSetObjectNameEXT, %function
     .p2align 2
 vkDebugMarkerSetObjectNameEXT:
-    mov x17, #3633
+    mov x17, #3634
     hlt #0x5846
     ret
     .size vkDebugMarkerSetObjectNameEXT, .-vkDebugMarkerSetObjectNameEXT
@@ -2892,7 +2892,7 @@ vkDebugMarkerSetObjectNameEXT:
     .type vkCmdDebugMarkerBeginEXT, %function
     .p2align 2
 vkCmdDebugMarkerBeginEXT:
-    mov x17, #3634
+    mov x17, #3635
     hlt #0x5846
     ret
     .size vkCmdDebugMarkerBeginEXT, .-vkCmdDebugMarkerBeginEXT
@@ -2900,7 +2900,7 @@ vkCmdDebugMarkerBeginEXT:
     .type vkCmdDebugMarkerEndEXT, %function
     .p2align 2
 vkCmdDebugMarkerEndEXT:
-    mov x17, #3635
+    mov x17, #3636
     hlt #0x5846
     ret
     .size vkCmdDebugMarkerEndEXT, .-vkCmdDebugMarkerEndEXT
@@ -2908,7 +2908,7 @@ vkCmdDebugMarkerEndEXT:
     .type vkCmdDebugMarkerInsertEXT, %function
     .p2align 2
 vkCmdDebugMarkerInsertEXT:
-    mov x17, #3636
+    mov x17, #3637
     hlt #0x5846
     ret
     .size vkCmdDebugMarkerInsertEXT, .-vkCmdDebugMarkerInsertEXT
@@ -2916,7 +2916,7 @@ vkCmdDebugMarkerInsertEXT:
     .type vkCmdBindTransformFeedbackBuffersEXT, %function
     .p2align 2
 vkCmdBindTransformFeedbackBuffersEXT:
-    mov x17, #3637
+    mov x17, #3638
     hlt #0x5846
     ret
     .size vkCmdBindTransformFeedbackBuffersEXT, .-vkCmdBindTransformFeedbackBuffersEXT
@@ -2924,7 +2924,7 @@ vkCmdBindTransformFeedbackBuffersEXT:
     .type vkCmdBeginTransformFeedbackEXT, %function
     .p2align 2
 vkCmdBeginTransformFeedbackEXT:
-    mov x17, #3638
+    mov x17, #3639
     hlt #0x5846
     ret
     .size vkCmdBeginTransformFeedbackEXT, .-vkCmdBeginTransformFeedbackEXT
@@ -2932,7 +2932,7 @@ vkCmdBeginTransformFeedbackEXT:
     .type vkCmdEndTransformFeedbackEXT, %function
     .p2align 2
 vkCmdEndTransformFeedbackEXT:
-    mov x17, #3639
+    mov x17, #3640
     hlt #0x5846
     ret
     .size vkCmdEndTransformFeedbackEXT, .-vkCmdEndTransformFeedbackEXT
@@ -2940,7 +2940,7 @@ vkCmdEndTransformFeedbackEXT:
     .type vkCmdBeginQueryIndexedEXT, %function
     .p2align 2
 vkCmdBeginQueryIndexedEXT:
-    mov x17, #3640
+    mov x17, #3641
     hlt #0x5846
     ret
     .size vkCmdBeginQueryIndexedEXT, .-vkCmdBeginQueryIndexedEXT
@@ -2948,7 +2948,7 @@ vkCmdBeginQueryIndexedEXT:
     .type vkCmdEndQueryIndexedEXT, %function
     .p2align 2
 vkCmdEndQueryIndexedEXT:
-    mov x17, #3641
+    mov x17, #3642
     hlt #0x5846
     ret
     .size vkCmdEndQueryIndexedEXT, .-vkCmdEndQueryIndexedEXT
@@ -2956,7 +2956,7 @@ vkCmdEndQueryIndexedEXT:
     .type vkCmdDrawIndirectByteCountEXT, %function
     .p2align 2
 vkCmdDrawIndirectByteCountEXT:
-    mov x17, #3642
+    mov x17, #3643
     hlt #0x5846
     ret
     .size vkCmdDrawIndirectByteCountEXT, .-vkCmdDrawIndirectByteCountEXT
@@ -2964,7 +2964,7 @@ vkCmdDrawIndirectByteCountEXT:
     .type vkCreateCuModuleNVX, %function
     .p2align 2
 vkCreateCuModuleNVX:
-    mov x17, #3643
+    mov x17, #3644
     hlt #0x5846
     ret
     .size vkCreateCuModuleNVX, .-vkCreateCuModuleNVX
@@ -2972,7 +2972,7 @@ vkCreateCuModuleNVX:
     .type vkCreateCuFunctionNVX, %function
     .p2align 2
 vkCreateCuFunctionNVX:
-    mov x17, #3644
+    mov x17, #3645
     hlt #0x5846
     ret
     .size vkCreateCuFunctionNVX, .-vkCreateCuFunctionNVX
@@ -2980,7 +2980,7 @@ vkCreateCuFunctionNVX:
     .type vkDestroyCuModuleNVX, %function
     .p2align 2
 vkDestroyCuModuleNVX:
-    mov x17, #3645
+    mov x17, #3646
     hlt #0x5846
     ret
     .size vkDestroyCuModuleNVX, .-vkDestroyCuModuleNVX
@@ -2988,7 +2988,7 @@ vkDestroyCuModuleNVX:
     .type vkDestroyCuFunctionNVX, %function
     .p2align 2
 vkDestroyCuFunctionNVX:
-    mov x17, #3646
+    mov x17, #3647
     hlt #0x5846
     ret
     .size vkDestroyCuFunctionNVX, .-vkDestroyCuFunctionNVX
@@ -2996,7 +2996,7 @@ vkDestroyCuFunctionNVX:
     .type vkCmdCuLaunchKernelNVX, %function
     .p2align 2
 vkCmdCuLaunchKernelNVX:
-    mov x17, #3647
+    mov x17, #3648
     hlt #0x5846
     ret
     .size vkCmdCuLaunchKernelNVX, .-vkCmdCuLaunchKernelNVX
@@ -3004,7 +3004,7 @@ vkCmdCuLaunchKernelNVX:
     .type vkGetImageViewHandleNVX, %function
     .p2align 2
 vkGetImageViewHandleNVX:
-    mov x17, #3648
+    mov x17, #3649
     hlt #0x5846
     ret
     .size vkGetImageViewHandleNVX, .-vkGetImageViewHandleNVX
@@ -3012,7 +3012,7 @@ vkGetImageViewHandleNVX:
     .type vkGetImageViewAddressNVX, %function
     .p2align 2
 vkGetImageViewAddressNVX:
-    mov x17, #3649
+    mov x17, #3650
     hlt #0x5846
     ret
     .size vkGetImageViewAddressNVX, .-vkGetImageViewAddressNVX
@@ -3020,7 +3020,7 @@ vkGetImageViewAddressNVX:
     .type vkCmdDrawIndirectCountAMD, %function
     .p2align 2
 vkCmdDrawIndirectCountAMD:
-    mov x17, #3650
+    mov x17, #3651
     hlt #0x5846
     ret
     .size vkCmdDrawIndirectCountAMD, .-vkCmdDrawIndirectCountAMD
@@ -3028,7 +3028,7 @@ vkCmdDrawIndirectCountAMD:
     .type vkCmdDrawIndexedIndirectCountAMD, %function
     .p2align 2
 vkCmdDrawIndexedIndirectCountAMD:
-    mov x17, #3651
+    mov x17, #3652
     hlt #0x5846
     ret
     .size vkCmdDrawIndexedIndirectCountAMD, .-vkCmdDrawIndexedIndirectCountAMD
@@ -3036,7 +3036,7 @@ vkCmdDrawIndexedIndirectCountAMD:
     .type vkGetShaderInfoAMD, %function
     .p2align 2
 vkGetShaderInfoAMD:
-    mov x17, #3652
+    mov x17, #3653
     hlt #0x5846
     ret
     .size vkGetShaderInfoAMD, .-vkGetShaderInfoAMD
@@ -3044,7 +3044,7 @@ vkGetShaderInfoAMD:
     .type vkGetPhysicalDeviceExternalImageFormatPropertiesNV, %function
     .p2align 2
 vkGetPhysicalDeviceExternalImageFormatPropertiesNV:
-    mov x17, #3653
+    mov x17, #3654
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceExternalImageFormatPropertiesNV, .-vkGetPhysicalDeviceExternalImageFormatPropertiesNV
@@ -3052,7 +3052,7 @@ vkGetPhysicalDeviceExternalImageFormatPropertiesNV:
     .type vkCmdBeginConditionalRenderingEXT, %function
     .p2align 2
 vkCmdBeginConditionalRenderingEXT:
-    mov x17, #3654
+    mov x17, #3655
     hlt #0x5846
     ret
     .size vkCmdBeginConditionalRenderingEXT, .-vkCmdBeginConditionalRenderingEXT
@@ -3060,7 +3060,7 @@ vkCmdBeginConditionalRenderingEXT:
     .type vkCmdEndConditionalRenderingEXT, %function
     .p2align 2
 vkCmdEndConditionalRenderingEXT:
-    mov x17, #3655
+    mov x17, #3656
     hlt #0x5846
     ret
     .size vkCmdEndConditionalRenderingEXT, .-vkCmdEndConditionalRenderingEXT
@@ -3068,7 +3068,7 @@ vkCmdEndConditionalRenderingEXT:
     .type vkCmdSetViewportWScalingNV, %function
     .p2align 2
 vkCmdSetViewportWScalingNV:
-    mov x17, #3656
+    mov x17, #3657
     hlt #0x5846
     ret
     .size vkCmdSetViewportWScalingNV, .-vkCmdSetViewportWScalingNV
@@ -3076,7 +3076,7 @@ vkCmdSetViewportWScalingNV:
     .type vkReleaseDisplayEXT, %function
     .p2align 2
 vkReleaseDisplayEXT:
-    mov x17, #3657
+    mov x17, #3658
     hlt #0x5846
     ret
     .size vkReleaseDisplayEXT, .-vkReleaseDisplayEXT
@@ -3084,7 +3084,7 @@ vkReleaseDisplayEXT:
     .type vkGetPhysicalDeviceSurfaceCapabilities2EXT, %function
     .p2align 2
 vkGetPhysicalDeviceSurfaceCapabilities2EXT:
-    mov x17, #3658
+    mov x17, #3659
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSurfaceCapabilities2EXT, .-vkGetPhysicalDeviceSurfaceCapabilities2EXT
@@ -3092,7 +3092,7 @@ vkGetPhysicalDeviceSurfaceCapabilities2EXT:
     .type vkDisplayPowerControlEXT, %function
     .p2align 2
 vkDisplayPowerControlEXT:
-    mov x17, #3659
+    mov x17, #3660
     hlt #0x5846
     ret
     .size vkDisplayPowerControlEXT, .-vkDisplayPowerControlEXT
@@ -3100,7 +3100,7 @@ vkDisplayPowerControlEXT:
     .type vkRegisterDeviceEventEXT, %function
     .p2align 2
 vkRegisterDeviceEventEXT:
-    mov x17, #3660
+    mov x17, #3661
     hlt #0x5846
     ret
     .size vkRegisterDeviceEventEXT, .-vkRegisterDeviceEventEXT
@@ -3108,7 +3108,7 @@ vkRegisterDeviceEventEXT:
     .type vkRegisterDisplayEventEXT, %function
     .p2align 2
 vkRegisterDisplayEventEXT:
-    mov x17, #3661
+    mov x17, #3662
     hlt #0x5846
     ret
     .size vkRegisterDisplayEventEXT, .-vkRegisterDisplayEventEXT
@@ -3116,7 +3116,7 @@ vkRegisterDisplayEventEXT:
     .type vkGetSwapchainCounterEXT, %function
     .p2align 2
 vkGetSwapchainCounterEXT:
-    mov x17, #3662
+    mov x17, #3663
     hlt #0x5846
     ret
     .size vkGetSwapchainCounterEXT, .-vkGetSwapchainCounterEXT
@@ -3124,7 +3124,7 @@ vkGetSwapchainCounterEXT:
     .type vkGetRefreshCycleDurationGOOGLE, %function
     .p2align 2
 vkGetRefreshCycleDurationGOOGLE:
-    mov x17, #3663
+    mov x17, #3664
     hlt #0x5846
     ret
     .size vkGetRefreshCycleDurationGOOGLE, .-vkGetRefreshCycleDurationGOOGLE
@@ -3132,7 +3132,7 @@ vkGetRefreshCycleDurationGOOGLE:
     .type vkGetPastPresentationTimingGOOGLE, %function
     .p2align 2
 vkGetPastPresentationTimingGOOGLE:
-    mov x17, #3664
+    mov x17, #3665
     hlt #0x5846
     ret
     .size vkGetPastPresentationTimingGOOGLE, .-vkGetPastPresentationTimingGOOGLE
@@ -3140,7 +3140,7 @@ vkGetPastPresentationTimingGOOGLE:
     .type vkCmdSetDiscardRectangleEXT, %function
     .p2align 2
 vkCmdSetDiscardRectangleEXT:
-    mov x17, #3665
+    mov x17, #3666
     hlt #0x5846
     ret
     .size vkCmdSetDiscardRectangleEXT, .-vkCmdSetDiscardRectangleEXT
@@ -3148,7 +3148,7 @@ vkCmdSetDiscardRectangleEXT:
     .type vkCmdSetDiscardRectangleEnableEXT, %function
     .p2align 2
 vkCmdSetDiscardRectangleEnableEXT:
-    mov x17, #3666
+    mov x17, #3667
     hlt #0x5846
     ret
     .size vkCmdSetDiscardRectangleEnableEXT, .-vkCmdSetDiscardRectangleEnableEXT
@@ -3156,7 +3156,7 @@ vkCmdSetDiscardRectangleEnableEXT:
     .type vkCmdSetDiscardRectangleModeEXT, %function
     .p2align 2
 vkCmdSetDiscardRectangleModeEXT:
-    mov x17, #3667
+    mov x17, #3668
     hlt #0x5846
     ret
     .size vkCmdSetDiscardRectangleModeEXT, .-vkCmdSetDiscardRectangleModeEXT
@@ -3164,7 +3164,7 @@ vkCmdSetDiscardRectangleModeEXT:
     .type vkSetHdrMetadataEXT, %function
     .p2align 2
 vkSetHdrMetadataEXT:
-    mov x17, #3668
+    mov x17, #3669
     hlt #0x5846
     ret
     .size vkSetHdrMetadataEXT, .-vkSetHdrMetadataEXT
@@ -3172,7 +3172,7 @@ vkSetHdrMetadataEXT:
     .type vkSetDebugUtilsObjectNameEXT, %function
     .p2align 2
 vkSetDebugUtilsObjectNameEXT:
-    mov x17, #3669
+    mov x17, #3670
     hlt #0x5846
     ret
     .size vkSetDebugUtilsObjectNameEXT, .-vkSetDebugUtilsObjectNameEXT
@@ -3180,7 +3180,7 @@ vkSetDebugUtilsObjectNameEXT:
     .type vkSetDebugUtilsObjectTagEXT, %function
     .p2align 2
 vkSetDebugUtilsObjectTagEXT:
-    mov x17, #3670
+    mov x17, #3671
     hlt #0x5846
     ret
     .size vkSetDebugUtilsObjectTagEXT, .-vkSetDebugUtilsObjectTagEXT
@@ -3188,7 +3188,7 @@ vkSetDebugUtilsObjectTagEXT:
     .type vkQueueBeginDebugUtilsLabelEXT, %function
     .p2align 2
 vkQueueBeginDebugUtilsLabelEXT:
-    mov x17, #3671
+    mov x17, #3672
     hlt #0x5846
     ret
     .size vkQueueBeginDebugUtilsLabelEXT, .-vkQueueBeginDebugUtilsLabelEXT
@@ -3196,7 +3196,7 @@ vkQueueBeginDebugUtilsLabelEXT:
     .type vkQueueEndDebugUtilsLabelEXT, %function
     .p2align 2
 vkQueueEndDebugUtilsLabelEXT:
-    mov x17, #3672
+    mov x17, #3673
     hlt #0x5846
     ret
     .size vkQueueEndDebugUtilsLabelEXT, .-vkQueueEndDebugUtilsLabelEXT
@@ -3204,7 +3204,7 @@ vkQueueEndDebugUtilsLabelEXT:
     .type vkQueueInsertDebugUtilsLabelEXT, %function
     .p2align 2
 vkQueueInsertDebugUtilsLabelEXT:
-    mov x17, #3673
+    mov x17, #3674
     hlt #0x5846
     ret
     .size vkQueueInsertDebugUtilsLabelEXT, .-vkQueueInsertDebugUtilsLabelEXT
@@ -3212,7 +3212,7 @@ vkQueueInsertDebugUtilsLabelEXT:
     .type vkCmdBeginDebugUtilsLabelEXT, %function
     .p2align 2
 vkCmdBeginDebugUtilsLabelEXT:
-    mov x17, #3674
+    mov x17, #3675
     hlt #0x5846
     ret
     .size vkCmdBeginDebugUtilsLabelEXT, .-vkCmdBeginDebugUtilsLabelEXT
@@ -3220,7 +3220,7 @@ vkCmdBeginDebugUtilsLabelEXT:
     .type vkCmdEndDebugUtilsLabelEXT, %function
     .p2align 2
 vkCmdEndDebugUtilsLabelEXT:
-    mov x17, #3675
+    mov x17, #3676
     hlt #0x5846
     ret
     .size vkCmdEndDebugUtilsLabelEXT, .-vkCmdEndDebugUtilsLabelEXT
@@ -3228,7 +3228,7 @@ vkCmdEndDebugUtilsLabelEXT:
     .type vkCmdInsertDebugUtilsLabelEXT, %function
     .p2align 2
 vkCmdInsertDebugUtilsLabelEXT:
-    mov x17, #3676
+    mov x17, #3677
     hlt #0x5846
     ret
     .size vkCmdInsertDebugUtilsLabelEXT, .-vkCmdInsertDebugUtilsLabelEXT
@@ -3236,7 +3236,7 @@ vkCmdInsertDebugUtilsLabelEXT:
     .type xef_raw_vkCreateDebugUtilsMessengerEXT, %function
     .p2align 2
 xef_raw_vkCreateDebugUtilsMessengerEXT:
-    mov x17, #3677
+    mov x17, #3678
     hlt #0x5846
     ret
     .size xef_raw_vkCreateDebugUtilsMessengerEXT, .-xef_raw_vkCreateDebugUtilsMessengerEXT
@@ -3244,7 +3244,7 @@ xef_raw_vkCreateDebugUtilsMessengerEXT:
     .type xef_raw_vkDestroyDebugUtilsMessengerEXT, %function
     .p2align 2
 xef_raw_vkDestroyDebugUtilsMessengerEXT:
-    mov x17, #3678
+    mov x17, #3679
     hlt #0x5846
     ret
     .size xef_raw_vkDestroyDebugUtilsMessengerEXT, .-xef_raw_vkDestroyDebugUtilsMessengerEXT
@@ -3252,7 +3252,7 @@ xef_raw_vkDestroyDebugUtilsMessengerEXT:
     .type vkSubmitDebugUtilsMessageEXT, %function
     .p2align 2
 vkSubmitDebugUtilsMessageEXT:
-    mov x17, #3679
+    mov x17, #3680
     hlt #0x5846
     ret
     .size vkSubmitDebugUtilsMessageEXT, .-vkSubmitDebugUtilsMessageEXT
@@ -3260,7 +3260,7 @@ vkSubmitDebugUtilsMessageEXT:
     .type vkCmdSetSampleLocationsEXT, %function
     .p2align 2
 vkCmdSetSampleLocationsEXT:
-    mov x17, #3680
+    mov x17, #3681
     hlt #0x5846
     ret
     .size vkCmdSetSampleLocationsEXT, .-vkCmdSetSampleLocationsEXT
@@ -3268,7 +3268,7 @@ vkCmdSetSampleLocationsEXT:
     .type vkGetPhysicalDeviceMultisamplePropertiesEXT, %function
     .p2align 2
 vkGetPhysicalDeviceMultisamplePropertiesEXT:
-    mov x17, #3681
+    mov x17, #3682
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceMultisamplePropertiesEXT, .-vkGetPhysicalDeviceMultisamplePropertiesEXT
@@ -3276,7 +3276,7 @@ vkGetPhysicalDeviceMultisamplePropertiesEXT:
     .type vkGetImageDrmFormatModifierPropertiesEXT, %function
     .p2align 2
 vkGetImageDrmFormatModifierPropertiesEXT:
-    mov x17, #3682
+    mov x17, #3683
     hlt #0x5846
     ret
     .size vkGetImageDrmFormatModifierPropertiesEXT, .-vkGetImageDrmFormatModifierPropertiesEXT
@@ -3284,7 +3284,7 @@ vkGetImageDrmFormatModifierPropertiesEXT:
     .type vkCreateValidationCacheEXT, %function
     .p2align 2
 vkCreateValidationCacheEXT:
-    mov x17, #3683
+    mov x17, #3684
     hlt #0x5846
     ret
     .size vkCreateValidationCacheEXT, .-vkCreateValidationCacheEXT
@@ -3292,7 +3292,7 @@ vkCreateValidationCacheEXT:
     .type vkDestroyValidationCacheEXT, %function
     .p2align 2
 vkDestroyValidationCacheEXT:
-    mov x17, #3684
+    mov x17, #3685
     hlt #0x5846
     ret
     .size vkDestroyValidationCacheEXT, .-vkDestroyValidationCacheEXT
@@ -3300,7 +3300,7 @@ vkDestroyValidationCacheEXT:
     .type vkMergeValidationCachesEXT, %function
     .p2align 2
 vkMergeValidationCachesEXT:
-    mov x17, #3685
+    mov x17, #3686
     hlt #0x5846
     ret
     .size vkMergeValidationCachesEXT, .-vkMergeValidationCachesEXT
@@ -3308,7 +3308,7 @@ vkMergeValidationCachesEXT:
     .type vkGetValidationCacheDataEXT, %function
     .p2align 2
 vkGetValidationCacheDataEXT:
-    mov x17, #3686
+    mov x17, #3687
     hlt #0x5846
     ret
     .size vkGetValidationCacheDataEXT, .-vkGetValidationCacheDataEXT
@@ -3316,7 +3316,7 @@ vkGetValidationCacheDataEXT:
     .type vkCmdBindShadingRateImageNV, %function
     .p2align 2
 vkCmdBindShadingRateImageNV:
-    mov x17, #3687
+    mov x17, #3688
     hlt #0x5846
     ret
     .size vkCmdBindShadingRateImageNV, .-vkCmdBindShadingRateImageNV
@@ -3324,7 +3324,7 @@ vkCmdBindShadingRateImageNV:
     .type vkCmdSetViewportShadingRatePaletteNV, %function
     .p2align 2
 vkCmdSetViewportShadingRatePaletteNV:
-    mov x17, #3688
+    mov x17, #3689
     hlt #0x5846
     ret
     .size vkCmdSetViewportShadingRatePaletteNV, .-vkCmdSetViewportShadingRatePaletteNV
@@ -3332,7 +3332,7 @@ vkCmdSetViewportShadingRatePaletteNV:
     .type vkCmdSetCoarseSampleOrderNV, %function
     .p2align 2
 vkCmdSetCoarseSampleOrderNV:
-    mov x17, #3689
+    mov x17, #3690
     hlt #0x5846
     ret
     .size vkCmdSetCoarseSampleOrderNV, .-vkCmdSetCoarseSampleOrderNV
@@ -3340,7 +3340,7 @@ vkCmdSetCoarseSampleOrderNV:
     .type vkCreateAccelerationStructureNV, %function
     .p2align 2
 vkCreateAccelerationStructureNV:
-    mov x17, #3690
+    mov x17, #3691
     hlt #0x5846
     ret
     .size vkCreateAccelerationStructureNV, .-vkCreateAccelerationStructureNV
@@ -3348,7 +3348,7 @@ vkCreateAccelerationStructureNV:
     .type vkDestroyAccelerationStructureNV, %function
     .p2align 2
 vkDestroyAccelerationStructureNV:
-    mov x17, #3691
+    mov x17, #3692
     hlt #0x5846
     ret
     .size vkDestroyAccelerationStructureNV, .-vkDestroyAccelerationStructureNV
@@ -3356,7 +3356,7 @@ vkDestroyAccelerationStructureNV:
     .type vkGetAccelerationStructureMemoryRequirementsNV, %function
     .p2align 2
 vkGetAccelerationStructureMemoryRequirementsNV:
-    mov x17, #3692
+    mov x17, #3693
     hlt #0x5846
     ret
     .size vkGetAccelerationStructureMemoryRequirementsNV, .-vkGetAccelerationStructureMemoryRequirementsNV
@@ -3364,7 +3364,7 @@ vkGetAccelerationStructureMemoryRequirementsNV:
     .type vkBindAccelerationStructureMemoryNV, %function
     .p2align 2
 vkBindAccelerationStructureMemoryNV:
-    mov x17, #3693
+    mov x17, #3694
     hlt #0x5846
     ret
     .size vkBindAccelerationStructureMemoryNV, .-vkBindAccelerationStructureMemoryNV
@@ -3372,7 +3372,7 @@ vkBindAccelerationStructureMemoryNV:
     .type vkCmdBuildAccelerationStructureNV, %function
     .p2align 2
 vkCmdBuildAccelerationStructureNV:
-    mov x17, #3694
+    mov x17, #3695
     hlt #0x5846
     ret
     .size vkCmdBuildAccelerationStructureNV, .-vkCmdBuildAccelerationStructureNV
@@ -3380,7 +3380,7 @@ vkCmdBuildAccelerationStructureNV:
     .type vkCmdCopyAccelerationStructureNV, %function
     .p2align 2
 vkCmdCopyAccelerationStructureNV:
-    mov x17, #3695
+    mov x17, #3696
     hlt #0x5846
     ret
     .size vkCmdCopyAccelerationStructureNV, .-vkCmdCopyAccelerationStructureNV
@@ -3388,7 +3388,7 @@ vkCmdCopyAccelerationStructureNV:
     .type vkCmdTraceRaysNV, %function
     .p2align 2
 vkCmdTraceRaysNV:
-    mov x17, #3696
+    mov x17, #3697
     hlt #0x5846
     ret
     .size vkCmdTraceRaysNV, .-vkCmdTraceRaysNV
@@ -3396,7 +3396,7 @@ vkCmdTraceRaysNV:
     .type vkCreateRayTracingPipelinesNV, %function
     .p2align 2
 vkCreateRayTracingPipelinesNV:
-    mov x17, #3697
+    mov x17, #3698
     hlt #0x5846
     ret
     .size vkCreateRayTracingPipelinesNV, .-vkCreateRayTracingPipelinesNV
@@ -3404,7 +3404,7 @@ vkCreateRayTracingPipelinesNV:
     .type vkGetRayTracingShaderGroupHandlesKHR, %function
     .p2align 2
 vkGetRayTracingShaderGroupHandlesKHR:
-    mov x17, #3698
+    mov x17, #3699
     hlt #0x5846
     ret
     .size vkGetRayTracingShaderGroupHandlesKHR, .-vkGetRayTracingShaderGroupHandlesKHR
@@ -3412,7 +3412,7 @@ vkGetRayTracingShaderGroupHandlesKHR:
     .type vkGetRayTracingShaderGroupHandlesNV, %function
     .p2align 2
 vkGetRayTracingShaderGroupHandlesNV:
-    mov x17, #3699
+    mov x17, #3700
     hlt #0x5846
     ret
     .size vkGetRayTracingShaderGroupHandlesNV, .-vkGetRayTracingShaderGroupHandlesNV
@@ -3420,7 +3420,7 @@ vkGetRayTracingShaderGroupHandlesNV:
     .type vkGetAccelerationStructureHandleNV, %function
     .p2align 2
 vkGetAccelerationStructureHandleNV:
-    mov x17, #3700
+    mov x17, #3701
     hlt #0x5846
     ret
     .size vkGetAccelerationStructureHandleNV, .-vkGetAccelerationStructureHandleNV
@@ -3428,7 +3428,7 @@ vkGetAccelerationStructureHandleNV:
     .type vkCmdWriteAccelerationStructuresPropertiesNV, %function
     .p2align 2
 vkCmdWriteAccelerationStructuresPropertiesNV:
-    mov x17, #3701
+    mov x17, #3702
     hlt #0x5846
     ret
     .size vkCmdWriteAccelerationStructuresPropertiesNV, .-vkCmdWriteAccelerationStructuresPropertiesNV
@@ -3436,7 +3436,7 @@ vkCmdWriteAccelerationStructuresPropertiesNV:
     .type vkCompileDeferredNV, %function
     .p2align 2
 vkCompileDeferredNV:
-    mov x17, #3702
+    mov x17, #3703
     hlt #0x5846
     ret
     .size vkCompileDeferredNV, .-vkCompileDeferredNV
@@ -3444,7 +3444,7 @@ vkCompileDeferredNV:
     .type vkGetMemoryHostPointerPropertiesEXT, %function
     .p2align 2
 vkGetMemoryHostPointerPropertiesEXT:
-    mov x17, #3703
+    mov x17, #3704
     hlt #0x5846
     ret
     .size vkGetMemoryHostPointerPropertiesEXT, .-vkGetMemoryHostPointerPropertiesEXT
@@ -3452,7 +3452,7 @@ vkGetMemoryHostPointerPropertiesEXT:
     .type vkCmdWriteBufferMarkerAMD, %function
     .p2align 2
 vkCmdWriteBufferMarkerAMD:
-    mov x17, #3704
+    mov x17, #3705
     hlt #0x5846
     ret
     .size vkCmdWriteBufferMarkerAMD, .-vkCmdWriteBufferMarkerAMD
@@ -3460,7 +3460,7 @@ vkCmdWriteBufferMarkerAMD:
     .type vkGetPhysicalDeviceCalibrateableTimeDomainsEXT, %function
     .p2align 2
 vkGetPhysicalDeviceCalibrateableTimeDomainsEXT:
-    mov x17, #3705
+    mov x17, #3706
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceCalibrateableTimeDomainsEXT, .-vkGetPhysicalDeviceCalibrateableTimeDomainsEXT
@@ -3468,7 +3468,7 @@ vkGetPhysicalDeviceCalibrateableTimeDomainsEXT:
     .type vkGetCalibratedTimestampsEXT, %function
     .p2align 2
 vkGetCalibratedTimestampsEXT:
-    mov x17, #3706
+    mov x17, #3707
     hlt #0x5846
     ret
     .size vkGetCalibratedTimestampsEXT, .-vkGetCalibratedTimestampsEXT
@@ -3476,7 +3476,7 @@ vkGetCalibratedTimestampsEXT:
     .type vkCmdDrawMeshTasksNV, %function
     .p2align 2
 vkCmdDrawMeshTasksNV:
-    mov x17, #3707
+    mov x17, #3708
     hlt #0x5846
     ret
     .size vkCmdDrawMeshTasksNV, .-vkCmdDrawMeshTasksNV
@@ -3484,7 +3484,7 @@ vkCmdDrawMeshTasksNV:
     .type vkCmdDrawMeshTasksIndirectNV, %function
     .p2align 2
 vkCmdDrawMeshTasksIndirectNV:
-    mov x17, #3708
+    mov x17, #3709
     hlt #0x5846
     ret
     .size vkCmdDrawMeshTasksIndirectNV, .-vkCmdDrawMeshTasksIndirectNV
@@ -3492,7 +3492,7 @@ vkCmdDrawMeshTasksIndirectNV:
     .type vkCmdDrawMeshTasksIndirectCountNV, %function
     .p2align 2
 vkCmdDrawMeshTasksIndirectCountNV:
-    mov x17, #3709
+    mov x17, #3710
     hlt #0x5846
     ret
     .size vkCmdDrawMeshTasksIndirectCountNV, .-vkCmdDrawMeshTasksIndirectCountNV
@@ -3500,7 +3500,7 @@ vkCmdDrawMeshTasksIndirectCountNV:
     .type vkCmdSetExclusiveScissorEnableNV, %function
     .p2align 2
 vkCmdSetExclusiveScissorEnableNV:
-    mov x17, #3710
+    mov x17, #3711
     hlt #0x5846
     ret
     .size vkCmdSetExclusiveScissorEnableNV, .-vkCmdSetExclusiveScissorEnableNV
@@ -3508,7 +3508,7 @@ vkCmdSetExclusiveScissorEnableNV:
     .type vkCmdSetExclusiveScissorNV, %function
     .p2align 2
 vkCmdSetExclusiveScissorNV:
-    mov x17, #3711
+    mov x17, #3712
     hlt #0x5846
     ret
     .size vkCmdSetExclusiveScissorNV, .-vkCmdSetExclusiveScissorNV
@@ -3516,7 +3516,7 @@ vkCmdSetExclusiveScissorNV:
     .type vkCmdSetCheckpointNV, %function
     .p2align 2
 vkCmdSetCheckpointNV:
-    mov x17, #3712
+    mov x17, #3713
     hlt #0x5846
     ret
     .size vkCmdSetCheckpointNV, .-vkCmdSetCheckpointNV
@@ -3524,7 +3524,7 @@ vkCmdSetCheckpointNV:
     .type vkGetQueueCheckpointDataNV, %function
     .p2align 2
 vkGetQueueCheckpointDataNV:
-    mov x17, #3713
+    mov x17, #3714
     hlt #0x5846
     ret
     .size vkGetQueueCheckpointDataNV, .-vkGetQueueCheckpointDataNV
@@ -3532,7 +3532,7 @@ vkGetQueueCheckpointDataNV:
     .type vkInitializePerformanceApiINTEL, %function
     .p2align 2
 vkInitializePerformanceApiINTEL:
-    mov x17, #3714
+    mov x17, #3715
     hlt #0x5846
     ret
     .size vkInitializePerformanceApiINTEL, .-vkInitializePerformanceApiINTEL
@@ -3540,7 +3540,7 @@ vkInitializePerformanceApiINTEL:
     .type vkUninitializePerformanceApiINTEL, %function
     .p2align 2
 vkUninitializePerformanceApiINTEL:
-    mov x17, #3715
+    mov x17, #3716
     hlt #0x5846
     ret
     .size vkUninitializePerformanceApiINTEL, .-vkUninitializePerformanceApiINTEL
@@ -3548,7 +3548,7 @@ vkUninitializePerformanceApiINTEL:
     .type vkCmdSetPerformanceMarkerINTEL, %function
     .p2align 2
 vkCmdSetPerformanceMarkerINTEL:
-    mov x17, #3716
+    mov x17, #3717
     hlt #0x5846
     ret
     .size vkCmdSetPerformanceMarkerINTEL, .-vkCmdSetPerformanceMarkerINTEL
@@ -3556,7 +3556,7 @@ vkCmdSetPerformanceMarkerINTEL:
     .type vkCmdSetPerformanceStreamMarkerINTEL, %function
     .p2align 2
 vkCmdSetPerformanceStreamMarkerINTEL:
-    mov x17, #3717
+    mov x17, #3718
     hlt #0x5846
     ret
     .size vkCmdSetPerformanceStreamMarkerINTEL, .-vkCmdSetPerformanceStreamMarkerINTEL
@@ -3564,7 +3564,7 @@ vkCmdSetPerformanceStreamMarkerINTEL:
     .type vkCmdSetPerformanceOverrideINTEL, %function
     .p2align 2
 vkCmdSetPerformanceOverrideINTEL:
-    mov x17, #3718
+    mov x17, #3719
     hlt #0x5846
     ret
     .size vkCmdSetPerformanceOverrideINTEL, .-vkCmdSetPerformanceOverrideINTEL
@@ -3572,7 +3572,7 @@ vkCmdSetPerformanceOverrideINTEL:
     .type vkAcquirePerformanceConfigurationINTEL, %function
     .p2align 2
 vkAcquirePerformanceConfigurationINTEL:
-    mov x17, #3719
+    mov x17, #3720
     hlt #0x5846
     ret
     .size vkAcquirePerformanceConfigurationINTEL, .-vkAcquirePerformanceConfigurationINTEL
@@ -3580,7 +3580,7 @@ vkAcquirePerformanceConfigurationINTEL:
     .type vkReleasePerformanceConfigurationINTEL, %function
     .p2align 2
 vkReleasePerformanceConfigurationINTEL:
-    mov x17, #3720
+    mov x17, #3721
     hlt #0x5846
     ret
     .size vkReleasePerformanceConfigurationINTEL, .-vkReleasePerformanceConfigurationINTEL
@@ -3588,7 +3588,7 @@ vkReleasePerformanceConfigurationINTEL:
     .type vkQueueSetPerformanceConfigurationINTEL, %function
     .p2align 2
 vkQueueSetPerformanceConfigurationINTEL:
-    mov x17, #3721
+    mov x17, #3722
     hlt #0x5846
     ret
     .size vkQueueSetPerformanceConfigurationINTEL, .-vkQueueSetPerformanceConfigurationINTEL
@@ -3596,7 +3596,7 @@ vkQueueSetPerformanceConfigurationINTEL:
     .type vkGetPerformanceParameterINTEL, %function
     .p2align 2
 vkGetPerformanceParameterINTEL:
-    mov x17, #3722
+    mov x17, #3723
     hlt #0x5846
     ret
     .size vkGetPerformanceParameterINTEL, .-vkGetPerformanceParameterINTEL
@@ -3604,7 +3604,7 @@ vkGetPerformanceParameterINTEL:
     .type vkSetLocalDimmingAMD, %function
     .p2align 2
 vkSetLocalDimmingAMD:
-    mov x17, #3723
+    mov x17, #3724
     hlt #0x5846
     ret
     .size vkSetLocalDimmingAMD, .-vkSetLocalDimmingAMD
@@ -3612,7 +3612,7 @@ vkSetLocalDimmingAMD:
     .type vkGetBufferDeviceAddressEXT, %function
     .p2align 2
 vkGetBufferDeviceAddressEXT:
-    mov x17, #3724
+    mov x17, #3725
     hlt #0x5846
     ret
     .size vkGetBufferDeviceAddressEXT, .-vkGetBufferDeviceAddressEXT
@@ -3620,7 +3620,7 @@ vkGetBufferDeviceAddressEXT:
     .type vkGetPhysicalDeviceToolPropertiesEXT, %function
     .p2align 2
 vkGetPhysicalDeviceToolPropertiesEXT:
-    mov x17, #3725
+    mov x17, #3726
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceToolPropertiesEXT, .-vkGetPhysicalDeviceToolPropertiesEXT
@@ -3628,7 +3628,7 @@ vkGetPhysicalDeviceToolPropertiesEXT:
     .type vkGetPhysicalDeviceCooperativeMatrixPropertiesNV, %function
     .p2align 2
 vkGetPhysicalDeviceCooperativeMatrixPropertiesNV:
-    mov x17, #3726
+    mov x17, #3727
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceCooperativeMatrixPropertiesNV, .-vkGetPhysicalDeviceCooperativeMatrixPropertiesNV
@@ -3636,7 +3636,7 @@ vkGetPhysicalDeviceCooperativeMatrixPropertiesNV:
     .type vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV, %function
     .p2align 2
 vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV:
-    mov x17, #3727
+    mov x17, #3728
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV, .-vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV
@@ -3644,7 +3644,7 @@ vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV:
     .type vkCreateHeadlessSurfaceEXT, %function
     .p2align 2
 vkCreateHeadlessSurfaceEXT:
-    mov x17, #3728
+    mov x17, #3729
     hlt #0x5846
     ret
     .size vkCreateHeadlessSurfaceEXT, .-vkCreateHeadlessSurfaceEXT
@@ -3652,7 +3652,7 @@ vkCreateHeadlessSurfaceEXT:
     .type vkCmdSetLineStippleEXT, %function
     .p2align 2
 vkCmdSetLineStippleEXT:
-    mov x17, #3729
+    mov x17, #3730
     hlt #0x5846
     ret
     .size vkCmdSetLineStippleEXT, .-vkCmdSetLineStippleEXT
@@ -3660,7 +3660,7 @@ vkCmdSetLineStippleEXT:
     .type vkResetQueryPoolEXT, %function
     .p2align 2
 vkResetQueryPoolEXT:
-    mov x17, #3730
+    mov x17, #3731
     hlt #0x5846
     ret
     .size vkResetQueryPoolEXT, .-vkResetQueryPoolEXT
@@ -3668,7 +3668,7 @@ vkResetQueryPoolEXT:
     .type vkCmdSetCullModeEXT, %function
     .p2align 2
 vkCmdSetCullModeEXT:
-    mov x17, #3731
+    mov x17, #3732
     hlt #0x5846
     ret
     .size vkCmdSetCullModeEXT, .-vkCmdSetCullModeEXT
@@ -3676,7 +3676,7 @@ vkCmdSetCullModeEXT:
     .type vkCmdSetFrontFaceEXT, %function
     .p2align 2
 vkCmdSetFrontFaceEXT:
-    mov x17, #3732
+    mov x17, #3733
     hlt #0x5846
     ret
     .size vkCmdSetFrontFaceEXT, .-vkCmdSetFrontFaceEXT
@@ -3684,7 +3684,7 @@ vkCmdSetFrontFaceEXT:
     .type vkCmdSetPrimitiveTopologyEXT, %function
     .p2align 2
 vkCmdSetPrimitiveTopologyEXT:
-    mov x17, #3733
+    mov x17, #3734
     hlt #0x5846
     ret
     .size vkCmdSetPrimitiveTopologyEXT, .-vkCmdSetPrimitiveTopologyEXT
@@ -3692,7 +3692,7 @@ vkCmdSetPrimitiveTopologyEXT:
     .type vkCmdSetViewportWithCountEXT, %function
     .p2align 2
 vkCmdSetViewportWithCountEXT:
-    mov x17, #3734
+    mov x17, #3735
     hlt #0x5846
     ret
     .size vkCmdSetViewportWithCountEXT, .-vkCmdSetViewportWithCountEXT
@@ -3700,7 +3700,7 @@ vkCmdSetViewportWithCountEXT:
     .type vkCmdSetScissorWithCountEXT, %function
     .p2align 2
 vkCmdSetScissorWithCountEXT:
-    mov x17, #3735
+    mov x17, #3736
     hlt #0x5846
     ret
     .size vkCmdSetScissorWithCountEXT, .-vkCmdSetScissorWithCountEXT
@@ -3708,7 +3708,7 @@ vkCmdSetScissorWithCountEXT:
     .type vkCmdBindVertexBuffers2EXT, %function
     .p2align 2
 vkCmdBindVertexBuffers2EXT:
-    mov x17, #3736
+    mov x17, #3737
     hlt #0x5846
     ret
     .size vkCmdBindVertexBuffers2EXT, .-vkCmdBindVertexBuffers2EXT
@@ -3716,7 +3716,7 @@ vkCmdBindVertexBuffers2EXT:
     .type vkCmdSetDepthTestEnableEXT, %function
     .p2align 2
 vkCmdSetDepthTestEnableEXT:
-    mov x17, #3737
+    mov x17, #3738
     hlt #0x5846
     ret
     .size vkCmdSetDepthTestEnableEXT, .-vkCmdSetDepthTestEnableEXT
@@ -3724,7 +3724,7 @@ vkCmdSetDepthTestEnableEXT:
     .type vkCmdSetDepthWriteEnableEXT, %function
     .p2align 2
 vkCmdSetDepthWriteEnableEXT:
-    mov x17, #3738
+    mov x17, #3739
     hlt #0x5846
     ret
     .size vkCmdSetDepthWriteEnableEXT, .-vkCmdSetDepthWriteEnableEXT
@@ -3732,7 +3732,7 @@ vkCmdSetDepthWriteEnableEXT:
     .type vkCmdSetDepthCompareOpEXT, %function
     .p2align 2
 vkCmdSetDepthCompareOpEXT:
-    mov x17, #3739
+    mov x17, #3740
     hlt #0x5846
     ret
     .size vkCmdSetDepthCompareOpEXT, .-vkCmdSetDepthCompareOpEXT
@@ -3740,7 +3740,7 @@ vkCmdSetDepthCompareOpEXT:
     .type vkCmdSetDepthBoundsTestEnableEXT, %function
     .p2align 2
 vkCmdSetDepthBoundsTestEnableEXT:
-    mov x17, #3740
+    mov x17, #3741
     hlt #0x5846
     ret
     .size vkCmdSetDepthBoundsTestEnableEXT, .-vkCmdSetDepthBoundsTestEnableEXT
@@ -3748,7 +3748,7 @@ vkCmdSetDepthBoundsTestEnableEXT:
     .type vkCmdSetStencilTestEnableEXT, %function
     .p2align 2
 vkCmdSetStencilTestEnableEXT:
-    mov x17, #3741
+    mov x17, #3742
     hlt #0x5846
     ret
     .size vkCmdSetStencilTestEnableEXT, .-vkCmdSetStencilTestEnableEXT
@@ -3756,7 +3756,7 @@ vkCmdSetStencilTestEnableEXT:
     .type vkCmdSetStencilOpEXT, %function
     .p2align 2
 vkCmdSetStencilOpEXT:
-    mov x17, #3742
+    mov x17, #3743
     hlt #0x5846
     ret
     .size vkCmdSetStencilOpEXT, .-vkCmdSetStencilOpEXT
@@ -3764,7 +3764,7 @@ vkCmdSetStencilOpEXT:
     .type vkCopyMemoryToImageEXT, %function
     .p2align 2
 vkCopyMemoryToImageEXT:
-    mov x17, #3743
+    mov x17, #3744
     hlt #0x5846
     ret
     .size vkCopyMemoryToImageEXT, .-vkCopyMemoryToImageEXT
@@ -3772,7 +3772,7 @@ vkCopyMemoryToImageEXT:
     .type vkCopyImageToMemoryEXT, %function
     .p2align 2
 vkCopyImageToMemoryEXT:
-    mov x17, #3744
+    mov x17, #3745
     hlt #0x5846
     ret
     .size vkCopyImageToMemoryEXT, .-vkCopyImageToMemoryEXT
@@ -3780,7 +3780,7 @@ vkCopyImageToMemoryEXT:
     .type vkCopyImageToImageEXT, %function
     .p2align 2
 vkCopyImageToImageEXT:
-    mov x17, #3745
+    mov x17, #3746
     hlt #0x5846
     ret
     .size vkCopyImageToImageEXT, .-vkCopyImageToImageEXT
@@ -3788,7 +3788,7 @@ vkCopyImageToImageEXT:
     .type vkTransitionImageLayoutEXT, %function
     .p2align 2
 vkTransitionImageLayoutEXT:
-    mov x17, #3746
+    mov x17, #3747
     hlt #0x5846
     ret
     .size vkTransitionImageLayoutEXT, .-vkTransitionImageLayoutEXT
@@ -3796,7 +3796,7 @@ vkTransitionImageLayoutEXT:
     .type vkGetImageSubresourceLayout2EXT, %function
     .p2align 2
 vkGetImageSubresourceLayout2EXT:
-    mov x17, #3747
+    mov x17, #3748
     hlt #0x5846
     ret
     .size vkGetImageSubresourceLayout2EXT, .-vkGetImageSubresourceLayout2EXT
@@ -3804,7 +3804,7 @@ vkGetImageSubresourceLayout2EXT:
     .type vkReleaseSwapchainImagesEXT, %function
     .p2align 2
 vkReleaseSwapchainImagesEXT:
-    mov x17, #3748
+    mov x17, #3749
     hlt #0x5846
     ret
     .size vkReleaseSwapchainImagesEXT, .-vkReleaseSwapchainImagesEXT
@@ -3812,7 +3812,7 @@ vkReleaseSwapchainImagesEXT:
     .type vkGetGeneratedCommandsMemoryRequirementsNV, %function
     .p2align 2
 vkGetGeneratedCommandsMemoryRequirementsNV:
-    mov x17, #3749
+    mov x17, #3750
     hlt #0x5846
     ret
     .size vkGetGeneratedCommandsMemoryRequirementsNV, .-vkGetGeneratedCommandsMemoryRequirementsNV
@@ -3820,7 +3820,7 @@ vkGetGeneratedCommandsMemoryRequirementsNV:
     .type vkCmdPreprocessGeneratedCommandsNV, %function
     .p2align 2
 vkCmdPreprocessGeneratedCommandsNV:
-    mov x17, #3750
+    mov x17, #3751
     hlt #0x5846
     ret
     .size vkCmdPreprocessGeneratedCommandsNV, .-vkCmdPreprocessGeneratedCommandsNV
@@ -3828,7 +3828,7 @@ vkCmdPreprocessGeneratedCommandsNV:
     .type vkCmdExecuteGeneratedCommandsNV, %function
     .p2align 2
 vkCmdExecuteGeneratedCommandsNV:
-    mov x17, #3751
+    mov x17, #3752
     hlt #0x5846
     ret
     .size vkCmdExecuteGeneratedCommandsNV, .-vkCmdExecuteGeneratedCommandsNV
@@ -3836,7 +3836,7 @@ vkCmdExecuteGeneratedCommandsNV:
     .type vkCmdBindPipelineShaderGroupNV, %function
     .p2align 2
 vkCmdBindPipelineShaderGroupNV:
-    mov x17, #3752
+    mov x17, #3753
     hlt #0x5846
     ret
     .size vkCmdBindPipelineShaderGroupNV, .-vkCmdBindPipelineShaderGroupNV
@@ -3844,7 +3844,7 @@ vkCmdBindPipelineShaderGroupNV:
     .type vkCreateIndirectCommandsLayoutNV, %function
     .p2align 2
 vkCreateIndirectCommandsLayoutNV:
-    mov x17, #3753
+    mov x17, #3754
     hlt #0x5846
     ret
     .size vkCreateIndirectCommandsLayoutNV, .-vkCreateIndirectCommandsLayoutNV
@@ -3852,7 +3852,7 @@ vkCreateIndirectCommandsLayoutNV:
     .type vkDestroyIndirectCommandsLayoutNV, %function
     .p2align 2
 vkDestroyIndirectCommandsLayoutNV:
-    mov x17, #3754
+    mov x17, #3755
     hlt #0x5846
     ret
     .size vkDestroyIndirectCommandsLayoutNV, .-vkDestroyIndirectCommandsLayoutNV
@@ -3860,7 +3860,7 @@ vkDestroyIndirectCommandsLayoutNV:
     .type vkCmdSetDepthBias2EXT, %function
     .p2align 2
 vkCmdSetDepthBias2EXT:
-    mov x17, #3755
+    mov x17, #3756
     hlt #0x5846
     ret
     .size vkCmdSetDepthBias2EXT, .-vkCmdSetDepthBias2EXT
@@ -3868,7 +3868,7 @@ vkCmdSetDepthBias2EXT:
     .type vkAcquireDrmDisplayEXT, %function
     .p2align 2
 vkAcquireDrmDisplayEXT:
-    mov x17, #3756
+    mov x17, #3757
     hlt #0x5846
     ret
     .size vkAcquireDrmDisplayEXT, .-vkAcquireDrmDisplayEXT
@@ -3876,7 +3876,7 @@ vkAcquireDrmDisplayEXT:
     .type vkGetDrmDisplayEXT, %function
     .p2align 2
 vkGetDrmDisplayEXT:
-    mov x17, #3757
+    mov x17, #3758
     hlt #0x5846
     ret
     .size vkGetDrmDisplayEXT, .-vkGetDrmDisplayEXT
@@ -3884,7 +3884,7 @@ vkGetDrmDisplayEXT:
     .type vkCreatePrivateDataSlotEXT, %function
     .p2align 2
 vkCreatePrivateDataSlotEXT:
-    mov x17, #3758
+    mov x17, #3759
     hlt #0x5846
     ret
     .size vkCreatePrivateDataSlotEXT, .-vkCreatePrivateDataSlotEXT
@@ -3892,7 +3892,7 @@ vkCreatePrivateDataSlotEXT:
     .type vkDestroyPrivateDataSlotEXT, %function
     .p2align 2
 vkDestroyPrivateDataSlotEXT:
-    mov x17, #3759
+    mov x17, #3760
     hlt #0x5846
     ret
     .size vkDestroyPrivateDataSlotEXT, .-vkDestroyPrivateDataSlotEXT
@@ -3900,7 +3900,7 @@ vkDestroyPrivateDataSlotEXT:
     .type vkSetPrivateDataEXT, %function
     .p2align 2
 vkSetPrivateDataEXT:
-    mov x17, #3760
+    mov x17, #3761
     hlt #0x5846
     ret
     .size vkSetPrivateDataEXT, .-vkSetPrivateDataEXT
@@ -3908,7 +3908,7 @@ vkSetPrivateDataEXT:
     .type vkGetPrivateDataEXT, %function
     .p2align 2
 vkGetPrivateDataEXT:
-    mov x17, #3761
+    mov x17, #3762
     hlt #0x5846
     ret
     .size vkGetPrivateDataEXT, .-vkGetPrivateDataEXT
@@ -3916,7 +3916,7 @@ vkGetPrivateDataEXT:
     .type vkCreateCudaModuleNV, %function
     .p2align 2
 vkCreateCudaModuleNV:
-    mov x17, #3762
+    mov x17, #3763
     hlt #0x5846
     ret
     .size vkCreateCudaModuleNV, .-vkCreateCudaModuleNV
@@ -3924,7 +3924,7 @@ vkCreateCudaModuleNV:
     .type vkGetCudaModuleCacheNV, %function
     .p2align 2
 vkGetCudaModuleCacheNV:
-    mov x17, #3763
+    mov x17, #3764
     hlt #0x5846
     ret
     .size vkGetCudaModuleCacheNV, .-vkGetCudaModuleCacheNV
@@ -3932,7 +3932,7 @@ vkGetCudaModuleCacheNV:
     .type vkCreateCudaFunctionNV, %function
     .p2align 2
 vkCreateCudaFunctionNV:
-    mov x17, #3764
+    mov x17, #3765
     hlt #0x5846
     ret
     .size vkCreateCudaFunctionNV, .-vkCreateCudaFunctionNV
@@ -3940,7 +3940,7 @@ vkCreateCudaFunctionNV:
     .type vkDestroyCudaModuleNV, %function
     .p2align 2
 vkDestroyCudaModuleNV:
-    mov x17, #3765
+    mov x17, #3766
     hlt #0x5846
     ret
     .size vkDestroyCudaModuleNV, .-vkDestroyCudaModuleNV
@@ -3948,7 +3948,7 @@ vkDestroyCudaModuleNV:
     .type vkDestroyCudaFunctionNV, %function
     .p2align 2
 vkDestroyCudaFunctionNV:
-    mov x17, #3766
+    mov x17, #3767
     hlt #0x5846
     ret
     .size vkDestroyCudaFunctionNV, .-vkDestroyCudaFunctionNV
@@ -3956,7 +3956,7 @@ vkDestroyCudaFunctionNV:
     .type vkCmdCudaLaunchKernelNV, %function
     .p2align 2
 vkCmdCudaLaunchKernelNV:
-    mov x17, #3767
+    mov x17, #3768
     hlt #0x5846
     ret
     .size vkCmdCudaLaunchKernelNV, .-vkCmdCudaLaunchKernelNV
@@ -3964,7 +3964,7 @@ vkCmdCudaLaunchKernelNV:
     .type vkGetDescriptorSetLayoutSizeEXT, %function
     .p2align 2
 vkGetDescriptorSetLayoutSizeEXT:
-    mov x17, #3768
+    mov x17, #3769
     hlt #0x5846
     ret
     .size vkGetDescriptorSetLayoutSizeEXT, .-vkGetDescriptorSetLayoutSizeEXT
@@ -3972,7 +3972,7 @@ vkGetDescriptorSetLayoutSizeEXT:
     .type vkGetDescriptorSetLayoutBindingOffsetEXT, %function
     .p2align 2
 vkGetDescriptorSetLayoutBindingOffsetEXT:
-    mov x17, #3769
+    mov x17, #3770
     hlt #0x5846
     ret
     .size vkGetDescriptorSetLayoutBindingOffsetEXT, .-vkGetDescriptorSetLayoutBindingOffsetEXT
@@ -3980,7 +3980,7 @@ vkGetDescriptorSetLayoutBindingOffsetEXT:
     .type vkGetDescriptorEXT, %function
     .p2align 2
 vkGetDescriptorEXT:
-    mov x17, #3770
+    mov x17, #3771
     hlt #0x5846
     ret
     .size vkGetDescriptorEXT, .-vkGetDescriptorEXT
@@ -3988,7 +3988,7 @@ vkGetDescriptorEXT:
     .type vkCmdBindDescriptorBuffersEXT, %function
     .p2align 2
 vkCmdBindDescriptorBuffersEXT:
-    mov x17, #3771
+    mov x17, #3772
     hlt #0x5846
     ret
     .size vkCmdBindDescriptorBuffersEXT, .-vkCmdBindDescriptorBuffersEXT
@@ -3996,7 +3996,7 @@ vkCmdBindDescriptorBuffersEXT:
     .type vkCmdSetDescriptorBufferOffsetsEXT, %function
     .p2align 2
 vkCmdSetDescriptorBufferOffsetsEXT:
-    mov x17, #3772
+    mov x17, #3773
     hlt #0x5846
     ret
     .size vkCmdSetDescriptorBufferOffsetsEXT, .-vkCmdSetDescriptorBufferOffsetsEXT
@@ -4004,7 +4004,7 @@ vkCmdSetDescriptorBufferOffsetsEXT:
     .type vkCmdBindDescriptorBufferEmbeddedSamplersEXT, %function
     .p2align 2
 vkCmdBindDescriptorBufferEmbeddedSamplersEXT:
-    mov x17, #3773
+    mov x17, #3774
     hlt #0x5846
     ret
     .size vkCmdBindDescriptorBufferEmbeddedSamplersEXT, .-vkCmdBindDescriptorBufferEmbeddedSamplersEXT
@@ -4012,7 +4012,7 @@ vkCmdBindDescriptorBufferEmbeddedSamplersEXT:
     .type vkGetBufferOpaqueCaptureDescriptorDataEXT, %function
     .p2align 2
 vkGetBufferOpaqueCaptureDescriptorDataEXT:
-    mov x17, #3774
+    mov x17, #3775
     hlt #0x5846
     ret
     .size vkGetBufferOpaqueCaptureDescriptorDataEXT, .-vkGetBufferOpaqueCaptureDescriptorDataEXT
@@ -4020,7 +4020,7 @@ vkGetBufferOpaqueCaptureDescriptorDataEXT:
     .type vkGetImageOpaqueCaptureDescriptorDataEXT, %function
     .p2align 2
 vkGetImageOpaqueCaptureDescriptorDataEXT:
-    mov x17, #3775
+    mov x17, #3776
     hlt #0x5846
     ret
     .size vkGetImageOpaqueCaptureDescriptorDataEXT, .-vkGetImageOpaqueCaptureDescriptorDataEXT
@@ -4028,7 +4028,7 @@ vkGetImageOpaqueCaptureDescriptorDataEXT:
     .type vkGetImageViewOpaqueCaptureDescriptorDataEXT, %function
     .p2align 2
 vkGetImageViewOpaqueCaptureDescriptorDataEXT:
-    mov x17, #3776
+    mov x17, #3777
     hlt #0x5846
     ret
     .size vkGetImageViewOpaqueCaptureDescriptorDataEXT, .-vkGetImageViewOpaqueCaptureDescriptorDataEXT
@@ -4036,7 +4036,7 @@ vkGetImageViewOpaqueCaptureDescriptorDataEXT:
     .type vkGetSamplerOpaqueCaptureDescriptorDataEXT, %function
     .p2align 2
 vkGetSamplerOpaqueCaptureDescriptorDataEXT:
-    mov x17, #3777
+    mov x17, #3778
     hlt #0x5846
     ret
     .size vkGetSamplerOpaqueCaptureDescriptorDataEXT, .-vkGetSamplerOpaqueCaptureDescriptorDataEXT
@@ -4044,7 +4044,7 @@ vkGetSamplerOpaqueCaptureDescriptorDataEXT:
     .type vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT, %function
     .p2align 2
 vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT:
-    mov x17, #3778
+    mov x17, #3779
     hlt #0x5846
     ret
     .size vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT, .-vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT
@@ -4052,7 +4052,7 @@ vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT:
     .type vkCmdSetFragmentShadingRateEnumNV, %function
     .p2align 2
 vkCmdSetFragmentShadingRateEnumNV:
-    mov x17, #3779
+    mov x17, #3780
     hlt #0x5846
     ret
     .size vkCmdSetFragmentShadingRateEnumNV, .-vkCmdSetFragmentShadingRateEnumNV
@@ -4060,7 +4060,7 @@ vkCmdSetFragmentShadingRateEnumNV:
     .type vkGetDeviceFaultInfoEXT, %function
     .p2align 2
 vkGetDeviceFaultInfoEXT:
-    mov x17, #3780
+    mov x17, #3781
     hlt #0x5846
     ret
     .size vkGetDeviceFaultInfoEXT, .-vkGetDeviceFaultInfoEXT
@@ -4068,7 +4068,7 @@ vkGetDeviceFaultInfoEXT:
     .type vkCmdSetVertexInputEXT, %function
     .p2align 2
 vkCmdSetVertexInputEXT:
-    mov x17, #3781
+    mov x17, #3782
     hlt #0x5846
     ret
     .size vkCmdSetVertexInputEXT, .-vkCmdSetVertexInputEXT
@@ -4076,7 +4076,7 @@ vkCmdSetVertexInputEXT:
     .type vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI, %function
     .p2align 2
 vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI:
-    mov x17, #3782
+    mov x17, #3783
     hlt #0x5846
     ret
     .size vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI, .-vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI
@@ -4084,7 +4084,7 @@ vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI:
     .type vkCmdSubpassShadingHUAWEI, %function
     .p2align 2
 vkCmdSubpassShadingHUAWEI:
-    mov x17, #3783
+    mov x17, #3784
     hlt #0x5846
     ret
     .size vkCmdSubpassShadingHUAWEI, .-vkCmdSubpassShadingHUAWEI
@@ -4092,7 +4092,7 @@ vkCmdSubpassShadingHUAWEI:
     .type vkCmdBindInvocationMaskHUAWEI, %function
     .p2align 2
 vkCmdBindInvocationMaskHUAWEI:
-    mov x17, #3784
+    mov x17, #3785
     hlt #0x5846
     ret
     .size vkCmdBindInvocationMaskHUAWEI, .-vkCmdBindInvocationMaskHUAWEI
@@ -4100,7 +4100,7 @@ vkCmdBindInvocationMaskHUAWEI:
     .type vkGetMemoryRemoteAddressNV, %function
     .p2align 2
 vkGetMemoryRemoteAddressNV:
-    mov x17, #3785
+    mov x17, #3786
     hlt #0x5846
     ret
     .size vkGetMemoryRemoteAddressNV, .-vkGetMemoryRemoteAddressNV
@@ -4108,7 +4108,7 @@ vkGetMemoryRemoteAddressNV:
     .type vkGetPipelinePropertiesEXT, %function
     .p2align 2
 vkGetPipelinePropertiesEXT:
-    mov x17, #3786
+    mov x17, #3787
     hlt #0x5846
     ret
     .size vkGetPipelinePropertiesEXT, .-vkGetPipelinePropertiesEXT
@@ -4116,7 +4116,7 @@ vkGetPipelinePropertiesEXT:
     .type vkCmdSetPatchControlPointsEXT, %function
     .p2align 2
 vkCmdSetPatchControlPointsEXT:
-    mov x17, #3787
+    mov x17, #3788
     hlt #0x5846
     ret
     .size vkCmdSetPatchControlPointsEXT, .-vkCmdSetPatchControlPointsEXT
@@ -4124,7 +4124,7 @@ vkCmdSetPatchControlPointsEXT:
     .type vkCmdSetRasterizerDiscardEnableEXT, %function
     .p2align 2
 vkCmdSetRasterizerDiscardEnableEXT:
-    mov x17, #3788
+    mov x17, #3789
     hlt #0x5846
     ret
     .size vkCmdSetRasterizerDiscardEnableEXT, .-vkCmdSetRasterizerDiscardEnableEXT
@@ -4132,7 +4132,7 @@ vkCmdSetRasterizerDiscardEnableEXT:
     .type vkCmdSetDepthBiasEnableEXT, %function
     .p2align 2
 vkCmdSetDepthBiasEnableEXT:
-    mov x17, #3789
+    mov x17, #3790
     hlt #0x5846
     ret
     .size vkCmdSetDepthBiasEnableEXT, .-vkCmdSetDepthBiasEnableEXT
@@ -4140,7 +4140,7 @@ vkCmdSetDepthBiasEnableEXT:
     .type vkCmdSetLogicOpEXT, %function
     .p2align 2
 vkCmdSetLogicOpEXT:
-    mov x17, #3790
+    mov x17, #3791
     hlt #0x5846
     ret
     .size vkCmdSetLogicOpEXT, .-vkCmdSetLogicOpEXT
@@ -4148,7 +4148,7 @@ vkCmdSetLogicOpEXT:
     .type vkCmdSetPrimitiveRestartEnableEXT, %function
     .p2align 2
 vkCmdSetPrimitiveRestartEnableEXT:
-    mov x17, #3791
+    mov x17, #3792
     hlt #0x5846
     ret
     .size vkCmdSetPrimitiveRestartEnableEXT, .-vkCmdSetPrimitiveRestartEnableEXT
@@ -4156,7 +4156,7 @@ vkCmdSetPrimitiveRestartEnableEXT:
     .type vkCmdSetColorWriteEnableEXT, %function
     .p2align 2
 vkCmdSetColorWriteEnableEXT:
-    mov x17, #3792
+    mov x17, #3793
     hlt #0x5846
     ret
     .size vkCmdSetColorWriteEnableEXT, .-vkCmdSetColorWriteEnableEXT
@@ -4164,7 +4164,7 @@ vkCmdSetColorWriteEnableEXT:
     .type vkCmdDrawMultiEXT, %function
     .p2align 2
 vkCmdDrawMultiEXT:
-    mov x17, #3793
+    mov x17, #3794
     hlt #0x5846
     ret
     .size vkCmdDrawMultiEXT, .-vkCmdDrawMultiEXT
@@ -4172,7 +4172,7 @@ vkCmdDrawMultiEXT:
     .type vkCmdDrawMultiIndexedEXT, %function
     .p2align 2
 vkCmdDrawMultiIndexedEXT:
-    mov x17, #3794
+    mov x17, #3795
     hlt #0x5846
     ret
     .size vkCmdDrawMultiIndexedEXT, .-vkCmdDrawMultiIndexedEXT
@@ -4180,7 +4180,7 @@ vkCmdDrawMultiIndexedEXT:
     .type vkCreateMicromapEXT, %function
     .p2align 2
 vkCreateMicromapEXT:
-    mov x17, #3795
+    mov x17, #3796
     hlt #0x5846
     ret
     .size vkCreateMicromapEXT, .-vkCreateMicromapEXT
@@ -4188,7 +4188,7 @@ vkCreateMicromapEXT:
     .type vkDestroyMicromapEXT, %function
     .p2align 2
 vkDestroyMicromapEXT:
-    mov x17, #3796
+    mov x17, #3797
     hlt #0x5846
     ret
     .size vkDestroyMicromapEXT, .-vkDestroyMicromapEXT
@@ -4196,7 +4196,7 @@ vkDestroyMicromapEXT:
     .type vkCmdBuildMicromapsEXT, %function
     .p2align 2
 vkCmdBuildMicromapsEXT:
-    mov x17, #3797
+    mov x17, #3798
     hlt #0x5846
     ret
     .size vkCmdBuildMicromapsEXT, .-vkCmdBuildMicromapsEXT
@@ -4204,7 +4204,7 @@ vkCmdBuildMicromapsEXT:
     .type vkBuildMicromapsEXT, %function
     .p2align 2
 vkBuildMicromapsEXT:
-    mov x17, #3798
+    mov x17, #3799
     hlt #0x5846
     ret
     .size vkBuildMicromapsEXT, .-vkBuildMicromapsEXT
@@ -4212,7 +4212,7 @@ vkBuildMicromapsEXT:
     .type vkCopyMicromapEXT, %function
     .p2align 2
 vkCopyMicromapEXT:
-    mov x17, #3799
+    mov x17, #3800
     hlt #0x5846
     ret
     .size vkCopyMicromapEXT, .-vkCopyMicromapEXT
@@ -4220,7 +4220,7 @@ vkCopyMicromapEXT:
     .type vkCopyMicromapToMemoryEXT, %function
     .p2align 2
 vkCopyMicromapToMemoryEXT:
-    mov x17, #3800
+    mov x17, #3801
     hlt #0x5846
     ret
     .size vkCopyMicromapToMemoryEXT, .-vkCopyMicromapToMemoryEXT
@@ -4228,7 +4228,7 @@ vkCopyMicromapToMemoryEXT:
     .type vkCopyMemoryToMicromapEXT, %function
     .p2align 2
 vkCopyMemoryToMicromapEXT:
-    mov x17, #3801
+    mov x17, #3802
     hlt #0x5846
     ret
     .size vkCopyMemoryToMicromapEXT, .-vkCopyMemoryToMicromapEXT
@@ -4236,7 +4236,7 @@ vkCopyMemoryToMicromapEXT:
     .type vkWriteMicromapsPropertiesEXT, %function
     .p2align 2
 vkWriteMicromapsPropertiesEXT:
-    mov x17, #3802
+    mov x17, #3803
     hlt #0x5846
     ret
     .size vkWriteMicromapsPropertiesEXT, .-vkWriteMicromapsPropertiesEXT
@@ -4244,7 +4244,7 @@ vkWriteMicromapsPropertiesEXT:
     .type vkCmdCopyMicromapEXT, %function
     .p2align 2
 vkCmdCopyMicromapEXT:
-    mov x17, #3803
+    mov x17, #3804
     hlt #0x5846
     ret
     .size vkCmdCopyMicromapEXT, .-vkCmdCopyMicromapEXT
@@ -4252,7 +4252,7 @@ vkCmdCopyMicromapEXT:
     .type vkCmdCopyMicromapToMemoryEXT, %function
     .p2align 2
 vkCmdCopyMicromapToMemoryEXT:
-    mov x17, #3804
+    mov x17, #3805
     hlt #0x5846
     ret
     .size vkCmdCopyMicromapToMemoryEXT, .-vkCmdCopyMicromapToMemoryEXT
@@ -4260,7 +4260,7 @@ vkCmdCopyMicromapToMemoryEXT:
     .type vkCmdCopyMemoryToMicromapEXT, %function
     .p2align 2
 vkCmdCopyMemoryToMicromapEXT:
-    mov x17, #3805
+    mov x17, #3806
     hlt #0x5846
     ret
     .size vkCmdCopyMemoryToMicromapEXT, .-vkCmdCopyMemoryToMicromapEXT
@@ -4268,7 +4268,7 @@ vkCmdCopyMemoryToMicromapEXT:
     .type vkCmdWriteMicromapsPropertiesEXT, %function
     .p2align 2
 vkCmdWriteMicromapsPropertiesEXT:
-    mov x17, #3806
+    mov x17, #3807
     hlt #0x5846
     ret
     .size vkCmdWriteMicromapsPropertiesEXT, .-vkCmdWriteMicromapsPropertiesEXT
@@ -4276,7 +4276,7 @@ vkCmdWriteMicromapsPropertiesEXT:
     .type vkGetDeviceMicromapCompatibilityEXT, %function
     .p2align 2
 vkGetDeviceMicromapCompatibilityEXT:
-    mov x17, #3807
+    mov x17, #3808
     hlt #0x5846
     ret
     .size vkGetDeviceMicromapCompatibilityEXT, .-vkGetDeviceMicromapCompatibilityEXT
@@ -4284,7 +4284,7 @@ vkGetDeviceMicromapCompatibilityEXT:
     .type vkGetMicromapBuildSizesEXT, %function
     .p2align 2
 vkGetMicromapBuildSizesEXT:
-    mov x17, #3808
+    mov x17, #3809
     hlt #0x5846
     ret
     .size vkGetMicromapBuildSizesEXT, .-vkGetMicromapBuildSizesEXT
@@ -4292,7 +4292,7 @@ vkGetMicromapBuildSizesEXT:
     .type vkCmdDrawClusterHUAWEI, %function
     .p2align 2
 vkCmdDrawClusterHUAWEI:
-    mov x17, #3809
+    mov x17, #3810
     hlt #0x5846
     ret
     .size vkCmdDrawClusterHUAWEI, .-vkCmdDrawClusterHUAWEI
@@ -4300,7 +4300,7 @@ vkCmdDrawClusterHUAWEI:
     .type vkCmdDrawClusterIndirectHUAWEI, %function
     .p2align 2
 vkCmdDrawClusterIndirectHUAWEI:
-    mov x17, #3810
+    mov x17, #3811
     hlt #0x5846
     ret
     .size vkCmdDrawClusterIndirectHUAWEI, .-vkCmdDrawClusterIndirectHUAWEI
@@ -4308,7 +4308,7 @@ vkCmdDrawClusterIndirectHUAWEI:
     .type vkSetDeviceMemoryPriorityEXT, %function
     .p2align 2
 vkSetDeviceMemoryPriorityEXT:
-    mov x17, #3811
+    mov x17, #3812
     hlt #0x5846
     ret
     .size vkSetDeviceMemoryPriorityEXT, .-vkSetDeviceMemoryPriorityEXT
@@ -4316,7 +4316,7 @@ vkSetDeviceMemoryPriorityEXT:
     .type vkGetDescriptorSetLayoutHostMappingInfoVALVE, %function
     .p2align 2
 vkGetDescriptorSetLayoutHostMappingInfoVALVE:
-    mov x17, #3812
+    mov x17, #3813
     hlt #0x5846
     ret
     .size vkGetDescriptorSetLayoutHostMappingInfoVALVE, .-vkGetDescriptorSetLayoutHostMappingInfoVALVE
@@ -4324,7 +4324,7 @@ vkGetDescriptorSetLayoutHostMappingInfoVALVE:
     .type vkGetDescriptorSetHostMappingVALVE, %function
     .p2align 2
 vkGetDescriptorSetHostMappingVALVE:
-    mov x17, #3813
+    mov x17, #3814
     hlt #0x5846
     ret
     .size vkGetDescriptorSetHostMappingVALVE, .-vkGetDescriptorSetHostMappingVALVE
@@ -4332,7 +4332,7 @@ vkGetDescriptorSetHostMappingVALVE:
     .type vkCmdCopyMemoryIndirectNV, %function
     .p2align 2
 vkCmdCopyMemoryIndirectNV:
-    mov x17, #3814
+    mov x17, #3815
     hlt #0x5846
     ret
     .size vkCmdCopyMemoryIndirectNV, .-vkCmdCopyMemoryIndirectNV
@@ -4340,7 +4340,7 @@ vkCmdCopyMemoryIndirectNV:
     .type vkCmdCopyMemoryToImageIndirectNV, %function
     .p2align 2
 vkCmdCopyMemoryToImageIndirectNV:
-    mov x17, #3815
+    mov x17, #3816
     hlt #0x5846
     ret
     .size vkCmdCopyMemoryToImageIndirectNV, .-vkCmdCopyMemoryToImageIndirectNV
@@ -4348,7 +4348,7 @@ vkCmdCopyMemoryToImageIndirectNV:
     .type vkCmdDecompressMemoryNV, %function
     .p2align 2
 vkCmdDecompressMemoryNV:
-    mov x17, #3816
+    mov x17, #3817
     hlt #0x5846
     ret
     .size vkCmdDecompressMemoryNV, .-vkCmdDecompressMemoryNV
@@ -4356,7 +4356,7 @@ vkCmdDecompressMemoryNV:
     .type vkCmdDecompressMemoryIndirectCountNV, %function
     .p2align 2
 vkCmdDecompressMemoryIndirectCountNV:
-    mov x17, #3817
+    mov x17, #3818
     hlt #0x5846
     ret
     .size vkCmdDecompressMemoryIndirectCountNV, .-vkCmdDecompressMemoryIndirectCountNV
@@ -4364,7 +4364,7 @@ vkCmdDecompressMemoryIndirectCountNV:
     .type vkGetPipelineIndirectMemoryRequirementsNV, %function
     .p2align 2
 vkGetPipelineIndirectMemoryRequirementsNV:
-    mov x17, #3818
+    mov x17, #3819
     hlt #0x5846
     ret
     .size vkGetPipelineIndirectMemoryRequirementsNV, .-vkGetPipelineIndirectMemoryRequirementsNV
@@ -4372,7 +4372,7 @@ vkGetPipelineIndirectMemoryRequirementsNV:
     .type vkCmdUpdatePipelineIndirectBufferNV, %function
     .p2align 2
 vkCmdUpdatePipelineIndirectBufferNV:
-    mov x17, #3819
+    mov x17, #3820
     hlt #0x5846
     ret
     .size vkCmdUpdatePipelineIndirectBufferNV, .-vkCmdUpdatePipelineIndirectBufferNV
@@ -4380,7 +4380,7 @@ vkCmdUpdatePipelineIndirectBufferNV:
     .type vkGetPipelineIndirectDeviceAddressNV, %function
     .p2align 2
 vkGetPipelineIndirectDeviceAddressNV:
-    mov x17, #3820
+    mov x17, #3821
     hlt #0x5846
     ret
     .size vkGetPipelineIndirectDeviceAddressNV, .-vkGetPipelineIndirectDeviceAddressNV
@@ -4388,7 +4388,7 @@ vkGetPipelineIndirectDeviceAddressNV:
     .type vkCmdSetTessellationDomainOriginEXT, %function
     .p2align 2
 vkCmdSetTessellationDomainOriginEXT:
-    mov x17, #3821
+    mov x17, #3822
     hlt #0x5846
     ret
     .size vkCmdSetTessellationDomainOriginEXT, .-vkCmdSetTessellationDomainOriginEXT
@@ -4396,7 +4396,7 @@ vkCmdSetTessellationDomainOriginEXT:
     .type vkCmdSetDepthClampEnableEXT, %function
     .p2align 2
 vkCmdSetDepthClampEnableEXT:
-    mov x17, #3822
+    mov x17, #3823
     hlt #0x5846
     ret
     .size vkCmdSetDepthClampEnableEXT, .-vkCmdSetDepthClampEnableEXT
@@ -4404,7 +4404,7 @@ vkCmdSetDepthClampEnableEXT:
     .type vkCmdSetPolygonModeEXT, %function
     .p2align 2
 vkCmdSetPolygonModeEXT:
-    mov x17, #3823
+    mov x17, #3824
     hlt #0x5846
     ret
     .size vkCmdSetPolygonModeEXT, .-vkCmdSetPolygonModeEXT
@@ -4412,7 +4412,7 @@ vkCmdSetPolygonModeEXT:
     .type vkCmdSetRasterizationSamplesEXT, %function
     .p2align 2
 vkCmdSetRasterizationSamplesEXT:
-    mov x17, #3824
+    mov x17, #3825
     hlt #0x5846
     ret
     .size vkCmdSetRasterizationSamplesEXT, .-vkCmdSetRasterizationSamplesEXT
@@ -4420,7 +4420,7 @@ vkCmdSetRasterizationSamplesEXT:
     .type vkCmdSetSampleMaskEXT, %function
     .p2align 2
 vkCmdSetSampleMaskEXT:
-    mov x17, #3825
+    mov x17, #3826
     hlt #0x5846
     ret
     .size vkCmdSetSampleMaskEXT, .-vkCmdSetSampleMaskEXT
@@ -4428,7 +4428,7 @@ vkCmdSetSampleMaskEXT:
     .type vkCmdSetAlphaToCoverageEnableEXT, %function
     .p2align 2
 vkCmdSetAlphaToCoverageEnableEXT:
-    mov x17, #3826
+    mov x17, #3827
     hlt #0x5846
     ret
     .size vkCmdSetAlphaToCoverageEnableEXT, .-vkCmdSetAlphaToCoverageEnableEXT
@@ -4436,7 +4436,7 @@ vkCmdSetAlphaToCoverageEnableEXT:
     .type vkCmdSetAlphaToOneEnableEXT, %function
     .p2align 2
 vkCmdSetAlphaToOneEnableEXT:
-    mov x17, #3827
+    mov x17, #3828
     hlt #0x5846
     ret
     .size vkCmdSetAlphaToOneEnableEXT, .-vkCmdSetAlphaToOneEnableEXT
@@ -4444,7 +4444,7 @@ vkCmdSetAlphaToOneEnableEXT:
     .type vkCmdSetLogicOpEnableEXT, %function
     .p2align 2
 vkCmdSetLogicOpEnableEXT:
-    mov x17, #3828
+    mov x17, #3829
     hlt #0x5846
     ret
     .size vkCmdSetLogicOpEnableEXT, .-vkCmdSetLogicOpEnableEXT
@@ -4452,7 +4452,7 @@ vkCmdSetLogicOpEnableEXT:
     .type vkCmdSetColorBlendEnableEXT, %function
     .p2align 2
 vkCmdSetColorBlendEnableEXT:
-    mov x17, #3829
+    mov x17, #3830
     hlt #0x5846
     ret
     .size vkCmdSetColorBlendEnableEXT, .-vkCmdSetColorBlendEnableEXT
@@ -4460,7 +4460,7 @@ vkCmdSetColorBlendEnableEXT:
     .type vkCmdSetColorBlendEquationEXT, %function
     .p2align 2
 vkCmdSetColorBlendEquationEXT:
-    mov x17, #3830
+    mov x17, #3831
     hlt #0x5846
     ret
     .size vkCmdSetColorBlendEquationEXT, .-vkCmdSetColorBlendEquationEXT
@@ -4468,7 +4468,7 @@ vkCmdSetColorBlendEquationEXT:
     .type vkCmdSetColorWriteMaskEXT, %function
     .p2align 2
 vkCmdSetColorWriteMaskEXT:
-    mov x17, #3831
+    mov x17, #3832
     hlt #0x5846
     ret
     .size vkCmdSetColorWriteMaskEXT, .-vkCmdSetColorWriteMaskEXT
@@ -4476,7 +4476,7 @@ vkCmdSetColorWriteMaskEXT:
     .type vkCmdSetRasterizationStreamEXT, %function
     .p2align 2
 vkCmdSetRasterizationStreamEXT:
-    mov x17, #3832
+    mov x17, #3833
     hlt #0x5846
     ret
     .size vkCmdSetRasterizationStreamEXT, .-vkCmdSetRasterizationStreamEXT
@@ -4484,7 +4484,7 @@ vkCmdSetRasterizationStreamEXT:
     .type vkCmdSetConservativeRasterizationModeEXT, %function
     .p2align 2
 vkCmdSetConservativeRasterizationModeEXT:
-    mov x17, #3833
+    mov x17, #3834
     hlt #0x5846
     ret
     .size vkCmdSetConservativeRasterizationModeEXT, .-vkCmdSetConservativeRasterizationModeEXT
@@ -4492,7 +4492,7 @@ vkCmdSetConservativeRasterizationModeEXT:
     .type vkCmdSetExtraPrimitiveOverestimationSizeEXT, %function
     .p2align 2
 vkCmdSetExtraPrimitiveOverestimationSizeEXT:
-    mov x17, #3834
+    mov x17, #3835
     hlt #0x5846
     ret
     .size vkCmdSetExtraPrimitiveOverestimationSizeEXT, .-vkCmdSetExtraPrimitiveOverestimationSizeEXT
@@ -4500,7 +4500,7 @@ vkCmdSetExtraPrimitiveOverestimationSizeEXT:
     .type vkCmdSetDepthClipEnableEXT, %function
     .p2align 2
 vkCmdSetDepthClipEnableEXT:
-    mov x17, #3835
+    mov x17, #3836
     hlt #0x5846
     ret
     .size vkCmdSetDepthClipEnableEXT, .-vkCmdSetDepthClipEnableEXT
@@ -4508,7 +4508,7 @@ vkCmdSetDepthClipEnableEXT:
     .type vkCmdSetSampleLocationsEnableEXT, %function
     .p2align 2
 vkCmdSetSampleLocationsEnableEXT:
-    mov x17, #3836
+    mov x17, #3837
     hlt #0x5846
     ret
     .size vkCmdSetSampleLocationsEnableEXT, .-vkCmdSetSampleLocationsEnableEXT
@@ -4516,7 +4516,7 @@ vkCmdSetSampleLocationsEnableEXT:
     .type vkCmdSetColorBlendAdvancedEXT, %function
     .p2align 2
 vkCmdSetColorBlendAdvancedEXT:
-    mov x17, #3837
+    mov x17, #3838
     hlt #0x5846
     ret
     .size vkCmdSetColorBlendAdvancedEXT, .-vkCmdSetColorBlendAdvancedEXT
@@ -4524,7 +4524,7 @@ vkCmdSetColorBlendAdvancedEXT:
     .type vkCmdSetProvokingVertexModeEXT, %function
     .p2align 2
 vkCmdSetProvokingVertexModeEXT:
-    mov x17, #3838
+    mov x17, #3839
     hlt #0x5846
     ret
     .size vkCmdSetProvokingVertexModeEXT, .-vkCmdSetProvokingVertexModeEXT
@@ -4532,7 +4532,7 @@ vkCmdSetProvokingVertexModeEXT:
     .type vkCmdSetLineRasterizationModeEXT, %function
     .p2align 2
 vkCmdSetLineRasterizationModeEXT:
-    mov x17, #3839
+    mov x17, #3840
     hlt #0x5846
     ret
     .size vkCmdSetLineRasterizationModeEXT, .-vkCmdSetLineRasterizationModeEXT
@@ -4540,7 +4540,7 @@ vkCmdSetLineRasterizationModeEXT:
     .type vkCmdSetLineStippleEnableEXT, %function
     .p2align 2
 vkCmdSetLineStippleEnableEXT:
-    mov x17, #3840
+    mov x17, #3841
     hlt #0x5846
     ret
     .size vkCmdSetLineStippleEnableEXT, .-vkCmdSetLineStippleEnableEXT
@@ -4548,7 +4548,7 @@ vkCmdSetLineStippleEnableEXT:
     .type vkCmdSetDepthClipNegativeOneToOneEXT, %function
     .p2align 2
 vkCmdSetDepthClipNegativeOneToOneEXT:
-    mov x17, #3841
+    mov x17, #3842
     hlt #0x5846
     ret
     .size vkCmdSetDepthClipNegativeOneToOneEXT, .-vkCmdSetDepthClipNegativeOneToOneEXT
@@ -4556,7 +4556,7 @@ vkCmdSetDepthClipNegativeOneToOneEXT:
     .type vkCmdSetViewportWScalingEnableNV, %function
     .p2align 2
 vkCmdSetViewportWScalingEnableNV:
-    mov x17, #3842
+    mov x17, #3843
     hlt #0x5846
     ret
     .size vkCmdSetViewportWScalingEnableNV, .-vkCmdSetViewportWScalingEnableNV
@@ -4564,7 +4564,7 @@ vkCmdSetViewportWScalingEnableNV:
     .type vkCmdSetViewportSwizzleNV, %function
     .p2align 2
 vkCmdSetViewportSwizzleNV:
-    mov x17, #3843
+    mov x17, #3844
     hlt #0x5846
     ret
     .size vkCmdSetViewportSwizzleNV, .-vkCmdSetViewportSwizzleNV
@@ -4572,7 +4572,7 @@ vkCmdSetViewportSwizzleNV:
     .type vkCmdSetCoverageToColorEnableNV, %function
     .p2align 2
 vkCmdSetCoverageToColorEnableNV:
-    mov x17, #3844
+    mov x17, #3845
     hlt #0x5846
     ret
     .size vkCmdSetCoverageToColorEnableNV, .-vkCmdSetCoverageToColorEnableNV
@@ -4580,7 +4580,7 @@ vkCmdSetCoverageToColorEnableNV:
     .type vkCmdSetCoverageToColorLocationNV, %function
     .p2align 2
 vkCmdSetCoverageToColorLocationNV:
-    mov x17, #3845
+    mov x17, #3846
     hlt #0x5846
     ret
     .size vkCmdSetCoverageToColorLocationNV, .-vkCmdSetCoverageToColorLocationNV
@@ -4588,7 +4588,7 @@ vkCmdSetCoverageToColorLocationNV:
     .type vkCmdSetCoverageModulationModeNV, %function
     .p2align 2
 vkCmdSetCoverageModulationModeNV:
-    mov x17, #3846
+    mov x17, #3847
     hlt #0x5846
     ret
     .size vkCmdSetCoverageModulationModeNV, .-vkCmdSetCoverageModulationModeNV
@@ -4596,7 +4596,7 @@ vkCmdSetCoverageModulationModeNV:
     .type vkCmdSetCoverageModulationTableEnableNV, %function
     .p2align 2
 vkCmdSetCoverageModulationTableEnableNV:
-    mov x17, #3847
+    mov x17, #3848
     hlt #0x5846
     ret
     .size vkCmdSetCoverageModulationTableEnableNV, .-vkCmdSetCoverageModulationTableEnableNV
@@ -4604,7 +4604,7 @@ vkCmdSetCoverageModulationTableEnableNV:
     .type vkCmdSetCoverageModulationTableNV, %function
     .p2align 2
 vkCmdSetCoverageModulationTableNV:
-    mov x17, #3848
+    mov x17, #3849
     hlt #0x5846
     ret
     .size vkCmdSetCoverageModulationTableNV, .-vkCmdSetCoverageModulationTableNV
@@ -4612,7 +4612,7 @@ vkCmdSetCoverageModulationTableNV:
     .type vkCmdSetShadingRateImageEnableNV, %function
     .p2align 2
 vkCmdSetShadingRateImageEnableNV:
-    mov x17, #3849
+    mov x17, #3850
     hlt #0x5846
     ret
     .size vkCmdSetShadingRateImageEnableNV, .-vkCmdSetShadingRateImageEnableNV
@@ -4620,7 +4620,7 @@ vkCmdSetShadingRateImageEnableNV:
     .type vkCmdSetRepresentativeFragmentTestEnableNV, %function
     .p2align 2
 vkCmdSetRepresentativeFragmentTestEnableNV:
-    mov x17, #3850
+    mov x17, #3851
     hlt #0x5846
     ret
     .size vkCmdSetRepresentativeFragmentTestEnableNV, .-vkCmdSetRepresentativeFragmentTestEnableNV
@@ -4628,7 +4628,7 @@ vkCmdSetRepresentativeFragmentTestEnableNV:
     .type vkCmdSetCoverageReductionModeNV, %function
     .p2align 2
 vkCmdSetCoverageReductionModeNV:
-    mov x17, #3851
+    mov x17, #3852
     hlt #0x5846
     ret
     .size vkCmdSetCoverageReductionModeNV, .-vkCmdSetCoverageReductionModeNV
@@ -4636,7 +4636,7 @@ vkCmdSetCoverageReductionModeNV:
     .type vkGetShaderModuleIdentifierEXT, %function
     .p2align 2
 vkGetShaderModuleIdentifierEXT:
-    mov x17, #3852
+    mov x17, #3853
     hlt #0x5846
     ret
     .size vkGetShaderModuleIdentifierEXT, .-vkGetShaderModuleIdentifierEXT
@@ -4644,7 +4644,7 @@ vkGetShaderModuleIdentifierEXT:
     .type vkGetShaderModuleCreateInfoIdentifierEXT, %function
     .p2align 2
 vkGetShaderModuleCreateInfoIdentifierEXT:
-    mov x17, #3853
+    mov x17, #3854
     hlt #0x5846
     ret
     .size vkGetShaderModuleCreateInfoIdentifierEXT, .-vkGetShaderModuleCreateInfoIdentifierEXT
@@ -4652,7 +4652,7 @@ vkGetShaderModuleCreateInfoIdentifierEXT:
     .type vkGetPhysicalDeviceOpticalFlowImageFormatsNV, %function
     .p2align 2
 vkGetPhysicalDeviceOpticalFlowImageFormatsNV:
-    mov x17, #3854
+    mov x17, #3855
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceOpticalFlowImageFormatsNV, .-vkGetPhysicalDeviceOpticalFlowImageFormatsNV
@@ -4660,7 +4660,7 @@ vkGetPhysicalDeviceOpticalFlowImageFormatsNV:
     .type vkCreateOpticalFlowSessionNV, %function
     .p2align 2
 vkCreateOpticalFlowSessionNV:
-    mov x17, #3855
+    mov x17, #3856
     hlt #0x5846
     ret
     .size vkCreateOpticalFlowSessionNV, .-vkCreateOpticalFlowSessionNV
@@ -4668,7 +4668,7 @@ vkCreateOpticalFlowSessionNV:
     .type vkDestroyOpticalFlowSessionNV, %function
     .p2align 2
 vkDestroyOpticalFlowSessionNV:
-    mov x17, #3856
+    mov x17, #3857
     hlt #0x5846
     ret
     .size vkDestroyOpticalFlowSessionNV, .-vkDestroyOpticalFlowSessionNV
@@ -4676,7 +4676,7 @@ vkDestroyOpticalFlowSessionNV:
     .type vkBindOpticalFlowSessionImageNV, %function
     .p2align 2
 vkBindOpticalFlowSessionImageNV:
-    mov x17, #3857
+    mov x17, #3858
     hlt #0x5846
     ret
     .size vkBindOpticalFlowSessionImageNV, .-vkBindOpticalFlowSessionImageNV
@@ -4684,7 +4684,7 @@ vkBindOpticalFlowSessionImageNV:
     .type vkCmdOpticalFlowExecuteNV, %function
     .p2align 2
 vkCmdOpticalFlowExecuteNV:
-    mov x17, #3858
+    mov x17, #3859
     hlt #0x5846
     ret
     .size vkCmdOpticalFlowExecuteNV, .-vkCmdOpticalFlowExecuteNV
@@ -4692,7 +4692,7 @@ vkCmdOpticalFlowExecuteNV:
     .type vkCreateShadersEXT, %function
     .p2align 2
 vkCreateShadersEXT:
-    mov x17, #3859
+    mov x17, #3860
     hlt #0x5846
     ret
     .size vkCreateShadersEXT, .-vkCreateShadersEXT
@@ -4700,7 +4700,7 @@ vkCreateShadersEXT:
     .type vkDestroyShaderEXT, %function
     .p2align 2
 vkDestroyShaderEXT:
-    mov x17, #3860
+    mov x17, #3861
     hlt #0x5846
     ret
     .size vkDestroyShaderEXT, .-vkDestroyShaderEXT
@@ -4708,7 +4708,7 @@ vkDestroyShaderEXT:
     .type vkGetShaderBinaryDataEXT, %function
     .p2align 2
 vkGetShaderBinaryDataEXT:
-    mov x17, #3861
+    mov x17, #3862
     hlt #0x5846
     ret
     .size vkGetShaderBinaryDataEXT, .-vkGetShaderBinaryDataEXT
@@ -4716,7 +4716,7 @@ vkGetShaderBinaryDataEXT:
     .type vkCmdBindShadersEXT, %function
     .p2align 2
 vkCmdBindShadersEXT:
-    mov x17, #3862
+    mov x17, #3863
     hlt #0x5846
     ret
     .size vkCmdBindShadersEXT, .-vkCmdBindShadersEXT
@@ -4724,7 +4724,7 @@ vkCmdBindShadersEXT:
     .type vkGetFramebufferTilePropertiesQCOM, %function
     .p2align 2
 vkGetFramebufferTilePropertiesQCOM:
-    mov x17, #3863
+    mov x17, #3864
     hlt #0x5846
     ret
     .size vkGetFramebufferTilePropertiesQCOM, .-vkGetFramebufferTilePropertiesQCOM
@@ -4732,7 +4732,7 @@ vkGetFramebufferTilePropertiesQCOM:
     .type vkGetDynamicRenderingTilePropertiesQCOM, %function
     .p2align 2
 vkGetDynamicRenderingTilePropertiesQCOM:
-    mov x17, #3864
+    mov x17, #3865
     hlt #0x5846
     ret
     .size vkGetDynamicRenderingTilePropertiesQCOM, .-vkGetDynamicRenderingTilePropertiesQCOM
@@ -4740,7 +4740,7 @@ vkGetDynamicRenderingTilePropertiesQCOM:
     .type vkSetLatencySleepModeNV, %function
     .p2align 2
 vkSetLatencySleepModeNV:
-    mov x17, #3865
+    mov x17, #3866
     hlt #0x5846
     ret
     .size vkSetLatencySleepModeNV, .-vkSetLatencySleepModeNV
@@ -4748,7 +4748,7 @@ vkSetLatencySleepModeNV:
     .type vkLatencySleepNV, %function
     .p2align 2
 vkLatencySleepNV:
-    mov x17, #3866
+    mov x17, #3867
     hlt #0x5846
     ret
     .size vkLatencySleepNV, .-vkLatencySleepNV
@@ -4756,7 +4756,7 @@ vkLatencySleepNV:
     .type vkSetLatencyMarkerNV, %function
     .p2align 2
 vkSetLatencyMarkerNV:
-    mov x17, #3867
+    mov x17, #3868
     hlt #0x5846
     ret
     .size vkSetLatencyMarkerNV, .-vkSetLatencyMarkerNV
@@ -4764,7 +4764,7 @@ vkSetLatencyMarkerNV:
     .type vkGetLatencyTimingsNV, %function
     .p2align 2
 vkGetLatencyTimingsNV:
-    mov x17, #3868
+    mov x17, #3869
     hlt #0x5846
     ret
     .size vkGetLatencyTimingsNV, .-vkGetLatencyTimingsNV
@@ -4772,7 +4772,7 @@ vkGetLatencyTimingsNV:
     .type vkQueueNotifyOutOfBandNV, %function
     .p2align 2
 vkQueueNotifyOutOfBandNV:
-    mov x17, #3869
+    mov x17, #3870
     hlt #0x5846
     ret
     .size vkQueueNotifyOutOfBandNV, .-vkQueueNotifyOutOfBandNV
@@ -4780,7 +4780,7 @@ vkQueueNotifyOutOfBandNV:
     .type vkCmdSetAttachmentFeedbackLoopEnableEXT, %function
     .p2align 2
 vkCmdSetAttachmentFeedbackLoopEnableEXT:
-    mov x17, #3870
+    mov x17, #3871
     hlt #0x5846
     ret
     .size vkCmdSetAttachmentFeedbackLoopEnableEXT, .-vkCmdSetAttachmentFeedbackLoopEnableEXT
@@ -4788,7 +4788,7 @@ vkCmdSetAttachmentFeedbackLoopEnableEXT:
     .type vkCreateAccelerationStructureKHR, %function
     .p2align 2
 vkCreateAccelerationStructureKHR:
-    mov x17, #3871
+    mov x17, #3872
     hlt #0x5846
     ret
     .size vkCreateAccelerationStructureKHR, .-vkCreateAccelerationStructureKHR
@@ -4796,7 +4796,7 @@ vkCreateAccelerationStructureKHR:
     .type vkDestroyAccelerationStructureKHR, %function
     .p2align 2
 vkDestroyAccelerationStructureKHR:
-    mov x17, #3872
+    mov x17, #3873
     hlt #0x5846
     ret
     .size vkDestroyAccelerationStructureKHR, .-vkDestroyAccelerationStructureKHR
@@ -4804,7 +4804,7 @@ vkDestroyAccelerationStructureKHR:
     .type vkCmdBuildAccelerationStructuresKHR, %function
     .p2align 2
 vkCmdBuildAccelerationStructuresKHR:
-    mov x17, #3873
+    mov x17, #3874
     hlt #0x5846
     ret
     .size vkCmdBuildAccelerationStructuresKHR, .-vkCmdBuildAccelerationStructuresKHR
@@ -4812,7 +4812,7 @@ vkCmdBuildAccelerationStructuresKHR:
     .type vkCmdBuildAccelerationStructuresIndirectKHR, %function
     .p2align 2
 vkCmdBuildAccelerationStructuresIndirectKHR:
-    mov x17, #3874
+    mov x17, #3875
     hlt #0x5846
     ret
     .size vkCmdBuildAccelerationStructuresIndirectKHR, .-vkCmdBuildAccelerationStructuresIndirectKHR
@@ -4820,7 +4820,7 @@ vkCmdBuildAccelerationStructuresIndirectKHR:
     .type vkBuildAccelerationStructuresKHR, %function
     .p2align 2
 vkBuildAccelerationStructuresKHR:
-    mov x17, #3875
+    mov x17, #3876
     hlt #0x5846
     ret
     .size vkBuildAccelerationStructuresKHR, .-vkBuildAccelerationStructuresKHR
@@ -4828,7 +4828,7 @@ vkBuildAccelerationStructuresKHR:
     .type vkCopyAccelerationStructureKHR, %function
     .p2align 2
 vkCopyAccelerationStructureKHR:
-    mov x17, #3876
+    mov x17, #3877
     hlt #0x5846
     ret
     .size vkCopyAccelerationStructureKHR, .-vkCopyAccelerationStructureKHR
@@ -4836,7 +4836,7 @@ vkCopyAccelerationStructureKHR:
     .type vkCopyAccelerationStructureToMemoryKHR, %function
     .p2align 2
 vkCopyAccelerationStructureToMemoryKHR:
-    mov x17, #3877
+    mov x17, #3878
     hlt #0x5846
     ret
     .size vkCopyAccelerationStructureToMemoryKHR, .-vkCopyAccelerationStructureToMemoryKHR
@@ -4844,7 +4844,7 @@ vkCopyAccelerationStructureToMemoryKHR:
     .type vkCopyMemoryToAccelerationStructureKHR, %function
     .p2align 2
 vkCopyMemoryToAccelerationStructureKHR:
-    mov x17, #3878
+    mov x17, #3879
     hlt #0x5846
     ret
     .size vkCopyMemoryToAccelerationStructureKHR, .-vkCopyMemoryToAccelerationStructureKHR
@@ -4852,7 +4852,7 @@ vkCopyMemoryToAccelerationStructureKHR:
     .type vkWriteAccelerationStructuresPropertiesKHR, %function
     .p2align 2
 vkWriteAccelerationStructuresPropertiesKHR:
-    mov x17, #3879
+    mov x17, #3880
     hlt #0x5846
     ret
     .size vkWriteAccelerationStructuresPropertiesKHR, .-vkWriteAccelerationStructuresPropertiesKHR
@@ -4860,7 +4860,7 @@ vkWriteAccelerationStructuresPropertiesKHR:
     .type vkCmdCopyAccelerationStructureKHR, %function
     .p2align 2
 vkCmdCopyAccelerationStructureKHR:
-    mov x17, #3880
+    mov x17, #3881
     hlt #0x5846
     ret
     .size vkCmdCopyAccelerationStructureKHR, .-vkCmdCopyAccelerationStructureKHR
@@ -4868,7 +4868,7 @@ vkCmdCopyAccelerationStructureKHR:
     .type vkCmdCopyAccelerationStructureToMemoryKHR, %function
     .p2align 2
 vkCmdCopyAccelerationStructureToMemoryKHR:
-    mov x17, #3881
+    mov x17, #3882
     hlt #0x5846
     ret
     .size vkCmdCopyAccelerationStructureToMemoryKHR, .-vkCmdCopyAccelerationStructureToMemoryKHR
@@ -4876,7 +4876,7 @@ vkCmdCopyAccelerationStructureToMemoryKHR:
     .type vkCmdCopyMemoryToAccelerationStructureKHR, %function
     .p2align 2
 vkCmdCopyMemoryToAccelerationStructureKHR:
-    mov x17, #3882
+    mov x17, #3883
     hlt #0x5846
     ret
     .size vkCmdCopyMemoryToAccelerationStructureKHR, .-vkCmdCopyMemoryToAccelerationStructureKHR
@@ -4884,7 +4884,7 @@ vkCmdCopyMemoryToAccelerationStructureKHR:
     .type vkGetAccelerationStructureDeviceAddressKHR, %function
     .p2align 2
 vkGetAccelerationStructureDeviceAddressKHR:
-    mov x17, #3883
+    mov x17, #3884
     hlt #0x5846
     ret
     .size vkGetAccelerationStructureDeviceAddressKHR, .-vkGetAccelerationStructureDeviceAddressKHR
@@ -4892,7 +4892,7 @@ vkGetAccelerationStructureDeviceAddressKHR:
     .type vkCmdWriteAccelerationStructuresPropertiesKHR, %function
     .p2align 2
 vkCmdWriteAccelerationStructuresPropertiesKHR:
-    mov x17, #3884
+    mov x17, #3885
     hlt #0x5846
     ret
     .size vkCmdWriteAccelerationStructuresPropertiesKHR, .-vkCmdWriteAccelerationStructuresPropertiesKHR
@@ -4900,7 +4900,7 @@ vkCmdWriteAccelerationStructuresPropertiesKHR:
     .type vkGetDeviceAccelerationStructureCompatibilityKHR, %function
     .p2align 2
 vkGetDeviceAccelerationStructureCompatibilityKHR:
-    mov x17, #3885
+    mov x17, #3886
     hlt #0x5846
     ret
     .size vkGetDeviceAccelerationStructureCompatibilityKHR, .-vkGetDeviceAccelerationStructureCompatibilityKHR
@@ -4908,7 +4908,7 @@ vkGetDeviceAccelerationStructureCompatibilityKHR:
     .type vkGetAccelerationStructureBuildSizesKHR, %function
     .p2align 2
 vkGetAccelerationStructureBuildSizesKHR:
-    mov x17, #3886
+    mov x17, #3887
     hlt #0x5846
     ret
     .size vkGetAccelerationStructureBuildSizesKHR, .-vkGetAccelerationStructureBuildSizesKHR
@@ -4916,7 +4916,7 @@ vkGetAccelerationStructureBuildSizesKHR:
     .type vkCmdTraceRaysKHR, %function
     .p2align 2
 vkCmdTraceRaysKHR:
-    mov x17, #3887
+    mov x17, #3888
     hlt #0x5846
     ret
     .size vkCmdTraceRaysKHR, .-vkCmdTraceRaysKHR
@@ -4924,7 +4924,7 @@ vkCmdTraceRaysKHR:
     .type vkCreateRayTracingPipelinesKHR, %function
     .p2align 2
 vkCreateRayTracingPipelinesKHR:
-    mov x17, #3888
+    mov x17, #3889
     hlt #0x5846
     ret
     .size vkCreateRayTracingPipelinesKHR, .-vkCreateRayTracingPipelinesKHR
@@ -4932,7 +4932,7 @@ vkCreateRayTracingPipelinesKHR:
     .type vkGetRayTracingCaptureReplayShaderGroupHandlesKHR, %function
     .p2align 2
 vkGetRayTracingCaptureReplayShaderGroupHandlesKHR:
-    mov x17, #3889
+    mov x17, #3890
     hlt #0x5846
     ret
     .size vkGetRayTracingCaptureReplayShaderGroupHandlesKHR, .-vkGetRayTracingCaptureReplayShaderGroupHandlesKHR
@@ -4940,7 +4940,7 @@ vkGetRayTracingCaptureReplayShaderGroupHandlesKHR:
     .type vkCmdTraceRaysIndirectKHR, %function
     .p2align 2
 vkCmdTraceRaysIndirectKHR:
-    mov x17, #3890
+    mov x17, #3891
     hlt #0x5846
     ret
     .size vkCmdTraceRaysIndirectKHR, .-vkCmdTraceRaysIndirectKHR
@@ -4948,7 +4948,7 @@ vkCmdTraceRaysIndirectKHR:
     .type vkGetRayTracingShaderGroupStackSizeKHR, %function
     .p2align 2
 vkGetRayTracingShaderGroupStackSizeKHR:
-    mov x17, #3891
+    mov x17, #3892
     hlt #0x5846
     ret
     .size vkGetRayTracingShaderGroupStackSizeKHR, .-vkGetRayTracingShaderGroupStackSizeKHR
@@ -4956,7 +4956,7 @@ vkGetRayTracingShaderGroupStackSizeKHR:
     .type vkCmdSetRayTracingPipelineStackSizeKHR, %function
     .p2align 2
 vkCmdSetRayTracingPipelineStackSizeKHR:
-    mov x17, #3892
+    mov x17, #3893
     hlt #0x5846
     ret
     .size vkCmdSetRayTracingPipelineStackSizeKHR, .-vkCmdSetRayTracingPipelineStackSizeKHR
@@ -4964,7 +4964,7 @@ vkCmdSetRayTracingPipelineStackSizeKHR:
     .type vkCmdDrawMeshTasksEXT, %function
     .p2align 2
 vkCmdDrawMeshTasksEXT:
-    mov x17, #3893
+    mov x17, #3894
     hlt #0x5846
     ret
     .size vkCmdDrawMeshTasksEXT, .-vkCmdDrawMeshTasksEXT
@@ -4972,7 +4972,7 @@ vkCmdDrawMeshTasksEXT:
     .type vkCmdDrawMeshTasksIndirectEXT, %function
     .p2align 2
 vkCmdDrawMeshTasksIndirectEXT:
-    mov x17, #3894
+    mov x17, #3895
     hlt #0x5846
     ret
     .size vkCmdDrawMeshTasksIndirectEXT, .-vkCmdDrawMeshTasksIndirectEXT
@@ -4980,7 +4980,7 @@ vkCmdDrawMeshTasksIndirectEXT:
     .type vkCmdDrawMeshTasksIndirectCountEXT, %function
     .p2align 2
 vkCmdDrawMeshTasksIndirectCountEXT:
-    mov x17, #3895
+    mov x17, #3896
     hlt #0x5846
     ret
     .size vkCmdDrawMeshTasksIndirectCountEXT, .-vkCmdDrawMeshTasksIndirectCountEXT
@@ -4988,7 +4988,7 @@ vkCmdDrawMeshTasksIndirectCountEXT:
     .type vkCreateXlibSurfaceKHR, %function
     .p2align 2
 vkCreateXlibSurfaceKHR:
-    mov x17, #3896
+    mov x17, #3897
     hlt #0x5846
     ret
     .size vkCreateXlibSurfaceKHR, .-vkCreateXlibSurfaceKHR
@@ -4996,7 +4996,7 @@ vkCreateXlibSurfaceKHR:
     .type vkGetPhysicalDeviceXlibPresentationSupportKHR, %function
     .p2align 2
 vkGetPhysicalDeviceXlibPresentationSupportKHR:
-    mov x17, #3897
+    mov x17, #3898
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceXlibPresentationSupportKHR, .-vkGetPhysicalDeviceXlibPresentationSupportKHR
@@ -5004,7 +5004,7 @@ vkGetPhysicalDeviceXlibPresentationSupportKHR:
     .type vkCreateXcbSurfaceKHR, %function
     .p2align 2
 vkCreateXcbSurfaceKHR:
-    mov x17, #3898
+    mov x17, #3899
     hlt #0x5846
     ret
     .size vkCreateXcbSurfaceKHR, .-vkCreateXcbSurfaceKHR
@@ -5012,8 +5012,24 @@ vkCreateXcbSurfaceKHR:
     .type vkGetPhysicalDeviceXcbPresentationSupportKHR, %function
     .p2align 2
 vkGetPhysicalDeviceXcbPresentationSupportKHR:
-    mov x17, #3899
+    mov x17, #3900
     hlt #0x5846
     ret
     .size vkGetPhysicalDeviceXcbPresentationSupportKHR, .-vkGetPhysicalDeviceXcbPresentationSupportKHR
+    .globl vkCreateWaylandSurfaceKHR
+    .type vkCreateWaylandSurfaceKHR, %function
+    .p2align 2
+vkCreateWaylandSurfaceKHR:
+    mov x17, #3901
+    hlt #0x5846
+    ret
+    .size vkCreateWaylandSurfaceKHR, .-vkCreateWaylandSurfaceKHR
+    .globl vkGetPhysicalDeviceWaylandPresentationSupportKHR
+    .type vkGetPhysicalDeviceWaylandPresentationSupportKHR, %function
+    .p2align 2
+vkGetPhysicalDeviceWaylandPresentationSupportKHR:
+    mov x17, #3902
+    hlt #0x5846
+    ret
+    .size vkGetPhysicalDeviceWaylandPresentationSupportKHR, .-vkGetPhysicalDeviceWaylandPresentationSupportKHR
     .section .note.GNU-stack,"",%progbits

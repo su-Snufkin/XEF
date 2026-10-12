@@ -173,25 +173,75 @@ void T1::analyze() {
         if (x.rres) extend(x.rres);
     }
 
-    // address folding: Load/Store(addr = Add(base, const|reg|Shl(reg,k))) with single use
+    // address folding. Memory accesses take [base + disp], [base + idx] and [base + idx << k]:
+    // - chains of constant adds whose every use is an address or another such add are never
+    //   materialized (ldp/stp: sp+16 feeds one load directly and one through +8)
+    // - Add(base, reg | Shl(reg, k)) whose single use is an address
+    // The values the folded nodes read stay live until the access itself.
+    auto is_mem = [](Op op) { return op == Op::Load || op == Op::Store || op == Op::VLoad || op == Op::VStore; };
+    auto extend_to = [&](Val o, i32 L) {
+        while (o) {
+            if (vi_[o].last < L) vi_[o].last = L;
+            if (!is_alias_op(I(o))) break;
+            o = I(o).a;
+        }
+    };
+    {
+        // candidates: small constants and bounded chain depth keep every partial sum in i32
+        u8* depth = (u8*)alloca(n);
+        for (int v = 1; v < n; v++) {
+            const Inst& in = I(v);
+            depth[v] = 0;
+            vi_[v].addr_c = false;
+            if (vi_[v].dead || !vi_[v].uses || in.op != Op::Add || in.ty != Type::I64 || I(in.b).op != Op::Const)
+                continue;
+            i64 c = (i64)I(in.b).imm;
+            if (c < -(1 << 24) || c > (1 << 24)) continue;
+            int d = (in.a < v && depth[in.a]) ? depth[in.a] + 1 : 1;
+            if (d > 64) continue;
+            depth[v] = (u8)d;
+            vi_[v].addr_c = true;
+        }
+        // backward: every use must be the address of an access or the base of a folded add
+        for (int v = n - 1; v >= 1; v--) {
+            const Inst& in = I(v);
+            if (vi_[v].dead || in.op == Op::SetFlags) continue;
+            for_operands(in, [&](Val o) {
+                if (!vi_[o].addr_c) return;
+                bool ok = (is_mem(in.op) && o == in.a && o != in.b) || (vi_[v].addr_c && o == in.a);
+                if (!ok) vi_[o].addr_c = false;
+            });
+        }
+        for (int v = 1; v < n; v++) {
+            if (vi_[v].addr_c) { vi_[v].folded = true; continue; }
+            const Inst& in = I(v);
+            if (vi_[v].dead || !is_mem(in.op) || !vi_[in.a].addr_c) continue;
+            Val r = in.a;
+            while (vi_[r].addr_c) r = I(r).a;
+            extend_to(r, v);
+        }
+    }
     for (int v = 1; v < n; v++) {
         const Inst& in = I(v);
-        if (vi_[v].dead) continue;
-        Val a = 0;
-        if (in.op == Op::Load || in.op == Op::Store || in.op == Op::VLoad || in.op == Op::VStore) a = in.a;
-        if (!a) continue;
+        if (vi_[v].dead || !is_mem(in.op)) continue;
+        Val a = in.a;
+        if (vi_[a].addr_c) continue;
         const Inst& ad = I(a);
         if (ad.op != Op::Add || vi_[a].uses != 1 || ad.ty != Type::I64) continue;
         const Inst& rhs = I(ad.b);
         if (rhs.op == Op::Const) {
-            if ((i64)rhs.imm == (i32)rhs.imm) vi_[a].folded = true;
+            if ((i64)rhs.imm != (i32)rhs.imm) continue;
+            vi_[a].folded = true;
         } else if (rhs.op == Op::Shl && I(rhs.b).op == Op::Const && I(rhs.b).imm <= 3 && vi_[ad.b].uses == 1 &&
                    rhs.ty == Type::I64) {
             vi_[a].folded = true;
             vi_[ad.b].folded = true;
+            extend_to(rhs.a, v);
         } else {
             vi_[a].folded = true;
+            extend_to(ad.b, v);
         }
+        extend_to(ad.a, v);
     }
 }
 
@@ -213,7 +263,7 @@ Reg T1::alloc_temp(Reg prefer) {
     if (best == NOREG) {
         // All temporaries are pinned by this instruction: borrow a mapped guest register.
         // Its guest value is saved to CpuState and restored after the instruction.
-        static const Reg cands[] = {RBP, RBX, R9, R8, R10, R12, R13, R14, RSI, RDI, RDX};
+        static const Reg cands[] = {R9, R8, R10, R13, R12, RBP, RBX, R14, RSI, RDI, RDX};   // rarest guests first
         for (Reg r : cands) {
             if (pinned_ & (1 << r)) continue;
             int g = -1;
@@ -329,6 +379,8 @@ void T1::release_operands(const Inst& in) {
     for_operands(in, [&](Val o) {
         Val r = resolve(o);
         VI& x = vi_[r];
+        // folded address arithmetic: what it reads is used by this access
+        if (x.folded && (I(r).op == Op::Add || I(r).op == Op::Shl)) { release_operands(I(r)); return; }
         if (x.last <= cur_) {
             if (x.k == L_REG && owner_[x.reg] == r) owner_[x.reg] = 0;
             if (x.k == L_XMM && xowner_[x.reg] == r) xowner_[x.reg] = 0;
@@ -339,24 +391,19 @@ void T1::release_operands(const Inst& in) {
 }
 
 // Before guest register g is overwritten: move live values that alias it.
-void T1::evacuate_guest(int g, int upto) {
+void T1::evacuate_guest(int g, int upto, Val keep) {
+    // one pass (this runs for every SetReg): aliases of g's current value move to temporaries, and
+    // values not yet touched (L_NONE GetReg of g) read the *old* value, so they are materialized now
     for (int v = 1; v < cur_; v++) {
         VI& x = vi_[v];
-        if (x.dead || x.last <= upto) continue;
+        if (x.dead || x.last <= upto || v == keep) continue;
         if (x.home == g) x.home = -1;
         if ((x.k == L_GREG || x.k == L_GMEM) && x.g == g) {
             Reg t = alloc_temp();
             if (x.k == L_GREG) as_.mov(8, t, (Reg)x.reg);
             else as_.mov(8, t, gmem(g));
             assign_reg((Val)v, t);
-        }
-    }
-    // values not yet touched (L_NONE GetReg of g): they read the *old* value, materialize now
-    for (int v = 1; v < cur_; v++) {
-        VI& x = vi_[v];
-        if (x.dead || x.last <= upto || x.k != L_NONE) continue;
-        const Inst& in = I(v);
-        if (in.op == Op::GetReg && in.aux == g) {
+        } else if (x.k == L_NONE && I(v).op == Op::GetReg && I(v).aux == g) {
             Reg t = alloc_temp();
             if (mapped(g)) as_.mov(8, t, host(g));
             else as_.mov(8, t, gmem(g));
@@ -408,6 +455,14 @@ void T1::finish_def(Val v, Reg r) {
 }
 
 Mem T1::addr_mem(Val a) {
+    if (vi_[a].addr_c) {
+        i32 disp = 0;
+        while (vi_[a].addr_c) { disp += (i32)I(I(a).b).imm; a = I(a).a; }
+        if (is_c(a) && (i64)(cv(a) + disp) == (i32)(cv(a) + disp)) { Mem m; m.disp = (i32)(cv(a) + disp); return m; }
+        Reg base = to_reg(a);
+        pinned_ |= 1 << base;
+        return mem(base, disp);
+    }
     const Inst& ad = I(a);
     if (vi_[a].folded) {
         const Inst& rhs = I(ad.b);
@@ -499,7 +554,7 @@ void T1::emit_inst(Val v) {
             Reg h = host(g);
             if ((x.k == L_GREG || x.k == L_REG) && x.reg == h) {
                 // already there (dest hint)
-                evacuate_guest(g, cur_);  // other aliases of the old value were moved at def time
+                evacuate_guest(g, cur_, src);  // other aliases of the old value were moved at def time
                 x.home = (i8)g;
                 if (x.k == L_GREG) x.g = (u8)g;
                 return;
@@ -1602,7 +1657,32 @@ void T1::emit_sys(Val v) {
         Reg r = to_reg(in.a); pinned_ |= 1 << r;
         switch (in.aux) {
         case SYS_TPIDR_EL0: as_.mov(8, mem(R15, XEF_ST(tpidr_el0)), r); return;
-        case SYS_FPCR: as_.mov(4, mem(R15, XEF_ST(fpcr)), r); return;  // TODO: MXCSR rounding
+        case SYS_FPCR: {
+            // the host MXCSR follows FPCR: RMode -> RC (RN 0, RP 2, RM 1, RZ 3), FZ -> FTZ|DAZ
+            as_.mov(4, mem(R15, XEF_ST(fpcr)), r);
+            clobber_flags();
+            Reg t = alloc_temp(); pinned_ |= 1 << t;
+            Reg u = alloc_temp(); pinned_ |= 1 << u;
+            as_.mov(4, t, r);
+            as_.shift_imm(SHR, 4, t, 22);
+            as_.alu_imm(AND, 4, t, 3);
+            as_.mov(4, u, t);
+            as_.alu_imm(AND, 4, u, 1);
+            as_.shift_imm(SHL, 4, u, 1);
+            as_.shift_imm(SHR, 4, t, 1);
+            as_.alu(OR, 4, t, u);                  // RC
+            as_.shift_imm(SHL, 4, t, 13);
+            as_.alu_imm(OR, 4, t, 0x1F80);         // all exceptions masked
+            as_.mov(4, u, r);
+            as_.shift_imm(SHR, 4, u, 24);
+            as_.alu_imm(AND, 4, u, 1);
+            as_.neg(4, u);
+            as_.alu_imm(AND, 4, u, 0x8040);        // FTZ | DAZ
+            as_.alu(OR, 4, t, u);
+            as_.mov(4, mem(R15, XEF_ST(host_mxcsr_saved)), t);
+            as_.op_rm(4, {0x0F, 0xAE}, 2, mem(R15, XEF_ST(host_mxcsr_saved)));   // ldmxcsr
+            return;
+        }
         case SYS_FPSR: as_.mov(4, mem(R15, XEF_ST(fpsr)), r); return;
         default: fatal("setsys");
         }
@@ -1628,7 +1708,10 @@ void T1::emit_sys(Val v) {
 void T1::emit_call_c(void* fn, Val v, Val a, Val b, u64 imm) {
     // load arguments into temps first (they may alias registers we are about to clobber)
     pin(a); pin(b);
-    for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) if (owner_[r] && !(pinned_ & (1 << r))) evict(r);
+    // the call clobbers every temporary: values needed afterwards (an argument too, e.g. the IC
+    // IVAU address reused by the next instruction) move to their home or a spill slot first
+    for (int ti_ = 0; ti_ < ntemps_; ti_++)
+        if (Reg r = temps_[ti_]; owner_[r] && (vi_[owner_[r]].last > cur_ || !(pinned_ & (1 << r)))) evict(r);
     for (int x = 0; x < 16; x++) if (xowner_[x] && vi_[xowner_[x]].last > cur_) evict_x(x);
     save_caller_saved_guests();
     // arguments: fetch from current locations (registers hold correct values still)

@@ -9,6 +9,9 @@ namespace xef {
 
 CodeCache g_cache;
 
+constexpr int kCodePageShift = 16;
+constexpr u64 kCodePageBits = 1ull << (48 - kCodePageShift);
+
 void CodeCache::init(size_t size) {
     size_ = size;
     void* p = mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
@@ -27,6 +30,28 @@ void CodeCache::init(size_t size) {
     void* l1 = mmap(nullptr, l1_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (l1 == MAP_FAILED) fatal("cannot allocate block map");
     l1_ = (std::atomic<BlockMeta**>*)l1;
+    void* cp = mmap(nullptr, kCodePageBits / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (cp == MAP_FAILED) fatal("cannot allocate code page bitmap");
+    code_pages_ = (u64*)cp;
+}
+
+void CodeCache::mark_code(GuestAddr lo, GuestAddr hi) {
+    if (hi <= lo) return;
+    for (u64 g = lo >> kCodePageShift; g <= (hi - 1) >> kCodePageShift && g < kCodePageBits; g++) {
+        u64* w = &code_pages_[g >> 6];
+        u64 m = 1ull << (g & 63);
+        // a locked RMW (full barrier) orders the mark before the caller's epoch check
+        if (!(__atomic_load_n(w, __ATOMIC_RELAXED) & m)) __atomic_fetch_or(w, m, __ATOMIC_SEQ_CST);
+    }
+}
+
+bool CodeCache::may_have_code(GuestAddr lo, GuestAddr hi) const {
+    if (hi <= lo) return false;
+    u64 first = lo >> kCodePageShift, last = (hi - 1) >> kCodePageShift;
+    if (last >= kCodePageBits || last - first > (1u << 20)) return true;   // huge range: just look
+    for (u64 g = first; g <= last; g++)
+        if (__atomic_load_n(&code_pages_[g >> 6], __ATOMIC_SEQ_CST) & (1ull << (g & 63))) return true;
+    return false;
 }
 
 u8* CodeCache::alloc_code(size_t max_size) {
@@ -146,13 +171,23 @@ const PcMapEntry* CodeCache::find_pc(const BlockMeta* b, const u8* host) const {
 // ------------------------------------------------------------------ invalidation
 
 void CodeCache::add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog* peeks) {
+    mark_code(lo, hi, peeks);   // normally already marked by the translator
     auto add = [&](GuestAddr l, GuestAddr h) {
         if (h <= l) return;
         for (u64 pg = l >> 12; pg <= (h - 1) >> 12; pg++) deps_[pg].push_back({b, l, h});
     };
-    add(lo, hi);
+    // the lookahead usually reads right past the block end: merge it into the body's range first
+    // (one dependency entry instead of several per block)
+    PeekLog all;
+    all.add(lo, hi);
     if (peeks)
-        for (int i = 0; i < peeks->n; i++) add(peeks->r[i].lo, peeks->r[i].hi);
+        for (int i = 0; i < peeks->n; i++) all.add(peeks->r[i].lo, peeks->r[i].hi);
+    if (all.overflow) {   // cannot happen with <= 32 peeks + 1, but stay exact
+        add(lo, hi);
+        for (int i = 0; peeks && i < peeks->n; i++) add(peeks->r[i].lo, peeks->r[i].hi);
+        return;
+    }
+    for (int i = 0; i < all.n; i++) add(all.r[i].lo, all.r[i].hi);
 }
 
 bool CodeCache::invalidate_range(GuestAddr lo, GuestAddr hi) {

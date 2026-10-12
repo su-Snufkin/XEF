@@ -55,6 +55,31 @@ ThreadCtx* thread_create(CpuState* parent) {
 static std::atomic<int> g_live_threads{1};
 int guest_thread_count() { return g_live_threads.load(); }
 
+// TIDs of the guest's threads (not XEF's compiler thread or host library workers): /proc/self/task
+// lists only these, or programs signalling every thread (Firefox's sandbox setup) wait forever
+static constexpr int kMaxTids = 8192;
+static std::atomic<int> g_tids[kMaxTids];
+static void guest_tid_add(int tid) {
+    for (auto& e : g_tids) {
+        int z = 0;
+        if (e.compare_exchange_strong(z, tid)) return;
+    }
+}
+static void guest_tid_remove(int tid) {
+    for (auto& e : g_tids) {
+        int x = tid;
+        if (e.compare_exchange_strong(x, 0)) return;
+    }
+}
+bool is_guest_tid(int tid) {
+    for (auto& e : g_tids) if (e.load(std::memory_order_relaxed) == tid) return true;
+    return false;
+}
+void guest_tid_init() {   // process start and fork child: just the calling thread
+    for (auto& e : g_tids) e.store(0, std::memory_order_relaxed);
+    guest_tid_add((int)syscall(SYS_gettid));
+}
+
 void thread_exit(CpuState* st, int code) {
     ThreadCtx* t = st->thread;
     if (g_live_threads.fetch_sub(1) == 1) {
@@ -63,6 +88,7 @@ void thread_exit(CpuState* st, int code) {
         syscall(SYS_exit_group, code);
     }
     tier2_thread_stop(t);
+    guest_tid_remove((int)syscall(SYS_gettid));
     if (t && t->clear_child_tid) {
         __atomic_store_n((u32*)t->clear_child_tid, 0, __ATOMIC_SEQ_CST);
         syscall(SYS_futex, t->clear_child_tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
@@ -87,6 +113,7 @@ static void* thread_trampoline(void* arg) {
     ThreadCtx* t = ts->t;
     int tid = (int)syscall(SYS_gettid);
     t->tid = tid;
+    guest_tid_add(tid);
     // like the kernel: both tid stores happen before the new thread runs guest code. (glibc passes
     // the same address as ptid and ctid; a parent-side store after the child started could
     // overwrite the 0 written when the thread exits, and pthread_join would wait forever.)
@@ -141,6 +168,7 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         if (stack) st->x[kGuestSP] = stack;
         if (flags & kCloneSettls) st->tpidr_el0 = tls;
         g_live_threads.store(1);
+        guest_tid_init();
         if (st->thread) st->thread->tid = (int)syscall(SYS_gettid);
         tier2_after_fork(st->thread);
         return 0;
@@ -214,6 +242,20 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     self[sl] = 0;
     std::vector<char*> av;
     av.push_back(self);
+    // the new image runs with the same XEF options
+    static char o_stats[] = "--stats", o_prof[] = "--profile", o_not2[] = "--no-tier2", o_trace[] = "--trace",
+                o_ir[] = "--dump-ir", o_code[] = "--dump-code", o_mb[] = "--max-block", o_t2t[] = "--tier2-threshold";
+    std::string mb = std::to_string(g_opt.max_block_insts), t2t = std::to_string(g_tier2_threshold);
+    if (g_opt.stats) av.push_back(o_stats);
+    if (g_opt.profile) av.push_back(o_prof);
+    if (g_opt.trace) av.push_back(o_trace);
+    else if (!g_opt.tier2) av.push_back(o_not2);
+    if (g_opt.dump_ir) av.push_back(o_ir);
+    if (g_opt.dump_code) av.push_back(o_code);
+    av.push_back(o_mb);
+    av.push_back((char*)mb.c_str());
+    av.push_back(o_t2t);
+    av.push_back((char*)t2t.c_str());
     av.push_back((char*)"--");
     av.push_back((char*)guest_exe.c_str());
     for (size_t i = 1; i < args.size(); i++) av.push_back((char*)args[i].c_str());

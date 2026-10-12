@@ -29,6 +29,7 @@ struct VI {
     Val rres = 0;      // flags values: result value usable for test-based remat (Z/N)
     bool dead = false;
     bool folded = false;
+    bool addr_c = false;   // constant add used only as a memory address: folded into [base + disp]
     bool clean32 = false;
     u16 uses = 0;
     i32 last = 0;
@@ -210,7 +211,7 @@ private:
     void load_into(Reg dst, Val v, int size);
     void pin(Val v) { v = resolve(v); if (vi_[v].k == L_REG || vi_[v].k == L_GREG) pinned_ |= 1 << vi_[v].reg; }
     void release_operands(const Inst& in);
-    void evacuate_guest(int g, int upto);
+    void evacuate_guest(int g, int upto, Val keep = 0);   // keep: the value being written (stays in g)
     Reg dest_for(Val v, int size);
     Reg dest_hint(Val v);
     void finish_def(Val v, Reg r);

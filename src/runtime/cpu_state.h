@@ -53,7 +53,7 @@ struct alignas(64) CpuState {
     alignas(16) u8 vspill[64][16];
     u64 host_mxcsr_saved;
     volatile u32 pending_signal;
-    u32 _pad1;
+    volatile u32 in_jit;    // between the enter stub and exit_to_runtime (also inside helpers called from JIT code)
 };
 
 constexpr int kStateBias = 128;
@@ -67,7 +67,10 @@ constexpr int kGuestSP = 31;
 
 // ---- Fixed register mapping (see docs/ARCHITECTURE.md §3.2) ----
 // X0-X5 sit in the x86 syscall argument registers, so pass-through syscalls
-// need no moves, and X0-X2 match SysV rdi/rsi/rdx for library thunks.
+// need no moves, and X0-X2 match SysV rdi/rsi/rdx for library thunks. The other
+// host registers hold the guest registers compiled code uses most (static counts
+// over cc1, libstdc++, Qt, fgfs: x0 x1 sp x2 x19 x20 x3 x21 ...; x6/x7/x29 are
+// 2-13x rarer than x19-x21).
 namespace regmap {
 using namespace x64;
 constexpr Reg kState = R15;
@@ -75,11 +78,11 @@ constexpr Reg kTmp0 = RAX, kTmp1 = RCX, kTmp2 = R11;
 constexpr Reg kUnmapped = NOREG;
 // guest index -> host register (NOREG = lives in CpuState)
 constexpr Reg kMap[32] = {
-    RDI, RSI, RDX, R10, R8, R9, RBX, RBP,             // X0..X7
+    RDI, RSI, RDX, R10, R8, R9, NOREG, NOREG,          // X0..X7
     NOREG, NOREG, NOREG, NOREG, NOREG, NOREG, NOREG, NOREG,  // X8..X15
-    NOREG, NOREG, NOREG, NOREG, NOREG, NOREG, NOREG, NOREG,  // X16..X23
+    NOREG, NOREG, NOREG, RBX, RBP, R12, NOREG, NOREG,  // X16..X23
     NOREG, NOREG, NOREG, NOREG, NOREG,                // X24..X28
-    R12,                                              // X29 (FP)
+    NOREG,                                            // X29 (FP)
     R13,                                              // X30 (LR)
     R14,                                              // SP
 };

@@ -21,6 +21,7 @@ tools/build_thunks.sh                            # guest shims for --host-gl (li
 ```sh
 build/xef program args...                        # static arm64 binaries
 tools/mkrootfs.sh [packages...]                  # arm64 root filesystem (Ubuntu noble + dependencies)
+XEF_REPOS=http://ppa.launchpad.net/mozillateam/ppa/ubuntu tools/mkrootfs.sh firefox   # + extra repositories (PPAs)
 build/xef -L .tools/rootfs-arm64 .tools/rootfs-arm64/usr/bin/python3 -c 'print(42)'
 ```
 
@@ -43,12 +44,14 @@ SuperTuxKart, Warzone 2100, GIMP, WebKitGTK with WebGL, vkcube, ...) with screen
 | `-L DIR` / `XEF_ROOTFS` | guest root filesystem (absolute guest paths resolve there first) |
 | `--host-gl` / `XEF_HOST_GL=1` | native host OpenGL/GLX/EGL/GLES/Vulkan |
 | `--stats` | translation and runtime statistics at exit |
-| `--profile` | hottest translated blocks and time outside translated code |
+| `--profile` | hottest translated blocks and time outside translated code (`XEF_PROFILE_AT=N`: report after N seconds) |
 | `--no-tier2`, `--tier2-threshold N` | tier-2 region compiler control |
 | `--trace` | debugging: no block linking, show the last blocks on a jump to unmapped code |
 | `--dump-ir`, `--dump-code` | IR / host code of every block |
 | `XEF_VERIFY=lo-hi` | debugging: check every scalar block starting in the range against a reference IR interpreter |
 | `XEF_SPLIT=lo-hi[,lo-hi]` | debugging: translate blocks starting there one instruction at a time (bisecting translation bugs) |
+| `XEF_DUMP=lo-hi` | limit `--dump-ir` / `--dump-code` to blocks starting in the range |
+| `XEF_CHECK_NZCV=1` | debugging: check the fast NZCV-liveness lookahead against the translator on every block |
 | `XEF_STRICT_FLAGS=1` | do not assume NZCV is dead at calls/returns (hand-written asm passing flags) |
 
 ## Documentation

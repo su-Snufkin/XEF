@@ -94,11 +94,12 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         a64::translate_block(pc, blk, topt);
         a64::set_peek_log(nullptr);
         if (peeks.overflow) blk.flags_live_out = true;   // don't depend on code we can't track
+        g_cache.mark_code(pc, blk.end, peeks.overflow ? nullptr : &peeks);   // before the epoch check
         lk.lock();
         if (g_cache.epoch.load(std::memory_order_seq_cst) == ep) break;
         lk.unlock();   // code was invalidated meanwhile: decode again
     }
-    if (g_opt.dump_ir) ir::dump(blk, stderr);
+    if (g_opt.dump_ir && g_opt.dump_wants(pc)) ir::dump(blk, stderr);
     if (BlockMeta* b = g_cache.lookup(pc)) return b;  // raced with another thread
     int nexits = backend::count_exits(blk);
     BlockMeta* meta = g_cache.alloc_meta(nexits);
@@ -114,7 +115,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     meta->tier = 1;
     g_cache.commit_code(code, out.size);
     g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
-    if (g_opt.dump_code) dump_code(code, out.size, pc);
+    if (g_opt.dump_code && g_opt.dump_wants(pc)) dump_code(code, out.size, pc);
     // link exits whose targets already exist
     for (int i = 0; i < out.nexits; i++) {
         ExitInfo* e = &meta->exits[i];
@@ -144,6 +145,13 @@ u8* get_or_translate(ThreadCtx* t, GuestAddr pc) {
 }
 
 void code_invalidate_range(GuestAddr start, u64 len) {
+    // translations in flight must not be published; then nothing to do where no code was translated
+    g_cache.epoch.fetch_add(1, std::memory_order_seq_cst);
+    if (g_opt.stats) __atomic_fetch_add(&g_stats.inval_requests, 1, __ATOMIC_RELAXED);
+    if (!g_cache.may_have_code(start, start + len)) {
+        if (g_opt.stats) __atomic_fetch_add(&g_stats.inval_unmarked, 1, __ATOMIC_RELAXED);
+        return;
+    }
     std::lock_guard<std::mutex> lk(g_cache.lock);
     if (g_cache.invalidate_range(start, start + len)) {
         g_cache.scrub_ibtcs();
@@ -159,6 +167,13 @@ static void run_guest(ThreadCtx* t, bool nested) {
     IbtcEntry* ibtc = (IbtcEntry*)st->ibtc;
     u8* host = get_or_translate(t, st->pc);
     for (;;) {
+        // a signal that arrived while this thread was in the runtime (not in translated code, so
+        // no single-step to a block boundary) is only marked pending: deliver it before re-entering
+        // the JIT, or a linked hot loop could run forever without seeing it
+        if (__atomic_load_n(&st->pending_signal, __ATOMIC_ACQUIRE)) {
+            signals_deliver_pending(st);
+            host = get_or_translate(t, st->pc);
+        }
         bool vf = verify_wants(st->pc) && verify_before(t, st);
         enter(st, host);
         if (vf) verify_after(st);

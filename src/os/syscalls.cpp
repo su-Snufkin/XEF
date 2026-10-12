@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <unistd.h>
@@ -70,7 +71,7 @@ enum GuestNr {
     G_recvmsg = 212, G_readahead = 213, G_brk = 214, G_munmap = 215, G_mremap = 216, G_clone = 220,
     G_execve = 221, G_mmap = 222, G_fadvise64 = 223, G_mprotect = 226, G_msync = 227, G_mlock = 228,
     G_munlock = 229, G_mincore = 232, G_madvise = 233, G_accept4 = 242, G_recvmmsg = 243, G_wait4 = 260,
-    G_prlimit64 = 261, G_syncfs = 267, G_sendmmsg = 269, G_renameat2 = 276, G_getrandom = 278,
+    G_prlimit64 = 261, G_syncfs = 267, G_sendmmsg = 269, G_renameat2 = 276, G_seccomp = 277, G_getrandom = 278,
     G_memfd_create = 279, G_membarrier = 283, G_copy_file_range = 285, G_statx = 291, G_rseq = 293,
     G_clone3 = 435, G_close_range = 436, G_openat2 = 437, G_faccessat2 = 439, G_epoll_pwait2 = 441,
     G_futex_waitv = 449, G_fchmodat2 = 452,
@@ -200,31 +201,38 @@ static i64 close_range_guest(u64 first, u64 last, u64 flags) {
     return lo <= last ? raw(436, lo, last, flags) : r;
 }
 
-// getdents64 on /proc/<pid>/fd: XEF's own descriptors are not the guest's business
-static i64 hide_reserved_fds(int dirfd, u8* buf, i64 n) {
-    bool any = false;
-    for (auto& w : g_reserved) any |= w.load(std::memory_order_relaxed) != 0;
-    if (!any || n <= 0) return n;
+// getdents64 on /proc/<pid>/fd and /proc/<pid>/task: XEF's own descriptors and threads are not
+// the guest's business
+static i64 hide_xef_entries(int dirfd, u8* buf, i64 n) {
+    if (n <= 0) return n;
     char link[64], path[64];
     snprintf(link, sizeof link, "/proc/self/fd/%d", dirfd);
     ssize_t k = readlink(link, path, sizeof path - 1);
     if (k <= 0) return n;
     path[k] = 0;
-    int pid;
-    char tail[8] = {0};
-    if (sscanf(path, "/proc/%d/fd%7s", &pid, tail) != 1 || pid != getpid()) return n;
+    int pid, used = 0;
+    if (sscanf(path, "/proc/%d/%n", &pid, &used) != 1 || pid != getpid()) return n;
+    bool fds = !strcmp(path + used, "fd"), tasks = !strcmp(path + used, "task");
+    if (!fds && !tasks) return n;
     i64 out = 0;
     for (i64 off = 0; off < n;) {
         u16 reclen = *(u16*)(buf + off + 16);
         const char* name = (const char*)(buf + off + 19);
         char* end;
-        long fd = strtol(name, &end, 10);
-        bool hide = *name && !*end && fd >= 0 && fd_reserved((u64)fd);
+        long id = strtol(name, &end, 10);
+        bool num = *name && !*end && id >= 0;
+        bool hide = num && (fds ? fd_reserved((u64)id) : !is_guest_tid((int)id));
         if (!hide) { if (out != off) memmove(buf + out, buf + off, reclen); out += reclen; }
         off += reclen;
     }
     return out;
 }
+
+// ---- seccomp: the guest's filters speak AArch64 syscall numbers and AUDIT_ARCH_AARCH64; on the host
+// they would kill XEF's own x86 syscalls, and XEF cannot enforce them for the guest either. So XEF
+// behaves like a kernel without seccomp (as qemu-user does): sandboxes that need it (Firefox's
+// content sandbox, Chromium's) fall back or must be disabled. ----
+static i64 guest_seccomp_prctl() { return -EINVAL; }
 
 // ---- thread counts the guest reads: its own threads only (not XEF's compiler thread or the
 // worker threads of host libraries behind --host-gl) ----
@@ -450,7 +458,7 @@ void do_syscall(CpuState* st) {
     case G_getdents64:
         for (;;) {   // a buffer of nothing but hidden entries must not read as the end of the directory
             i64 got = raw(SYS_getdents64, a0, a1, a2);
-            r = got > 0 ? hide_reserved_fds((int)a0, (u8*)a1, got) : got;
+            r = got > 0 ? hide_xef_entries((int)a0, (u8*)a1, got) : got;
             if (!(got > 0 && r == 0)) break;
         }
         break;   // pretend: the guest owns it no more
@@ -543,7 +551,11 @@ void do_syscall(CpuState* st) {
         break;
     }
     case G_rseq: r = -ENOSYS; break;
-    case G_prctl: r = raw(SYS_prctl, a0, a1, a2, a3, a4); break;
+    case G_prctl:
+        if (a0 == PR_SET_SECCOMP || a0 == PR_GET_SECCOMP) r = guest_seccomp_prctl();
+        else r = raw(SYS_prctl, a0, a1, a2, a3, a4);
+        break;
+    case G_seccomp: r = -ENOSYS; break;   // see guest_seccomp_prctl
     case G_epoll_ctl: {
         if (a3) {
             GuestEpollEvent* ge = (GuestEpollEvent*)a3;

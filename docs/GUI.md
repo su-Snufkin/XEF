@@ -35,6 +35,16 @@ Verified with `--host-gl`:
 | MegaGlest, Armagetron Advanced, X-Moto | menus / animated 3D menu | `hostgl-games2.jpg` |
 | Scorched3D | wxWidgets launcher starting the SDL client; tutorial match against bots | `scorched3d-hostgl.jpg` |
 | BZFlag, Widelands, Endless Sky | menus | |
+| Hedgewars 1.0 | Qt 5 frontend starts the Free Pascal engine (SDL2 + GL); simple game against the CPU team | `hedgewars-hostgl.jpg` |
+| FlightGear 2020.3 | OpenSceneGraph, Nasal, Qt 5; Cessna 172P cockpit at KSFO after ~110 s of loading. Needs `DBUS_FATAL_WARNINGS=0` without a session bus (fgfs passes a NULL connection to libdbus, natively too); `--disable-terrasync` | `flightgear-hostgl.jpg` |
+| OpenTTD 13.4 | SDL2, title screen with the running demo game (`-m null -s null`: no music/sound drivers) | `openttd.jpg` |
+| Firefox 157 | Mozilla PPA build (`XEF_REPOS=http://ppa.launchpad.net/mozillateam/ppa/ubuntu tools/mkrootfs.sh firefox`): GTK3 UI, page with CSS animation, canvas and the SpiderMonkey JIT; multi-process. WebGL (rotating cube) at 59 FPS with `--host-gl`. XEF reports no seccomp (like qemu-user), so the sandbox runs without its seccomp layer. Needs an existing `-profile` directory | `firefox.jpg`, `firefox-webgl.jpg` |
+| LibreOffice 24.2 Writer | GTK3; ready in ~15 s; typing, spell checking (no --host-gl needed) | `libreoffice-writer.jpg` |
+| OpenSCAD 2021 | Qt 5 + CGAL (needs FP rounding modes: FPCR -> MXCSR); CSG preview on host GL | `openscad-hostgl.jpg` |
+| Inkscape 1.2 | GTK3 welcome dialog | `inkscape.jpg` |
+| Krita 5.2 | Qt 5, OpenGL canvas on host GL: new image, brush strokes | `krita-hostgl.jpg` |
+| mpv 0.37 | `--vo=gpu --gpu-sw=yes` (llvmpipe counts as software): 640x360@30 in real time, 1 frame dropped per minute | `mpv-hostgl.jpg` |
+| Audacity 3.4, darktable 4.6 | wxWidgets / GTK3; `darktable-cli` exports a JPEG through its pipeline in 3 s | `audacity-darktable.jpg` |
 | vkmark (Vulkan) | 300 points vs 360 natively (llvmpipe/lavapipe) | |
 
 (screenshots in `docs/screenshots/`)
@@ -45,7 +55,7 @@ FPS) run on the host (`docs/screenshots/hostgl-egl.png`).
 
 Vulkan: `libvulkan.so.1` is redirected to a second shim (`build/thunks/libvulkan.so.1`, ~630
 entry points from `vulkan_core.h`, Xlib and XCB WSI). Allocation callbacks are dropped (NULL),
-debug messengers are faked in the guest and stripped from `vkCreateInstance`'s pNext chain,
+Wayland WSI entry points exist for programs that link them (mpv), debug messengers are faked in the guest and stripped from `vkCreateInstance`'s pNext chain,
 `VkXlibSurfaceCreateInfoKHR::dpy` / `VkXcbSurfaceCreateInfoKHR::connection` are swapped for host
 connections, and `vkGet*ProcAddr` hand out the shim's stubs for functions the host provides.
 vulkaninfo and vkcube run on the host's lavapipe (`docs/screenshots/vkcube-hostvk.png`).
@@ -110,3 +120,14 @@ from `paplay` and Neverball's menu music arrive intact. Without a sound server u
 
 Without `ALSOFT_DRIVERS=null` OpenAL games spin on failing audio calls when no sound device
 exists (not an XEF issue).
+
+## Other runtimes
+
+- Python 3.12 from the rootfs passes its standard-library test suite (`libpython3.12-testsuite`;
+  run as `build/xef -L R /usr/bin/python3 -m test ...`), except VSOCK socket tests (no device).
+- OpenJDK 21 (HotSpot C1/C2 JIT on top of XEF, SIGSEGV-based null checks, threads): a mixed
+  benchmark (recursion, collections, streams, sorting, 10k NullPointerExceptions, 4 threads) runs
+  correctly in 1.6 s vs 0.4 s natively (`tests/java/run.sh`). Swing / Java2D with antialiasing
+  renders (`tests/java/SwingDemo.java`, `docs/screenshots/java-swing.jpg`).
+- Node.js 18 (V8 JIT, `tests/node/run.sh`): the same output as the host's node; 1.8 s vs 0.26 s,
+  most of it translating V8's large one-shot code (140k blocks).

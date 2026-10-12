@@ -1,6 +1,7 @@
 // XEF — guest signals. Milestone-1 version: handlers are recorded, SIG_DFL/SIG_IGN
 // are forwarded to the host; delivery to guest handlers comes with milestone 4.
 #include "os/signals.h"
+#include "runtime/verify.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -105,6 +106,13 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
             n = snprintf(buf, sizeof buf, "  %-3s=%016lx%s", kGuestRegNames[g], (unsigned long)v, (g % 4 == 3) ? "\n" : "");
             write(2, buf, n);
         }
+        // block temporaries (unmapped guest values may live there) and the faulting host instruction
+        const greg_t* gr = uc->uc_mcontext.gregs;
+        n = snprintf(buf, sizeof buf, "  host rax=%016lx rcx=%016lx r11=%016lx  code:", (unsigned long)gr[REG_RAX],
+                     (unsigned long)gr[REG_RCX], (unsigned long)gr[REG_R11]);
+        for (int k = 0; k < 12 && n < (int)sizeof buf - 4; k++) n += snprintf(buf + n, sizeof buf - n, " %02x", rip[k]);
+        buf[n++] = '\n';
+        write(2, buf, n);
     }
     _exit(128 + sig);
 }
@@ -128,6 +136,9 @@ void signals_init() {
     struct sigaction tr {};
     tr.sa_sigaction = trap_handler;
     tr.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    // a guest signal arriving inside this handler would set TF in the handler's context, which
+    // its sigreturn discards: hold signals until the JIT context is current again
+    sigfillset(&tr.sa_mask);
     sigaction(SIGTRAP, &tr, nullptr);
 }
 
@@ -145,6 +156,7 @@ void signals_report_on_interrupt() {
 }
 
 void signals_flush_output() {
+    if (verify_enabled()) verify_report();
     if (g_opt.stats) stats_print();
     if (g_opt.profile) profile_report();
 }
@@ -187,7 +199,8 @@ static void async_handler(int sig, siginfo_t* si, void* ctx) {
     t->st->pending_signal = 1;
     ucontext_t* uc = (ucontext_t*)ctx;
     u8* rip = (u8*)uc->uc_mcontext.gregs[REG_RIP];
-    if (g_cache.contains(rip)) {
+    // in translated code, or in a helper it called (which returns into translated code)
+    if (g_cache.contains(rip) || t->st->in_jit) {
         t->stepping = true;
         uc->uc_mcontext.gregs[REG_EFL] |= 0x100;  // TF: single-step to the next block entry
     }
@@ -203,6 +216,7 @@ static void trap_handler(int sig, siginfo_t* si, void* ctx) {
     }
     u8* rip = (u8*)uc->uc_mcontext.gregs[REG_RIP];
     if (!g_cache.contains(rip)) {
+        if (t->st->in_jit) return;   // a helper called from translated code: keep stepping until it returns
         // back in the runtime: it will see pending_signal
         t->stepping = false;
         uc->uc_mcontext.gregs[REG_EFL] &= ~0x100ull;
@@ -290,7 +304,7 @@ static void host_setmask(u64 m) {
     syscall(SYS_rt_sigprocmask, SIG_SETMASK, &m, nullptr, 8);
 }
 
-i64 sig_rt_sigprocmask(CpuState*, int how, u64 set, u64 oset, u64 sigsetsize) {
+i64 sig_rt_sigprocmask(CpuState* st, int how, u64 set, u64 oset, u64 sigsetsize) {
     // Signals XEF itself depends on (faults, profiling) are never blocked on the host.
     u64 m;
     u64 hset = 0;
@@ -298,7 +312,11 @@ i64 sig_rt_sigprocmask(CpuState*, int how, u64 set, u64 oset, u64 sigsetsize) {
         m = *(u64*)set & ~kInternalSigs;
         hset = (u64)&m;
     }
-    return syscall(SYS_rt_sigprocmask, how, hset, oset, sigsetsize) < 0 ? -errno : 0;
+    if (syscall(SYS_rt_sigprocmask, how, hset, oset, sigsetsize) < 0) return -errno;
+    // signals received earlier and held back by the guest mask may be deliverable now
+    if (set && st && st->thread && (__atomic_load_n(&st->thread->pending, __ATOMIC_SEQ_CST) & ~host_blocked()))
+        st->pending_signal = 1;
+    return 0;
 }
 
 // --- AArch64 signal frame layout (arch/arm64/include/uapi/asm/{sigcontext,ucontext}.h) ---
@@ -397,9 +415,9 @@ static void deliver_pending_masked(CpuState* st, u64 saved_mask, u64 blocked) {
     int sig = __builtin_ctzll(p) + 1;
     __atomic_and_fetch(&t->pending, ~sigbit(sig), __ATOMIC_SEQ_CST);
     siginfo_t si = t->pending_info[sig];
-    if (g_actions[sig].handler <= 1) return;  // action changed meanwhile
-    deliver_one(st, sig, si, saved_mask);
-    if (__atomic_load_n(&t->pending, __ATOMIC_SEQ_CST)) st->pending_signal = 1;
+    deliver_one(st, sig, si, saved_mask);   // also handles an action changed to SIG_IGN / SIG_DFL
+    // more to deliver now? (signals still blocked are re-checked when the mask changes)
+    if (__atomic_load_n(&t->pending, __ATOMIC_SEQ_CST) & ~host_blocked()) st->pending_signal = 1;
 }
 
 void signals_deliver_pending(CpuState* st) {
@@ -427,6 +445,10 @@ void sig_rt_sigreturn(CpuState* st) {
     if (hd[0] == FPSIMD_MAGIC) {
         st->fpsr = hd[2];
         st->fpcr = hd[3];
+        // the host MXCSR follows FPCR (see emit_sys: RMode -> RC, FZ -> FTZ|DAZ)
+        u32 rm = (st->fpcr >> 22) & 3, rc = ((rm & 1) << 1) | (rm >> 1);
+        u32 mx = 0x1F80 | (rc << 13) | ((st->fpcr >> 24) & 1 ? 0x8040 : 0);
+        __builtin_ia32_ldmxcsr(mx);
         memcpy(st->v, mc.reserved + 16, 512);
     }
     host_setmask(f->uc.uc_sigmask);

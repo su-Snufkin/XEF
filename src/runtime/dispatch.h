@@ -13,6 +13,8 @@ struct Options {
     bool tier2 = true;
     bool trace = false;   // debugging: no block linking / IBTC, remember the last blocks entered
     int max_block_insts = 128;
+    GuestAddr dump_lo = 0, dump_hi = ~0ull;   // XEF_DUMP=lo-hi: dump only blocks starting there
+    bool dump_wants(GuestAddr pc) const { return pc >= dump_lo && pc < dump_hi; }
 };
 extern Options g_opt;
 

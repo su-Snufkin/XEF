@@ -16,5 +16,6 @@ bool verify_wants(GuestAddr pc);
 bool verify_before(ThreadCtx* t, CpuState* st);
 // After the JIT returned from that block: compare and report.
 void verify_after(CpuState* st);
+void verify_report();   // summary (XEF_VERIFY only)
 
 }  // namespace xef

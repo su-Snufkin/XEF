@@ -16,6 +16,12 @@ for s in noble noble-updates; do for c in main universe; do
   [ -f $s-arm64-$c.xz ] || curl -sf -o $s-arm64-$c.xz $M/dists/$s/$c/binary-arm64/Packages.xz
   IDX=$IDX${IDX:+,}$T/dl/$s-arm64-$c.xz
 done; done
+# extra repositories (PPAs), e.g. XEF_REPOS=http://ppa.launchpad.net/mozillateam/ppa/ubuntu for firefox
+for r in $XEF_REPOS; do
+  f=$(echo "$r" | tr -c 'a-zA-Z0-9\n' _)-arm64.xz
+  [ -f $f ] || curl -sf -o $f $r/dists/noble/main/binary-arm64/Packages.xz
+  IDX=$IDX,$T/dl/$f@$r
+done
 PKGS=${*:-"busybox-static dash bash coreutils findutils grep sed gawk python3.12-minimal sqlite3 lua5.4
   x11-apps mesa-utils libgl1-mesa-dri libglx-mesa0 libegl-mesa0 libglib2.0-bin librsvg2-common"}
 python3 $ROOT/tools/fetch_debs.py --deps $M $R $IDX $PKGS
@@ -34,6 +40,15 @@ for d in $R/usr/lib/aarch64-linux-gnu/blas $R/usr/lib/aarch64-linux-gnu/lapack $
     [ -e $R/usr/lib/aarch64-linux-gnu/$b ] || ln -s ${d#$R/usr/lib/aarch64-linux-gnu/}/$b $R/usr/lib/aarch64-linux-gnu/$b
   done
 done
+# libreoffice-common's postinst: the configuration registry is linked into /etc
+if [ -d $R/usr/lib/libreoffice/share/.registry ]; then
+  mkdir -p $R/etc/libreoffice/registry/res
+  for f in $R/usr/lib/libreoffice/share/.registry/*.xcd $R/usr/lib/libreoffice/share/.registry/res/*.xcd; do
+    [ -e "$f" ] || continue
+    rel=${f#$R/usr/lib/libreoffice/share/.registry/}
+    ln -sfn /usr/lib/libreoffice/share/.registry/$rel $R/etc/libreoffice/registry/$rel
+  done
+fi
 # What maintainer scripts would normally generate (needs build/xef): gdk-pixbuf loaders cache,
 # compiled GSettings schemas, icon caches, font cache.
 X=$ROOT/build/xef

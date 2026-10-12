@@ -1,4 +1,6 @@
 // XEF — AArch64 → x86-64 user-mode binary translator.
+#include <chrono>
+#include <thread>
 #include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -56,6 +58,10 @@ int main(int argc, char** argv, char** envp) {
         else if (a == "--") { i++; break; }
         else usage();
     }
+    if (const char* e = getenv("XEF_DUMP")) {   // --dump-ir / --dump-code only for blocks in [lo, hi)
+        unsigned long lo, hi;
+        if (sscanf(e, "%lx-%lx", &lo, &hi) == 2) { g_opt.dump_lo = lo; g_opt.dump_hi = hi; }
+    }
     if (i >= argc) usage();
     if (getenv("XEF_STATS")) g_opt.stats = true;
     if (getenv("XEF_HOST_GL")) g_host_gl = true;
@@ -108,6 +114,7 @@ int main(int argc, char** argv, char** envp) {
     syscalls_init(img);
     GuestAddr sp = setup_stack(img, argc - i, argv + i, envp);
 
+    guest_tid_init();
     ThreadCtx* t = thread_create(nullptr);
     CpuState* st = t->st;
     signals_thread_init(t);
@@ -115,6 +122,16 @@ int main(int argc, char** argv, char** envp) {
     st->pc = img.entry;
     st->eflags = 0x203;   // canonical NZCV=0000 -> CF=1
     if (g_opt.profile) profile_start();
+    // XEF_PROFILE_AT=N: print the statistics / profile after N seconds (for programs that do not
+    // exit cleanly, e.g. GUI applications handling SIGINT themselves)
+    if (const char* e = getenv("XEF_PROFILE_AT"); e && (g_opt.profile || g_opt.stats)) {
+        static int secs = atoi(e);
+        std::thread([] {
+            std::this_thread::sleep_for(std::chrono::seconds(secs));
+            if (g_opt.stats) stats_print();
+            if (g_opt.profile) profile_report();
+        }).detach();
+    }
     if (g_opt.profile || g_opt.stats) signals_report_on_interrupt();
     if (getenv("XEF_NO_TIER2")) g_opt.tier2 = false;
     if (verify_enabled()) { g_opt.trace = true; g_opt.tier2 = false; }   // one block per JIT entry

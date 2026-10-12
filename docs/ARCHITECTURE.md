@@ -49,8 +49,8 @@ Strona gościa = 4 KiB (AT_PAGESZ); binarki wyrównane do 16/64 KiB działają b
 | x86 | gość |
 |---|---|
 | rdi rsi rdx r10 r8 r9 | X0–X5 (= rejestry argumentów `syscall` x86; `memcpy(x0,x1,x2)` = SysV rdi/rsi/rdx) |
-| rbx rbp | X6 X7 |
-| r12 r13 r14 | FP (X29), LR (X30), SP |
+| rbx rbp r12 | X19 X20 X21 (najczęstsze po X0–X3 w skompilowanym kodzie; X6/X7/FP są 2–13× rzadsze) |
+| r13 r14 | LR (X30), SP |
 | r15 | `CpuState* + 128` (najgorętsze pola w zasięgu disp8) |
 | rsp | stos JIT = natywny stos powrotów (patrz niżej) |
 | rax rcx r11 | temporaria bloku |

@@ -83,6 +83,8 @@ static bool compile_region(GuestAddr head) {
     BlockMeta* hm = g_cache.lookup(head);
     if (!hm || hm->tier != 1) return false;
     hm->tier = 3;  // "tried": don't retry on failure
+    // cache maintenance does not take the lock where no code is marked (CodeCache::mark_code)
+    u64 ep = g_cache.epoch.load(std::memory_order_seq_cst);
     // every guest range decoded ahead while forming the region becomes an invalidation dependency
     static PeekLog peeks;
     peeks.n = 0;
@@ -283,7 +285,7 @@ static bool compile_region(GuestAddr head) {
         meta->code_size = (u32)out.size;
         g_cache.commit_code(code, out.size);
         g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
-        if (g_opt.dump_code) {
+        if (g_opt.dump_code && g_opt.dump_wants(R.pcs[i])) {
             char path[64];
             snprintf(path, sizeof path, "/tmp/xef-t2-%lx.bin", (unsigned long)R.pcs[i]);
             if (FILE* f = fopen(path, "wb")) { fwrite(code, 1, out.size, f); fclose(f); }
@@ -319,6 +321,8 @@ static bool compile_region(GuestAddr head) {
         }
     }
     if (peeks.overflow) return false;   // dependencies not trackable (abandoned code stays unpublished)
+    for (int i = 0; i < R.n; i++) g_cache.mark_code(metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
+    if (g_cache.epoch.load(std::memory_order_seq_cst) != ep) { hm->tier = 1; return false; }   // code changed
     for (int i = 0; i < R.n; i++) g_cache.add_deps(entry, metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
     // ---- go live: publish the entry and re-point incoming links of the tier-1 head
     entry->incoming = hm->incoming;
@@ -370,7 +374,15 @@ static void* compiler_thread(void*) {
 
 // kSampleSig: count samples per translated block, request tier 2 for hot ones.
 static void sample_handler(int sig, siginfo_t* si, void* ctx) {
-    u8* rip = (u8*)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP];
+    ucontext_t* uc = (ucontext_t*)ctx;
+    u8* rip = (u8*)uc->uc_mcontext.gregs[REG_RIP];
+    // safety net: a pending guest signal whose single-step request was lost (TF overwritten by a
+    // popfq in translated code) is re-armed here, at most 1 ms of CPU time later
+    if (ThreadCtx* t = tls_thread; t && t->st && t->st->pending_signal && !(uc->uc_mcontext.gregs[REG_EFL] & 0x100) &&
+                                   (g_cache.contains(rip) || t->st->in_jit)) {
+        t->stepping = true;
+        uc->uc_mcontext.gregs[REG_EFL] |= 0x100;
+    }
     if (g_opt.profile) profile_sample(rip);
     if (!g_cache.contains(rip)) return;
     BlockMeta* b = g_cache.find_by_host(rip);
@@ -454,6 +466,7 @@ void tier2_init(bool enable) {
     struct sigaction sa {};
     sa.sa_sigaction = sample_handler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigfillset(&sa.sa_mask);   // see trap_handler: guest signals must see the interrupted context
     sa.sa_flags |= SA_ONSTACK;
     sigaction(kSampleSig, &sa, nullptr);
     g_sampling = true;
