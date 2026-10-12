@@ -59,9 +59,16 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   (stałe adresy bibliotek) — skrypt w stylu `/tmp/bisectg.sh` z historii; znaleziony blok odtwórz
   w asm jako test w tests/guest/. Tak znalezione: dzielenie przez stałą 64-bit (pożyczony rejestr),
   cset po remat flag, zwolnienie operandów flag w terminatorze.
+- **`XEF_VERIFY=lo-hi`** (src/runtime/verify.cpp): bloki z zakresu najpierw w interpreterze IR
+  (skalarne; bloki z wektorami/FP/atomikami pomijane), potem JIT bez linkowania; raportuje różnice
+  rejestrów/NZCV/pc/zapisów. Najszybsza droga do błędnego bloku — tak znaleziony błąd slotów spill
+  (X25519/TLS). `XEF_SPLIT` przyjmuje listę zakresów (`0-a,b-7fffffffffff` = dziel wszystko poza [a,b)).
 - `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64); fuzzer go ustawia.
 
 ## Następne kroki (priorytet)
+0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
+   znalezione bloki; testy Pythona: 84/93 OK, pozostałe asyncio/ssl do ponownego sprawdzenia po
+   naprawie slotów spill (test_socket: tylko VSOCK — środowisko).
 1. Wydajność gier: przypinanie rejestrów V do XMM w regionach tier 2 (shadery llvmpipe to gorące
    pętle NEON), mniej przeładowań stałych wektorowych, regiony obejmujące BL.
    Odroczone zapisy rejestrów V (dziś VSet przed każdym dostępem do pamięci jest zachowywany dla
@@ -79,6 +86,8 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   czytające ten rejestr (także nietknięte GetReg) na zapisaną kopię w CpuState.
 - Wewnętrzne fd XEF (pipe tier 2) są ≥1000 i chronione przed close/close_range/dup3 gościa — dziecko po
   fork zamykające „wszystko” inaczej podmieniało je na pliki gościa.
+- Odzyskiwanie slotów spill musi odbudować mapę z żywych wartości: martwa wartość może mieć „swój” slot
+  zajęty już przez żywą (zepsute TLS/ECDHE).
 - Próbkowanie używa sygnału RT 64 (`kSampleSig`), SIGPROF należy do gościa.
 - Remat flag w terminatorach nie może używać RAX (cel skoku) — RAX jest przypinany w Exit*Indirect/Ret.
 - `CLONE_PARENT_SETTID` musi być zapisany zanim dziecko ruszy (glibc: ptid == ctid).
