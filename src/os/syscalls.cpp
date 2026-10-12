@@ -171,11 +171,18 @@ static const Pair kPathArgs[] = {
     {G_chdir, 1}, {G_chroot, 1}, {G_fchmodat, 2}, {G_fchownat, 2}, {G_utimensat, 2}, {89, 1},
     {264, 2}, {G_renameat2, 2 | 8}, {G_faccessat2, 2}, {G_fchmodat2, 2},
 };
+// ... of which these act on a final symlink itself
+static u8 g_nofollow_args[512];
+static const Pair kNoFollowArgs[] = {
+    {6, 1}, {9, 1}, {12, 1}, {15, 1}, {33, 2}, {G_mkdirat, 2}, {G_unlinkat, 2}, {G_symlinkat, 4},
+    {G_linkat, 2 | 8}, {G_renameat, 2 | 8}, {G_renameat2, 2 | 8},
+};
 
 void syscalls_init(const LoadedImage& img) {
     for (auto& v : g_passthrough_nr) v = -1;
     for (auto& p : kPass) g_passthrough_nr[p.g] = p.h;
     for (auto& p : kPathArgs) g_path_args[p.g] = (u8)p.h;
+    for (auto& p : kNoFollowArgs) g_nofollow_args[p.g] = (u8)p.h;
     g_brk_start = g_brk_cur = g_brk_mapped = align_up<u64>(img.brk_start, 4096);
     char buf[PATH_MAX];
     if (realpath(img.host_path.c_str(), buf)) g_exe_realpath = buf;
@@ -238,10 +245,10 @@ struct GuestEpollEvent { u32 events; u32 pad; u64 data; };
 struct PathArg {
     std::string s;
     const char* p;
-    explicit PathArg(u64 guest) {
+    explicit PathArg(u64 guest, bool follow_last = true) {
         const char* g = (const char*)guest;
         if (!g) { p = nullptr; return; }
-        if (g[0] == '/' && !g_rootfs.empty()) { s = resolve_guest_path(g); p = s.c_str(); }
+        if (g[0] == '/' && !g_rootfs.empty()) { s = resolve_guest_path(g, follow_last); p = s.c_str(); }
         else p = g;
     }
 };
@@ -286,10 +293,11 @@ void do_syscall(CpuState* st) {
             std::string keep[6];
             for (int k = 0; k < 6; k++)
                 if ((m >> k & 1) && a[k] && ((const char*)a[k])[0] == '/') {
-                    keep[k] = resolve_guest_path((const char*)a[k]);
+                    keep[k] = resolve_guest_path((const char*)a[k], !(g_nofollow_args[nr] >> k & 1));
                     a[k] = (u64)keep[k].c_str();
                 }
             r = raw(g_passthrough_nr[nr], a[0], a[1], a[2], a[3], a[4], a[5]);
+            if (r == 0 && (nr == G_unlinkat || nr == G_renameat || nr == G_renameat2)) guest_path_cache_clear();
             st->x[0] = (u64)r;
             return;
         }
@@ -299,7 +307,7 @@ void do_syscall(CpuState* st) {
     }
     switch (nr) {
     case G_openat: {
-        PathArg p(a1);
+        PathArg p(a1, !(a2 & 0x8000));   // O_NOFOLLOW
         if (is_proc_self_exe((const char*)a1)) { r = raw(SYS_openat, a0, (u64)g_exe_realpath.c_str(), open_flags_g2h(a2), a3); break; }
         r = raw(SYS_openat, a0, (u64)p.p, open_flags_g2h(a2), a3);
         break;
@@ -327,12 +335,15 @@ void do_syscall(CpuState* st) {
     }
     case G_readlinkat: {
         const char* path = (const char*)a1;
-        if (is_proc_self_exe(path)) {
-            size_t n = std::min<size_t>(g_exe_realpath.size(), a3);
-            memcpy((void*)a2, g_exe_realpath.data(), n);
+        if (is_proc_self_exe(path)) {   // the guest's view: inside the rootfs, without its prefix
+            const char* e = g_exe_realpath.c_str();
+            size_t rn = g_rootfs.size();
+            if (rn && !strncmp(e, g_rootfs.c_str(), rn) && e[rn] == '/') e += rn;
+            size_t n = std::min<size_t>(strlen(e), a3);
+            memcpy((void*)a2, e, n);
             r = (i64)n;
         } else {
-            PathArg p(a1);
+            PathArg p(a1, false);
             r = raw(SYS_readlinkat, a0, (u64)p.p, a2, a3);
         }
         break;
@@ -345,12 +356,12 @@ void do_syscall(CpuState* st) {
     }
     case G_newfstatat: {
         HostStat hs;
-        PathArg p(a1);
+        PathArg p(a1, !(a3 & AT_SYMLINK_NOFOLLOW));
         r = raw(SYS_newfstatat, a0, (u64)p.p, (u64)&hs, a3);
         if (r == 0) stat_h2g(hs, (GuestStat*)a2);
         break;
     }
-    case G_statx: { PathArg p(a1); r = raw(SYS_statx, a0, (u64)p.p, a2, a3, a4); break; }
+    case G_statx: { PathArg p(a1, !(a2 & AT_SYMLINK_NOFOLLOW)); r = raw(SYS_statx, a0, (u64)p.p, a2, a3, a4); break; }
     case G_exit:
         thread_exit(st, (int)a0);
         return;  // not reached for the last thread

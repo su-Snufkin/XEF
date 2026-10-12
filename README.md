@@ -60,5 +60,7 @@ SuperTuxKart, Warzone 2100, GIMP, WebKitGTK with WebGL, vkcube, ...) with screen
 
 ```sh
 tests/guest/run.sh                                         # C/C++ programs: XEF vs qemu-aarch64
+tests/rootfs/run.sh                                        # -L path handling (symlinks inside the rootfs)
+tests/gui/run.sh                                           # --host-gl shims
 (cd tests/diff && python3 fuzz.py -n 3000 --class all)     # random instructions vs qemu
 ```

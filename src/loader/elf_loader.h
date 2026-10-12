@@ -22,7 +22,10 @@ struct LoadedImage {
 // Guest root filesystem prefix (like qemu -L). Empty = host root.
 extern std::string g_rootfs;
 // Resolve a guest absolute path to a host path (rootfs-redirected if the file exists there).
-std::string resolve_guest_path(const char* path);
+// Host path of guest path `path`: inside the rootfs when it exists there, symlinks resolved as if
+// the rootfs were / (follow_last=false leaves a final symlink itself, for lstat/readlink/unlink).
+std::string resolve_guest_path(const char* path, bool follow_last = true);
+void guest_path_cache_clear();
 
 bool load_elf(const char* path, LoadedImage& img);
 GuestAddr setup_stack(const LoadedImage& img, int argc, char** argv, char** envp);

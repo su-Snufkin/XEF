@@ -7,19 +7,111 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <climits>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
 
 namespace xef {
 
 std::string g_rootfs;
 
-std::string resolve_guest_path(const char* path) {
+// Guest directories resolved inside the rootfs (guest path -> physical guest path, symlinks
+// followed as if the rootfs were /). Cleared when the guest renames or removes anything.
+static std::mutex g_dir_lock;
+struct DirEntry { std::string phys; bool via_abs = false; };
+static std::unordered_map<std::string, DirEntry> g_dir_cache;
+
+void guest_path_cache_clear() {
+    std::lock_guard<std::mutex> lk(g_dir_lock);
+    g_dir_cache.clear();
+}
+
+// Walks `path` (absolute, guest view) component by component in the rootfs, following symlinks
+// with absolute targets inside the rootfs instead of the host's /. `phys` receives the physical
+// guest path; returns false when a component is missing (the rest is appended unresolved) and sets
+// `via_abs` if an absolute symlink was followed.
+static bool walk_guest(const std::string& path, bool follow_last, std::string& phys, bool& via_abs) {
+    std::string rest = path, done;
+    size_t i = 0;
+    int hops = 0;
+    struct stat st;
+    while (i < rest.size()) {
+        while (i < rest.size() && rest[i] == '/') i++;
+        if (i >= rest.size()) break;
+        size_t j = rest.find('/', i);
+        if (j == std::string::npos) j = rest.size();
+        std::string c = rest.substr(i, j - i);
+        size_t k = j;
+        while (k < rest.size() && rest[k] == '/') k++;
+        bool last = k >= rest.size();
+        i = j;
+        if (c == ".") continue;
+        if (c == "..") {
+            size_t s = done.rfind('/');
+            done.resize(s == std::string::npos ? 0 : s);
+            continue;
+        }
+        std::string cand = done + "/" + c;
+        if (last && !follow_last) { done = cand; break; }
+        if (lstat((g_rootfs + cand).c_str(), &st) != 0) {
+            phys = cand + rest.substr(j);
+            return false;
+        }
+        if (S_ISLNK(st.st_mode)) {
+            char t[PATH_MAX];
+            ssize_t n = readlink((g_rootfs + cand).c_str(), t, sizeof t - 1);
+            if (n <= 0 || ++hops > 40) { phys = cand + rest.substr(j); return false; }
+            t[n] = 0;
+            if (t[0] == '/') { via_abs = true; rest = std::string(t) + rest.substr(j); }
+            else rest = done + "/" + t + rest.substr(j);
+            done.clear();
+            i = 0;
+            continue;
+        }
+        done = cand;
+    }
+    phys = done.empty() ? "/" : done;
+    return true;
+}
+
+std::string resolve_guest_path(const char* path, bool follow_last) {
     if (const char* shim = thunk_lib_redirect(path)) return shim;
     if (!path || path[0] != '/' || g_rootfs.empty()) return path ? path : "";
-    std::string p = g_rootfs + path;
+    std::string gp = path;
+    while (gp.size() > 1 && gp.back() == '/') gp.pop_back();
+    size_t sl = gp.rfind('/');
+    std::string dir = gp.substr(0, sl ? sl : 1), name = gp.substr(sl + 1);
     struct stat st;
-    if (lstat(p.c_str(), &st) == 0) return p;
-    return path;
+    if (name.empty() || name == "." || name == "..") {
+        std::string p = g_rootfs + path;
+        return lstat(p.c_str(), &st) == 0 ? p : std::string(path);
+    }
+    // the parent directory, resolved (cached)
+    DirEntry d;
+    bool hit;
+    {
+        std::lock_guard<std::mutex> lk(g_dir_lock);
+        auto it = g_dir_cache.find(dir);
+        hit = it != g_dir_cache.end();
+        if (hit) d = it->second;
+    }
+    if (!hit) {
+        if (!walk_guest(dir, true, d.phys, d.via_abs))   // missing in the rootfs: the host's, unless
+            return d.via_abs ? g_rootfs + d.phys + "/" + name : std::string(path);   // a link led here
+        std::lock_guard<std::mutex> lk(g_dir_lock);
+        if (g_dir_cache.size() > 4096) g_dir_cache.clear();
+        g_dir_cache[dir] = d;
+    }
+    std::string full = (d.phys == "/" ? "" : d.phys) + "/" + name;
+    if (lstat((g_rootfs + full).c_str(), &st) != 0) return d.via_abs ? g_rootfs + full : std::string(path);
+    if (follow_last && S_ISLNK(st.st_mode)) {
+        std::string phys;
+        bool abs = false;
+        walk_guest(full, true, phys, abs);
+        if (abs) return g_rootfs + phys;   // relative links: the kernel follows them correctly
+    }
+    return g_rootfs + full;
 }
 
 // HWCAP bits (arch/arm64/include/uapi/asm/hwcap.h)
