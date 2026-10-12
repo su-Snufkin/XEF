@@ -964,28 +964,37 @@ static QuickFlags quick_flags(u32 i, GuestAddr pc, GuestAddr* t1, GuestAddr* t2)
     return Q_UNKNOWN;
 }
 
-static bool nzcv_live_slow(GuestAddr pc, int depth, int budget = 24);
-static bool nzcv_live_fast(GuestAddr pc, int depth);
-
-// Returns true if NZCV may be read at `pc` before being overwritten.
-bool nzcv_live_at(GuestAddr pc, int depth) {
-    // XEF_CHECK_NZCV=1: debugging aid, compares the fast classification with the translator's
-    static const bool check = getenv("XEF_CHECK_NZCV") != nullptr;
-    bool r = nzcv_live_fast(pc, depth);
-    if (check && r != nzcv_live_slow(pc, depth)) {
-        fatal("nzcv lookahead mismatch at %#lx (fast says %s): %08x %08x %08x %08x", (unsigned long)pc,
-              r ? "live" : "dead", ((const u32*)pc)[0], ((const u32*)pc)[1], ((const u32*)pc)[2], ((const u32*)pc)[3]);
+// The translator's view of one instruction, in the same terms (Q_READ: NZCV is live, Q_WRITE: dead).
+static QuickFlags slow_flags(GuestAddr pc, GuestAddr* t1, GuestAddr* t2) {
+    static thread_local ir::Block* scratch = new ir::Block();
+    scratch->clear(pc);
+    Translator tr(*scratch);
+    tr.step(pc, *(const u32*)pc);
+    bool reads = false, writes = false;
+    const Inst* term = nullptr;
+    for (int v = 1; v < scratch->n; v++) {
+        const Inst& in = scratch->insts[v];
+        if (in.op == Op::GetFlags) reads = true;
+        if (in.op == Op::SetFlags) writes = true;
+        if (is_terminator(in.op)) term = &in;
     }
-    return r;
+    if (reads) return Q_READ;
+    if (writes) return Q_WRITE;
+    if (!term) return Q_NONE;
+    switch (term->op) {
+    case Op::ExitJump: *t1 = term->imm; return Q_B;
+    case Op::ExitCbz: case Op::ExitTbz: *t1 = term->imm; *t2 = term->imm2; return Q_CB;
+    default: return abi_kills_flags(term->op) ? Q_WRITE : Q_READ;  // indirect branches, syscalls: conservative
+    }
 }
 
-static bool nzcv_live_fast(GuestAddr pc, int depth) {
+static bool nzcv_walk(GuestAddr pc, int depth, bool fast) {
     for (int i = 0; i < 24; i++) {
         if (!guest_readable(pc)) return true;
-        GuestAddr t1 = 0, t2 = 0;
-        QuickFlags q = quick_flags(*(const u32*)pc, pc, &t1, &t2);
-        if (q == Q_UNKNOWN) return nzcv_live_slow(pc, depth, 24 - i);   // continues from this instruction
         if (tls_peek) tls_peek->add(pc, pc + 4);
+        GuestAddr t1 = 0, t2 = 0;
+        QuickFlags q = fast ? quick_flags(*(const u32*)pc, pc, &t1, &t2) : Q_UNKNOWN;
+        if (q == Q_UNKNOWN) q = slow_flags(pc, &t1, &t2);
         switch (q) {
         case Q_READ: return true;
         case Q_WRITE: return false;
@@ -994,7 +1003,7 @@ static bool nzcv_live_fast(GuestAddr pc, int depth) {
         case Q_RET: return !abi_kills_flags(Op::ExitRet);
         case Q_CB:
             if (depth >= 2) return true;
-            return nzcv_live_fast(t1, depth + 1) || nzcv_live_fast(t2, depth + 1);
+            return nzcv_walk(t1, depth + 1, fast) || nzcv_walk(t2, depth + 1, fast);
         default: break;
         }
         pc += 4;
@@ -1002,39 +1011,15 @@ static bool nzcv_live_fast(GuestAddr pc, int depth) {
     return true;
 }
 
-static bool nzcv_live_slow(GuestAddr pc, int depth, int budget) {
-    static thread_local ir::Block* scratch = new ir::Block();
-    for (int i = 0; i < budget; i++) {
-        if (!guest_readable(pc)) return true;
-        if (tls_peek) tls_peek->add(pc, pc + 4);
-        scratch->clear(pc);
-        Translator tr(*scratch);
-        tr.step(pc, *(const u32*)pc);
-        bool reads = false, writes = false;
-        const Inst* term = nullptr;
-        for (int v = 1; v < scratch->n; v++) {
-            const Inst& in = scratch->insts[v];
-            if (in.op == Op::GetFlags) reads = true;
-            if (in.op == Op::SetFlags) writes = true;
-            if (is_terminator(in.op)) term = &in;
-        }
-        if (reads) return true;
-        if (writes) return false;
-        if (term) {
-            switch (term->op) {
-            case Op::ExitJump: pc = term->imm; continue;
-            case Op::ExitCbz: case Op::ExitTbz: {
-                if (depth >= 2) return true;
-                // read both targets first: the recursion reuses `scratch`, which `term` points into
-                GuestAddr t1 = term->imm, t2 = term->imm2;
-                return nzcv_live_slow(t1, depth + 1) || nzcv_live_slow(t2, depth + 1);
-            }
-            default: return !abi_kills_flags(term->op);  // indirect branches, syscalls: conservative
-            }
-        }
-        pc += 4;
-    }
-    return true;
+// Returns true if NZCV may be read at `pc` before being overwritten.
+bool nzcv_live_at(GuestAddr pc, int depth) {
+    // XEF_CHECK_NZCV=1: debugging aid, compares the fast classification with the translator's
+    static const bool check = getenv("XEF_CHECK_NZCV") != nullptr;
+    bool r = nzcv_walk(pc, depth, true);
+    if (check && r != nzcv_walk(pc, depth, false))
+        fatal("nzcv lookahead mismatch at %#lx (fast says %s): %08x %08x %08x %08x", (unsigned long)pc,
+              r ? "live" : "dead", ((const u32*)pc)[0], ((const u32*)pc)[1], ((const u32*)pc)[2], ((const u32*)pc)[3]);
+    return r;
 }
 
 static void compute_flags_liveness(ir::Block& blk) {
