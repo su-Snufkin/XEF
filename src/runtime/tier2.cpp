@@ -170,19 +170,28 @@ static bool compile_region(GuestAddr head) {
     int nfree = 0;
     RegionXfer xfer[16];
     int nxfer = 0;
-    int order[32], no = 0;
-    for (int g = 0; g < 32; g++) if (!regmap::mapped(g) && uses[g] > 0) order[no++] = g;
-    std::sort(order, order + no, [&](int a, int b) { return uses[a] > uses[b]; });
-    // displace only as many canonical registers as needed (+2 extra temporaries);
-    // callee-saved hosts first (no save/restore around helper calls)
+    // The region keeps its most-used guest registers in host registers: canonical ones that are
+    // used less are displaced (to CpuState, via the entry/exit transfers) in favour of hot ones
+    // that normally live in memory. Ties keep the canonical mapping (no transfer cost).
     static const Reg pref[] = {RDI, RSI, RDX, R10, R8, R9, RBX, RBP, R12, R13, R14};
-    int want = 16;
+    constexpr int kHosts = sizeof pref / sizeof pref[0];
+    int cand[32], nc = 0;
+    for (int g = 0; g < 32; g++) if (uses[g] > 0) cand[nc++] = g;
+    std::sort(cand, cand + nc, [&](int a, int b) {
+        if (uses[a] != uses[b]) return uses[a] > uses[b];
+        return regmap::mapped(a) && !regmap::mapped(b);
+    });
+    bool in_top[32] = {};
+    for (int i = 0; i < nc && i < kHosts; i++) in_top[cand[i]] = true;
     for (Reg h : pref) {
-        if (nfree >= want) break;
         int gc = -1;
         for (int g = 0; g < 32; g++) if (regmap::host(g) == h) gc = g;
-        if (gc >= 0 && uses[gc] == 0) { freed[nfree++] = h; map[gc] = NOREG; }
+        if (gc >= 0 && in_top[gc]) continue;              // stays where it is
+        freed[nfree++] = h;
+        if (gc >= 0) map[gc] = NOREG;
     }
+    int order[32], no = 0;                                 // hot guests without a host register yet
+    for (int i = 0; i < nc && i < kHosts; i++) if (map[cand[i]] == NOREG) order[no++] = cand[i];
     Reg temps[12] = {RAX, RCX, R11};
     int ntemps = 3;
     for (int i = 0; i < nfree; i++) {
