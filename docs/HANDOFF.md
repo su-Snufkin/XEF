@@ -69,8 +69,8 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 
 ## Następne kroki (priorytet)
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
-   znalezione bloki; testy Pythona: 84/93 OK, pozostałe asyncio/ssl do ponownego sprawdzenia po
-   naprawie slotów spill (test_socket: tylko VSOCK — środowisko).
+   znalezione bloki; testy Pythona (w tym asyncio, ssl) przechodzą po naprawie slotów spill
+   i dostarczania sygnałów (test_socket: tylko VSOCK — środowisko).
 1. Wydajność gier: przypinanie rejestrów V do XMM w regionach tier 2 (shadery llvmpipe to gorące
    pętle NEON), mniej przeładowań stałych wektorowych, regiony obejmujące BL.
    Odroczone zapisy rejestrów V (dziś VSet przed każdym dostępem do pamięci jest zachowywany dla
