@@ -28,6 +28,13 @@ EGL (X11 platform) and GLES go through the same shim (`libEGL.so.1`, `libGLESv2.
 `libGLESv1_CM.so.1` are redirected too): eglinfo, eglgears_x11, and WebGL in WebKitGTK (22 → 41
 FPS) run on the host (`docs/screenshots/hostgl-egl.png`).
 
+Vulkan: `libvulkan.so.1` is redirected to a second shim (`build/thunks/libvulkan.so.1`, ~630
+entry points from `vulkan_core.h`, Xlib and XCB WSI). Allocation callbacks are dropped (NULL),
+debug messengers are faked in the guest and stripped from `vkCreateInstance`'s pNext chain,
+`VkXlibSurfaceCreateInfoKHR::dpy` / `VkXcbSurfaceCreateInfoKHR::connection` are swapped for host
+connections, and `vkGet*ProcAddr` hand out the shim's stubs for functions the host provides.
+vulkaninfo and vkcube run on the host's lavapipe (`docs/screenshots/vkcube-hostvk.png`).
+
 Limits: callbacks from the host into guest code (`glDebugMessageCallback`) are dropped; the
 GBM/Wayland EGL platforms are not supported; X errors on the host connection are ignored instead
 of reaching the guest's handler.

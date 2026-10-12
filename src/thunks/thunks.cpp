@@ -46,6 +46,13 @@ void* g_libgl;
 void* g_libx11;
 void* g_libegl;
 void* (*g_eglproc)(const char*);
+// Vulkan: the host loader, and the last instance / device for extension entry points
+void* g_libvk;
+void* (*g_vkGetInstanceProcAddr)(void*, const char*);
+void* (*g_vkGetDeviceProcAddr)(void*, const char*);
+void* g_vk_instance;
+void* g_vk_device;
+void* g_xcb_conn;
 void* (*g_getproc)(const unsigned char*);
 void* (*g_XOpenDisplay)(const char*);
 char* (*g_XDisplayString)(void*);
@@ -85,6 +92,17 @@ void* resolve(int id) {
     const char* name = kTable[id].name;
     void* f = nullptr;
     if (!strncmp(name, "xef_host_", 9)) f = dlsym(g_libx11, name + 9);
+    else if (!strncmp(name, "vk", 2)) {
+        if (!g_libvk) {
+            g_libvk = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_GLOBAL);
+            if (!g_libvk) fatal("--host-gl: cannot load the host libvulkan.so.1: %s", dlerror());
+            g_vkGetInstanceProcAddr = (void* (*)(void*, const char*))dlsym(g_libvk, "vkGetInstanceProcAddr");
+            g_vkGetDeviceProcAddr = (void* (*)(void*, const char*))dlsym(g_libvk, "vkGetDeviceProcAddr");
+        }
+        f = dlsym(g_libvk, name);
+        if (!f && g_vk_device) f = g_vkGetDeviceProcAddr(g_vk_device, name);
+        if (!f && g_vkGetInstanceProcAddr) f = g_vkGetInstanceProcAddr(g_vk_instance, name);
+    }
     else if (!strncmp(name, "egl", 3)) {
         if (!g_libegl) fatal("--host-gl: the host has no libEGL.so.1 (needed for %s)", name);
         f = dlsym(g_libegl, name);
@@ -111,6 +129,34 @@ void* host_display(void* guest) {
     return h;
 }
 
+void* host_xcb() {
+    std::lock_guard<std::mutex> lk(g_lock);
+    if (g_xcb_conn) return g_xcb_conn;
+    void* lib = dlopen("libxcb.so.1", RTLD_NOW | RTLD_GLOBAL);
+    auto conn = lib ? (void* (*)(const char*, int*))dlsym(lib, "xcb_connect") : nullptr;
+    if (!conn) fatal("--host-gl: cannot load the host libxcb.so.1");
+    g_xcb_conn = conn(nullptr, nullptr);   // $DISPLAY: the same server as the guest's
+    return g_xcb_conn;
+}
+
+// vkCreateInstance: debug callbacks in the pNext chain point at guest code; unlink them for the call
+struct VkChainEdit { u64* link; u64 node; };
+int vk_strip_debug(u64 create_info, VkChainEdit* edits, int max) {
+    int n = 0;
+    u64* link = (u64*)(create_info + 8);   // VkInstanceCreateInfo::pNext
+    while (*link && n < max) {
+        u64 node = *link;
+        u32 stype = *(u32*)node;
+        if (stype == 1000128004u || stype == 1000011000u) {   // DEBUG_UTILS_MESSENGER / DEBUG_REPORT_CALLBACK
+            edits[n++] = {link, node};
+            *link = *(u64*)(node + 8);
+            continue;
+        }
+        link = (u64*)(node + 8);
+    }
+    return n;
+}
+
 }  // namespace
 
 // --host-gl: the guest's GL libraries are replaced by the thunk shim (built next to the xef binary).
@@ -122,8 +168,9 @@ const char* thunk_lib_redirect(const char* path) {
                                         "libGLESv2.so.2", "libGLESv1_CM.so.1", "libEGL.so", "libGLESv2.so"};
     bool match = false;
     for (const char* l : kLibs) match |= !strcmp(b, l);
-    if (!match) return nullptr;
-    static std::string shim;
+    bool vk = !strcmp(b, "libvulkan.so.1") || !strcmp(b, "libvulkan.so");
+    if (!match && !vk) return nullptr;
+    static std::string shim, vkshim;
     static std::once_flag once;
     std::call_once(once, [] {
         char exe[4096];
@@ -133,9 +180,10 @@ const char* thunk_lib_redirect(const char* path) {
         std::string dir(exe);
         dir.resize(dir.rfind('/'));
         shim = dir + "/thunks/libGL.so.1";
+        vkshim = dir + "/thunks/libvulkan.so.1";
         if (access(shim.c_str(), R_OK) != 0) fatal("--host-gl: guest shim %s not built (tools/build_thunks.sh)", shim.c_str());
     });
-    return shim.c_str();
+    return vk ? vkshim.c_str() : shim.c_str();
 }
 
 void thunk_dispatch(CpuState* st) {
@@ -173,6 +221,8 @@ void thunk_dispatch(CpuState* st) {
             case 'S': v = (u16)v; break;
             case 'i': v = (u32)v; break;
             case 'D': v = (u64)host_display((void*)v); break;
+            case 'X': v = (u64)host_xcb(); break;        // the guest's xcb_connection_t -> the host's
+            case 'A': v = 0; break;                      // VkAllocationCallbacks: guest functions, dropped
             default: break;
             }
         }
@@ -180,9 +230,20 @@ void thunk_dispatch(CpuState* st) {
         else if (ns < 32) stk[ns++] = v;
         else fatal("host thunk %s: too many arguments", e.name);
     }
+    // Vulkan structures that carry host-incompatible pointers: patched for the call, restored after
+    u64 saved = 0, *patched = nullptr;
+    VkChainEdit edits[8];
+    int nedits = 0;
+    if (e.flags & 16) { patched = (u64*)(st->x[1] + 24); saved = *patched; *patched = (u64)host_display((void*)saved); }
+    if (e.flags & 32) { patched = (u64*)(st->x[1] + 24); saved = *patched; *patched = (u64)host_xcb(); }
+    if (e.flags & 64) nedits = vk_strip_debug(st->x[0], edits, 8);
     u64 xmm0 = 0;
     static int trace = getenv("XEF_TRACE_THUNKS") ? 1 : 0;
     u64 r = xef_call_sysv(fn, ir, fr, stk, (u64)ns, &xmm0);
+    if (patched) *patched = saved;
+    while (nedits > 0) { nedits--; *edits[nedits].link = edits[nedits].node; }
+    if ((e.flags & 64) && (i32)r == 0) g_vk_instance = *(void**)st->x[2];
+    if ((e.flags & 128) && (i32)r == 0) g_vk_device = *(void**)st->x[3];
     if (trace)
         log_msg("thunk %s(%#lx, %#lx, %#lx, %#lx) = %#lx", e.name, (unsigned long)ir[0], (unsigned long)ir[1],
                 (unsigned long)ir[2], (unsigned long)ir[3], (unsigned long)r);
