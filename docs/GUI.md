@@ -26,8 +26,8 @@ Neverball, Extreme Tux Racer, OpenArena, Minetest, Warzone 2100 and glxgears all
 `docs/screenshots/blender-hostgl.png`), Stellarium 24.4 (Qt 6, 13 FPS:
 `docs/screenshots/stellarium-hostgl.png`) and Godot 3.5 — the editor and a GLES3 3D scene with
 shadows at 28 FPS, where the time goes to the host's llvmpipe, not to translated code
-(`docs/screenshots/godot3-hostgl.png`). Red Eclipse (GL 4.5 core) and Trigger Rally reach their
-menus too (`docs/screenshots/redeclipse-hostgl.png`, `trigger-rally-hostgl.png`).
+(`docs/screenshots/godot3-hostgl.png`). Red Eclipse (GL 4.5 core) reaches its menu and Trigger
+Rally races (driven with xdotool) (`docs/screenshots/redeclipse-hostgl.png`, `trigger-rally-hostgl.png`).
 
 EGL (X11 platform) and GLES go through the same shim (`libEGL.so.1`, `libGLESv2.so.2`,
 `libGLESv1_CM.so.1` are redirected too): eglinfo, eglgears_x11, and WebGL in WebKitGTK (22 → 41
