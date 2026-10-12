@@ -14,4 +14,7 @@ check() {  # name expected
 clang --target=aarch64-linux-gnu --sysroot=$S -fuse-ld=lld -O2 $ROOT/tests/gui/t_gldebug.c $L/libEGL.so.1 $L/libGL.so.1 \
   -Wl,--allow-shlib-undefined -Wl,-rpath-link,$L -o $OUT/t_gldebug
 check t_gldebug "debug callback: calls>0=1 type=0x824c user ok=1"
+clang --target=aarch64-linux-gnu --sysroot=$S -fuse-ld=lld -O2 $ROOT/tests/gui/t_procaddr.c \
+  -Wl,--allow-shlib-undefined -Wl,-rpath-link,$L -o $OUT/t_procaddr
+check t_procaddr "procaddr: 7/7 self=1 egl=1"
 echo "gui tests: $pass passed, $fail failed"

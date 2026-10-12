@@ -22,7 +22,8 @@ with AVX2 here, or the GPU driver on a real machine.
 | SuperTuxKart, Lighthouse race | 2.2 FPS | 9.4 FPS | 7.4 FPS |
 
 Neverball, Extreme Tux Racer, OpenArena, Minetest, Warzone 2100 and glxgears all run with
-`--host-gl` (`docs/screenshots/hostgl-games.png`).
+`--host-gl` (`docs/screenshots/hostgl-games.png`), and so does Blender 4.0 (libepoxy, GL 4.5 core:
+`docs/screenshots/blender-hostgl.png`).
 
 EGL (X11 platform) and GLES go through the same shim (`libEGL.so.1`, `libGLESv2.so.2`,
 `libGLESv1_CM.so.1` are redirected too): eglinfo, eglgears_x11, and WebGL in WebKitGTK (22 → 41
@@ -35,7 +36,8 @@ debug messengers are faked in the guest and stripped from `vkCreateInstance`'s p
 connections, and `vkGet*ProcAddr` hand out the shim's stubs for functions the host provides.
 vulkaninfo and vkcube run on the host's lavapipe (`docs/screenshots/vkcube-hostvk.png`).
 
-Limits: callbacks from the host into guest code (`glDebugMessageCallback`) are dropped; the
+Callbacks from the host into guest code (`glDebugMessageCallback`) run the guest function on the
+calling guest thread (nested JIT run, return via `hlt #0x5847`). Limits: the
 GBM/Wayland EGL platforms are not supported; X errors on the host connection are ignored instead
 of reaching the guest's handler.
 

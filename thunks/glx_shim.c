@@ -67,6 +67,11 @@ void** glXGetFBConfigs(void* dpy, int screen, int* n) {
 }
 
 // ---- glXGetProcAddress: our own stubs, by name
+void* glXGetProcAddress(const unsigned char* name);
+void* eglGetDisplay(void* native);
+void* eglGetPlatformDisplay(unsigned platform, void* native, const long* attribs);
+void* eglGetPlatformDisplayEXT(unsigned platform, void* native, const int* attribs);
+void* eglGetProcAddress(const char* name);
 #define DECL(n) void n(void);
 typedef struct { const char* name; void* fn; } Proc;
 #include "gl_decls.inc"
@@ -80,11 +85,22 @@ void* glXGetProcAddressARB(const unsigned char* name) {
     if (!name) return 0;
     const Proc* p = bsearch(name, kProcs, sizeof kProcs / sizeof kProcs[0], sizeof kProcs[0], cmp);
     if (p) return p->fn;
-    if (!strcmp((const char*)name, "glXGetProcAddress")) return (void*)glXGetProcAddressARB;
-    if (!strcmp((const char*)name, "glXChooseVisual")) return (void*)glXChooseVisual;
-    if (!strcmp((const char*)name, "glXChooseFBConfig")) return (void*)glXChooseFBConfig;
-    if (!strcmp((const char*)name, "glXGetVisualFromFBConfig")) return (void*)glXGetVisualFromFBConfig;
-    if (!strcmp((const char*)name, "glXGetFBConfigs")) return (void*)glXGetFBConfigs;
+    static const Proc kShim[] = {
+        {"eglGetDisplay", (void*)eglGetDisplay},
+        {"eglGetPlatformDisplay", (void*)eglGetPlatformDisplay},
+        {"eglGetPlatformDisplayEXT", (void*)eglGetPlatformDisplayEXT},
+        {"eglGetProcAddress", (void*)eglGetProcAddress},
+        {"glXChooseFBConfig", (void*)glXChooseFBConfig},
+        {"glXChooseFBConfigSGIX", (void*)glXChooseFBConfigSGIX},
+        {"glXChooseVisual", (void*)glXChooseVisual},
+        {"glXGetFBConfigs", (void*)glXGetFBConfigs},
+        {"glXGetProcAddress", (void*)glXGetProcAddress},
+        {"glXGetProcAddressARB", (void*)glXGetProcAddressARB},
+        {"glXGetVisualFromFBConfig", (void*)glXGetVisualFromFBConfig},
+        {"glXGetVisualFromFBConfigSGIX", (void*)glXGetVisualFromFBConfigSGIX},
+    };
+    for (unsigned i = 0; i < sizeof kShim / sizeof kShim[0]; i++)
+        if (!strcmp((const char*)name, kShim[i].name)) return kShim[i].fn;
     return 0;
 }
 void* glXGetProcAddress(const unsigned char* name) { return glXGetProcAddressARB(name); }
@@ -109,11 +125,4 @@ void* eglGetPlatformDisplayEXT(unsigned platform, void* native, const int* attri
     if (platform == 0x31D5 && native) g_egl_xdpy = native;
     return xef_raw_eglGetPlatformDisplayEXT(platform, native, attribs);
 }
-void* eglGetProcAddress(const char* name) {
-    if (!name) return 0;
-    if (!strcmp(name, "eglGetDisplay")) return (void*)eglGetDisplay;
-    if (!strcmp(name, "eglGetPlatformDisplay")) return (void*)eglGetPlatformDisplay;
-    if (!strcmp(name, "eglGetPlatformDisplayEXT")) return (void*)eglGetPlatformDisplayEXT;
-    if (!strcmp(name, "eglGetProcAddress")) return (void*)eglGetProcAddress;
-    return glXGetProcAddressARB((const unsigned char*)name);
-}
+void* eglGetProcAddress(const char* name) { return glXGetProcAddressARB((const unsigned char*)name); }
