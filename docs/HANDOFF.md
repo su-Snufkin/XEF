@@ -43,6 +43,8 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   MegaGlest, Blender 4.0, Godot 3.5, Stellarium, WebKitGTK (WebGL), vkcube/vkmark.
 - **`--host-gl`** (thunki): GL/GLX/EGL/GLES/Vulkan gościa → natywne biblioteki hosta (src/thunks,
   thunks/, tools/gen_glthunks.py). Wywołania zwrotne host→gość przez `guest_call` (hlt #0x5847).
+- Aplikacje: LibreOffice Writer, Krita, Inkscape, OpenSCAD, mpv, Blender, Godot, Stellarium (docs/GUI.md).
+  `XEF_PROFILE_AT=N` + `--profile` daje raport po N s (opcje XEF są przekazywane przez execve).
 - Python 3.12 z rootfs przechodzi testy stdlib (pakiet `libpython3.12-testsuite`; uruchamiaj
   `build/xef -L R /usr/bin/python3 -m test ...` — ścieżką gościa, inaczej sys.prefix wskazuje hosta).
 
@@ -60,7 +62,7 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   w asm jako test w tests/guest/. Tak znalezione: dzielenie przez stałą 64-bit (pożyczony rejestr),
   cset po remat flag, zwolnienie operandów flag w terminatorze.
 - **`XEF_VERIFY=lo-hi`** (src/runtime/verify.cpp): bloki z zakresu najpierw w interpreterze IR
-  (skalarne; bloki z wektorami/FP/atomikami pomijane), potem JIT bez linkowania; raportuje różnice
+  (skalarne i NEON/FP przez `vec_ref`; atomiki/helpery/rejestry systemowe pomijane; tier 2 wyłączony), potem JIT bez linkowania; raportuje różnice
   rejestrów/NZCV/pc/zapisów. Najszybsza droga do błędnego bloku — tak znaleziony błąd slotów spill
   (X25519/TLS). `XEF_SPLIT` przyjmuje listę zakresów (`0-a,b-7fffffffffff` = dziel wszystko poza [a,b)).
 - `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64); fuzzer go ustawia.
@@ -88,6 +90,11 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   fork zamykające „wszystko” inaczej podmieniało je na pliki gościa.
 - Odzyskiwanie slotów spill musi odbudować mapę z żywych wartości: martwa wartość może mieć „swój” slot
   zajęty już przez żywą (zepsute TLS/ECDHE).
+- Sygnał złapany, gdy wątek jest w runtime (poza kodem JIT), jest tylko oznaczany: dyspozytor musi go
+  dostarczyć przed ponownym wejściem do JIT (inaczej połączona gorąca pętla kręci się w nieskończoność).
+- FPCR (RMode, FZ) jest odwzorowane na MXCSR hosta przy MSR FPCR i sigreturn (fesetround, CGAL).
+- `pkill -f build/xef` zabija też powłokę, której linia poleceń to zawiera — używaj `pkill -x xef`.
+- Gdy GUI nagle „nie ma X11” (SDL: x11 not available), sprawdź czy Xvfb :1 żyje (`xdpyinfo`).
 - Próbkowanie używa sygnału RT 64 (`kSampleSig`), SIGPROF należy do gościa.
 - Remat flag w terminatorach nie może używać RAX (cel skoku) — RAX jest przypinany w Exit*Indirect/Ret.
 - `CLONE_PARENT_SETTID` musi być zapisany zanim dziecko ruszy (glibc: ptid == ctid).
