@@ -87,10 +87,18 @@ void T1::evict_x(int x) {
     if (vi.vhome >= 0) {
         vi.k = L_VMEM;
     } else {
-        int s = -1;
-        for (int i = 0; i < 16; i++) if (!(vspill_used_ & (1u << i))) { s = i; break; }
-        if (s < 0) fatal("codegen: out of vector spill slots");
-        vspill_used_ |= 1u << s;
+        auto free_slot = [&]() {
+            for (int i = 0; i < 64; i++) if (!(vspill_used_ & (1ull << i))) return i;
+            return -1;
+        };
+        int s = free_slot();
+        if (s < 0) {   // reclaim slots of dead values whose last use did not release them
+            for (int v = 1; v < cur_; v++)
+                if (vi_[v].k == L_VSPILL && vi_[v].last < cur_) vspill_used_ &= ~(1ull << vi_[v].slot);
+            s = free_slot();
+        }
+        if (s < 0) fatal("codegen: out of vector spill slots (block %#lx, ir %d)", (unsigned long)b_.start, cur_);
+        vspill_used_ |= 1ull << s;
         as_.movdqu_store(mem(R15, XEF_ST(vspill) + s * 16), (Xmm)x);
         vi.k = L_VSPILL;
         vi.slot = (i8)s;
@@ -121,7 +129,7 @@ Xmm T1::xreg(Val v) {
     if (x.k == L_VMEM) as_.movdqu_load(t, mem(R15, st_v(x.vhome)));
     else if (x.k == L_VSPILL) {
         as_.movdqu_load(t, mem(R15, XEF_ST(vspill) + x.slot * 16));
-        vspill_used_ &= ~(1u << x.slot);
+        vspill_used_ &= ~(1ull << x.slot);
     } else fatal("codegen: vector value %%%d has no location (%s)", r, op_name(in.op));
     x.k = L_XMM;
     x.reg = t;

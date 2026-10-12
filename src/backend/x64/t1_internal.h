@@ -94,7 +94,7 @@ private:
     struct ColdIbtc { Label l; };
     HostPcEntry pcmap_[1024];
     int npc_ = 0;
-    u32 vspill_used_ = 0;
+    u64 vspill_used_ = 0;   // CpuState::vspill slots in use
     struct ConstFix { u64 lo, hi; u8* field; };
     ConstFix consts_[256];
     int nconsts_ = 0;

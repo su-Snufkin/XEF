@@ -311,7 +311,7 @@ void T1::release_operands(const Inst& in) {
             if (x.k == L_REG && owner_[x.reg] == r) owner_[x.reg] = 0;
             if (x.k == L_XMM && xowner_[x.reg] == r) xowner_[x.reg] = 0;
             if (x.k == L_SPILL) spill_used_ &= ~(1u << x.slot);
-            if (x.k == L_VSPILL) vspill_used_ &= ~(1u << x.slot);
+            if (x.k == L_VSPILL) vspill_used_ &= ~(1ull << x.slot);
         }
     });
 }
