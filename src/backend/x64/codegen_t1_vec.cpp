@@ -41,6 +41,10 @@ constexpr SseOp PAVGB = P(0xE0), PAVGW = P(0xE3);
 constexpr SseOp PSHUFB = P38(0x00), PALIGNR = P3A(0x0F), PSHUFD = P(0x70);
 constexpr SseOp PBLENDW = P3A(0x0E), PSADBW = P(0xF6), PHADDW = P38(0x01), PHADDD = P38(0x02);
 constexpr SseOp PHMINPOSUW = P38(0x41);
+constexpr SseOp PACKUSWB = P(0x67), PACKSSWB = P(0x63), PACKSSDW = P(0x6B), PACKUSDW = P38(0x2B);
+constexpr SseOp PMULHRSW = P38(0x0B);
+constexpr SseOp VCVTPH2PS = P38(0x13), VCVTPS2PH = P3A(0x1D);          // F16C (VEX only)
+constexpr SseOp VPSLLVQ = {0x66, 2, 0x47, 1}, VPSRLVQ = {0x66, 2, 0x45, 1}; // AVX2
 constexpr SseOp PMOVZX[5] = {{}, P38(0x30), P38(0x33), {}, P38(0x35)};   // bw, wd, dq
 constexpr SseOp PMOVSX[5] = {{}, P38(0x20), P38(0x23), {}, P38(0x25)};
 constexpr SseOp INSERTPS = P3A(0x21), SHUFPS = {0, 1, 0xC6, 0};
@@ -1197,12 +1201,13 @@ void T1::emit_vop(Val v) {
         as_.xop(isMax ? PAND : POR, d, d, t);
         SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
         if (!nm) {
-            // NaN in either: result = a + b (propagates the NaN)
-            as_.xop(cmp, u, a, b, 3);                                     // unordered mask
-            as_.xop(scalar ? FPS(0x58, es) : FPV(0x58, es), t, a, b);
-            as_.xop(PAND, t, t, u);
-            as_.xop(PANDN, u, u, d);
-            as_.xop(POR, d, t, u);
+            // NaN in either operand must give a NaN. min: one of the two orders returns the NaN
+            // and OR keeps exponent/mantissa bits set, so it is already a NaN. max: OR in the
+            // unordered mask (all ones = a quiet NaN; NaN payloads may differ, see ARCHITECTURE.md).
+            if (isMax) {
+                as_.xop(cmp, u, a, b, 3);
+                as_.xop(POR, d, d, u);
+            }
         } else {
             // a NaN -> b ; b NaN -> a (quiet NaN semantics)
             as_.xop(cmp, u, a, a, 3);
@@ -1257,7 +1262,26 @@ void T1::emit_vop(Val v) {
     }
     case V_FRINT: {
         int rnd = (int)in.imm;
-        if (rnd == FR_TIEAWAY) return helper();
+        if (rnd == FR_TIEAWAY) {   // trunc(|x|) + (frac >= 0.5), sign restored (exact: no x + 0.5)
+            Xmm a = A();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            Xmm f = alloc_x(); xpinned_ |= 1 << f;
+            u64 absm = es == 8 ? 0x7fffffffffffffffull : 0x7fffffff7fffffffull;
+            u64 half = es == 8 ? 0x3fe0000000000000ull : 0x3f0000003f000000ull;
+            u64 one = es == 8 ? 0x3ff0000000000000ull : 0x3f8000003f800000ull;
+            as_.xop_m(PAND, t, a, vconst_mem(absm, absm));
+            if (scalar) as_.xop(ROUNDS(es), d, t, t, 3 | 8); else as_.xop1(ROUNDV(es), d, t, 3 | 8);
+            as_.xop(scalar ? FPS(0x5C, es) : FPV(0x5C, es), f, t, d);       // frac
+            as_.xop_m(FPV(0xC2, es), f, f, vconst_mem(half, half), 5);      // frac >= 0.5
+            as_.xop_m(PAND, f, f, vconst_mem(one, one));
+            as_.xop(scalar ? FPS(0x58, es) : FPV(0x58, es), d, d, f);
+            as_.xop_m(PANDN, t, t, vconst_mem(~0ull, ~0ull));               // t = ~|x| ...
+            as_.xop(PAND, t, t, a);                                         // ... & x = sign bit
+            as_.xop(POR, d, d, t);
+            finish(d);
+            return;
+        }
         int mode = rnd == FR_TIEEVEN ? 0 : rnd == FR_NEGINF ? 1 : rnd == FR_POSINF ? 2 : rnd == FR_ZERO ? 3 : 4;
         Xmm a = A();
         Xmm d = new_x(v);
@@ -1275,6 +1299,12 @@ void T1::emit_vop(Val v) {
         return;
     }
     case V_FCVTL: {
+        if (es == 4 && g_host.f16c && as_.avx) {   // half -> single
+            Xmm a = A();
+            Xmm d = new_x(v);
+            as_.xop1(VCVTPH2PS, d, a);
+            return;
+        }
         if (es != 8) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
@@ -1282,6 +1312,12 @@ void T1::emit_vop(Val v) {
         return;
     }
     case V_FCVTN: {
+        if (es == 4 && g_host.f16c && as_.avx) {   // single -> half (RNE), upper 64 bits zeroed
+            Xmm a = A();
+            Xmm d = new_x(v);
+            as_.xop1(VCVTPS2PH, a, d, 0);           // ModRM.reg = source, rm = destination
+            return;
+        }
         if (es != 8) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
@@ -1366,6 +1402,23 @@ void T1::emit_vop(Val v) {
         return;
     }
     case V_USHL: {
+        if (es == 8 && g_host.avx2 && as_.avx) {
+            // count = low byte (0..255 unsigned): 0..127 left, 128..255 = right by 256-count;
+            // counts >= 64 give 0 from vpsllvq/vpsrlvq, as on AArch64
+            Xmm a = A(), b = B();
+            Xmm d = new_x(v);
+            Xmm c = alloc_x(); xpinned_ |= 1 << c;
+            Xmm n = alloc_x(); xpinned_ |= 1 << n;
+            as_.xop_m(PAND, c, b, vconst_mem(0xff, 0xff));
+            as_.xop_m(PSUB[8], n, c, vconst_mem(0x100, 0x100));
+            as_.xop(PXOR, d, d, d);
+            as_.xop(PSUB[8], n, d, n);                                      // n = 256 - c
+            as_.xop(VPSLLVQ, d, a, c);
+            as_.xop(VPSRLVQ, n, a, n);
+            as_.xop(POR, d, d, n);
+            finish(d);
+            return;
+        }
         if (es != 4 || scalar || !g_host.avx2 || !as_.avx) return helper();
         // shift count = signed low byte of each lane; out-of-range counts give 0 (as on AArch64)
         Xmm a = A(), b = B();
@@ -1379,6 +1432,97 @@ void T1::emit_vop(Val v) {
         as_.xop({0x66, 2, 0x47, 0}, d, a, c);                               // vpsllvd
         as_.xop({0x66, 2, 0x45, 0}, n, a, n);                               // vpsrlvd
         as_.xop(POR, d, d, n);
+        finish(d);
+        return;
+    }
+    case V_SLI: case V_SRI: {   // shift and insert into the old destination (operand c)
+        int sh = (int)in.imm, eb = es * 8;
+        if (in.sub == V_SRI && sh >= eb) {   // nothing shifted in
+            Xmm c = C();
+            Xmm d = new_x(v);
+            as_.movaps(d, c);
+            finish(d);
+            return;
+        }
+        Xmm a = A(), c = C();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        u64 em = es == 8 ? ~0ull : (1ull << eb) - 1;
+        u64 m = in.sub == V_SLI ? (em << sh) & em : em >> sh;
+        int wes = es == 1 ? 2 : es;                                         // no byte shifts on x86
+        u8 opc = wes == 2 ? 0x71 : wes == 4 ? 0x72 : 0x73;
+        as_.xshift_imm(opc, in.sub == V_SLI ? 6 : 2, t, a, (u8)sh);
+        as_.xop_m(PAND, t, t, vconst_mem(rep(m, es), rep(m, es)));
+        as_.xop_m(PAND, d, c, vconst_mem(rep(~m & em, es), rep(~m & em, es)));
+        as_.xop(POR, d, d, t);
+        finish(d);
+        return;
+    }
+    case V_RSHRN: {   // rounding shift right narrow (wraps at the source width: carries are truncated anyway)
+        if (es == 8) return helper();
+        int sh = (int)in.imm, ws = es * 2;
+        Xmm a = A();
+        Xmm d = new_x(v);
+        u64 rnd = 1ull << (sh - 1);
+        as_.xop_m(PADD[ws], d, a, vconst_mem(rep(rnd, ws), rep(rnd, ws)));
+        u8 opc = ws == 2 ? 0x71 : ws == 4 ? 0x72 : 0x73;
+        as_.xshift_imm(opc, 2, d, d, (u8)sh);
+        if (es == 4) { as_.xop1(PSHUFD, d, d, 0x08); zero_upper(d, 8); return; }
+        u64 lo = es == 1 ? 0x0e0c0a0806040200ull : 0x0d0c090805040100ull;
+        as_.xop_m(PSHUFB, d, d, vconst_mem(lo, 0x8080808080808080ull));
+        return;
+    }
+    case V_SQRSHRN: case V_SQSHRN: {   // signed (rounding) shift right narrow, saturating
+        if (es > 2 || scalar) return helper();
+        int sh = (int)in.imm;
+        bool rnd = in.sub == V_SQRSHRN;
+        Xmm a = A();
+        Xmm d = new_x(v);
+        u8 opc = es == 1 ? 0x71 : 0x72;
+        as_.xshift_imm(opc, 4, d, a, (u8)sh);                               // arithmetic
+        if (rnd) {   // + bit (sh-1): no overflow since the shifted value has sh spare bits
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            as_.xshift_imm(opc, 2, t, a, (u8)(sh - 1));
+            u64 one = es == 1 ? 0x0001000100010001ull : 0x0000000100000001ull;
+            as_.xop_m(PAND, t, t, vconst_mem(one, one));
+            as_.xop(PADD[es * 2], d, d, t);
+        }
+        Xmm z = alloc_x(); xpinned_ |= 1 << z;
+        as_.xop(PXOR, z, z, z);
+        as_.xop(es == 1 ? PACKSSWB : PACKSSDW, d, d, z);
+        return;
+    }
+    case V_SQXTUN: {
+        if (es > 2 || scalar) return helper();
+        Xmm a = A();
+        Xmm d = new_x(v);
+        Xmm z = alloc_x(); xpinned_ |= 1 << z;
+        as_.xop(PXOR, z, z, z);
+        as_.xop(es == 1 ? PACKUSWB : PACKUSDW, d, a, z);
+        return;
+    }
+    case V_ADDHN: case V_SUBHN: {
+        if (es == 8) return helper();
+        int ws = es * 2;
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        as_.xop(in.sub == V_ADDHN ? PADD[ws] : PSUB[ws], d, a, b);
+        u8 opc = ws == 2 ? 0x71 : ws == 4 ? 0x72 : 0x73;
+        as_.xshift_imm(opc, 2, d, d, (u8)(es * 8));                         // high halves, zero-extended
+        if (es == 4) { as_.xop1(PSHUFD, d, d, 0x08); zero_upper(d, 8); return; }
+        Xmm z = alloc_x(); xpinned_ |= 1 << z;
+        as_.xop(PXOR, z, z, z);
+        as_.xop(es == 1 ? PACKUSWB : PACKUSDW, d, d, z);                    // values fit: no saturation
+        return;
+    }
+    case V_SQRDMULH: {
+        if (es != 2) return helper();
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        as_.xop(PMULHRSW, d, a, b);                                         // (a*b + 0x4000) >> 15
+        as_.xop_m(PCMPEQ[2], t, d, vconst_mem(0x8000800080008000ull, 0x8000800080008000ull));
+        as_.xop(PXOR, d, d, t);                                             // -32768*-32768 saturates
         finish(d);
         return;
     }

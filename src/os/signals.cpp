@@ -131,6 +131,19 @@ void signals_init() {
     sigaction(SIGTRAP, &tr, nullptr);
 }
 
+// --stats / --profile: report also when the program is interrupted (until the guest installs
+// its own handler for these signals)
+static void report_and_die(int sig) {
+    signals_flush_output();
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+void signals_report_on_interrupt() {
+    signal(SIGINT, report_and_die);
+    signal(SIGTERM, report_and_die);
+}
+
 void signals_flush_output() {
     if (g_opt.stats) stats_print();
     if (g_opt.profile) profile_report();

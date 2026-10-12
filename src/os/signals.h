@@ -12,6 +12,7 @@ u64 nzcv_to_eflags(u32 nzcv);
 
 void signals_init();
 void signals_flush_output();
+void signals_report_on_interrupt();
 i64 sig_rt_sigaction(CpuState* st, int sig, u64 act, u64 oact, u64 sigsetsize);
 i64 sig_rt_sigprocmask(CpuState* st, int how, u64 set, u64 oset, u64 sigsetsize);
 void sig_rt_sigreturn(CpuState* st);

@@ -79,9 +79,24 @@ void T1::analyze() {
     for (int v = 1; v < n; v++)
         if (I(v).op == Op::SetFlags) final_flags_ = fid(I(v).a);
     // backward: liveness, DCE, alias last-use propagation
+    // vset_later[g]: guest V register g is written again later in the block with nothing in
+    // between that reads its CpuState slot or may fault (a signal handler must see it)
+    bool vset_later[32] = {};
     for (int v = n - 1; v >= 1; v--) {
         const Inst& in = I(v);
         VI& x = vi_[v];
+        switch (in.op) {
+        case Op::VSet:
+            if (vset_later[in.aux & 31]) { x.dead = true; continue; }
+            vset_later[in.aux & 31] = true;
+            break;
+        case Op::VGet: vset_later[in.aux & 31] = false; break;
+        case Op::Load: case Op::Store: case Op::VLoad: case Op::VStore: case Op::LoadExcl: case Op::StoreExcl:
+        case Op::AtomicRMW: case Op::Cas: case Op::Helper:
+            memset(vset_later, 0, sizeof vset_later);
+            break;
+        default: break;
+        }
         if (!has_side_effects(in) && x.uses == 0 && in.op != Op::SetFlags) {
             // a flags value that is the final guest flags is live at exit
             if (!(live_out_ && in.ty == Type::Flags && fid(v) == final_flags_)) { x.dead = true; continue; }

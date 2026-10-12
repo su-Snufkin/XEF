@@ -110,6 +110,7 @@ int main(int argc, char** argv, char** envp) {
     st->pc = img.entry;
     st->eflags = 0x203;   // canonical NZCV=0000 -> CF=1
     if (g_opt.profile) profile_start();
+    if (g_opt.profile || g_opt.stats) signals_report_on_interrupt();
     if (getenv("XEF_NO_TIER2")) g_opt.tier2 = false;
     tier2_init(g_opt.tier2);
     cpu_loop(t);
