@@ -116,3 +116,11 @@ from `paplay` and Neverball's menu music arrive intact. Without a sound server u
 
 Without `ALSOFT_DRIVERS=null` OpenAL games spin on failing audio calls when no sound device
 exists (not an XEF issue).
+
+## Other runtimes
+
+- Python 3.12 from the rootfs passes its standard-library test suite (`libpython3.12-testsuite`;
+  run as `build/xef -L R /usr/bin/python3 -m test ...`), except VSOCK socket tests (no device).
+- OpenJDK 21 (HotSpot C1/C2 JIT on top of XEF, SIGSEGV-based null checks, threads): a mixed
+  benchmark (recursion, collections, streams, sorting, 10k NullPointerExceptions, 4 threads) runs
+  correctly in 1.6 s vs 0.4 s natively.
