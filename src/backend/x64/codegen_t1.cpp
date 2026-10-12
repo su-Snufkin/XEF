@@ -228,6 +228,7 @@ Reg T1::alloc_temp(Reg prefer) {
                 if (x.dead || x.last < cur_) continue;
                 bool untouched = x.k == L_NONE && v <= cur_ && I(v).op == Op::GetReg && I(v).aux == g;
                 if (untouched || (x.k == L_GREG && x.reg == r)) { x.k = L_GMEM; x.g = (u8)g; }
+                if (x.home == g) x.home = -1;   // evicting to "home" would now land in the temporary
             }
             return r;
         }
@@ -249,9 +250,11 @@ void T1::evict(Reg r) {
         int s = free_spill_slot();
         if (s < 0) {
             // slots of values whose last use did not release them (e.g. consumed through flag
-            // rematerialization) are reclaimed lazily
-            for (int v = 1; v < cur_; v++)
-                if (vi_[v].k == L_SPILL && vi_[v].last < cur_) spill_used_ &= ~(1u << vi_[v].slot);
+            // rematerialization) are reclaimed lazily: rebuild the map from the live spilled values
+            // (a dead value's stale slot may already belong to a live one)
+            spill_used_ = 0;
+            for (int v = 1; v < b_.n; v++)
+                if (vi_[v].k == L_SPILL && vi_[v].last >= cur_ && !vi_[v].dead) spill_used_ |= 1u << vi_[v].slot;
             s = free_spill_slot();
         }
         if (s < 0) fatal("codegen: out of spill slots (block %#lx, ir %d)", (unsigned long)b_.start, cur_);

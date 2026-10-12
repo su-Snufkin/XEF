@@ -1,6 +1,7 @@
 // XEF — translation driver and per-thread execution loop.
 #include "runtime/dispatch.h"
 #include "thunks/thunks.h"
+#include "runtime/verify.h"
 
 #include <sys/mman.h>
 #include <time.h>
@@ -54,11 +55,21 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     ir::Block& blk = *t->blk;
     a64::TranslateOpts topt;
     topt.max_insts = g_opt.max_block_insts;
-    {   // debugging aid: XEF_SPLIT=lo-hi translates blocks starting there one instruction at a time
-        static u64 lo = 1, hi = 0;
-        static bool init = [] { if (const char* e = getenv("XEF_SPLIT")) sscanf(e, "%lx-%lx", &lo, &hi); return true; }();
-        (void)init;
-        if (pc >= lo && pc < hi) topt.max_insts = 1;
+    {   // debugging aid: XEF_SPLIT=lo-hi[,lo-hi...] translates blocks starting there one
+        // instruction at a time (bisecting translation bugs)
+        static u64 rng[8][2];
+        static int nrng = [] {
+            int n = 0;
+            const char* e = getenv("XEF_SPLIT");
+            while (e && *e && n < 8) {
+                if (sscanf(e, "%lx-%lx", &rng[n][0], &rng[n][1]) == 2) n++;
+                e = strchr(e, ',');
+                if (e) e++;
+            }
+            return n;
+        }();
+        for (int i = 0; i < nrng; i++)
+            if (pc >= rng[i][0] && pc < rng[i][1]) topt.max_insts = 1;
     }
     if (!a64::guest_readable(pc)) {
         char lr[512];
@@ -107,7 +118,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     // link exits whose targets already exist
     for (int i = 0; i < out.nexits; i++) {
         ExitInfo* e = &meta->exits[i];
-        if (BlockMeta* tb = g_cache.lookup(e->target)) {
+        if (BlockMeta* tb = g_opt.trace ? nullptr : g_cache.lookup(e->target)) {
             link_exit(e, tb->code);
             e->next_in = tb->incoming;
             tb->incoming = e;
@@ -148,7 +159,9 @@ static void run_guest(ThreadCtx* t, bool nested) {
     IbtcEntry* ibtc = (IbtcEntry*)st->ibtc;
     u8* host = get_or_translate(t, st->pc);
     for (;;) {
+        bool vf = verify_wants(st->pc) && verify_before(t, st);
         enter(st, host);
+        if (vf) verify_after(st);
         switch (st->exit_reason) {
         case EXIT_LINK: {
             ExitInfo* e = (ExitInfo*)st->exit_info;

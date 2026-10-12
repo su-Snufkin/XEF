@@ -92,9 +92,11 @@ void T1::evict_x(int x) {
             return -1;
         };
         int s = free_slot();
-        if (s < 0) {   // reclaim slots of dead values whose last use did not release them
-            for (int v = 1; v < cur_; v++)
-                if (vi_[v].k == L_VSPILL && vi_[v].last < cur_) vspill_used_ &= ~(1ull << vi_[v].slot);
+        if (s < 0) {   // reclaim slots of dead values whose last use did not release them:
+            // rebuild from the live values (a dead value's stale slot may belong to a live one now)
+            vspill_used_ = 0;
+            for (int v = 1; v < b_.n; v++)
+                if (vi_[v].k == L_VSPILL && vi_[v].last >= cur_ && !vi_[v].dead) vspill_used_ |= 1ull << vi_[v].slot;
             s = free_slot();
         }
         if (s < 0) fatal("codegen: out of vector spill slots (block %#lx, ir %d)", (unsigned long)b_.start, cur_);

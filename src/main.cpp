@@ -14,6 +14,7 @@
 #include "os/thread.h"
 #include "profile/stats.h"
 #include "runtime/dispatch.h"
+#include "runtime/verify.h"
 #include "runtime/tier2.h"
 #include "thunks/thunks.h"
 
@@ -116,6 +117,7 @@ int main(int argc, char** argv, char** envp) {
     if (g_opt.profile) profile_start();
     if (g_opt.profile || g_opt.stats) signals_report_on_interrupt();
     if (getenv("XEF_NO_TIER2")) g_opt.tier2 = false;
+    if (verify_enabled()) { g_opt.trace = true; g_opt.tier2 = false; }   // one block per JIT entry
     tier2_init(g_opt.tier2);
     cpu_loop(t);
 }
