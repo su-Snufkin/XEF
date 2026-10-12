@@ -78,7 +78,7 @@ enum GuestNr {
 
 struct Pair { i16 g, h; };
 static const Pair kPass[] = {
-    {G_getcwd, SYS_getcwd}, {G_eventfd2, SYS_eventfd2}, {G_epoll_create1, SYS_epoll_create1}, {G_dup, SYS_dup},
+    {G_eventfd2, SYS_eventfd2}, {G_epoll_create1, SYS_epoll_create1}, {G_dup, SYS_dup},
     {G_dup3, SYS_dup3}, {G_inotify_init1, SYS_inotify_init1}, {27, SYS_inotify_add_watch},
     {28, SYS_inotify_rm_watch}, {G_ioctl, SYS_ioctl}, {G_flock, SYS_flock}, {G_mknodat, SYS_mknodat},
     {G_mkdirat, SYS_mkdirat}, {G_unlinkat, SYS_unlinkat}, {G_symlinkat, SYS_symlinkat}, {G_linkat, SYS_linkat},
@@ -127,7 +127,7 @@ static const Pair kPass[] = {
     {G_recvmmsg, SYS_recvmmsg}, {G_wait4, SYS_wait4}, {G_prlimit64, SYS_prlimit64}, {G_syncfs, SYS_syncfs},
     {G_sendmmsg, SYS_sendmmsg}, {G_renameat2, SYS_renameat2}, {G_getrandom, SYS_getrandom},
     {G_memfd_create, SYS_memfd_create}, {G_membarrier, SYS_membarrier},
-    {G_copy_file_range, SYS_copy_file_range}, {G_statx, SYS_statx}, {G_close_range, 436},
+    {G_copy_file_range, SYS_copy_file_range}, {G_close_range, 436},
     {G_faccessat2, 439}, {G_futex_waitv, 449}, {G_fchmodat2, 452},
     // identical ABI on both sides
     {5, SYS_setxattr}, {6, SYS_lsetxattr}, {7, SYS_fsetxattr}, {8, SYS_getxattr}, {9, SYS_lgetxattr},
@@ -162,9 +162,20 @@ static std::string g_exe_realpath;
 
 std::string guest_exe_path() { return g_exe_realpath; }
 
+// Passthrough syscalls whose arguments include guest paths (bit i = argument i): redirected into
+// the rootfs like openat. (symlinkat's target string is link content and stays as is.)
+static u8 g_path_args[512];
+static const Pair kPathArgs[] = {
+    {5, 1}, {6, 1}, {8, 1}, {9, 1}, {11, 1}, {12, 1}, {14, 1}, {15, 1}, {27, 2}, {33, 2}, {G_mkdirat, 2},
+    {G_unlinkat, 2}, {G_symlinkat, 4}, {G_linkat, 2 | 8}, {G_renameat, 2 | 8}, {G_statfs, 1}, {G_truncate, 1},
+    {G_chdir, 1}, {G_chroot, 1}, {G_fchmodat, 2}, {G_fchownat, 2}, {G_utimensat, 2}, {89, 1},
+    {264, 2}, {G_renameat2, 2 | 8}, {G_faccessat2, 2}, {G_fchmodat2, 2},
+};
+
 void syscalls_init(const LoadedImage& img) {
     for (auto& v : g_passthrough_nr) v = -1;
     for (auto& p : kPass) g_passthrough_nr[p.g] = p.h;
+    for (auto& p : kPathArgs) g_path_args[p.g] = (u8)p.h;
     g_brk_start = g_brk_cur = g_brk_mapped = align_up<u64>(img.brk_start, 4096);
     char buf[PATH_MAX];
     if (realpath(img.host_path.c_str(), buf)) g_exe_realpath = buf;
@@ -270,6 +281,18 @@ void do_syscall(CpuState* st) {
     u64 a0 = st->x[0], a1 = st->x[1], a2 = st->x[2], a3 = st->x[3], a4 = st->x[4], a5 = st->x[5];
     i64 r;
     if (nr < 512 && g_passthrough_nr[nr] >= 0) {
+        if (u8 m = g_path_args[nr]; m && !g_rootfs.empty()) {
+            u64 a[6] = {a0, a1, a2, a3, a4, a5};
+            std::string keep[6];
+            for (int k = 0; k < 6; k++)
+                if ((m >> k & 1) && a[k] && ((const char*)a[k])[0] == '/') {
+                    keep[k] = resolve_guest_path((const char*)a[k]);
+                    a[k] = (u64)keep[k].c_str();
+                }
+            r = raw(g_passthrough_nr[nr], a[0], a[1], a[2], a[3], a[4], a[5]);
+            st->x[0] = (u64)r;
+            return;
+        }
         r = raw(g_passthrough_nr[nr], a0, a1, a2, a3, a4, a5);
         st->x[0] = (u64)r;
         return;
@@ -282,6 +305,19 @@ void do_syscall(CpuState* st) {
         break;
     }
     case G_openat2: r = -ENOSYS; break;
+    case G_getcwd: {   // inside the rootfs (after chdir to a redirected path): report the guest path
+        char buf[PATH_MAX];
+        r = raw(SYS_getcwd, (u64)buf, sizeof buf);
+        if (r < 0) break;
+        const char* g = buf;
+        size_t n = g_rootfs.size();
+        if (n && !strncmp(buf, g_rootfs.c_str(), n) && (buf[n] == '/' || buf[n] == 0)) g = buf[n] ? buf + n : "/";
+        size_t len = strlen(g) + 1;
+        if (len > a1) { r = -ERANGE; break; }
+        memcpy((void*)a0, g, len);
+        r = (i64)len;
+        break;
+    }
     case G_faccessat: { PathArg p(a1); r = raw(SYS_faccessat, a0, (u64)p.p, a2); break; }
     case G_fcntl: {
         if (a1 == F_SETFL) r = raw(SYS_fcntl, a0, a1, open_flags_g2h(a2));

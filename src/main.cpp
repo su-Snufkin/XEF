@@ -1,4 +1,6 @@
 // XEF — AArch64 → x86-64 user-mode binary translator.
+#include <limits.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <string>
@@ -53,6 +55,10 @@ int main(int argc, char** argv, char** envp) {
     if (i >= argc) usage();
     if (getenv("XEF_STATS")) g_opt.stats = true;
     while (!g_rootfs.empty() && g_rootfs.back() == '/') g_rootfs.pop_back();
+    if (!g_rootfs.empty()) {   // absolute: guest chdir() into the rootfs must not break later lookups
+        char abs[PATH_MAX];
+        if (realpath(g_rootfs.c_str(), abs)) g_rootfs = abs;
+    }
     g_main_argc_xef = i;
     g_xef_argv = argv;
 

@@ -26,6 +26,7 @@ build/xef -L $R $R/usr/games/minetest
 | Program | Result |
 |---|---|
 | xlogo, xeyes, xclock | work |
+| galculator (GTK 3), xterm running the guest bash | work, interactive (`docs/screenshots/gtk-xterm.png`) |
 | glxinfo | OpenGL 4.5 compat / ES 3.2, llvmpipe (LLVM 20.1.2) |
 | glxgears | ~380 FPS |
 | glmark2 (build, phong, texture, refract) | score 137 (native x86 llvmpipe on the host: 350) |
