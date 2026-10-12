@@ -19,6 +19,7 @@ struct RegionXfer {
     x64::Reg h;
     i8 g_region;  // guest reg held in h inside the region (-1: scratch)
     i8 g_canon;   // guest reg held in h in the canonical mapping (-1: temp)
+    bool written; // g_region is written inside the region (needs write-back on exit)
 };
 
 struct CodegenCtx {
@@ -30,6 +31,7 @@ struct CodegenCtx {
     void* user = nullptr;
     const RegionXfer* xfer = nullptr;
     int nxfer = 0;
+    u64* exit_counter = nullptr;   // region exit counter (RIP-addressable)
 };
 
 struct InternalFix {

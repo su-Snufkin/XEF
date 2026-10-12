@@ -406,6 +406,11 @@ bool T1::run() {
     // region exits: transfer back to the canonical mapping, then a normal patchable exit
     for (int i = 0; i < nrstubs_; i++) {
         as_.bind(rstubs_[i].l);
+        if (ctx_->exit_counter) {  // flag-free increment (rax is free at block exits)
+            as_.mov(8, RAX, rip(ctx_->exit_counter));
+            as_.lea(8, RAX, mem(RAX, 1));
+            as_.mov(8, rip(ctx_->exit_counter), RAX);
+        }
         emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, false);
         raw_exit_jmp(rstubs_[i].target);
     }
@@ -1627,7 +1632,7 @@ void emit_region_xfer(Assembler& as, const RegionXfer* x, int n, bool enter) {
     for (int i = 0; i < n; i++) {
         const RegionXfer& r = x[i];
         int from = enter ? r.g_canon : r.g_region, to = enter ? r.g_region : r.g_canon;
-        if (from >= 0) as.mov(8, mem(R15, st_x(from)), r.h);
+        if (from >= 0 && (enter || r.written)) as.mov(8, mem(R15, st_x(from)), r.h);
         if (to >= 0) as.mov(8, r.h, mem(R15, st_x(to)));
     }
 }

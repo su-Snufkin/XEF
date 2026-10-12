@@ -9,6 +9,15 @@ namespace xef {
 
 struct BlockMeta;
 
+// Runtime feedback for a tier-2 region.
+struct RegionInfo {
+    BlockMeta* head_t1;   // tier-1 version of the head (for demotion)
+    BlockMeta* entry;     // published region entry
+    u64* exit_counter;    // incremented (flag-free) by every region exit stub; lives in the code cache
+    u64 samples;
+    bool demoted;
+};
+
 enum ExitKind : u8 {
     EK_JMP = 0,     // jmp rel32 site
     EK_JCC = 1,     // jcc rel32 site
@@ -37,6 +46,7 @@ struct BlockMeta {
     ExitInfo* incoming;    // exits from other blocks that jump here
     BlockMeta* next_on_page;  // chained per guest page for invalidation
     u64 exec_count;
+    struct RegionInfo* region;   // tier-2 blocks: owning region
     u32 host_pc_map_off;   // offset of host→guest pc map (for faults)
     u32 host_pc_map_len;
     ExitInfo exits[];
@@ -61,6 +71,9 @@ class CodeCache {
 public:
     void init(size_t size);
     u8* alloc_code(size_t max_size);          // returns write pointer (caller commits)
+    // Mutable data reachable RIP-relatively from code but on separate pages (writes near
+    // executing code trigger self-modifying-code machine clears).
+    u8* alloc_data(size_t size);
     void commit_code(u8* start, size_t used);
     BlockMeta* alloc_meta(int nexits);
 
@@ -97,6 +110,9 @@ private:
     u8* base_ = nullptr;
     size_t size_ = 0;
     u8* code_ptr_ = nullptr;
+    u8* data_ptr_ = nullptr;
+    u8* data_end_ = nullptr;
+    std::mutex data_lock_;
     u8* meta_base_ = nullptr;
     u8* meta_ptr_ = nullptr;
     u8* meta_end_ = nullptr;

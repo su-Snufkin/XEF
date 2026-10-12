@@ -39,7 +39,10 @@ BENCHES = [
     ('zstd-d', ['zstd', '-q', '-d', '-c', DATA + '.zst'], 'zstd decompress 48 MB text'),
 ]
 
+PIN = ['taskset', '-c', '2,3'] if os.path.exists('/usr/bin/taskset') else []
+
 def timeit(cmd, reps, timeout):
+    cmd = PIN + cmd
     best = None
     for _ in range(reps):
         t0 = time.perf_counter()
@@ -55,7 +58,7 @@ def timeit(cmd, reps, timeout):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--reps', type=int, default=3)
+    ap.add_argument('--reps', type=int, default=5)
     ap.add_argument('--only', default=None)
     ap.add_argument('--no-qemu', action='store_true')
     ap.add_argument('--label', default='')

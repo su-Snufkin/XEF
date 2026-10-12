@@ -15,8 +15,7 @@ static u8* g_pool_end;
 
 void vconst_pool_init() {
     const size_t sz = 64 * 1024;
-    g_pool = g_pool_ptr = g_cache.alloc_code(sz);
-    g_cache.commit_code(g_pool, sz);
+    g_pool = g_pool_ptr = g_cache.alloc_data(sz);
     g_pool_end = g_pool + sz;
 }
 

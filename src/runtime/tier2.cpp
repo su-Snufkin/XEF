@@ -9,6 +9,7 @@
 // head block's incoming links to the region entry.
 #include "runtime/tier2.h"
 
+#include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
 #include <sys/time.h>
@@ -84,7 +85,7 @@ static bool compile_region(GuestAddr head) {
     // ---- region formation: BFS over hot direct successors
     Region R;
     R.pcs[R.n++] = head;
-    int uses[32] = {0};
+    int uses[32] = {0}, writes[32] = {0};
     for (int qi = 0; qi < R.n; qi++) {
         a64::translate_block(R.pcs[qi], blk, topt);
         GuestAddr succ[2];
@@ -99,6 +100,7 @@ static bool compile_region(GuestAddr head) {
         for (int v = 1; v < blk.n; v++) {
             const ir::Inst& in = blk.insts[v];
             if (in.op == ir::Op::GetReg || in.op == ir::Op::SetReg) uses[in.aux] += 1;
+            if (in.op == ir::Op::SetReg) writes[in.aux] += 1;
         }
         for (int k = 0; k < ns; k++) {
             if (R.contains(succ[k]) || R.n >= kMaxRegionBlocks) continue;
@@ -162,11 +164,19 @@ static bool compile_region(GuestAddr head) {
     int nfree = 0;
     RegionXfer xfer[16];
     int nxfer = 0;
-    for (int g = 0; g < 32; g++)
-        if (regmap::mapped(g) && uses[g] == 0) { freed[nfree++] = regmap::host(g); map[g] = NOREG; }
     int order[32], no = 0;
     for (int g = 0; g < 32; g++) if (!regmap::mapped(g) && uses[g] > 0) order[no++] = g;
     std::sort(order, order + no, [&](int a, int b) { return uses[a] > uses[b]; });
+    // displace only as many canonical registers as needed (+2 extra temporaries);
+    // callee-saved hosts first (no save/restore around helper calls)
+    static const Reg pref[] = {RDI, RSI, RDX, R10, R8, R9, RBX, RBP, R12, R13, R14};
+    int want = 16;
+    for (Reg h : pref) {
+        if (nfree >= want) break;
+        int gc = -1;
+        for (int g = 0; g < 32; g++) if (regmap::host(g) == h) gc = g;
+        if (gc >= 0 && uses[gc] == 0) { freed[nfree++] = h; map[gc] = NOREG; }
+    }
     Reg temps[12] = {RAX, RCX, R11};
     int ntemps = 3;
     for (int i = 0; i < nfree; i++) {
@@ -176,11 +186,18 @@ static bool compile_region(GuestAddr head) {
         int gr = -1;
         if (i < no) { gr = order[i]; map[gr] = h; }
         else if (ntemps < 12) temps[ntemps++] = h;
-        xfer[nxfer++] = {h, (i8)gr, (i8)gc};
+        xfer[nxfer++] = {h, (i8)gr, (i8)gc, gr >= 0 && writes[gr] > 0};
     }
+
+    // ---- runtime feedback record
+    RegionInfo* ri = new RegionInfo();
+    ri->head_t1 = hm;
+    ri->exit_counter = (u64*)g_cache.alloc_data(8);
+    *ri->exit_counter = 0;
 
     // ---- code generation
     backend::CodegenCtx ctx;
+    ctx.exit_counter = ri->exit_counter;
     ctx.map = map;
     ctx.temps = temps;
     ctx.ntemps = ntemps;
@@ -203,6 +220,8 @@ static bool compile_region(GuestAddr head) {
     eas.dd(0);
     entry->code = ecode;
     entry->code_size = (u32)eas.size();
+    entry->region = ri;
+    ri->entry = entry;
     g_cache.commit_code(ecode, eas.size());
     g_cache.register_block(entry);
 
@@ -218,6 +237,7 @@ static bool compile_region(GuestAddr head) {
         meta->start = R.pcs[i];
         meta->end = blk.end;
         meta->tier = 2;
+        meta->region = ri;
         const size_t kMax = 256 * 1024;
         u8* code = g_cache.alloc_code(kMax);
         Assembler as(code, kMax);
@@ -270,6 +290,24 @@ static bool compile_region(GuestAddr head) {
     return true;
 }
 
+// Region exits too often relative to time spent in it: re-point links back to tier 1.
+static void demote_region(RegionInfo* ri) {
+    if (ri->demoted) return;
+    ri->demoted = true;
+    BlockMeta* hm = ri->head_t1;
+    BlockMeta* entry = ri->entry;
+    hm->incoming = entry->incoming;
+    entry->incoming = nullptr;
+    for (ExitInfo* e = hm->incoming; e; e = e->next_in) link_exit(e, hm->code);
+    hm->tier = 4;  // never promote again
+    g_cache.publish(hm);
+    if (g_opt.stats) g_stats.regions_demoted++;
+    XEF_LOG(1, "tier2: demoted region %#lx (exits=%lu samples=%lu)", (unsigned long)hm->start,
+            (unsigned long)*ri->exit_counter, (unsigned long)ri->samples);
+}
+
+int g_tier2_max_exits_per_ms = 100000;
+
 static void* compiler_thread(void*) {
     sigset_t all;
     sigfillset(&all);
@@ -280,7 +318,8 @@ static void* compiler_thread(void*) {
         ssize_t r = read(g_pipe[0], &pc, sizeof pc);
         if (r != sizeof pc) continue;
         std::lock_guard<std::mutex> lk(g_cache.lock);
-        compile_region(pc);
+        if (pc & 1) demote_region((RegionInfo*)(pc & ~1ull));
+        else compile_region(pc);
     }
     return nullptr;
 }
@@ -293,6 +332,16 @@ static void sample_handler(int sig, siginfo_t* si, void* ctx) {
     BlockMeta* b = g_cache.find_by_host(rip);
     if (!b) return;
     u64 c = ++b->exec_count;
+    if (b->tier == 2 && b->region && !b->region->demoted) {
+        RegionInfo* ri = b->region;
+        u64 n = ++ri->samples;
+        if ((n & 3) == 0 && *ri->exit_counter > n * (u64)g_tier2_max_exits_per_ms && g_pipe[1] >= 0) {
+            u64 msg = (u64)ri | 1;
+            ssize_t w = write(g_pipe[1], &msg, sizeof msg);
+            (void)w;
+        }
+        return;
+    }
     if (b->tier == 1 && c == (u64)g_tier2_threshold && g_pipe[1] >= 0) {
         GuestAddr pc = b->start;
         ssize_t w = write(g_pipe[1], &pc, sizeof pc);
@@ -304,7 +353,9 @@ static void sample_handler(int sig, siginfo_t* si, void* ctx) {
 
 void tier2_init(bool enable) {
     if (enable) {
-        if (pipe(g_pipe) != 0) fatal("tier2: pipe");
+        if (pipe2(g_pipe, O_CLOEXEC) != 0) fatal("tier2: pipe");
+        // the SIGPROF handler must never block: drop requests if the pipe is full
+        fcntl(g_pipe[1], F_SETFL, O_NONBLOCK);
         pthread_t th;
         pthread_attr_t attr;
         pthread_attr_init(&attr);

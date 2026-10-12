@@ -12,7 +12,11 @@ void CodeCache::init(size_t size) {
     size_ = size;
     void* p = mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (p == MAP_FAILED) fatal("cannot allocate code cache (%zu MB)", size >> 20);
-    base_ = code_ptr_ = (u8*)p;
+    base_ = (u8*)p;
+    // first 16 MB: data area (counters etc.), code starts after it
+    data_ptr_ = base_;
+    data_end_ = base_ + (16u << 20);
+    code_ptr_ = data_end_;
     size_t meta_size = size / 2;
     void* m = mmap(nullptr, meta_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (m == MAP_FAILED) fatal("cannot allocate block metadata");
@@ -27,6 +31,14 @@ void CodeCache::init(size_t size) {
 u8* CodeCache::alloc_code(size_t max_size) {
     if (code_ptr_ + max_size > base_ + size_) fatal("code cache full (flush not implemented yet)");
     return code_ptr_;
+}
+
+u8* CodeCache::alloc_data(size_t size) {
+    std::lock_guard<std::mutex> g(data_lock_);
+    u8* p = (u8*)align_up((uintptr_t)data_ptr_, (uintptr_t)64);  // own cache line
+    if (p + size > data_end_) fatal("code cache data area full");
+    data_ptr_ = p + align_up(size, (size_t)64);
+    return p;
 }
 
 void CodeCache::commit_code(u8* start, size_t used) {
