@@ -29,6 +29,7 @@ struct VI {
     Val rres = 0;      // flags values: result value usable for test-based remat (Z/N)
     bool dead = false;
     bool folded = false;
+    bool addr_c = false;   // constant add used only as a memory address: folded into [base + disp]
     bool clean32 = false;
     u16 uses = 0;
     i32 last = 0;

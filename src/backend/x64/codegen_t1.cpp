@@ -173,25 +173,75 @@ void T1::analyze() {
         if (x.rres) extend(x.rres);
     }
 
-    // address folding: Load/Store(addr = Add(base, const|reg|Shl(reg,k))) with single use
+    // address folding. Memory accesses take [base + disp], [base + idx] and [base + idx << k]:
+    // - chains of constant adds whose every use is an address or another such add are never
+    //   materialized (ldp/stp: sp+16 feeds one load directly and one through +8)
+    // - Add(base, reg | Shl(reg, k)) whose single use is an address
+    // The values the folded nodes read stay live until the access itself.
+    auto is_mem = [](Op op) { return op == Op::Load || op == Op::Store || op == Op::VLoad || op == Op::VStore; };
+    auto extend_to = [&](Val o, i32 L) {
+        while (o) {
+            if (vi_[o].last < L) vi_[o].last = L;
+            if (!is_alias_op(I(o))) break;
+            o = I(o).a;
+        }
+    };
+    {
+        // candidates: small constants and bounded chain depth keep every partial sum in i32
+        u8* depth = (u8*)alloca(n);
+        for (int v = 1; v < n; v++) {
+            const Inst& in = I(v);
+            depth[v] = 0;
+            vi_[v].addr_c = false;
+            if (vi_[v].dead || !vi_[v].uses || in.op != Op::Add || in.ty != Type::I64 || I(in.b).op != Op::Const)
+                continue;
+            i64 c = (i64)I(in.b).imm;
+            if (c < -(1 << 24) || c > (1 << 24)) continue;
+            int d = (in.a < v && depth[in.a]) ? depth[in.a] + 1 : 1;
+            if (d > 64) continue;
+            depth[v] = (u8)d;
+            vi_[v].addr_c = true;
+        }
+        // backward: every use must be the address of an access or the base of a folded add
+        for (int v = n - 1; v >= 1; v--) {
+            const Inst& in = I(v);
+            if (vi_[v].dead || in.op == Op::SetFlags) continue;
+            for_operands(in, [&](Val o) {
+                if (!vi_[o].addr_c) return;
+                bool ok = (is_mem(in.op) && o == in.a && o != in.b) || (vi_[v].addr_c && o == in.a);
+                if (!ok) vi_[o].addr_c = false;
+            });
+        }
+        for (int v = 1; v < n; v++) {
+            if (vi_[v].addr_c) { vi_[v].folded = true; continue; }
+            const Inst& in = I(v);
+            if (vi_[v].dead || !is_mem(in.op) || !vi_[in.a].addr_c) continue;
+            Val r = in.a;
+            while (vi_[r].addr_c) r = I(r).a;
+            extend_to(r, v);
+        }
+    }
     for (int v = 1; v < n; v++) {
         const Inst& in = I(v);
-        if (vi_[v].dead) continue;
-        Val a = 0;
-        if (in.op == Op::Load || in.op == Op::Store || in.op == Op::VLoad || in.op == Op::VStore) a = in.a;
-        if (!a) continue;
+        if (vi_[v].dead || !is_mem(in.op)) continue;
+        Val a = in.a;
+        if (vi_[a].addr_c) continue;
         const Inst& ad = I(a);
         if (ad.op != Op::Add || vi_[a].uses != 1 || ad.ty != Type::I64) continue;
         const Inst& rhs = I(ad.b);
         if (rhs.op == Op::Const) {
-            if ((i64)rhs.imm == (i32)rhs.imm) vi_[a].folded = true;
+            if ((i64)rhs.imm != (i32)rhs.imm) continue;
+            vi_[a].folded = true;
         } else if (rhs.op == Op::Shl && I(rhs.b).op == Op::Const && I(rhs.b).imm <= 3 && vi_[ad.b].uses == 1 &&
                    rhs.ty == Type::I64) {
             vi_[a].folded = true;
             vi_[ad.b].folded = true;
+            extend_to(rhs.a, v);
         } else {
             vi_[a].folded = true;
+            extend_to(ad.b, v);
         }
+        extend_to(ad.a, v);
     }
 }
 
@@ -329,6 +379,8 @@ void T1::release_operands(const Inst& in) {
     for_operands(in, [&](Val o) {
         Val r = resolve(o);
         VI& x = vi_[r];
+        // folded address arithmetic: what it reads is used by this access
+        if (x.folded && (I(r).op == Op::Add || I(r).op == Op::Shl)) { release_operands(I(r)); return; }
         if (x.last <= cur_) {
             if (x.k == L_REG && owner_[x.reg] == r) owner_[x.reg] = 0;
             if (x.k == L_XMM && xowner_[x.reg] == r) xowner_[x.reg] = 0;
@@ -403,6 +455,14 @@ void T1::finish_def(Val v, Reg r) {
 }
 
 Mem T1::addr_mem(Val a) {
+    if (vi_[a].addr_c) {
+        i32 disp = 0;
+        while (vi_[a].addr_c) { disp += (i32)I(I(a).b).imm; a = I(a).a; }
+        if (is_c(a) && (i64)(cv(a) + disp) == (i32)(cv(a) + disp)) { Mem m; m.disp = (i32)(cv(a) + disp); return m; }
+        Reg base = to_reg(a);
+        pinned_ |= 1 << base;
+        return mem(base, disp);
+    }
     const Inst& ad = I(a);
     if (vi_[a].folded) {
         const Inst& rhs = I(ad.b);
