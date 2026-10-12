@@ -129,6 +129,9 @@ void signals_init() {
     struct sigaction tr {};
     tr.sa_sigaction = trap_handler;
     tr.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    // a guest signal arriving inside this handler would set TF in the handler's context, which
+    // its sigreturn discards: hold signals until the JIT context is current again
+    sigfillset(&tr.sa_mask);
     sigaction(SIGTRAP, &tr, nullptr);
 }
 
@@ -189,7 +192,8 @@ static void async_handler(int sig, siginfo_t* si, void* ctx) {
     t->st->pending_signal = 1;
     ucontext_t* uc = (ucontext_t*)ctx;
     u8* rip = (u8*)uc->uc_mcontext.gregs[REG_RIP];
-    if (g_cache.contains(rip)) {
+    // in translated code, or in a helper it called (which returns into translated code)
+    if (g_cache.contains(rip) || t->st->in_jit) {
         t->stepping = true;
         uc->uc_mcontext.gregs[REG_EFL] |= 0x100;  // TF: single-step to the next block entry
     }
@@ -205,6 +209,7 @@ static void trap_handler(int sig, siginfo_t* si, void* ctx) {
     }
     u8* rip = (u8*)uc->uc_mcontext.gregs[REG_RIP];
     if (!g_cache.contains(rip)) {
+        if (t->st->in_jit) return;   // a helper called from translated code: keep stepping until it returns
         // back in the runtime: it will see pending_signal
         t->stepping = false;
         uc->uc_mcontext.gregs[REG_EFL] &= ~0x100ull;

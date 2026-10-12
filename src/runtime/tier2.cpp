@@ -370,7 +370,15 @@ static void* compiler_thread(void*) {
 
 // kSampleSig: count samples per translated block, request tier 2 for hot ones.
 static void sample_handler(int sig, siginfo_t* si, void* ctx) {
-    u8* rip = (u8*)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP];
+    ucontext_t* uc = (ucontext_t*)ctx;
+    u8* rip = (u8*)uc->uc_mcontext.gregs[REG_RIP];
+    // safety net: a pending guest signal whose single-step request was lost (TF overwritten by a
+    // popfq in translated code) is re-armed here, at most 1 ms of CPU time later
+    if (ThreadCtx* t = tls_thread; t && t->st && t->st->pending_signal && !(uc->uc_mcontext.gregs[REG_EFL] & 0x100) &&
+                                   (g_cache.contains(rip) || t->st->in_jit)) {
+        t->stepping = true;
+        uc->uc_mcontext.gregs[REG_EFL] |= 0x100;
+    }
     if (g_opt.profile) profile_sample(rip);
     if (!g_cache.contains(rip)) return;
     BlockMeta* b = g_cache.find_by_host(rip);
@@ -454,6 +462,7 @@ void tier2_init(bool enable) {
     struct sigaction sa {};
     sa.sa_sigaction = sample_handler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigfillset(&sa.sa_mask);   // see trap_handler: guest signals must see the interrupted context
     sa.sa_flags |= SA_ONSTACK;
     sigaction(kSampleSig, &sa, nullptr);
     g_sampling = true;

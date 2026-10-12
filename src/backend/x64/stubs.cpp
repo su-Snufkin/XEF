@@ -38,13 +38,25 @@ void emit_runtime_stubs(Assembler& as, RuntimeStubs& s) {
     as.mov(8, RAX, RSI);
     as.mov(8, RSP, mem(R15, XEF_ST(jit_sp)));
     load_guest_regs(as);
+    as.mov_imm(4, mem(R15, XEF_ST(in_jit)), 1);
     as.push(mem(R15, XEF_ST(eflags)));
     as.popfq();
+    // A signal between the check at the top and popfq set TF in a context that popfq then
+    // overwrote: look again, flag-free (rcx is free at block entry). After this point a signal
+    // finds RIP in the code cache and single-steps to the block entry.
+    Label late_sig;
+    as.mov(4, RCX, mem(R15, XEF_ST(pending_signal)));
+    u8* go = as.jrcxz_fwd();
+    as.jmp(late_sig);
+    as.patch_rel8_here(go);
     as.jmp(RAX);
+    as.bind(late_sig);
+    as.mov_imm(8, mem(R15, XEF_ST(exit_reason)), EXIT_SIGNAL);
 
     // ---- exit_to_runtime: exit_reason (and pc/info) already stored ----
-    as.align(16);
+    // (the late-signal path above falls through into it: no padding in between)
     s.exit_to_runtime = as.cur();
+    as.mov_imm(4, mem(R15, XEF_ST(in_jit)), 0);
     store_guest_regs(as);
     as.pushfq();
     as.pop(mem(R15, XEF_ST(eflags)));

@@ -340,6 +340,8 @@ void T1::release_operands(const Inst& in) {
 
 // Before guest register g is overwritten: move live values that alias it.
 void T1::evacuate_guest(int g, int upto, Val keep) {
+    // one pass (this runs for every SetReg): aliases of g's current value move to temporaries, and
+    // values not yet touched (L_NONE GetReg of g) read the *old* value, so they are materialized now
     for (int v = 1; v < cur_; v++) {
         VI& x = vi_[v];
         if (x.dead || x.last <= upto || v == keep) continue;
@@ -349,14 +351,7 @@ void T1::evacuate_guest(int g, int upto, Val keep) {
             if (x.k == L_GREG) as_.mov(8, t, (Reg)x.reg);
             else as_.mov(8, t, gmem(g));
             assign_reg((Val)v, t);
-        }
-    }
-    // values not yet touched (L_NONE GetReg of g): they read the *old* value, materialize now
-    for (int v = 1; v < cur_; v++) {
-        VI& x = vi_[v];
-        if (x.dead || x.last <= upto || x.k != L_NONE) continue;
-        const Inst& in = I(v);
-        if (in.op == Op::GetReg && in.aux == g) {
+        } else if (x.k == L_NONE && I(v).op == Op::GetReg && I(v).aux == g) {
             Reg t = alloc_temp();
             if (mapped(g)) as_.mov(8, t, host(g));
             else as_.mov(8, t, gmem(g));

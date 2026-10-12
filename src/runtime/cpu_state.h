@@ -53,7 +53,7 @@ struct alignas(64) CpuState {
     alignas(16) u8 vspill[64][16];
     u64 host_mxcsr_saved;
     volatile u32 pending_signal;
-    u32 _pad1;
+    volatile u32 in_jit;    // between the enter stub and exit_to_runtime (also inside helpers called from JIT code)
 };
 
 constexpr int kStateBias = 128;

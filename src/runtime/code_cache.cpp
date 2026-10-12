@@ -150,9 +150,18 @@ void CodeCache::add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog
         if (h <= l) return;
         for (u64 pg = l >> 12; pg <= (h - 1) >> 12; pg++) deps_[pg].push_back({b, l, h});
     };
-    add(lo, hi);
+    // the lookahead usually reads right past the block end: merge it into the body's range first
+    // (one dependency entry instead of several per block)
+    PeekLog all;
+    all.add(lo, hi);
     if (peeks)
-        for (int i = 0; i < peeks->n; i++) add(peeks->r[i].lo, peeks->r[i].hi);
+        for (int i = 0; i < peeks->n; i++) all.add(peeks->r[i].lo, peeks->r[i].hi);
+    if (all.overflow) {   // cannot happen with <= 32 peeks + 1, but stay exact
+        add(lo, hi);
+        for (int i = 0; peeks && i < peeks->n; i++) add(peeks->r[i].lo, peeks->r[i].hi);
+        return;
+    }
+    for (int i = 0; i < all.n; i++) add(all.r[i].lo, all.r[i].hi);
 }
 
 bool CodeCache::invalidate_range(GuestAddr lo, GuestAddr hi) {
