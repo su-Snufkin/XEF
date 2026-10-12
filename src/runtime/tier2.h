@@ -4,7 +4,7 @@
 
 namespace xef {
 
-extern int g_tier2_threshold;   // SIGPROF samples (1 ms CPU each) before a block is promoted
+extern int g_tier2_threshold;   // samples (1 ms CPU each) before a block is promoted
 void tier2_init(bool enable);
 // In a forked child: restart the compiler thread (it does not survive fork).
 struct ThreadCtx;

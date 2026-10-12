@@ -5,6 +5,10 @@
 
 namespace xef {
 
+// Host signal of XEF's per-thread sampling timers (tier-2 hotness, --profile): the last real-time
+// signal, so that SIGPROF (ITIMER_PROF, profilers) stays the guest's.
+constexpr int kSampleSig = 64;
+
 struct ThreadCtx;
 void signals_thread_init(ThreadCtx* t);
 u32 eflags_to_nzcv(u64 e);

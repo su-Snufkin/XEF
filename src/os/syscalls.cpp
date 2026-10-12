@@ -85,7 +85,7 @@ static const Pair kPass[] = {
     {G_renameat, SYS_renameat}, {G_statfs, SYS_statfs}, {G_fstatfs, SYS_fstatfs}, {G_truncate, SYS_truncate},
     {G_ftruncate, SYS_ftruncate}, {G_fallocate, SYS_fallocate}, {G_chdir, SYS_chdir}, {G_fchdir, SYS_fchdir},
     {G_chroot, SYS_chroot}, {G_fchmod, SYS_fchmod}, {G_fchmodat, SYS_fchmodat}, {G_fchownat, SYS_fchownat},
-    {G_fchown, SYS_fchown}, {G_pipe2, SYS_pipe2}, {G_getdents64, SYS_getdents64},
+    {G_fchown, SYS_fchown}, {G_pipe2, SYS_pipe2},
     {G_lseek, SYS_lseek}, {G_read, SYS_read}, {G_write, SYS_write}, {G_readv, SYS_readv},
     {G_writev, SYS_writev}, {G_pread64, SYS_pread64}, {G_pwrite64, SYS_pwrite64}, {G_preadv, SYS_preadv},
     {G_pwritev, SYS_pwritev}, {G_sendfile, SYS_sendfile}, {G_pselect6, SYS_pselect6}, {G_ppoll, SYS_ppoll},
@@ -198,6 +198,89 @@ static i64 close_range_guest(u64 first, u64 last, u64 flags) {
         lo = fd + 1;
     }
     return lo <= last ? raw(436, lo, last, flags) : r;
+}
+
+// getdents64 on /proc/<pid>/fd: XEF's own descriptors are not the guest's business
+static i64 hide_reserved_fds(int dirfd, u8* buf, i64 n) {
+    bool any = false;
+    for (auto& w : g_reserved) any |= w.load(std::memory_order_relaxed) != 0;
+    if (!any || n <= 0) return n;
+    char link[64], path[64];
+    snprintf(link, sizeof link, "/proc/self/fd/%d", dirfd);
+    ssize_t k = readlink(link, path, sizeof path - 1);
+    if (k <= 0) return n;
+    path[k] = 0;
+    int pid;
+    char tail[8] = {0};
+    if (sscanf(path, "/proc/%d/fd%7s", &pid, tail) != 1 || pid != getpid()) return n;
+    i64 out = 0;
+    for (i64 off = 0; off < n;) {
+        u16 reclen = *(u16*)(buf + off + 16);
+        const char* name = (const char*)(buf + off + 19);
+        char* end;
+        long fd = strtol(name, &end, 10);
+        bool hide = *name && !*end && fd >= 0 && fd_reserved((u64)fd);
+        if (!hide) { if (out != off) memmove(buf + out, buf + off, reclen); out += reclen; }
+        off += reclen;
+    }
+    return out;
+}
+
+// ---- thread counts the guest reads: its own threads only (not XEF's compiler thread or the
+// worker threads of host libraries behind --host-gl) ----
+int guest_thread_count();
+
+static bool is_proc_self_file(const char* p, const char* name) {
+    if (!p) return false;
+    char buf[64];
+    snprintf(buf, sizeof buf, "/proc/self/%s", name);
+    if (!strcmp(p, buf)) return true;
+    snprintf(buf, sizeof buf, "/proc/%d/%s", getpid(), name);
+    return !strcmp(p, buf);
+}
+
+// /proc/self/stat (field 20) and /proc/self/status ("Threads:") without XEF's threads, served
+// from a memfd. Returns -1 if `path` is neither.
+static i64 open_proc_thread_count(const char* path) {
+    bool stat = is_proc_self_file(path, "stat"), status = is_proc_self_file(path, "status");
+    if (!stat && !status) return -1;
+    long guest = guest_thread_count();
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    char buf[8192];
+    ssize_t n = read(fd, buf, sizeof buf - 1);
+    close(fd);
+    if (n <= 0) return -1;
+    buf[n] = 0;
+    std::string out;
+    if (stat) {   // fields after the parenthesized comm; num_threads is field 20
+        char* rp = strrchr(buf, ')');
+        if (!rp) return -1;
+        out.assign(buf, rp + 1 - buf);
+        int field = 2;
+        for (char* q = rp + 1; *q;) {
+            while (*q == ' ') out += *q++;
+            char* e = q;
+            while (*e && *e != ' ') e++;
+            field++;
+            std::string tok(q, e - q);
+            if (field == 20) tok = std::to_string(guest);
+            out += tok;
+            q = e;
+        }
+    } else {
+        out = buf;
+        size_t at = out.find("\nThreads:");
+        if (at != std::string::npos) {
+            size_t b = out.find_first_of("0123456789", at), e = out.find('\n', b);
+            out.replace(b, e - b, std::to_string(guest));
+        }
+    }
+    int m = (int)syscall(SYS_memfd_create, "xef-proc", MFD_CLOEXEC);
+    if (m < 0) return -1;
+    if (write(m, out.data(), out.size()) != (ssize_t)out.size()) { close(m); return -1; }
+    lseek(m, 0, SEEK_SET);
+    return m;
 }
 
 // ---- process state ----
@@ -354,11 +437,23 @@ void do_syscall(CpuState* st) {
     case G_openat: {
         PathArg p(a1, !(a2 & 0x8000));   // O_NOFOLLOW
         if (is_proc_self_exe((const char*)a1)) { r = raw(SYS_openat, a0, (u64)g_exe_realpath.c_str(), open_flags_g2h(a2), a3); break; }
+        if (i64 m = open_proc_thread_count((const char*)a1); m >= 0) {
+            if (a2 & 0x80000) r = m;   // O_CLOEXEC as asked
+            else { fcntl((int)m, F_SETFD, 0); r = m; }
+            break;
+        }
         r = raw(SYS_openat, a0, (u64)p.p, open_flags_g2h(a2), a3);
         break;
     }
     case G_openat2: r = -ENOSYS; break;
-    case G_close: r = fd_reserved(a0) ? 0 : raw(SYS_close, a0); break;   // pretend: the guest owns it no more
+    case G_close: r = fd_reserved(a0) ? 0 : raw(SYS_close, a0); break;
+    case G_getdents64:
+        for (;;) {   // a buffer of nothing but hidden entries must not read as the end of the directory
+            i64 got = raw(SYS_getdents64, a0, a1, a2);
+            r = got > 0 ? hide_reserved_fds((int)a0, (u8*)a1, got) : got;
+            if (!(got > 0 && r == 0)) break;
+        }
+        break;   // pretend: the guest owns it no more
     case G_close_range: r = first_le(a0, a1) ? close_range_guest((u32)a0, (u32)a1, a2) : -EINVAL; break;
     case G_dup3: r = fd_reserved(a1) ? -EBADF : raw(SYS_dup3, a0, a1, a2); break;
     case G_getcwd: {   // inside the rootfs (after chdir to a redirected path): report the guest path
@@ -376,6 +471,7 @@ void do_syscall(CpuState* st) {
     }
     case G_faccessat: { PathArg p(a1); r = raw(SYS_faccessat, a0, (u64)p.p, a2); break; }
     case G_fcntl: {
+        if (fd_reserved(a0)) { r = -EBADF; break; }   // invisible to the guest
         if (a1 == F_SETFL) r = raw(SYS_fcntl, a0, a1, open_flags_g2h(a2));
         else if (a1 == F_GETFL) { r = raw(SYS_fcntl, a0, a1, a2); if (r >= 0) r = (i64)open_flags_h2g((u64)r); }
         else r = raw(SYS_fcntl, a0, a1, a2);
@@ -397,6 +493,7 @@ void do_syscall(CpuState* st) {
         break;
     }
     case G_fstat: {
+        if (fd_reserved(a0)) { r = -EBADF; break; }
         HostStat hs;
         r = raw(SYS_fstat, a0, (u64)&hs);
         if (r == 0) stat_h2g(hs, (GuestStat*)a1);

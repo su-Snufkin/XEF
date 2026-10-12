@@ -53,6 +53,7 @@ ThreadCtx* thread_create(CpuState* parent) {
 }
 
 static std::atomic<int> g_live_threads{1};
+int guest_thread_count() { return g_live_threads.load(); }
 
 void thread_exit(CpuState* st, int code) {
     ThreadCtx* t = st->thread;
@@ -148,12 +149,6 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
 }
 
 // ---- execve: run the new image under XEF (or natively if it is an x86-64 binary) ----
-// interval timers survive execve; the new image must not inherit our SIGPROF sampler
-struct ItimerPause {
-    struct itimerval saved {};
-    ItimerPause() { struct itimerval z {}; setitimer(ITIMER_PROF, &z, &saved); }
-    ~ItimerPause() { setitimer(ITIMER_PROF, &saved, nullptr); }
-};
 
 i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     const char* path = (const char*)gpath;
@@ -208,7 +203,6 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
             std::vector<char*> av;
             for (auto& a : args) av.push_back((char*)a.c_str());
             av.push_back(nullptr);
-            ItimerPause ip;
             syscall(SYS_execve, host.c_str(), av.data(), envp.data());
             return -errno;
         }
@@ -226,7 +220,6 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     // argv[0] of the guest is preserved by the loader using the path; pass original argv0 via env
     av.push_back(nullptr);
     signals_flush_output();
-    ItimerPause ip;
     syscall(SYS_execve, self, av.data(), envp.data());
     return -errno;
 }

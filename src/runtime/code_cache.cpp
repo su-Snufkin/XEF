@@ -88,7 +88,7 @@ IbtcEntry* CodeCache::new_ibtc() {
 }
 
 void CodeCache::register_block(BlockMeta* b) {
-    // fixed-size index (no reallocation: read lock-free from the SIGPROF sampler)
+    // fixed-size index (no reallocation: read lock-free from the sampling handler)
     if (!by_host_) {
         cap_by_host_ = 1 << 24;
         void* p = mmap(nullptr, cap_by_host_ * sizeof(BlockMeta*), PROT_READ | PROT_WRITE,

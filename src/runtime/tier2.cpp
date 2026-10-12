@@ -1,6 +1,6 @@
 // XEF — tier 2: hot regions with a region-specific register mapping.
 //
-// Hot blocks are found by SIGPROF sampling (no counters on the hot path). A
+// Hot blocks are found by sampling (kSampleSig) (no counters on the hot path). A
 // background thread forms a region (the hot block plus hot direct successors),
 // picks a register mapping that gives host registers of guest registers unused
 // in the region to the most used X8..X28, and compiles all region blocks with
@@ -368,7 +368,7 @@ static void* compiler_thread(void*) {
     return nullptr;
 }
 
-// SIGPROF: count samples per translated block, request tier 2 for hot ones.
+// kSampleSig: count samples per translated block, request tier 2 for hot ones.
 static void sample_handler(int sig, siginfo_t* si, void* ctx) {
     u8* rip = (u8*)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP];
     if (g_opt.profile) profile_sample(rip);
@@ -399,7 +399,7 @@ static bool g_t2_enabled = false;
 
 static void start_compiler_thread() {
     if (pipe2(g_pipe, O_CLOEXEC) != 0) fatal("tier2: pipe");
-    // the SIGPROF handler must never block: drop requests if the pipe is full
+    // the sampling handler must never block: drop requests if the pipe is full
     fcntl(g_pipe[1], F_SETFL, O_NONBLOCK);
     g_pipe[0] = reserve_host_fd(g_pipe[0]);
     g_pipe[1] = reserve_host_fd(g_pipe[1]);
@@ -420,7 +420,7 @@ void tier2_thread_start(ThreadCtx* t) {
     if (!g_sampling || !t || t->prof_timer_ok) return;
     struct sigevent sev {};
     sev.sigev_notify = SIGEV_THREAD_ID;
-    sev.sigev_signo = SIGPROF;
+    sev.sigev_signo = kSampleSig;
     sev._sigev_un._tid = (int)syscall(SYS_gettid);
     timer_t tm;
     if (syscall(SYS_timer_create, CLOCK_THREAD_CPUTIME_ID, &sev, &tm) != 0) return;
@@ -455,7 +455,7 @@ void tier2_init(bool enable) {
     sa.sa_sigaction = sample_handler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
     sa.sa_flags |= SA_ONSTACK;
-    sigaction(SIGPROF, &sa, nullptr);
+    sigaction(kSampleSig, &sa, nullptr);
     g_sampling = true;
     tier2_thread_start(tls_thread);   // the main thread; others start theirs in thread_trampoline
 }

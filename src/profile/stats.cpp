@@ -20,7 +20,7 @@ namespace xef {
 
 Stats g_stats;
 
-// ---- sampling profiler (--profile): SIGPROF every 1 ms CPU time, host RIP recorded ----
+// ---- sampling profiler (--profile): kSampleSig every 1 ms CPU time, host RIP recorded ----
 static constexpr int kMaxSamples = 1 << 22;
 static u64* g_samples;
 static volatile int g_nsamples;

@@ -160,7 +160,7 @@ void signals_flush_output() {
 thread_local ThreadCtx* tls_thread;
 
 constexpr u64 kInternalSigs = (1ull << (SIGSEGV - 1)) | (1ull << (SIGBUS - 1)) | (1ull << (SIGILL - 1)) |
-                              (1ull << (SIGFPE - 1)) | (1ull << (SIGPROF - 1)) | (1ull << (SIGTRAP - 1));
+                              (1ull << (SIGFPE - 1)) | (1ull << (kSampleSig - 1)) | (1ull << (SIGTRAP - 1));
 constexpr u64 G_SA_SIGINFO = 4, G_SA_ONSTACK = 0x08000000, G_SA_RESTART = 0x10000000, G_SA_NODEFER = 0x40000000,
               G_SA_RESETHAND = 0x80000000, G_SA_RESTORER = 0x04000000;
 
@@ -330,7 +330,19 @@ constexpr u32 FPSIMD_MAGIC = 0x46508001;
 
 static void deliver_one(CpuState* st, int sig, const siginfo_t& si, u64 saved_mask) {
     ThreadCtx* t = st->thread;
-    GuestSigaction& a = g_actions[sig];
+    GuestSigaction a = g_actions[sig];   // a copy: the guest may change it concurrently
+    // the disposition may have changed since the signal was queued
+    if (a.handler == (u64)SIG_IGN) return;
+    if (a.handler == (u64)SIG_DFL) {
+        if (sig == SIGCHLD || sig == SIGURG || sig == SIGWINCH || sig == SIGCONT) return;   // default: ignore
+        signal(sig, SIG_DFL);   // default: terminate (or stop / core) like the host would
+        sigset_t one;
+        sigemptyset(&one);
+        sigaddset(&one, sig);
+        pthread_sigmask(SIG_UNBLOCK, &one, nullptr);
+        raise(sig);
+        return;
+    }
     u64 sp = st->x[kGuestSP];
     if ((a.flags & G_SA_ONSTACK) && t->ss_size && !(sp > t->ss_sp && sp <= t->ss_sp + t->ss_size))
         sp = t->ss_sp + t->ss_size;
@@ -369,7 +381,7 @@ static void deliver_one(CpuState* st, int sig, const siginfo_t& si, u64 saved_ma
     if (!(a.flags & G_SA_NODEFER)) nm |= sigbit(sig);
     host_setmask(nm);
     if (a.flags & G_SA_RESETHAND) {
-        a.handler = 0;
+        g_actions[sig].handler = 0;
         struct sigaction h {};
         h.sa_handler = SIG_DFL;
         sigaction(sig, &h, nullptr);
