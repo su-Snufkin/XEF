@@ -1,0 +1,10 @@
+/etc/xef-real.conf: inside
+/usr/share/xef/link.conf: inside
+/usr/share/xef/etc/xef-real.conf: inside
+/usr/share/xef/rel.conf: inside
+/usr/share/xef/chain.conf: inside
+readlink: /etc/xef-real.conf
+lstat is link: 1, stat is file: 1
+unlink link: 0
+/usr/share/xef/chain.conf: missing
+/etc/xef-real.conf: inside

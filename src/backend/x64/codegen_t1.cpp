@@ -14,6 +14,7 @@ namespace xef::backend {
 
 extern "C" u64 xef_helper_sysreg(u64, u64, u64 id);
 extern "C" u64 xef_helper_crc32(u64 crc, u64 data, u64 size_and_c);
+extern "C" u64 xef_helper_ic_ivau(u64 addr, u64, u64);
 
 int count_exits(const Block& b) {
     int n = 0;
@@ -78,9 +79,35 @@ void T1::analyze() {
     for (int v = 1; v < n; v++)
         if (I(v).op == Op::SetFlags) final_flags_ = fid(I(v).a);
     // backward: liveness, DCE, alias last-use propagation
+    // vset_later[g]: guest V register g is written again later in the block with nothing in
+    // between that reads its CpuState slot or may fault (a signal handler must see it)
+    // set_later[g]: the same for guest X registers kept in CpuState (not in a host register)
+    bool vset_later[32] = {}, set_later[32] = {};
     for (int v = n - 1; v >= 1; v--) {
         const Inst& in = I(v);
         VI& x = vi_[v];
+        switch (in.op) {
+        case Op::VSet:
+            if (vset_later[in.aux & 31]) { x.dead = true; continue; }
+            vset_later[in.aux & 31] = true;
+            break;
+        case Op::VGet: vset_later[in.aux & 31] = false; break;
+        case Op::SetReg:
+            if (in.aux < 32 && !mapped(in.aux)) {
+                if (set_later[in.aux]) { x.dead = true; continue; }
+                set_later[in.aux] = true;
+            }
+            break;
+        case Op::GetReg: if (in.aux < 32) set_later[in.aux] = false; break;
+        case Op::Load: case Op::Store: case Op::VLoad: case Op::VStore: case Op::LoadExcl: case Op::StoreExcl:
+        case Op::AtomicRMW: case Op::Cas: case Op::Helper: case Op::Barrier: case Op::GetSys: case Op::SetSys:
+            memset(vset_later, 0, sizeof vset_later);
+            memset(set_later, 0, sizeof set_later);
+            break;
+        default:
+            if (is_terminator(in.op)) { memset(vset_later, 0, sizeof vset_later); memset(set_later, 0, sizeof set_later); }
+            break;
+        }
         if (!has_side_effects(in) && x.uses == 0 && in.op != Op::SetFlags) {
             // a flags value that is the final guest flags is live at exit
             if (!(live_out_ && in.ty == Type::Flags && fid(v) == final_flags_)) { x.dead = true; continue; }
@@ -195,6 +222,14 @@ Reg T1::alloc_temp(Reg prefer) {
             as_.mov(8, gmem(g), r);
             borrowed_ |= 1 << r;
             pinned_ |= 1 << r;
+            // values that read guest g from r (including not yet touched GetRegs) read the saved copy
+            for (int v = 1; v < b_.n; v++) {
+                VI& x = vi_[v];
+                if (x.dead || x.last < cur_) continue;
+                bool untouched = x.k == L_NONE && v <= cur_ && I(v).op == Op::GetReg && I(v).aux == g;
+                if (untouched || (x.k == L_GREG && x.reg == r)) { x.k = L_GMEM; x.g = (u8)g; }
+                if (x.home == g) x.home = -1;   // evicting to "home" would now land in the temporary
+            }
             return r;
         }
         fatal("codegen: out of temporaries at ir %d", cur_);
@@ -212,9 +247,17 @@ void T1::evict(Reg r) {
         if (mapped(g)) { x.k = L_GREG; x.reg = host(g); x.g = (u8)g; }
         else { x.k = L_GMEM; x.g = (u8)g; }
     } else {
-        int s = -1;
-        for (int i = 0; i < 15; i++) if (!(spill_used_ & (1u << i))) { s = i; break; }  // slot 15: flags restore
-        if (s < 0) fatal("codegen: out of spill slots");
+        int s = free_spill_slot();
+        if (s < 0) {
+            // slots of values whose last use did not release them (e.g. consumed through flag
+            // rematerialization) are reclaimed lazily: rebuild the map from the live spilled values
+            // (a dead value's stale slot may already belong to a live one)
+            spill_used_ = 0;
+            for (int v = 1; v < b_.n; v++)
+                if (vi_[v].k == L_SPILL && vi_[v].last >= cur_ && !vi_[v].dead) spill_used_ |= 1u << vi_[v].slot;
+            s = free_spill_slot();
+        }
+        if (s < 0) fatal("codegen: out of spill slots (block %#lx, ir %d)", (unsigned long)b_.start, cur_);
         spill_used_ |= 1u << s;
         as_.mov(8, mem(R15, XEF_ST(spill) + s * 8), r);
         x.k = L_SPILL;
@@ -277,6 +320,7 @@ Reg T1::to_reg(Val v, int size) {
 }
 
 void T1::load_into(Reg dst, Val v, int size) {
+    if (is_c(v) && size == 8) { as_.mov_imm(dst, cv(v)); return; }   // no temporary for 64-bit constants
     Opnd o = opnd(v, true, true, size);
     emit_mov_opnd(size, dst, o);
 }
@@ -289,7 +333,7 @@ void T1::release_operands(const Inst& in) {
             if (x.k == L_REG && owner_[x.reg] == r) owner_[x.reg] = 0;
             if (x.k == L_XMM && xowner_[x.reg] == r) xowner_[x.reg] = 0;
             if (x.k == L_SPILL) spill_used_ &= ~(1u << x.slot);
-            if (x.k == L_VSPILL) vspill_used_ &= ~(1u << x.slot);
+            if (x.k == L_VSPILL) vspill_used_ &= ~(1ull << x.slot);
         }
     });
 }
@@ -325,10 +369,16 @@ void T1::evacuate_guest(int g, int upto) {
 // register, compute v directly into that host register (after evacuating live aliases).
 Reg T1::dest_hint(Val v) {
     int nx = v + 1;
-    while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded || I(nx).op == Op::Nop)) nx++;
+    Val cur = v;
+    for (;;) {
+        while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded || I(nx).op == Op::Nop)) nx++;
+        // look through alias views (e.g. the zero-extension of a 32-bit result) before SetReg
+        if (nx < b_.n && I(nx).a == cur && is_alias_op(I(nx)) && I(nx).op != Op::GetFlags) { cur = (Val)nx++; continue; }
+        break;
+    }
     if (nx < b_.n) {
         const Inst& s = I(nx);
-        if (s.op == Op::SetReg && mapped(s.aux) && s.a == v) {
+        if (s.op == Op::SetReg && mapped(s.aux) && s.a == cur) {
             pinned_ |= 1 << host(s.aux);
             evacuate_guest(s.aux, cur_);
             return host(s.aux);
@@ -440,7 +490,7 @@ void T1::emit_inst(Val v) {
         return;
     }
     case Op::GetFlags: vi_[v].k = L_ALIAS; return;
-    case Op::SetFlags: return;  // bookkeeping only
+    case Op::SetFlags: gflags_ = in.a; return;  // bookkeeping only
     case Op::SetReg: {
         int g = in.aux;
         Val src = resolve(in.a);
@@ -566,6 +616,10 @@ void T1::emit_inst(Val v) {
     case Op::VConst: case Op::VSelect: case Op::FToI: case Op::IToF:
         emit_vec(v); return;
     case Op::Helper: {
+        if (in.sub == 2) {   // IC IVAU
+            emit_call_c((void*)&xef_helper_ic_ivau, 0, in.a, 0, 0);
+            return;
+        }
         // sub=1: CRC32/CRC32C (size in .size, aux=1 for the Castagnoli polynomial)
         if (in.sub == 1 && in.aux == 1 && g_host.sse42) {
             pin(in.a); pin(in.b);
@@ -1143,13 +1197,12 @@ void T1::emit_adc_sbc(Val v, bool flags_out, Val) {
         Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
         Opnd ob = opnd(in.b, true, true, s);
         if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
+        need_flags(in.c);   // before d is written (see emit_select); the movs below keep flags
         Reg d = dest_for(v, s);
         if (ob.k == Opnd::R && ob.r == d && d != ra) {
             Reg t = alloc_temp(); pinned_ |= 1 << t; as_.mov(8, t, ob.r); ob.r = t;
         }
-        // flags must hold the input carry; mov does not disturb flags
         if (d != ra) as_.mov(s, d, ra);
-        need_flags(in.c);
         if (flags_needed_after(cur_) && !fuse) {
             // preserve: spill, compute, restore later
             as_.pushfq(); as_.pop(mem(R15, XEF_ST(flags_spill)));
@@ -1207,6 +1260,19 @@ void T1::emit_select(Val v) {
             return;
         }
     }
+    // Flags first: rematerializing them re-reads their operands, which may die here and share
+    // a register with d (cset w0 after cmp w0: d = x0's register).
+    need_flags(in.a, in.aux);
+    if (is_c(in.b) && is_c(in.c)) {   // cset with the inverted condition: select(c, 0, 1)
+        u64 m = s == 4 ? 0xffffffffull : ~0ull;
+        if ((cv(in.b) & m) == 0 && (cv(in.c) & m) == 1) {
+            Reg d = dest_for(v, s);
+            as_.setcc(invert(c), d);
+            as_.movzx8(d, d);
+            finish_def(v, d);
+            return;
+        }
+    }
     Opnd ot = opnd(in.b, true, false, s);
     if (ot.k == Opnd::R) pinned_ |= 1 << ot.r;
     Opnd of = opnd(in.c, true, true, s);
@@ -1219,13 +1285,11 @@ void T1::emit_select(Val v) {
             as_.mov_imm(t, (u64)of.imm);
             of.k = Opnd::R; of.r = t;
         }
-        need_flags(in.a, in.aux);
         if (of.k == Opnd::R) as_.cmov(invert(c), s, d, of.r); else as_.cmov(invert(c), s, d, of.m);
         if (s == 4 && false) {}
     } else {
         if (of.k == Opnd::R && of.r == d) {
         } else emit_mov_opnd(s, d, of);  // mov does not touch flags
-        need_flags(in.a, in.aux);
         if (ot.k == Opnd::R) as_.cmov(c, s, d, ot.r); else as_.cmov(c, s, d, ot.m);
     }
     finish_def(v, d);
@@ -1315,7 +1379,7 @@ void T1::emit_atomic(Val v) {
         as_.mov_imm(8, mem(R15, XEF_ST(excl_addr)), -1);
         return;
     case Op::LoadExcl: {
-        if (in.aux != 0) fatal("LDXP not implemented yet");
+        if (in.aux != 0) { emit_pair_atomic(v); return; }
         pin(in.a);
         Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
         Reg d = dest_for(v, s);
@@ -1327,7 +1391,7 @@ void T1::emit_atomic(Val v) {
         return;
     }
     case Op::StoreExcl: {
-        if (in.aux != 0) fatal("STXP not implemented yet");
+        if (in.aux != 0) { emit_pair_atomic(v); return; }
         clobber_flags();
         take_reg(RAX); pinned_ |= 1 << RAX;
         pin(in.a); pin(in.b);
@@ -1353,7 +1417,7 @@ void T1::emit_atomic(Val v) {
         return;
     }
     case Op::Cas: {
-        if (in.aux != 0) fatal("CASP not implemented yet");
+        if (in.aux != 0) { emit_pair_atomic(v); return; }
         clobber_flags();
         take_reg(RAX); pinned_ |= 1 << RAX;
         pin(in.a); pin(in.b); pin(in.c);
@@ -1374,9 +1438,11 @@ void T1::emit_atomic(Val v) {
     }
     case Op::AtomicRMW: {
         clobber_flags();
+        u8 aop = in.aux;
+        // the CMPXCHG loop needs RAX: claim it before the address can be placed there
+        if (aop != AT_ADD && aop != AT_SWP) { take_reg(RAX); pinned_ |= 1 << RAX; }
         pin(in.a); pin(in.b);
         Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
-        u8 aop = in.aux;
         if (aop == AT_ADD || aop == AT_SWP) {
             Reg t = alloc_temp(); pinned_ |= 1 << t;
             load_into(t, in.b, s);
@@ -1388,7 +1454,6 @@ void T1::emit_atomic(Val v) {
             assign_reg(v, t);
             return;
         }
-        take_reg(RAX); pinned_ |= 1 << RAX;
         if (ra == RAX) fatal("rmw regs");
         Reg rv = to_reg(in.b); pinned_ |= 1 << rv;
         Reg t = alloc_temp(); pinned_ |= 1 << t;
@@ -1434,6 +1499,100 @@ void T1::emit_atomic(Val v) {
     }
     default: fatal("atomic");
     }
+}
+
+// Pair atomics: LDXP/STXP (LoadExcl/StoreExcl aux 1/2) and CASP (Cas aux 1/2); element size is
+// in.size / 2. The 2x64-bit forms use LOCK CMPXCHG16B, which needs RAX/RBX/RCX/RDX: operands are
+// staged in CpuState::vtmp first, and RBX/RCX/RDX/R11 are preserved around the instruction since
+// they may hold guest registers (tier 2) or live temps. LDXP loads the halves separately; a torn
+// read is caught by STXP, which compares memory against both halves recorded in the monitor.
+void T1::emit_pair_atomic(Val v) {
+    const Inst& in = I(v);
+    const int esz = in.size / 2;
+    const int V0 = XEF_ST(vtmp), V1 = V0 + 16, V2 = V0 + 32, V3 = V0 + 48;
+    if (in.op == Op::LoadExcl) {
+        pin(in.a);
+        Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
+        Reg d = dest_for(v, esz);
+        if (in.aux == 1) {
+            record_pc();
+            as_.mov(8, d, mem(ra, 0));
+            as_.mov(8, mem(R15, XEF_ST(excl_addr)), ra);
+            as_.mov(8, mem(R15, XEF_ST(excl_val)), d);
+            if (esz == 4) as_.mov(4, d, d);
+        } else if (esz == 4) {          // high word comes from the same 64-bit snapshot
+            as_.mov(8, d, mem(R15, XEF_ST(excl_val)));
+            as_.shift_imm(SHR, 8, d, 32);
+        } else {
+            record_pc();
+            as_.mov(8, d, mem(ra, 8));
+            as_.mov(8, mem(R15, XEF_ST(excl_val2)), d);
+        }
+        finish_def(v, d);
+        return;
+    }
+    if (in.op == Op::Cas && in.aux == 2) {  // high half of the CASP result, left in vtmp by aux 1
+        Reg d = dest_for(v, esz);
+        as_.mov(esz, d, mem(R15, V3 + esz));
+        finish_def(v, d);
+        return;
+    }
+    clobber_flags();
+    take_reg(RAX); pinned_ |= 1 << RAX;
+    for_operands(in, [&](Val o) { pin(o); });
+    auto stage = [&](Val x, int size, int off) { load_into(RAX, x, size); as_.mov(size, mem(R15, off), RAX); };
+    stage(in.a, 8, V2);
+    bool cas = in.op == Op::Cas;
+    if (cas) {
+        stage(in.b, esz, V0);
+        stage((Val)(in.imm & 0xffff), esz, V0 + esz);
+        stage(in.c, esz, V1);
+        stage((Val)((in.imm >> 16) & 0xffff), esz, V1 + esz);
+    } else {
+        stage(in.b, esz, V1);
+        stage(in.c, esz, V1 + esz);
+    }
+    Label fail, done;
+    if (!cas) {
+        as_.mov(8, RAX, mem(R15, V2));
+        as_.alu(CMP, 8, RAX, mem(R15, XEF_ST(excl_addr)));
+        as_.jcc(CNE, fail);
+    }
+    if (esz == 4) {
+        as_.push(RCX); as_.push(R11);
+        as_.mov(8, RAX, cas ? mem(R15, V0) : mem(R15, XEF_ST(excl_val)));
+        as_.mov(8, RCX, mem(R15, V1));
+        as_.mov(8, R11, mem(R15, V2));
+        record_pc();
+        as_.cmpxchg(8, mem(R11, 0), RCX);
+        as_.pop(R11); as_.pop(RCX);
+        if (cas) as_.mov(8, mem(R15, V3), RAX);
+    } else {
+        as_.push(RBX); as_.push(RCX); as_.push(RDX); as_.push(R11);
+        as_.mov(8, RAX, cas ? mem(R15, V0) : mem(R15, XEF_ST(excl_val)));
+        as_.mov(8, RDX, cas ? mem(R15, V0 + 8) : mem(R15, XEF_ST(excl_val2)));
+        as_.mov(8, RBX, mem(R15, V1));
+        as_.mov(8, RCX, mem(R15, V1 + 8));
+        as_.mov(8, R11, mem(R15, V2));
+        record_pc();
+        as_.cmpxchg16b(mem(R11, 0));
+        if (cas) { as_.mov(8, mem(R15, V3), RAX); as_.mov(8, mem(R15, V3 + 8), RDX); }
+        as_.pop(R11); as_.pop(RDX); as_.pop(RCX); as_.pop(RBX);
+    }
+    if (cas) {
+        if (esz == 4) as_.mov(4, RAX, RAX);   // old low word
+    } else {
+        // STXP status: 0 = stored, 1 = failed. POP/MOV keep ZF from the compare-exchange.
+        as_.setcc(CNE, RAX);
+        as_.movzx8(RAX, RAX);
+        as_.jmp(done);
+        as_.bind(fail);
+        as_.mov_imm(RAX, 1);
+        as_.bind(done);
+        as_.mov_imm(8, mem(R15, XEF_ST(excl_addr)), -1);
+    }
+    pinned_ &= ~(1 << RAX);
+    assign_reg(v, RAX);
 }
 
 void T1::emit_sys(Val v) {
@@ -1495,10 +1654,12 @@ void T1::emit_call_c(void* fn, Val v, Val a, Val b, u64 imm) {
 
 void T1::emit_terminator(Val v) {
     const Inst& in = I(v);
-    // every other value is dead now; release temps not holding the operand
+    // release temps of dead values; operands of the live-out flags stay (rematerialization)
     {
         Val keep = in.a ? resolve(in.a) : 0;
-        for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) if (owner_[r] && owner_[r] != keep) owner_[r] = 0;
+        for (int ti_ = 0; ti_ < ntemps_; ti_++)
+            if (Reg r = temps_[ti_]; true)
+                if (owner_[r] && owner_[r] != keep && vi_[owner_[r]].last < cur_) owner_[r] = 0;
     }
     // All terminators: guest NZCV must be in EFLAGS.
     auto ensure_flags = [&]() { if (live_out_ && final_flags_ != eflags_) need_flags(final_flags_); };
@@ -1522,8 +1683,8 @@ void T1::emit_terminator(Val v) {
         int s = sz(I(in.a).ty);
         take_reg(RCX);
         pinned_ |= 1 << RCX;
+        ensure_flags();   // first: may read values from registers the load below reuses
         load_into(RCX, in.a, s);
-        ensure_flags();
         bool nz = in.aux;
         u8* j = as_.jrcxz_fwd();
         // not zero
@@ -1564,6 +1725,7 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitIndirect: {
         take_reg(RAX);
+        pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
         emit_ibtc_probe();
@@ -1582,6 +1744,7 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitCallIndirect: {
         take_reg(RAX);
+        pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
         as_.mov_imm(RCX, in.imm2);
@@ -1596,6 +1759,7 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitRet: {
         take_reg(RAX);
+        pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
         // compare guest return address on the native stack with target (flag-free)

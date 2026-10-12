@@ -274,6 +274,10 @@ const u8 kSbox[256] = {
 u8 inv_sbox[256];
 bool inv_init = [] { for (int i = 0; i < 256; i++) inv_sbox[kSbox[i]] = (u8)i; return true; }();
 inline u8 xt(u8 x) { return (u8)((x << 1) ^ ((x & 0x80) ? 0x1b : 0)); }
+inline u32 rol32(u32 x, int n) { return (x << n) | (x >> (32 - n)); }
+inline u32 ror32(u32 x, int n) { return (x >> n) | (x << (32 - n)); }
+inline u32 sha_choose(u32 x, u32 y, u32 z) { return ((y ^ z) & x) ^ z; }
+inline u32 sha_majority(u32 x, u32 y, u32 z) { return (x & y) | ((x | y) & z); }
 inline u8 gmul(u8 a, u8 b) {
     u8 p = 0;
     for (int i = 0; i < 8; i++) { if (b & 1) p ^= a; a = xt(a); b >>= 1; }
@@ -854,6 +858,74 @@ void vec_ref(u32 op, int es, u32 flags, u64 imm, const V128& a, const V128& b, c
                 d[3] = gmul(s[0], 11) ^ gmul(s[1], 13) ^ gmul(s[2], 9) ^ gmul(s[3], 14);
             }
         }
+        break;
+    }
+    case V_SHA1C: case V_SHA1P: case V_SHA1M: {   // a = Qd (hash state), b = Sn, c = Vm (schedule)
+        u32 x[4], y = (u32)get(b, 0, 4);
+        for (int e = 0; e < 4; e++) x[e] = (u32)get(a, e, 4);
+        for (int e = 0; e < 4; e++) {
+            u32 f = op == V_SHA1C ? sha_choose(x[1], x[2], x[3])
+                  : op == V_SHA1P ? (x[1] ^ x[2] ^ x[3]) : sha_majority(x[1], x[2], x[3]);
+            y += rol32(x[0], 5) + f + (u32)get(c, e, 4);
+            x[1] = rol32(x[1], 30);
+            u32 top = x[3];                       // <Y,X> = ROL(Y:X, 32)
+            x[3] = x[2]; x[2] = x[1]; x[1] = x[0]; x[0] = y; y = top;
+        }
+        r = V128{};
+        for (int e = 0; e < 4; e++) put(r, e, 4, x[e]);
+        break;
+    }
+    case V_SHA1H: r = V128{}; put(r, 0, 4, rol32((u32)get(a, 0, 4), 30)); break;
+    case V_SHA1SU0: {
+        V128 t;
+        put(t, 0, 8, get(a, 1, 8));
+        put(t, 1, 8, get(b, 0, 8));
+        for (int e = 0; e < 2; e++) put(r, e, 8, get(t, e, 8) ^ get(a, e, 8) ^ get(c, e, 8));
+        break;
+    }
+    case V_SHA1SU1: {
+        u32 t[4];
+        for (int e = 0; e < 4; e++) t[e] = (u32)get(a, e, 4) ^ (e < 3 ? (u32)get(b, e + 1, 4) : 0);
+        for (int e = 0; e < 3; e++) put(r, e, 4, rol32(t[e], 1));
+        put(r, 3, 4, rol32(t[3], 1) ^ rol32(t[0], 2));
+        break;
+    }
+    case V_SHA256H: case V_SHA256H2: {
+        // SHA256H: X = Qd, Y = Qn -> X;  SHA256H2: X = Qn, Y = Qd -> Y
+        u32 x[4], y[4];
+        const V128& xs = op == V_SHA256H ? a : b;
+        const V128& ys = op == V_SHA256H ? b : a;
+        for (int e = 0; e < 4; e++) { x[e] = (u32)get(xs, e, 4); y[e] = (u32)get(ys, e, 4); }
+        for (int e = 0; e < 4; e++) {
+            u32 chs = sha_choose(y[0], y[1], y[2]);
+            u32 maj = sha_majority(x[0], x[1], x[2]);
+            u32 s1 = ror32(y[0], 6) ^ ror32(y[0], 11) ^ ror32(y[0], 25);
+            u32 s0 = ror32(x[0], 2) ^ ror32(x[0], 13) ^ ror32(x[0], 22);
+            u32 tt = y[3] + s1 + chs + (u32)get(c, e, 4);
+            x[3] += tt;
+            y[3] = tt + s0 + maj;
+            u32 ytop = y[3], xtop = x[3];          // <Y,X> = ROL(Y:X, 32)
+            y[3] = y[2]; y[2] = y[1]; y[1] = y[0]; y[0] = xtop;
+            x[3] = x[2]; x[2] = x[1]; x[1] = x[0]; x[0] = ytop;
+        }
+        const u32* res = op == V_SHA256H ? x : y;
+        for (int e = 0; e < 4; e++) put(r, e, 4, res[e]);
+        break;
+    }
+    case V_SHA256SU0: {
+        u32 t[4] = {(u32)get(a, 1, 4), (u32)get(a, 2, 4), (u32)get(a, 3, 4), (u32)get(b, 0, 4)};
+        for (int e = 0; e < 4; e++)
+            put(r, e, 4, (ror32(t[e], 7) ^ ror32(t[e], 18) ^ (t[e] >> 3)) + (u32)get(a, e, 4));
+        break;
+    }
+    case V_SHA256SU1: {
+        u32 t0[4] = {(u32)get(b, 1, 4), (u32)get(b, 2, 4), (u32)get(b, 3, 4), (u32)get(c, 0, 4)};
+        u32 res[4];
+        for (int e = 0; e < 4; e++) {
+            u32 x = e < 2 ? (u32)get(c, e + 2, 4) : res[e - 2];
+            res[e] = (ror32(x, 17) ^ ror32(x, 19) ^ (x >> 10)) + (u32)get(a, e, 4) + t0[e];
+        }
+        for (int e = 0; e < 4; e++) put(r, e, 4, res[e]);
         break;
     }
     default:

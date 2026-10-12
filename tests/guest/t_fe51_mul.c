@@ -1,0 +1,47 @@
+// X25519 field multiplication (radix 2^51, OpenSSL's fe51_mul as compiled in Ubuntu's libcrypto,
+// copied as machine code): one 128-instruction block of mul/umulh/adds/adc under heavy register
+// pressure. Every ECDHE TLS handshake failed with "bad record mac".
+#include <stdint.h>
+#include <stdio.h>
+__asm__(".text\n.p2align 4\n.globl fe51_mul\nfe51_mul:\n"
+        ".inst 0xd503233f, 0xa9bb7bfd, 0x910003fd, 0xa90363f7, 0xa9411c57, 0xa9025bf5\n"
+        ".inst 0xf9401050, 0xa90153f3, 0xa941582f, 0x8b170af1, 0x8b0708e8, 0x8b100a05\n"
+        ".inst 0xa9405424, 0xd37ef631, 0xa9400c4c, 0xd37ef508, 0xcb070108, 0xcb170231\n"
+        ".inst 0xd37ef4a5, 0xa9046bf9, 0xcb1000a5, 0xf9401032, 0x9b087dea, 0x9b117ec1\n"
+        ".inst 0x8b030874, 0x9bd17ec6, 0x9bc87de2, 0xab01014a, 0x9b057ea9, 0xd37ef694\n"
+        ".inst 0x9b0c7c81, 0x9a060042, 0x9bc57ead, 0xcb030294, 0x9bcc7c86, 0xab090021\n"
+        ".inst 0x9b167d0b, 0x9a0d00c6, 0x9b0f7ca9, 0xab010153, 0x9bcf7cad, 0x9bd67d0a\n"
+        ".inst 0x9a060042, 0x9b157d81, 0xab0b0129, 0x9b037c86, 0x9a0a01ad, 0x9bc37c8b\n"
+        ".inst 0x9bd57d98, 0xab060021, 0x9b167cb9, 0x9b0f7d8a, 0x9a0b0318, 0x9bd67cba\n"
+        ".inst 0xab01012e, 0x9bcf7d86, 0x9a1801ad, 0x9b177c89, 0xab19014a, 0x9b157c61\n"
+        ".inst 0x9a1a00c6, 0x9bd77c8b, 0x9bd57c78, 0xab090021, 0x9b167d9a, 0x9b0f7c69\n"
+        ".inst 0x9a0b0318, 0x9bcf7c79, 0xab01015e, 0x9bd67d81, 0x9a1800cb, 0x9b077c98\n"
+        ".inst 0xab1a0129, 0x9b157ee6, 0x9a010321, 0x9bd57eea, 0x9bc77c99, 0xab1800c6\n"
+        ".inst 0x9b0f7ef8, 0x9a19014a, 0x9bcf7ef7, 0xab060129, 0x9b167c6f, 0x9a0a0021\n"
+        ".inst 0x9bd67c63, 0x9b157cea, 0xab0f030f, 0x9b107c96, 0x9a0302e3, 0x9bd07c86\n"
+        ".inst 0x9bd57ce7, 0xab16014a, 0x9b127e90, 0x9b127d04, 0x9a0600e7, 0x9bd27e94\n"
+        ".inst 0xab0a01ef, 0x9a070063, 0x9bd27d08, 0xab130210, 0x9b127ca7, 0x9a140042\n"
+        ".inst 0xab1e008a, 0x9a080166, 0x9bd27ca5, 0x9b127e24, 0x93d0cc42, 0x9b127d88\n"
+        ".inst 0x93caccc6, 0xab0700c6, 0x9bd27e27, 0x9a8534a5, 0xab0900c6, 0x9a050021\n"
+        ".inst 0xab040042, 0x9a8734e5, 0x9bd27d84, 0xab0e0042, 0x93c6cc21, 0x9a0501ad\n"
+        ".inst 0xab080021, 0x9a843484, 0xab0f0021, 0x9a040065, 0x93c2cdad, 0x9240ca10\n"
+        ".inst 0x9240c944, 0x8b0d0084, 0x93c1cca5, 0x9240c8c6, 0x9240c842, 0x8b0508a3\n"
+        ".inst 0x8b44ccc6, 0x9240c884, 0x9240c821, 0x8b030a03, 0xa9011804, 0xcb050063\n"
+        ".inst 0xa94153f3, 0x9240c864, 0xa9425bf5, 0x8b43cc43, 0xa9000c04, 0xf9001001\n"
+        ".inst 0xa94363f7, 0xa9446bf9, 0xa8c57bfd, 0xd50323bf, 0xd2800000, 0xd2800001\n"
+        ".inst 0xd2800002, 0xd2800003, 0xd2800004, 0xd2800005, 0xd2800006, 0xd2800007\n"
+        ".inst 0xd2800008, 0xd2800009, 0xd280000a, 0xd280000b, 0xd280000c, 0xd280000d\n"
+        ".inst 0xd280000e, 0xd280000f, 0xd2800010, 0xd2800011, 0xd2800012, 0xd65f03c0\n");
+void fe51_mul(uint64_t h[5], const uint64_t f[5], const uint64_t g[5]);
+static uint64_t s = 0x9e3779b97f4a7c15ull;
+static uint64_t rnd(void) { s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s; }
+int main(void) {
+    uint64_t h[5], f[5], g[5], acc = 0;
+    for (int i = 0; i < 20000; i++) {
+        for (int k = 0; k < 5; k++) { f[k] = rnd() & 0x7ffffffffffffull; g[k] = rnd() & 0x7ffffffffffffull; }
+        fe51_mul(h, f, g);
+        for (int k = 0; k < 5; k++) acc = acc * 31 + h[k];
+    }
+    printf("%016llx\n", (unsigned long long)acc);
+    return 0;
+}

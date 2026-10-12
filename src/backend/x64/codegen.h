@@ -9,10 +9,7 @@ namespace xef::backend {
 // Number of patchable direct exits the block will need.
 int count_exits(const ir::Block& b);
 
-struct HostPcEntry {
-    u32 host_off;
-    u32 guest_off;
-};
+using HostPcEntry = PcMapEntry;
 
 // One host register whose content differs between the canonical mapping and a region mapping.
 struct RegionXfer {

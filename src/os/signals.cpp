@@ -49,8 +49,36 @@ static int host_greg_index(x64::Reg r) {
     }
 }
 
+extern thread_local ThreadCtx* tls_thread;
+static bool deliver_sync_fault(int sig, siginfo_t* si, ucontext_t* uc);
+
+// guest reg -> host reg for the code at `b` (canonical, or the region's own mapping)
+static x64::Reg block_host_reg(const BlockMeta* b, int g) {
+    return b && b->region ? (x64::Reg)b->region->map[g] : regmap::host(g);
+}
+
+// Deep guest recursion fills the JIT stack (one native return-stack entry per BL). On a fault in
+// its guard page, move the newest bytes back to the top and continue: entries that are dropped
+// only turn later RETs into return-stack mismatches, which fall back to the IBTC.
+static bool relocate_jit_stack(int sig, siginfo_t* si, ucontext_t* uc) {
+    ThreadCtx* t = tls_thread;
+    greg_t* gr = uc->uc_mcontext.gregs;
+    if (!t || sig != SIGSEGV || !g_cache.contains((u8*)gr[REG_RIP])) return false;
+    u8* a = (u8*)si->si_addr;
+    if (a < t->jit_stack || a >= t->jit_stack + 4096) return false;
+    u8* rsp = (u8*)gr[REG_RSP];
+    u8* top = (u8*)t->st->jit_stack_top;
+    const size_t keep = 256;   // covers push/pop sequences in progress
+    u8* nsp = top - keep - 16 + ((uintptr_t)rsp & 15);
+    memmove(nsp, rsp, keep);
+    gr[REG_RSP] = (greg_t)nsp;
+    return true;
+}
+
 static void crash_handler(int sig, siginfo_t* si, void* ctx) {
     ucontext_t* uc = (ucontext_t*)ctx;
+    if (relocate_jit_stack(sig, si, uc)) return;
+    if (deliver_sync_fault(sig, si, uc)) return;
     u8* rip = (u8*)uc->uc_mcontext.gregs[REG_RIP];
     char buf[512];
     int n = snprintf(buf, sizeof buf, "xef: fatal signal %d at host %p [xef+%#lx] (fault addr %p)\n", sig, rip,
@@ -58,14 +86,22 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
     write(2, buf, n);
     if (g_cache.contains(rip)) {
         BlockMeta* b = g_cache.find_by_host(rip);
+        const PcMapEntry* pe = b ? g_cache.find_pc(b, rip) : nullptr;
         if (b) {
             n = snprintf(buf, sizeof buf, "xef:   in translated block guest %#lx..%#lx (host %p +%#lx)\n",
                          (unsigned long)b->start, (unsigned long)b->end, b->code, (unsigned long)(rip - b->code));
             write(2, buf, n);
+            if (pe) {
+                n = snprintf(buf, sizeof buf, "xef:   guest pc %#lx%s\n", (unsigned long)(b->start + pe->guest_off),
+                             b->region ? " (tier-2 region)" : "");
+                write(2, buf, n);
+            }
         }
         CpuState* st = (CpuState*)(uc->uc_mcontext.gregs[REG_R15] - kStateBias);
         for (int g = 0; g < 32; g++) {
-            u64 v = regmap::mapped(g) ? (u64)uc->uc_mcontext.gregs[host_greg_index(regmap::host(g))] : st->x[g];
+            x64::Reg h = block_host_reg(b, g);
+            bool in_reg = h != x64::NOREG && !(pe && (pe->borrowed & (1 << h)));
+            u64 v = in_reg ? (u64)uc->uc_mcontext.gregs[host_greg_index(h)] : st->x[g];
             n = snprintf(buf, sizeof buf, "  %-3s=%016lx%s", kGuestRegNames[g], (unsigned long)v, (g % 4 == 3) ? "\n" : "");
             write(2, buf, n);
         }
@@ -84,15 +120,28 @@ void signals_init() {
     }
     struct sigaction sa {};
     sa.sa_sigaction = crash_handler;
-    sa.sa_flags = SA_SIGINFO;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigaction(SIGSEGV, &sa, nullptr);
     sigaction(SIGBUS, &sa, nullptr);
     sigaction(SIGILL, &sa, nullptr);
     sigaction(SIGFPE, &sa, nullptr);
     struct sigaction tr {};
     tr.sa_sigaction = trap_handler;
-    tr.sa_flags = SA_SIGINFO;
+    tr.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigaction(SIGTRAP, &tr, nullptr);
+}
+
+// --stats / --profile: report also when the program is interrupted (until the guest installs
+// its own handler for these signals)
+static void report_and_die(int sig) {
+    signals_flush_output();
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+void signals_report_on_interrupt() {
+    signal(SIGINT, report_and_die);
+    signal(SIGTERM, report_and_die);
 }
 
 void signals_flush_output() {
@@ -111,7 +160,7 @@ void signals_flush_output() {
 thread_local ThreadCtx* tls_thread;
 
 constexpr u64 kInternalSigs = (1ull << (SIGSEGV - 1)) | (1ull << (SIGBUS - 1)) | (1ull << (SIGILL - 1)) |
-                              (1ull << (SIGFPE - 1)) | (1ull << (SIGPROF - 1)) | (1ull << (SIGTRAP - 1));
+                              (1ull << (SIGFPE - 1)) | (1ull << (kSampleSig - 1)) | (1ull << (SIGTRAP - 1));
 constexpr u64 G_SA_SIGINFO = 4, G_SA_ONSTACK = 0x08000000, G_SA_RESTART = 0x10000000, G_SA_NODEFER = 0x40000000,
               G_SA_RESETHAND = 0x80000000, G_SA_RESTORER = 0x04000000;
 
@@ -176,6 +225,40 @@ static void trap_handler(int sig, siginfo_t* si, void* ctx) {
 
 bool g_actions_handler(int sig) { return g_actions[sig].handler > 1; }
 
+// Synchronous SIGSEGV/SIGBUS raised by a guest memory access in translated code, with a guest
+// handler installed: rebuild the precise guest state at the faulting instruction from the
+// block's pc map (GPRs from the block's register mapping, NZCV from EFLAGS or its spill slot;
+// SetReg is never deferred past a later memory access, and vector registers live in CpuState),
+// then leave the JIT through exit_to_runtime; the runtime builds the signal frame.
+static bool deliver_sync_fault(int sig, siginfo_t* si, ucontext_t* uc) {
+    ThreadCtx* t = tls_thread;
+    if (!t || (sig != SIGSEGV && sig != SIGBUS) || !g_actions_handler(sig)) return false;
+    greg_t* gr = uc->uc_mcontext.gregs;
+    u8* rip = (u8*)gr[REG_RIP];
+    if (!g_cache.contains(rip)) return false;
+    CpuState* st = t->st;
+    if ((u64)gr[REG_R15] != (u64)st + kStateBias) return false;
+    BlockMeta* b = g_cache.find_by_host(rip);
+    const PcMapEntry* e = b ? g_cache.find_pc(b, rip) : nullptr;
+    if (!e) return false;
+    for (int g = 0; g < 32; g++) {
+        x64::Reg h = block_host_reg(b, g);
+        if (h != x64::NOREG && !(e->borrowed & (1 << h))) st->x[g] = (u64)gr[host_greg_index(h)];
+    }
+    st->pc = b->start + e->guest_off;
+    u64 efl = e->flags_loc == PCF_SPILL ? st->flags_spill : (u64)gr[REG_EFL];
+    st->eflags = (efl & 0x8c1) | 0x202;      // NZCV lives in SF/ZF/CF/OF
+    for (int g = 0; g < 32; g++)
+        if (regmap::mapped(g)) gr[host_greg_index(regmap::host(g))] = (greg_t)st->x[g];
+    gr[REG_EFL] = (greg_t)st->eflags;
+    t->sync_sig = sig;
+    t->sync_info = *si;
+    st->exit_reason = EXIT_SIGNAL;
+    st->pending_signal = 1;
+    gr[REG_RIP] = (greg_t)g_cache.stubs.exit_to_runtime;
+    return true;
+}
+
 i64 sig_rt_sigaction(CpuState*, int sig, u64 act, u64 oact, u64 sigsetsize) {
     if (sig < 1 || sig > 64 || sigsetsize != 8) return -EINVAL;
     if (oact) *(GuestSigaction*)oact = g_actions[sig];
@@ -189,7 +272,7 @@ i64 sig_rt_sigaction(CpuState*, int sig, u64 act, u64 oact, u64 sigsetsize) {
             h.sa_handler = (void (*)(int))a.handler;
         } else {
             h.sa_sigaction = async_handler;
-            h.sa_flags = SA_SIGINFO | ((a.flags & G_SA_RESTART) ? SA_RESTART : 0);
+            h.sa_flags = SA_SIGINFO | SA_ONSTACK | ((a.flags & G_SA_RESTART) ? SA_RESTART : 0);
             sigfillset(&h.sa_mask);
         }
         sigaction(sig, &h, nullptr);
@@ -247,7 +330,19 @@ constexpr u32 FPSIMD_MAGIC = 0x46508001;
 
 static void deliver_one(CpuState* st, int sig, const siginfo_t& si, u64 saved_mask) {
     ThreadCtx* t = st->thread;
-    GuestSigaction& a = g_actions[sig];
+    GuestSigaction a = g_actions[sig];   // a copy: the guest may change it concurrently
+    // the disposition may have changed since the signal was queued
+    if (a.handler == (u64)SIG_IGN) return;
+    if (a.handler == (u64)SIG_DFL) {
+        if (sig == SIGCHLD || sig == SIGURG || sig == SIGWINCH || sig == SIGCONT) return;   // default: ignore
+        signal(sig, SIG_DFL);   // default: terminate (or stop / core) like the host would
+        sigset_t one;
+        sigemptyset(&one);
+        sigaddset(&one, sig);
+        pthread_sigmask(SIG_UNBLOCK, &one, nullptr);
+        raise(sig);
+        return;
+    }
     u64 sp = st->x[kGuestSP];
     if ((a.flags & G_SA_ONSTACK) && t->ss_size && !(sp > t->ss_sp && sp <= t->ss_sp + t->ss_size))
         sp = t->ss_sp + t->ss_size;
@@ -286,7 +381,7 @@ static void deliver_one(CpuState* st, int sig, const siginfo_t& si, u64 saved_ma
     if (!(a.flags & G_SA_NODEFER)) nm |= sigbit(sig);
     host_setmask(nm);
     if (a.flags & G_SA_RESETHAND) {
-        a.handler = 0;
+        g_actions[sig].handler = 0;
         struct sigaction h {};
         h.sa_handler = SIG_DFL;
         sigaction(sig, &h, nullptr);
@@ -311,6 +406,13 @@ void signals_deliver_pending(CpuState* st) {
     // EXIT_SIGNAL clobbers nothing; strip TF that may have been captured by an exit stub
     st->eflags &= ~0x100ull;
     u64 m = host_blocked();
+    ThreadCtx* t = st->thread;
+    if (int sig = t->sync_sig) {   // synchronous fault: delivered first, even if blocked
+        t->sync_sig = 0;
+        deliver_one(st, sig, t->sync_info, m);
+        st->pending_signal = __atomic_load_n(&t->pending, __ATOMIC_SEQ_CST) != 0;
+        return;
+    }
     deliver_pending_masked(st, m, m);
 }
 
@@ -360,6 +462,17 @@ i64 sig_sigaltstack(CpuState* st, u64 ss, u64 oss) {
     return 0;
 }
 
-void signals_thread_init(ThreadCtx* t) { tls_thread = t; }
+// XEF's own handlers run on a per-thread alternate stack: the JIT stack may be the one that
+// overflowed, and guest code must not see host frames on its stack.
+void signals_thread_init(ThreadCtx* t) {
+    tls_thread = t;
+    const size_t sz = 64 << 10;
+    void* p = mmap(nullptr, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) return;
+    stack_t ss {};
+    ss.ss_sp = p;
+    ss.ss_size = sz;
+    sigaltstack(&ss, nullptr);
+}
 
 }  // namespace xef

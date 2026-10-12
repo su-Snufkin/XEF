@@ -1,6 +1,7 @@
 // XEF — AArch64 base (integer / branch / load-store / system) translation.
 #include "frontend/a64/translate.h"
 
+#include <stdlib.h>
 #include <sys/mman.h>
 
 namespace xef::a64 {
@@ -281,6 +282,18 @@ bool Translator::branch_sys(u32 i) {
             ended_ = true;
             return true;
         }
+        if (opc == 2 && ll == 0 && imm16 == 0x5847) {  // HLT #0x5847: return from a host -> guest call
+            Val v = ir_.emit(Op::ExitSyscall, Type::None, kNone, kNone, kNone, pc);
+            ir_.inst(v).imm2 = 0x10000 | imm16;
+            ended_ = true;
+            return true;
+        }
+        if (opc == 2 && ll == 0 && imm16 == 0x5846) {  // HLT #0x5846: host library thunk (thunks.h)
+            Val v = ir_.emit(Op::ExitSyscall, Type::None, kNone, kNone, kNone, pc + 4);
+            ir_.inst(v).imm2 = 0x10000 | imm16;
+            ended_ = true;
+            return true;
+        }
         if (opc == 2 && ll == 0) {  // HLT
             Val v = ir_.emit(Op::ExitBrk, Type::None, kNone, kNone, kNone, pc);
             ir_.inst(v).imm2 = 0x10000 | imm16;
@@ -389,7 +402,13 @@ bool Translator::system(u32 i) {
             for (int k = 0; k < 64; k += 8) ir_.store(ir_.add(Type::I64, addr, ir_.c64(k)), z, 8);
             return true;
         }
-        // IC IVAU / DC CVAU / DC CIVAC / DC CVAC ...: no-ops; SMC is detected by page protection.
+        // IC IVAU: op1=3 crn=7 crm=5 op2=1 -> drop translations of that cache line
+        if (!l && op1 == 3 && crn == 7 && crm == 5 && op2 == 1) {
+            Val h = ir_.emit(Op::Helper, Type::None, X(rt, Type::I64));
+            ir_.inst(h).sub = 2;  // helper id: IC IVAU
+            return true;
+        }
+        // DC CVAU / DC CIVAC / DC CVAC ...: no-ops (x86 caches are coherent)
         return !l;
     }
     if (op0 >= 2) {  // MRS / MSR (register)
@@ -590,6 +609,8 @@ bool Translator::ldst_reg(u32 i) {
     bool v = bit(i, 26);
     int rt = bits(i, 4, 0), rn = bits(i, 9, 5);
     u32 b2524 = bits(i, 25, 24);
+    // LSE atomics: bits 23:22 are the A/R ordering bits there, not opc
+    if (!v && b2524 == 0 && bit(i, 21) && bits(i, 11, 10) == 0) return ldst_atomic(i);
     // Determine access properties.
     int sz;
     bool load, sign = false, prfm = false;
@@ -862,7 +883,7 @@ bool Translator::dp_reg(u32 i) {
 
 // ---------------------------------------------------------------- NZCV liveness lookahead
 
-static bool guest_readable(GuestAddr pc) {
+bool guest_readable(GuestAddr pc) {
     static thread_local GuestAddr last_ok = 1;
     GuestAddr page = pc & ~0xfffull;
     if (page == last_ok) return true;
@@ -872,11 +893,24 @@ static bool guest_readable(GuestAddr pc) {
     return true;
 }
 
+static thread_local PeekLog* tls_peek;
+void set_peek_log(PeekLog* log) { tls_peek = log; }
+
+// AAPCS64 does not preserve NZCV across calls, and compiled code never passes values in it, so
+// flags are dead at calls and returns. XEF_STRICT_FLAGS=1 drops this assumption (hand-written
+// assembly with flag-passing subroutines).
+bool g_abi_flags = !getenv("XEF_STRICT_FLAGS");
+
+static bool abi_kills_flags(Op op) {
+    return g_abi_flags && (op == Op::ExitCall || op == Op::ExitCallIndirect || op == Op::ExitRet);
+}
+
 // Returns true if NZCV may be read at `pc` before being overwritten.
 bool nzcv_live_at(GuestAddr pc, int depth) {
     static thread_local ir::Block* scratch = new ir::Block();
     for (int i = 0; i < 24; i++) {
         if (!guest_readable(pc)) return true;
+        if (tls_peek) tls_peek->add(pc, pc + 4);
         scratch->clear(pc);
         Translator tr(*scratch);
         tr.step(pc, *(const u32*)pc);
@@ -893,10 +927,13 @@ bool nzcv_live_at(GuestAddr pc, int depth) {
         if (term) {
             switch (term->op) {
             case Op::ExitJump: pc = term->imm; continue;
-            case Op::ExitCbz: case Op::ExitTbz:
+            case Op::ExitCbz: case Op::ExitTbz: {
                 if (depth >= 2) return true;
-                return nzcv_live_at(term->imm, depth + 1) || nzcv_live_at(term->imm2, depth + 1);
-            default: return true;  // calls, returns, indirect branches, syscalls: conservative
+                // read both targets first: the recursion reuses `scratch`, which `term` points into
+                GuestAddr t1 = term->imm, t2 = term->imm2;
+                return nzcv_live_at(t1, depth + 1) || nzcv_live_at(t2, depth + 1);
+            }
+            default: return !abi_kills_flags(term->op);  // indirect branches, syscalls: conservative
             }
         }
         pc += 4;
@@ -914,7 +951,7 @@ static void compute_flags_liveness(ir::Block& blk) {
     case Op::ExitCond: case Op::ExitCbz: case Op::ExitTbz:
         blk.flags_live_out = nzcv_live_at(term->imm, 0) || nzcv_live_at(term->imm2, 0);
         break;
-    default: blk.flags_live_out = true; break;
+    default: blk.flags_live_out = !abi_kills_flags(term->op); break;
     }
 }
 

@@ -1,0 +1,17 @@
+rwx v=1 sum=1000
+rwx v=2 sum=2000
+rwx v=3 sum=3000
+rwx v=4 sum=4000
+rwx v=5 sum=5000
+w^x v=10 got=10
+w^x v=11 got=11
+w^x v=12 got=12
+remap v=20 got=20 same=1
+remap v=21 got=21 same=1
+remap v=22 got=22 same=1
+loop k=1 r=10000000
+loop k=2 r=20000000
+loop k=3 r=30000000
+loop k=4 r=40000000
+patched loop r=100000
+spinner stopped: 1

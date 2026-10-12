@@ -6,7 +6,7 @@ wydajność jest priorytetem zaraz po poprawności. Użytkownik akceptuje każdy
 jest „rozwijaj XEF dopóki nie skończą się tokeny”.
 
 **Zasady repo:** commity BEZ stopki „Co-Authored-By: Claude”; autor zawsze `su-Snufkin <341201482+su-Snufkin@users.noreply.github.com>` (ustawione w `git config` repo; nie podawaj `-c user.email`).
-Remote: `git@github.com:su-Snufkin/XEF.git`, gałąź `main`.
+Remote: `git@github.com:su-Snufkin/XEF.git`; bieżąca praca na gałęzi `claude/upbeat-wright-ausggy` (`git push -u origin claude/upbeat-wright-ausggy`), bez PR-ów bez prośby.
 
 ## Szybki start (nowa maszyna / cloud)
 ```sh
@@ -14,7 +14,10 @@ tools/setup.sh                       # cmake/ninja (venv), sysroot arm64, qemu-u
 export PATH=$PWD/.tools/venv/bin:$PATH
 cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ && ninja -C build
 cmake -S . -B build-dbg -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ && ninja -C build-dbg
-tests/guest/run.sh                   # programy C/C++ vs qemu (27/27 przechodzi)
+tests/guest/run.sh                   # programy C/C++ vs qemu (72/72)
+tests/rootfs/run.sh                  # ścieżki -L (symlinki wewnątrz rootfs)
+tests/gui/run.sh                     # shimy --host-gl (bez serwera X)
+tools/build_thunks.sh                # shimy gościa dla --host-gl (libGL/libEGL/libvulkan)
 (cd tests/diff && python3 fuzz.py -n 3000 --class all --seed 1)   # fuzzer instrukcji vs qemu
 bench/build.sh && bench/run.py       # benchmarki -> docs/benchmarks.md
 ```
@@ -24,77 +27,68 @@ Diagnostyka: `--stats`, `--profile`, `--dump-ir`, `--dump-code`, `-v`, `--no-tie
 zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebiegów).
 
 ## Co działa
-- Loader ELF (static, static-pie, dynamic przez ld-linux z rootfs), syscalle (generic → x86-64 z konwersjami).
-- Frontend: pełne int/load-store/branch/system, LSE, NEON/FP (szeroko; rzadkie operacje przez `vec_ref`).
-  Brak: LDXP/STXP/CASP w codegenie (`fatal`), SHA1/SHA256, FP16 arytmetyka.
-- Tier 1 JIT: stałe mapowanie rejestrów, NZCV w EFLAGS (CF=!C), lookahead żywotności flag,
-  rematerializacja flag, block linking, IBTC inline, natywny RSB dla BL/RET.
-- Tier 2: regiony gorących pętli z regionalnym mapowaniem rejestrów, dataflow flag, wątek
-  kompilacji w tle, sampling SIGPROF, degradacja regionów, które wychodzą zbyt często.
-- Wątki (clone → pthread_create), fork/vfork, execve (z obsługą shebang i natywnych binarek x86).
-- Testy: 27 programów gościa zgodnych z qemu; fuzzer bez niezgodności poza znakiem/payloadem NaN
-  (świadome odstępstwo, opisane w ARCHITECTURE.md).
+- Loader ELF (static, static-pie, dynamic przez ld-linux z rootfs), skrypty `#!` także jako program startowy.
+- Syscalle: generic → x86-64 z konwersjami; ścieżki absolutne przekierowywane do rootfs (także w
+  passthrough: statx, mkdirat, renameat, xattr, chdir…; `getcwd` zdejmuje prefiks rootfs).
+- Frontend: int/LSE (także A/R), LDXP/STXP/CASP, NEON/FP, AES/SHA1/SHA256/PMULL/CRC32 (HWCAP ogłasza
+  je + ATOMICS). Brak: FP16 arytmetyka (FPHP/ASIMDHP), SVE.
+- Tier 1/Tier 2 jak wcześniej; wiele operacji NEON natywnie (patrz `--stats` → "vector ops via C helper").
+- Sygnały: asynchroniczne (TF single-step) i **synchroniczne SIGSEGV/SIGBUS** do handlerów gościa
+  (mapa host-PC→guest-PC per blok w `CodeCache::set_pcmap`, rejestry z mapowania bloku/regionu).
+- **Inwalidacja kodu**: IC IVAU, munmap/mmap FIXED/mprotect/mremap; zależności bloków (ciało + lookahead
+  flag) w indeksie stron; regiony tier 2 zabijane przez przekierowanie wewnętrznych skoków (atomowo).
+- Wątki, fork/vfork, execve; przepełnienie stosu JIT (głęboka rekurencja) obsługiwane.
+- **GUI / gry 3D** (docs/GUI.md): X11, GTK3, Qt, Mesa llvmpipe (GL 4.5), glmark2, Neverball, ETR,
+  OpenArena, Minetest, SuperTuxKart, Warzone 2100, TORCS, Trigger Rally, Red Eclipse, Scorched3D,
+  MegaGlest, Blender 4.0, Godot 3.5, Stellarium, WebKitGTK (WebGL), vkcube/vkmark.
+- **`--host-gl`** (thunki): GL/GLX/EGL/GLES/Vulkan gościa → natywne biblioteki hosta (src/thunks,
+  thunks/, tools/gen_glthunks.py). Wywołania zwrotne host→gość przez `guest_call` (hlt #0x5847).
+- Python 3.12 z rootfs przechodzi testy stdlib (pakiet `libpython3.12-testsuite`; uruchamiaj
+  `build/xef -L R /usr/bin/python3 -m test ...` — ścieżką gościa, inaczej sys.prefix wskazuje hosta).
 
-## Wydajność (ostatnie pomiary, i7-13620H VM)
-CoreMark 200k: natywnie ~4,7 s, XEF ~7,9–8,4 s, qemu ~28,7 s (≈55% natywnej, ≈3,5× qemu).
-zstd -6 (48 MB): natywnie ~0,55 s, XEF ~1,3–1,5 s, qemu ~4,8 s. Szczegóły w `docs/benchmarks.md`.
-
-## PRIORYTET 1: regresja / niedeterministyczny crash w t_malloc
-Po commicie z sygnałami `tests/guest/run.sh` daje 24–25/27: `t_malloc` (static -O2/-O3, dyn -O3)
-czasem kończy się SIGSEGV w kodzie JIT (np. blok gościa 0x25e134..0x25e14c w malloc glibc,
-fault addr 0x3969 — wygląda na zły rejestr bazowy). Commit „Threads …” przechodził 27/27.
-Kroki:
-1. bisekcja: `git stash`/checkout poprzedniego commita, test wielokrotny (`for i in $(seq 20)`),
-2. `--no-tier2` i `--tier2-threshold 1`, żeby oddzielić tier 1 od tier 2,
-3. podejrzani: zmiany w stubie `enter` (sprawdzanie `pending_signal` przed pushami),
-   `g_actions`/handlery, a z wcześniejszych zmian zapis zwrotny tylko modyfikowanych rejestrów
-   w xfer regionu (`RegionXfer::written`) — błąd zależny od czasu kompilacji regionów pasuje do tier 2.
-
-## PRACA W TOKU: sygnały (nie skończone, niezacommitowane testy w `tests/guest/wip/`)
-Zaimplementowane w `src/os/signals.cpp`:
-- sigaction gościa, handler hosta `async_handler` dla sygnałów z handlerem gościa
-  (sygnały wewnętrzne SEGV/BUS/ILL/FPE/PROF/TRAP zostają przy XEF),
-- `pending` per wątek (`ThreadCtx`), sprawdzanie w stubie `enter` i po syscallach,
-- single-step (flaga TF) do najbliższego wejścia bloku w `trap_handler`, potem
-  przekierowanie do `exit_to_runtime` (tier 1) albo `RegionInfo::sig_exit` (tier 2),
-- ramka `rt_sigframe` AArch64 (siginfo, ucontext, sigcontext, fpsimd_context, frame record),
-  `rt_sigreturn`, `sigsuspend`, `sigaltstack`, maska sygnałów,
-- trampolina sigreturn w pamięci gościa (glibc aarch64 nie ustawia SA_RESTORER).
-
-Stan testu `tests/guest/wip/t_signals.c`:
-- działa: `raise`/`kill` do siebie, SA_SIGINFO;
-- **zawiesza się**: SIGALRM przerywający ciasną pętlę bez syscalli (dostarczanie przez TF).
-
-Hipotezy do sprawdzenia:
-1. Krokowanie przez TF nigdy nie trafia na `b->code == rip`, bo pętla jest w regionie tier 2,
-   a wejścia bloków wewnętrznych są wykrywane przez `find_by_host`. Sprawdzić też, czy `sig_exit`
-   istnieje i czy TF nie jest zdejmowany przez coś po drodze.
-2. Sekwencja przywracania flag (`rol/shr/add/sahf`) nie rusza TF, ale `pushfq` w JIT zapisuje TF
-   w `flags_spill`; `need_flags` przez `sahf` go nie przywraca (OK). Natomiast `popfq` w stubie
-   `enter` odtwarza `st->eflags` — upewnić się, że TF nie trafia tam z `exit_to_runtime` podczas
-   krokowania (`signals_deliver_pending` czyści bit 0x100, ale inne wyjścia nie).
-3. Możliwe, że SIGTRAP od TF przychodzi z `si_code` > 0, ale `t->stepping` jest fałszywe w innym wątku.
-
-Debug: `build-dbg/xef` + gdb (`handle SIGTRAP nostop noprint pass`) albo licznik kroków w
-`trap_handler` wypisywany przez `write(2, ...)`. Po naprawie przenieść test z `wip/` do
-`tests/guest/` (oczekiwane wyjście = to, co daje qemu).
+## Narzędzia
+- `tools/mkrootfs.sh [pkg…]` — rootfs arm64 z Ubuntu noble (z zależnościami), `tools/guishot.sh` —
+  uruchom program GUI i zrób zrzut (Xvfb `:1`). Domyślne env dla GUI: `LIBGL_ALWAYS_SOFTWARE=1
+  SDL_AUDIODRIVER=dummy ALSOFT_DRIVERS=null`.
+- `--trace` (bez linkowania, ślad ostatnich bloków przy skoku w niezamapowany adres), `--profile`
+  (bloki + czas poza JIT wg funkcji/bibliotek), `--stats` (lista operacji wektorowych przez helper C).
+- Sieć w chmurze: deb.debian.org zablokowany → `tools/setup.sh` używa Ubuntu ports/archive.
+- **Szukanie błędów translacji**: uruchom duży program/test (np. testy stdlib Pythona), a gdy wynik
+  różni się od qemu: `--max-block 1 --no-tier2` (czy to interakcja w bloku?), potem bisekcja zakresu
+  adresów z `XEF_SPLIT=lo-hi` (bloki z tego zakresu po jednej instrukcji) i `setarch x86_64 -R`
+  (stałe adresy bibliotek) — skrypt w stylu `/tmp/bisectg.sh` z historii; znaleziony blok odtwórz
+  w asm jako test w tests/guest/. Tak znalezione: dzielenie przez stałą 64-bit (pożyczony rejestr),
+  cset po remat flag, zwolnienie operandów flag w terminatorze.
+- **`XEF_VERIFY=lo-hi`** (src/runtime/verify.cpp): bloki z zakresu najpierw w interpreterze IR
+  (skalarne; bloki z wektorami/FP/atomikami pomijane), potem JIT bez linkowania; raportuje różnice
+  rejestrów/NZCV/pc/zapisów. Najszybsza droga do błędnego bloku — tak znaleziony błąd slotów spill
+  (X25519/TLS). `XEF_SPLIT` przyjmuje listę zakresów (`0-a,b-7fffffffffff` = dziel wszystko poza [a,b)).
+- `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64); fuzzer go ustawia.
 
 ## Następne kroki (priorytet)
-1. Dokończyć sygnały (wyżej), potem synchroniczne SIGSEGV/SIGBUS do handlerów gościa
-   (wymaga mapy host-PC → guest-PC: `CodegenOut::pcmap` jest liczona, ale nigdzie nie zapisywana).
-2. Inwalidacja kodu przy SMC/munmap (`code_invalidate_range` to dziś no-op): indeks bloków po
-   stronach, unpublish + odlinkowanie (`ExitInfo::next_in`), ochrona zapisu stron z kodem, epoki
-   przy zwalnianiu kodu. Lookahead flag też czyta kod następników, więc trzeba to uwzględnić.
-3. LDXP/STXP/CASP (cmpxchg16b); potem włączyć HWCAP_ATOMICS/CRC32 w loaderze (`guest_hwcap`).
-4. Tier 2: przypinanie rejestrów V do XMM, eliminacja zbędnych zapisów do CpuState, regiony
-   obejmujące wywołania (BL), lepszy dobór regionów; tier 1: tańsze kopie (VI init per blok to ~50 KB memset).
-5. Trwały cache AOT, thunki bibliotek (memcpy/strlen/libm), przeliczenie benchmarków.
-6. Mapa rejestrów regionu w handlerze crashy (dziś zakłada mapowanie kanoniczne).
+0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
+   znalezione bloki; testy Pythona: 84/93 OK, pozostałe asyncio/ssl do ponownego sprawdzenia po
+   naprawie slotów spill (test_socket: tylko VSOCK — środowisko).
+1. Wydajność gier: przypinanie rejestrów V do XMM w regionach tier 2 (shadery llvmpipe to gorące
+   pętle NEON), mniej przeładowań stałych wektorowych, regiony obejmujące BL.
+   Odroczone zapisy rejestrów V (dziś VSet przed każdym dostępem do pamięci jest zachowywany dla
+   precyzji SIGSEGV): wymaga zapisu w mapie PC, w którym XMM/slocie jest bieżąca wartość V.
+   Pomiar zysku utrudnia szum maszyny (glmark2 ±15%); mierzyć CPU-time przy LP_NUM_THREADS=1.
+2. FP16 arytmetyka (HWCAP FPHP/ASIMDHP), rzadsze operacje NEON wciąż w helperze (`--stats`).
+3. Zwalnianie kodu (cache rośnie bez końca: inwalidacja tylko odpina bloki), epoki dla wątków.
+4. Trwały cache AOT, thunki bibliotek.
 
 ## Pułapki, na które już wpadliśmy
-- **Nie zapisywać danych na stronach z kodem.** Licznik obok kodu dawał 25-krotne spowolnienia
-  (SMC machine clears). Dane zmienne alokować przez `g_cache.alloc_data`.
-- Interwał ITIMER_PROF przeżywa execve: przed exec trzeba go wyłączyć (`ItimerPause`).
-- Maska sygnałów gościa nie może blokować sygnałów wewnętrznych (`kInternalSigs`).
-- `fid(kEntryFlags)` kiedyś czytał poza tablicą IR; stała 0xFFFF to pseudo-wartość.
-- qemu nie wykona exec binarki aarch64 (brak binfmt), więc dla takich testów używaj plików `.expected`.
+- Remat flag czyta operandy producenta flag: zapis rejestru docelowego (select/adc) i zwalnianie
+  rejestrów w terminatorze muszą nastąpić PO `need_flags`/z zachowaniem tych wartości.
+- `nzcv_live_at` używa wspólnego `scratch` — wskaźniki do jego instrukcji są nieważne po rekurencji.
+- Pożyczenie zmapowanego rejestru gościa (`alloc_temp` bez wolnych tymczasowych) musi przepiąć wartości
+  czytające ten rejestr (także nietknięte GetReg) na zapisaną kopię w CpuState.
+- Wewnętrzne fd XEF (pipe tier 2) są ≥1000 i chronione przed close/close_range/dup3 gościa — dziecko po
+  fork zamykające „wszystko” inaczej podmieniało je na pliki gościa.
+- Odzyskiwanie slotów spill musi odbudować mapę z żywych wartości: martwa wartość może mieć „swój” slot
+  zajęty już przez żywą (zepsute TLS/ECDHE).
+- Próbkowanie używa sygnału RT 64 (`kSampleSig`), SIGPROF należy do gościa.
+- Remat flag w terminatorach nie może używać RAX (cel skoku) — RAX jest przypinany w Exit*Indirect/Ret.
+- `CLONE_PARENT_SETTID` musi być zapisany zanim dziecko ruszy (glibc: ptid == ctid).
+- `alloc_code()` tylko rezerwuje; drugi alloc przed `commit_code` zwraca ten sam adres.

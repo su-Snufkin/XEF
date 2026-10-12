@@ -1,6 +1,7 @@
 // XEF — tier-1 code generator internals (shared by codegen_t1*.cpp).
 #pragma once
 #include <cstddef>
+#include <new>
 
 #include "backend/x64/codegen.h"
 #include "common/cpu_features.h"
@@ -46,6 +47,7 @@ class T1 {
 public:
     T1(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out, const CodegenCtx* ctx)
         : b_(b), as_(as), meta_(meta), out_(out), ctx_(ctx) {
+        for (int v = 0; v < b.n; v++) new (&vi_[v]) VI();
         if (ctx && ctx->map) {
             map_ = ctx->map;
             ntemps_ = 0;
@@ -60,7 +62,10 @@ private:
     BlockMeta* meta_;
     CodegenOut& out_;
     const CodegenCtx* ctx_;
-    VI vi_[kMaxBlockInsts];
+    // Only the first b_.n entries are used: constructing all kMaxBlockInsts per block was ~10% of
+    // run time for programs that translate a lot (e.g. Mesa llvmpipe JIT-ing shaders).
+    alignas(VI) unsigned char vi_raw_[sizeof(VI) * kMaxBlockInsts];
+    VI* const vi_ = reinterpret_cast<VI*>(vi_raw_);
     Val owner_[16] = {};        // owned temp regs: which value holds it
     Val xowner_[16] = {};
     u16 pinned_ = 0;            // host regs that must not be evicted in current inst
@@ -78,6 +83,7 @@ private:
     Val eflags_ = kEntryFlags;  // flags value currently in EFLAGS (0 = garbage)
     Val spilled_flags_ = 0;
     Val final_flags_ = kEntryFlags;
+    Val gflags_ = kEntryFlags;  // guest NZCV as of the current instruction (last SetFlags)
     bool live_out_ = true;
     i32 entry_flags_last_ = 0;
     u32 spill_used_ = 0;
@@ -88,7 +94,7 @@ private:
     struct ColdIbtc { Label l; };
     HostPcEntry pcmap_[1024];
     int npc_ = 0;
-    u32 vspill_used_ = 0;
+    u64 vspill_used_ = 0;   // CpuState::vspill slots in use
     struct ConstFix { u64 lo, hi; u8* field; };
     ConstFix consts_[256];
     int nconsts_ = 0;
@@ -189,6 +195,10 @@ private:
     void free_reg(Reg r) { owner_[r] = 0; }
     void evict(Reg r);
     void take_reg(Reg r) { if (owner_[r]) evict(r); }
+    int free_spill_slot() const {   // slot 15 is reserved for flags restore
+        for (int i = 0; i < 15; i++) if (!(spill_used_ & (1u << i))) return i;
+        return -1;
+    }
     void assign_reg(Val v, Reg r) {
         vi_[v].k = L_REG;
         vi_[v].reg = r;
@@ -239,6 +249,7 @@ private:
     void emit_ext(Val v);
     void emit_adc_sbc(Val v, bool with_flags_val, Val flags_v);
     void emit_atomic(Val v);
+    void emit_pair_atomic(Val v);
     void emit_sys(Val v);
     void emit_vec(Val v);
     // vector helpers (codegen_t1_vec.cpp)
@@ -294,7 +305,8 @@ private:
     }
     void exit_jmp(GuestAddr target) {
         if (ctx_ && ctx_->region) {
-            if (internal(target)) { as_.db(0xE9); as_.dd(0); add_fix(target); return; }
+            // rel32 retargeted atomically when the region is invalidated
+            if (internal(target)) { as_.keep_field_in_line(1); as_.db(0xE9); as_.dd(0); add_fix(target); return; }
             XEF_ASSERT(nrstubs_ < 64);
             RegionStub& r = rstubs_[nrstubs_++];
             r.l = Label(); r.target = target;
@@ -305,7 +317,12 @@ private:
     }
     void exit_jcc(Cond c, GuestAddr target) {
         if (ctx_ && ctx_->region) {
-            if (internal(target)) { as_.db(0x0F); as_.db((u8)(0x80 | c)); as_.dd(0); add_fix(target); return; }
+            if (internal(target)) {
+                as_.keep_field_in_line(2);
+                as_.db(0x0F); as_.db((u8)(0x80 | c)); as_.dd(0);
+                add_fix(target);
+                return;
+            }
             XEF_ASSERT(nrstubs_ < 64);
             RegionStub& r = rstubs_[nrstubs_++];
             r.l = Label(); r.target = target;
@@ -350,9 +367,13 @@ private:
     }
     void record_pc() {
         if (npc_ < 1024) {  // host->guest pc map for faults
-            pcmap_[npc_].host_off = (u32)as_.offset();
-            pcmap_[npc_].guest_off = b_.pc_off[cur_];
-            npc_++;
+            HostPcEntry& e = pcmap_[npc_++];
+            e = {};
+            e.host_off = (u32)as_.offset();
+            e.guest_off = (u16)b_.pc_off[cur_];
+            e.borrowed = borrowed_;
+            Val f = fid(gflags_);
+            e.flags_loc = eflags_ == f ? PCF_EFLAGS : spilled_flags_ == f ? PCF_SPILL : PCF_UNKNOWN;
         }
     }
 };

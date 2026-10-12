@@ -11,12 +11,14 @@ struct Options {
     bool stats = false;
     bool profile = false;
     bool tier2 = true;
+    bool trace = false;   // debugging: no block linking / IBTC, remember the last blocks entered
     int max_block_insts = 128;
 };
 extern Options g_opt;
 
 void runtime_init();
 [[noreturn]] void cpu_loop(ThreadCtx* t);
+void cpu_run_nested(ThreadCtx* t);   // until the guest returns to the host-callback trampoline
 u8* get_or_translate(ThreadCtx* t, GuestAddr pc);
 void code_invalidate_range(GuestAddr start, u64 len);
 

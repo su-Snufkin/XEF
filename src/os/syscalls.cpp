@@ -78,14 +78,14 @@ enum GuestNr {
 
 struct Pair { i16 g, h; };
 static const Pair kPass[] = {
-    {G_getcwd, SYS_getcwd}, {G_eventfd2, SYS_eventfd2}, {G_epoll_create1, SYS_epoll_create1}, {G_dup, SYS_dup},
-    {G_dup3, SYS_dup3}, {G_inotify_init1, SYS_inotify_init1}, {27, SYS_inotify_add_watch},
+    {G_eventfd2, SYS_eventfd2}, {G_epoll_create1, SYS_epoll_create1}, {G_dup, SYS_dup},
+    {G_inotify_init1, SYS_inotify_init1}, {27, SYS_inotify_add_watch},
     {28, SYS_inotify_rm_watch}, {G_ioctl, SYS_ioctl}, {G_flock, SYS_flock}, {G_mknodat, SYS_mknodat},
     {G_mkdirat, SYS_mkdirat}, {G_unlinkat, SYS_unlinkat}, {G_symlinkat, SYS_symlinkat}, {G_linkat, SYS_linkat},
     {G_renameat, SYS_renameat}, {G_statfs, SYS_statfs}, {G_fstatfs, SYS_fstatfs}, {G_truncate, SYS_truncate},
     {G_ftruncate, SYS_ftruncate}, {G_fallocate, SYS_fallocate}, {G_chdir, SYS_chdir}, {G_fchdir, SYS_fchdir},
     {G_chroot, SYS_chroot}, {G_fchmod, SYS_fchmod}, {G_fchmodat, SYS_fchmodat}, {G_fchownat, SYS_fchownat},
-    {G_fchown, SYS_fchown}, {G_close, SYS_close}, {G_pipe2, SYS_pipe2}, {G_getdents64, SYS_getdents64},
+    {G_fchown, SYS_fchown}, {G_pipe2, SYS_pipe2},
     {G_lseek, SYS_lseek}, {G_read, SYS_read}, {G_write, SYS_write}, {G_readv, SYS_readv},
     {G_writev, SYS_writev}, {G_pread64, SYS_pread64}, {G_pwrite64, SYS_pwrite64}, {G_preadv, SYS_preadv},
     {G_pwritev, SYS_pwritev}, {G_sendfile, SYS_sendfile}, {G_pselect6, SYS_pselect6}, {G_ppoll, SYS_ppoll},
@@ -127,9 +127,161 @@ static const Pair kPass[] = {
     {G_recvmmsg, SYS_recvmmsg}, {G_wait4, SYS_wait4}, {G_prlimit64, SYS_prlimit64}, {G_syncfs, SYS_syncfs},
     {G_sendmmsg, SYS_sendmmsg}, {G_renameat2, SYS_renameat2}, {G_getrandom, SYS_getrandom},
     {G_memfd_create, SYS_memfd_create}, {G_membarrier, SYS_membarrier},
-    {G_copy_file_range, SYS_copy_file_range}, {G_statx, SYS_statx}, {G_close_range, 436},
+    {G_copy_file_range, SYS_copy_file_range},
     {G_faccessat2, 439}, {G_futex_waitv, 449}, {G_fchmodat2, 452},
+    // identical ABI on both sides
+    {5, SYS_setxattr}, {6, SYS_lsetxattr}, {7, SYS_fsetxattr}, {8, SYS_getxattr}, {9, SYS_lgetxattr},
+    {10, SYS_fgetxattr}, {11, SYS_listxattr}, {12, SYS_llistxattr}, {13, SYS_flistxattr},
+    {14, SYS_removexattr}, {15, SYS_lremovexattr}, {16, SYS_fremovexattr}, {18, SYS_lookup_dcookie},
+    {30, SYS_ioprio_set}, {31, SYS_ioprio_get}, {39, SYS_umount2}, {40, SYS_mount}, {41, SYS_pivot_root},
+    {74, SYS_signalfd4}, {75, SYS_vmsplice}, {76, SYS_splice}, {77, SYS_tee}, {84, SYS_sync_file_range},
+    {89, SYS_acct}, {91, SYS_capset}, {104, SYS_kexec_load}, {105, SYS_init_module},
+    {106, SYS_delete_module}, {116, SYS_syslog}, {142, SYS_reboot},
+    {151, SYS_setfsuid}, {152, SYS_setfsgid}, {162, SYS_setdomainname}, {170, SYS_settimeofday},
+    {171, SYS_adjtimex}, {180, SYS_mq_open}, {181, SYS_mq_unlink}, {182, SYS_mq_timedsend},
+    {183, SYS_mq_timedreceive}, {184, SYS_mq_notify}, {185, SYS_mq_getsetattr}, {186, SYS_msgget},
+    {187, SYS_msgctl}, {188, SYS_msgrcv}, {189, SYS_msgsnd}, {190, SYS_semget}, {191, SYS_semctl},
+    {192, SYS_semtimedop}, {193, SYS_semop}, {217, SYS_add_key}, {218, SYS_request_key},
+    {219, SYS_keyctl}, {224, SYS_swapon}, {225, SYS_swapoff}, {230, SYS_mlockall}, {231, SYS_munlockall},
+    {234, SYS_remap_file_pages}, {235, SYS_mbind}, {236, SYS_get_mempolicy}, {237, SYS_set_mempolicy},
+    {238, SYS_migrate_pages}, {239, SYS_move_pages}, {241, SYS_perf_event_open},
+    {262, SYS_fanotify_init}, {263, SYS_fanotify_mark}, {264, SYS_name_to_handle_at},
+    {265, SYS_open_by_handle_at}, {266, SYS_clock_adjtime}, {268, SYS_setns},
+    {270, SYS_process_vm_readv}, {271, SYS_process_vm_writev}, {272, SYS_kcmp},
+    {273, SYS_finit_module}, {274, SYS_sched_setattr}, {275, SYS_sched_getattr},
+    {280, SYS_bpf}, {282, SYS_userfaultfd}, {284, SYS_mlock2},
+    {286, SYS_preadv2}, {287, SYS_pwritev2}, {288, SYS_pkey_mprotect}, {289, SYS_pkey_alloc},
+    {290, SYS_pkey_free}, {424, 424 /*pidfd_send_signal*/}, {434, 434 /*pidfd_open*/},
+    {438, 438 /*pidfd_getfd*/}, {440, 440 /*process_madvise*/}, {448, 448 /*process_mrelease*/},
 };
+
+// ---- XEF's own file descriptors ----
+static constexpr int kMaxReserved = 4096;
+static std::atomic<u64> g_reserved[kMaxReserved / 64];
+
+static bool fd_reserved(u64 fd) {
+    return fd < kMaxReserved && (g_reserved[fd / 64].load(std::memory_order_relaxed) >> (fd % 64) & 1);
+}
+
+int reserve_host_fd(int fd) {
+    // high numbers, below the usual 1024 soft limit: shells and fork+exec helpers use small ones
+    int nfd = fcntl(fd, F_DUPFD_CLOEXEC, 1000);
+    if (nfd < 0) nfd = fcntl(fd, F_DUPFD_CLOEXEC, 100);
+    if (nfd >= 0) {
+        int fl = fcntl(fd, F_GETFL);
+        close(fd);
+        fcntl(nfd, F_SETFL, fl);
+        fd = nfd;
+    }
+    if (fd >= 0 && fd < kMaxReserved) g_reserved[fd / 64].fetch_or(1ull << (fd % 64));
+    return fd;
+}
+
+void protect_host_fd(int fd) {
+    if (fd >= 0 && fd < kMaxReserved) g_reserved[fd / 64].fetch_or(1ull << (fd % 64));
+}
+
+void release_host_fd(int fd) {
+    if (fd >= 0 && fd < kMaxReserved) g_reserved[fd / 64].fetch_and(~(1ull << (fd % 64)));
+}
+
+// close_range without XEF's descriptors
+static bool first_le(u64 a, u64 b) { return (u32)a <= (u32)b; }
+
+static i64 close_range_guest(u64 first, u64 last, u64 flags) {
+    u64 lo = first;
+    i64 r = 0;
+    for (u64 fd = first; fd <= last && fd < kMaxReserved; fd++) {
+        if (!fd_reserved(fd)) continue;
+        if (fd > lo) r = raw(436, lo, fd - 1, flags);
+        if (r < 0) return r;
+        lo = fd + 1;
+    }
+    return lo <= last ? raw(436, lo, last, flags) : r;
+}
+
+// getdents64 on /proc/<pid>/fd: XEF's own descriptors are not the guest's business
+static i64 hide_reserved_fds(int dirfd, u8* buf, i64 n) {
+    bool any = false;
+    for (auto& w : g_reserved) any |= w.load(std::memory_order_relaxed) != 0;
+    if (!any || n <= 0) return n;
+    char link[64], path[64];
+    snprintf(link, sizeof link, "/proc/self/fd/%d", dirfd);
+    ssize_t k = readlink(link, path, sizeof path - 1);
+    if (k <= 0) return n;
+    path[k] = 0;
+    int pid;
+    char tail[8] = {0};
+    if (sscanf(path, "/proc/%d/fd%7s", &pid, tail) != 1 || pid != getpid()) return n;
+    i64 out = 0;
+    for (i64 off = 0; off < n;) {
+        u16 reclen = *(u16*)(buf + off + 16);
+        const char* name = (const char*)(buf + off + 19);
+        char* end;
+        long fd = strtol(name, &end, 10);
+        bool hide = *name && !*end && fd >= 0 && fd_reserved((u64)fd);
+        if (!hide) { if (out != off) memmove(buf + out, buf + off, reclen); out += reclen; }
+        off += reclen;
+    }
+    return out;
+}
+
+// ---- thread counts the guest reads: its own threads only (not XEF's compiler thread or the
+// worker threads of host libraries behind --host-gl) ----
+int guest_thread_count();
+
+static bool is_proc_self_file(const char* p, const char* name) {
+    if (!p) return false;
+    char buf[64];
+    snprintf(buf, sizeof buf, "/proc/self/%s", name);
+    if (!strcmp(p, buf)) return true;
+    snprintf(buf, sizeof buf, "/proc/%d/%s", getpid(), name);
+    return !strcmp(p, buf);
+}
+
+// /proc/self/stat (field 20) and /proc/self/status ("Threads:") without XEF's threads, served
+// from a memfd. Returns -1 if `path` is neither.
+static i64 open_proc_thread_count(const char* path) {
+    bool stat = is_proc_self_file(path, "stat"), status = is_proc_self_file(path, "status");
+    if (!stat && !status) return -1;
+    long guest = guest_thread_count();
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    char buf[8192];
+    ssize_t n = read(fd, buf, sizeof buf - 1);
+    close(fd);
+    if (n <= 0) return -1;
+    buf[n] = 0;
+    std::string out;
+    if (stat) {   // fields after the parenthesized comm; num_threads is field 20
+        char* rp = strrchr(buf, ')');
+        if (!rp) return -1;
+        out.assign(buf, rp + 1 - buf);
+        int field = 2;
+        for (char* q = rp + 1; *q;) {
+            while (*q == ' ') out += *q++;
+            char* e = q;
+            while (*e && *e != ' ') e++;
+            field++;
+            std::string tok(q, e - q);
+            if (field == 20) tok = std::to_string(guest);
+            out += tok;
+            q = e;
+        }
+    } else {
+        out = buf;
+        size_t at = out.find("\nThreads:");
+        if (at != std::string::npos) {
+            size_t b = out.find_first_of("0123456789", at), e = out.find('\n', b);
+            out.replace(b, e - b, std::to_string(guest));
+        }
+    }
+    int m = (int)syscall(SYS_memfd_create, "xef-proc", MFD_CLOEXEC);
+    if (m < 0) return -1;
+    if (write(m, out.data(), out.size()) != (ssize_t)out.size()) { close(m); return -1; }
+    lseek(m, 0, SEEK_SET);
+    return m;
+}
 
 // ---- process state ----
 static std::mutex g_mm_lock;
@@ -138,9 +290,27 @@ static std::string g_exe_realpath;
 
 std::string guest_exe_path() { return g_exe_realpath; }
 
+// Passthrough syscalls whose arguments include guest paths (bit i = argument i): redirected into
+// the rootfs like openat. (symlinkat's target string is link content and stays as is.)
+static u8 g_path_args[512];
+static const Pair kPathArgs[] = {
+    {5, 1}, {6, 1}, {8, 1}, {9, 1}, {11, 1}, {12, 1}, {14, 1}, {15, 1}, {27, 2}, {33, 2}, {G_mkdirat, 2},
+    {G_unlinkat, 2}, {G_symlinkat, 4}, {G_linkat, 2 | 8}, {G_renameat, 2 | 8}, {G_statfs, 1}, {G_truncate, 1},
+    {G_chdir, 1}, {G_chroot, 1}, {G_fchmodat, 2}, {G_fchownat, 2}, {G_utimensat, 2}, {89, 1},
+    {264, 2}, {G_renameat2, 2 | 8}, {G_faccessat2, 2}, {G_fchmodat2, 2},
+};
+// ... of which these act on a final symlink itself
+static u8 g_nofollow_args[512];
+static const Pair kNoFollowArgs[] = {
+    {6, 1}, {9, 1}, {12, 1}, {15, 1}, {33, 2}, {G_mkdirat, 2}, {G_unlinkat, 2}, {G_symlinkat, 4},
+    {G_linkat, 2 | 8}, {G_renameat, 2 | 8}, {G_renameat2, 2 | 8},
+};
+
 void syscalls_init(const LoadedImage& img) {
     for (auto& v : g_passthrough_nr) v = -1;
     for (auto& p : kPass) g_passthrough_nr[p.g] = p.h;
+    for (auto& p : kPathArgs) g_path_args[p.g] = (u8)p.h;
+    for (auto& p : kNoFollowArgs) g_nofollow_args[p.g] = (u8)p.h;
     g_brk_start = g_brk_cur = g_brk_mapped = align_up<u64>(img.brk_start, 4096);
     char buf[PATH_MAX];
     if (realpath(img.host_path.c_str(), buf)) g_exe_realpath = buf;
@@ -203,10 +373,10 @@ struct GuestEpollEvent { u32 events; u32 pad; u64 data; };
 struct PathArg {
     std::string s;
     const char* p;
-    explicit PathArg(u64 guest) {
+    explicit PathArg(u64 guest, bool follow_last = true) {
         const char* g = (const char*)guest;
         if (!g) { p = nullptr; return; }
-        if (g[0] == '/' && !g_rootfs.empty()) { s = resolve_guest_path(g); p = s.c_str(); }
+        if (g[0] == '/' && !g_rootfs.empty()) { s = resolve_guest_path(g, follow_last); p = s.c_str(); }
         else p = g;
     }
 };
@@ -246,20 +416,62 @@ void do_syscall(CpuState* st) {
     u64 a0 = st->x[0], a1 = st->x[1], a2 = st->x[2], a3 = st->x[3], a4 = st->x[4], a5 = st->x[5];
     i64 r;
     if (nr < 512 && g_passthrough_nr[nr] >= 0) {
+        if (u8 m = g_path_args[nr]; m && !g_rootfs.empty()) {
+            u64 a[6] = {a0, a1, a2, a3, a4, a5};
+            std::string keep[6];
+            for (int k = 0; k < 6; k++)
+                if ((m >> k & 1) && a[k] && ((const char*)a[k])[0] == '/') {
+                    keep[k] = resolve_guest_path((const char*)a[k], !(g_nofollow_args[nr] >> k & 1));
+                    a[k] = (u64)keep[k].c_str();
+                }
+            r = raw(g_passthrough_nr[nr], a[0], a[1], a[2], a[3], a[4], a[5]);
+            if (r == 0 && (nr == G_unlinkat || nr == G_renameat || nr == G_renameat2)) guest_path_cache_clear();
+            st->x[0] = (u64)r;
+            return;
+        }
         r = raw(g_passthrough_nr[nr], a0, a1, a2, a3, a4, a5);
         st->x[0] = (u64)r;
         return;
     }
     switch (nr) {
     case G_openat: {
-        PathArg p(a1);
+        PathArg p(a1, !(a2 & 0x8000));   // O_NOFOLLOW
         if (is_proc_self_exe((const char*)a1)) { r = raw(SYS_openat, a0, (u64)g_exe_realpath.c_str(), open_flags_g2h(a2), a3); break; }
+        if (i64 m = open_proc_thread_count((const char*)a1); m >= 0) {
+            if (a2 & 0x80000) r = m;   // O_CLOEXEC as asked
+            else { fcntl((int)m, F_SETFD, 0); r = m; }
+            break;
+        }
         r = raw(SYS_openat, a0, (u64)p.p, open_flags_g2h(a2), a3);
         break;
     }
     case G_openat2: r = -ENOSYS; break;
+    case G_close: r = fd_reserved(a0) ? 0 : raw(SYS_close, a0); break;
+    case G_getdents64:
+        for (;;) {   // a buffer of nothing but hidden entries must not read as the end of the directory
+            i64 got = raw(SYS_getdents64, a0, a1, a2);
+            r = got > 0 ? hide_reserved_fds((int)a0, (u8*)a1, got) : got;
+            if (!(got > 0 && r == 0)) break;
+        }
+        break;   // pretend: the guest owns it no more
+    case G_close_range: r = first_le(a0, a1) ? close_range_guest((u32)a0, (u32)a1, a2) : -EINVAL; break;
+    case G_dup3: r = fd_reserved(a1) ? -EBADF : raw(SYS_dup3, a0, a1, a2); break;
+    case G_getcwd: {   // inside the rootfs (after chdir to a redirected path): report the guest path
+        char buf[PATH_MAX];
+        r = raw(SYS_getcwd, (u64)buf, sizeof buf);
+        if (r < 0) break;
+        const char* g = buf;
+        size_t n = g_rootfs.size();
+        if (n && !strncmp(buf, g_rootfs.c_str(), n) && (buf[n] == '/' || buf[n] == 0)) g = buf[n] ? buf + n : "/";
+        size_t len = strlen(g) + 1;
+        if (len > a1) { r = -ERANGE; break; }
+        memcpy((void*)a0, g, len);
+        r = (i64)len;
+        break;
+    }
     case G_faccessat: { PathArg p(a1); r = raw(SYS_faccessat, a0, (u64)p.p, a2); break; }
     case G_fcntl: {
+        if (fd_reserved(a0)) { r = -EBADF; break; }   // invisible to the guest
         if (a1 == F_SETFL) r = raw(SYS_fcntl, a0, a1, open_flags_g2h(a2));
         else if (a1 == F_GETFL) { r = raw(SYS_fcntl, a0, a1, a2); if (r >= 0) r = (i64)open_flags_h2g((u64)r); }
         else r = raw(SYS_fcntl, a0, a1, a2);
@@ -267,17 +479,21 @@ void do_syscall(CpuState* st) {
     }
     case G_readlinkat: {
         const char* path = (const char*)a1;
-        if (is_proc_self_exe(path)) {
-            size_t n = std::min<size_t>(g_exe_realpath.size(), a3);
-            memcpy((void*)a2, g_exe_realpath.data(), n);
+        if (is_proc_self_exe(path)) {   // the guest's view: inside the rootfs, without its prefix
+            const char* e = g_exe_realpath.c_str();
+            size_t rn = g_rootfs.size();
+            if (rn && !strncmp(e, g_rootfs.c_str(), rn) && e[rn] == '/') e += rn;
+            size_t n = std::min<size_t>(strlen(e), a3);
+            memcpy((void*)a2, e, n);
             r = (i64)n;
         } else {
-            PathArg p(a1);
+            PathArg p(a1, false);
             r = raw(SYS_readlinkat, a0, (u64)p.p, a2, a3);
         }
         break;
     }
     case G_fstat: {
+        if (fd_reserved(a0)) { r = -EBADF; break; }
         HostStat hs;
         r = raw(SYS_fstat, a0, (u64)&hs);
         if (r == 0) stat_h2g(hs, (GuestStat*)a1);
@@ -285,12 +501,12 @@ void do_syscall(CpuState* st) {
     }
     case G_newfstatat: {
         HostStat hs;
-        PathArg p(a1);
+        PathArg p(a1, !(a3 & AT_SYMLINK_NOFOLLOW));
         r = raw(SYS_newfstatat, a0, (u64)p.p, (u64)&hs, a3);
         if (r == 0) stat_h2g(hs, (GuestStat*)a2);
         break;
     }
-    case G_statx: { PathArg p(a1); r = raw(SYS_statx, a0, (u64)p.p, a2, a3, a4); break; }
+    case G_statx: { PathArg p(a1, !(a2 & AT_SYMLINK_NOFOLLOW)); r = raw(SYS_statx, a0, (u64)p.p, a2, a3, a4); break; }
     case G_exit:
         thread_exit(st, (int)a0);
         return;  // not reached for the last thread
@@ -307,12 +523,17 @@ void do_syscall(CpuState* st) {
     }
     case G_mprotect:
         r = raw(SYS_mprotect, a0, a1, prot_g2h(a2));
+        // code made writable or non-executable will change before it runs again (W^X JITs)
+        if (r == 0 && ((a2 & PROT_WRITE) || !(a2 & PROT_EXEC))) code_invalidate_range(a0, a1);
         break;
     case G_munmap:
         r = raw(SYS_munmap, a0, a1);
         if (r == 0) code_invalidate_range(a0, a1);
         break;
-    case G_mremap: r = raw(SYS_mremap, a0, a1, a2, a3, a4); break;
+    case G_mremap:
+        r = raw(SYS_mremap, a0, a1, a2, a3, a4);
+        if (r >= 0) code_invalidate_range(a0, a1);
+        break;
     case G_uname: {
         r = raw(SYS_uname, a0);
         if (r == 0) {

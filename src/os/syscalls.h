@@ -18,4 +18,10 @@ void do_syscall(CpuState* st);
 // unchanged (no argument conversion). -1 = needs emulation / unsupported.
 extern i16 g_passthrough_nr[512];
 
+// File descriptors XEF itself keeps open (tier-2 pipe, host X connections): moved out of the way
+// of the guest's numbers and protected from its close / close_range / dup2. Returns the new fd.
+int reserve_host_fd(int fd);
+void protect_host_fd(int fd);   // the same, in place (descriptors a host library keeps)
+void release_host_fd(int fd);
+
 }  // namespace xef

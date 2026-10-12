@@ -50,7 +50,7 @@ struct alignas(64) CpuState {
     u64 _pad0;
     alignas(16) u8 v[32][16];  // NEON / FP registers
     alignas(16) u8 vtmp[4][16];   // vector helper arguments / result
-    alignas(16) u8 vspill[16][16];
+    alignas(16) u8 vspill[64][16];
     u64 host_mxcsr_saved;
     volatile u32 pending_signal;
     u32 _pad1;

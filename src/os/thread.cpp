@@ -1,5 +1,6 @@
 // XEF — guest threads and processes.
 #include "os/thread.h"
+#include "thunks/thunks.h"
 
 #include <errno.h>
 #include <sys/mman.h>
@@ -52,6 +53,7 @@ ThreadCtx* thread_create(CpuState* parent) {
 }
 
 static std::atomic<int> g_live_threads{1};
+int guest_thread_count() { return g_live_threads.load(); }
 
 void thread_exit(CpuState* st, int code) {
     ThreadCtx* t = st->thread;
@@ -60,6 +62,7 @@ void thread_exit(CpuState* st, int code) {
         signals_flush_output();
         syscall(SYS_exit_group, code);
     }
+    tier2_thread_stop(t);
     if (t && t->clear_child_tid) {
         __atomic_store_n((u32*)t->clear_child_tid, 0, __ATOMIC_SEQ_CST);
         syscall(SYS_futex, t->clear_child_tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
@@ -84,12 +87,17 @@ static void* thread_trampoline(void* arg) {
     ThreadCtx* t = ts->t;
     int tid = (int)syscall(SYS_gettid);
     t->tid = tid;
+    // like the kernel: both tid stores happen before the new thread runs guest code. (glibc passes
+    // the same address as ptid and ctid; a parent-side store after the child started could
+    // overwrite the 0 written when the thread exits, and pthread_join would wait forever.)
+    if (ts->flags & kCloneParentSettid) *(u32*)ts->ptid = (u32)tid;
     if (ts->flags & kCloneChildSettid) *(u32*)ts->ctid = (u32)tid;
     if (ts->flags & kCloneChildCleartid) t->clear_child_tid = ts->ctid;
     __atomic_store_n(&ts->tid, tid, __ATOMIC_RELEASE);
     syscall(SYS_futex, &ts->tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
     // ts is owned by the parent's stack from here on: don't touch it
     signals_thread_init(t);
+    tier2_thread_start(t);
     cpu_loop(t);
 }
 
@@ -117,7 +125,6 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         }
         while (__atomic_load_n(&ts.tid, __ATOMIC_ACQUIRE) == 0)
             syscall(SYS_futex, &ts.tid, FUTEX_WAIT, 0, nullptr, nullptr, 0);
-        if (flags & kCloneParentSettid) *(u32*)ptid = (u32)ts.tid;
         return ts.tid;
     }
     // fork / vfork: a separate process. vfork's shared address space is emulated with a copy
@@ -135,19 +142,13 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         if (flags & kCloneSettls) st->tpidr_el0 = tls;
         g_live_threads.store(1);
         if (st->thread) st->thread->tid = (int)syscall(SYS_gettid);
-        tier2_after_fork();
+        tier2_after_fork(st->thread);
         return 0;
     }
     return r;
 }
 
 // ---- execve: run the new image under XEF (or natively if it is an x86-64 binary) ----
-// interval timers survive execve; the new image must not inherit our SIGPROF sampler
-struct ItimerPause {
-    struct itimerval saved {};
-    ItimerPause() { struct itimerval z {}; setitimer(ITIMER_PROF, &z, &saved); }
-    ~ItimerPause() { setitimer(ITIMER_PROF, &saved, nullptr); }
-};
 
 i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     const char* path = (const char*)gpath;
@@ -163,9 +164,12 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     std::vector<std::string> args;
     for (char** a = (char**)gargv; a && *a; a++) args.push_back(*a);
     std::vector<char*> envp;
-    for (char** e = (char**)genvp; e && *e; e++) envp.push_back(*e);
+    for (char** e = (char**)genvp; e && *e; e++)
+        if (strncmp(*e, "XEF_ROOTFS=", 11)) envp.push_back(*e);   // ours (below) must be the one seen
     std::string rootenv;
     if (!g_rootfs.empty()) { rootenv = "XEF_ROOTFS=" + g_rootfs; envp.push_back((char*)rootenv.c_str()); }
+    static char hostgl[] = "XEF_HOST_GL=1";
+    if (g_host_gl) envp.push_back(hostgl);
     envp.push_back(nullptr);
     std::string guest_exe = path;
     if (hdr[0] == '#' && hdr[1] == '!') {
@@ -199,7 +203,6 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
             std::vector<char*> av;
             for (auto& a : args) av.push_back((char*)a.c_str());
             av.push_back(nullptr);
-            ItimerPause ip;
             syscall(SYS_execve, host.c_str(), av.data(), envp.data());
             return -errno;
         }
@@ -217,7 +220,6 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     // argv[0] of the guest is preserved by the loader using the path; pass original argv0 via env
     av.push_back(nullptr);
     signals_flush_output();
-    ItimerPause ip;
     syscall(SYS_execve, self, av.data(), envp.data());
     return -errno;
 }

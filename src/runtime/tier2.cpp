@@ -1,13 +1,18 @@
 // XEF — tier 2: hot regions with a region-specific register mapping.
 //
-// Hot blocks are found by SIGPROF sampling (no counters on the hot path). A
+// Hot blocks are found by sampling (kSampleSig) (no counters on the hot path). A
 // background thread forms a region (the hot block plus hot direct successors),
 // picks a register mapping that gives host registers of guest registers unused
 // in the region to the most used X8..X28, and compiles all region blocks with
 // that mapping. Internal edges are direct jumps; the register transfer happens
 // only on region entry/exit. The region is then made live by re-pointing the
 // head block's incoming links to the region entry.
+#include "os/syscalls.h"
 #include "runtime/tier2.h"
+#include "os/signals.h"
+#include "os/thread.h"
+#include <sys/syscall.h>
+#include <time.h>
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -78,6 +83,12 @@ static bool compile_region(GuestAddr head) {
     BlockMeta* hm = g_cache.lookup(head);
     if (!hm || hm->tier != 1) return false;
     hm->tier = 3;  // "tried": don't retry on failure
+    // every guest range decoded ahead while forming the region becomes an invalidation dependency
+    static PeekLog peeks;
+    peeks.n = 0;
+    peeks.overflow = false;
+    a64::set_peek_log(&peeks);
+    struct ClearPeek { ~ClearPeek() { a64::set_peek_log(nullptr); } } clear_peek;
     ir::Block& blk = *g_t2_blk;
     a64::TranslateOpts topt;
     topt.max_insts = g_opt.max_block_insts;
@@ -164,19 +175,28 @@ static bool compile_region(GuestAddr head) {
     int nfree = 0;
     RegionXfer xfer[16];
     int nxfer = 0;
-    int order[32], no = 0;
-    for (int g = 0; g < 32; g++) if (!regmap::mapped(g) && uses[g] > 0) order[no++] = g;
-    std::sort(order, order + no, [&](int a, int b) { return uses[a] > uses[b]; });
-    // displace only as many canonical registers as needed (+2 extra temporaries);
-    // callee-saved hosts first (no save/restore around helper calls)
+    // The region keeps its most-used guest registers in host registers: canonical ones that are
+    // used less are displaced (to CpuState, via the entry/exit transfers) in favour of hot ones
+    // that normally live in memory. Ties keep the canonical mapping (no transfer cost).
     static const Reg pref[] = {RDI, RSI, RDX, R10, R8, R9, RBX, RBP, R12, R13, R14};
-    int want = 16;
+    constexpr int kHosts = sizeof pref / sizeof pref[0];
+    int cand[32], nc = 0;
+    for (int g = 0; g < 32; g++) if (uses[g] > 0) cand[nc++] = g;
+    std::sort(cand, cand + nc, [&](int a, int b) {
+        if (uses[a] != uses[b]) return uses[a] > uses[b];
+        return regmap::mapped(a) && !regmap::mapped(b);
+    });
+    bool in_top[32] = {};
+    for (int i = 0; i < nc && i < kHosts; i++) in_top[cand[i]] = true;
     for (Reg h : pref) {
-        if (nfree >= want) break;
         int gc = -1;
         for (int g = 0; g < 32; g++) if (regmap::host(g) == h) gc = g;
-        if (gc >= 0 && uses[gc] == 0) { freed[nfree++] = h; map[gc] = NOREG; }
+        if (gc >= 0 && in_top[gc]) continue;              // stays where it is
+        freed[nfree++] = h;
+        if (gc >= 0) map[gc] = NOREG;
     }
+    int order[32], no = 0;                                 // hot guests without a host register yet
+    for (int i = 0; i < nc && i < kHosts; i++) if (map[cand[i]] == NOREG) order[no++] = cand[i];
     Reg temps[12] = {RAX, RCX, R11};
     int ntemps = 3;
     for (int i = 0; i < nfree; i++) {
@@ -192,6 +212,12 @@ static bool compile_region(GuestAddr head) {
     // ---- runtime feedback record
     RegionInfo* ri = new RegionInfo();
     ri->head_t1 = hm;
+    ri->blocks = new BlockMeta*[R.n];
+    ri->nblocks = 0;
+    ri->branches = nullptr;
+    ri->nbranches = 0;
+    ri->killed = false;
+    for (int g = 0; g < 32; g++) ri->map[g] = (u8)map[g];
     ri->exit_counter = (u64*)g_cache.alloc_data(8);
     *ri->exit_counter = 0;
 
@@ -222,7 +248,10 @@ static bool compile_region(GuestAddr head) {
     entry->code_size = (u32)eas.size();
     entry->region = ri;
     ri->entry = entry;
-    {   // signal-delivery exit for region-internal block entries
+    g_cache.commit_code(ecode, eas.size());
+    g_cache.register_block(entry);
+    {   // signal-delivery exit for region-internal block entries. alloc_code() only reserves, so
+        // this must come after the entry stub is committed or the two would overlap.
         u8* sc = g_cache.alloc_code(1024);
         Assembler sas(sc, 1024);
         backend::emit_region_xfer(sas, xfer, nxfer, false);
@@ -230,8 +259,6 @@ static bool compile_region(GuestAddr head) {
         g_cache.commit_code(sc, sas.size());
         ri->sig_exit = sc;
     }
-    g_cache.commit_code(ecode, eas.size());
-    g_cache.register_block(entry);
 
     u8* code_of[kMaxRegionBlocks];
     struct Fix { u8* field; GuestAddr target; };
@@ -255,6 +282,7 @@ static bool compile_region(GuestAddr head) {
         meta->code = code;
         meta->code_size = (u32)out.size;
         g_cache.commit_code(code, out.size);
+        g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
         if (g_opt.dump_code) {
             char path[64];
             snprintf(path, sizeof path, "/tmp/xef-t2-%lx.bin", (unsigned long)R.pcs[i]);
@@ -264,6 +292,7 @@ static bool compile_region(GuestAddr head) {
         meta->nexits = (u16)out.nexits;
         code_of[i] = code;
         metas[i] = meta;
+        ri->blocks[ri->nblocks++] = meta;
         for (int k = 0; k < out.nfixes; k++) fixes[nfix++] = {out.fixes[k].field, out.fixes[k].target};
     }
     auto code_for = [&](GuestAddr pc) -> u8* {
@@ -271,6 +300,11 @@ static bool compile_region(GuestAddr head) {
         return nullptr;
     };
     for (int k = 0; k < nfix; k++) Assembler::patch_rel32(fixes[k].field, code_for(fixes[k].target));
+    ri->branches = new RegionInfo::Branch[nfix];
+    ri->nbranches = 0;
+    for (int k = 0; k < nfix; k++)
+        for (int i = 0; i < R.n; i++)
+            if (R.pcs[i] == fixes[k].target) ri->branches[ri->nbranches++] = {fixes[k].field, i};
     Assembler::patch_rel32(entry_fix, code_of[0]);
     // link external exits whose targets exist
     for (int i = 0; i < R.n; i++) {
@@ -284,6 +318,8 @@ static bool compile_region(GuestAddr head) {
             }
         }
     }
+    if (peeks.overflow) return false;   // dependencies not trackable (abandoned code stays unpublished)
+    for (int i = 0; i < R.n; i++) g_cache.add_deps(entry, metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
     // ---- go live: publish the entry and re-point incoming links of the tier-1 head
     entry->incoming = hm->incoming;
     hm->incoming = nullptr;
@@ -300,7 +336,7 @@ static bool compile_region(GuestAddr head) {
 
 // Region exits too often relative to time spent in it: re-point links back to tier 1.
 static void demote_region(RegionInfo* ri) {
-    if (ri->demoted) return;
+    if (ri->demoted || ri->killed) return;
     ri->demoted = true;
     BlockMeta* hm = ri->head_t1;
     BlockMeta* entry = ri->entry;
@@ -308,7 +344,7 @@ static void demote_region(RegionInfo* ri) {
     entry->incoming = nullptr;
     for (ExitInfo* e = hm->incoming; e; e = e->next_in) link_exit(e, hm->code);
     hm->tier = 4;  // never promote again
-    g_cache.publish(hm);
+    if (!(hm->flags & BF_DEAD)) g_cache.publish(hm);
     if (g_opt.stats) g_stats.regions_demoted++;
     XEF_LOG(1, "tier2: demoted region %#lx (exits=%lu samples=%lu)", (unsigned long)hm->start,
             (unsigned long)*ri->exit_counter, (unsigned long)ri->samples);
@@ -332,7 +368,7 @@ static void* compiler_thread(void*) {
     return nullptr;
 }
 
-// SIGPROF: count samples per translated block, request tier 2 for hot ones.
+// kSampleSig: count samples per translated block, request tier 2 for hot ones.
 static void sample_handler(int sig, siginfo_t* si, void* ctx) {
     u8* rip = (u8*)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP];
     if (g_opt.profile) profile_sample(rip);
@@ -363,8 +399,10 @@ static bool g_t2_enabled = false;
 
 static void start_compiler_thread() {
     if (pipe2(g_pipe, O_CLOEXEC) != 0) fatal("tier2: pipe");
-    // the SIGPROF handler must never block: drop requests if the pipe is full
+    // the sampling handler must never block: drop requests if the pipe is full
     fcntl(g_pipe[1], F_SETFL, O_NONBLOCK);
+    g_pipe[0] = reserve_host_fd(g_pipe[0]);
+    g_pipe[1] = reserve_host_fd(g_pipe[1]);
     pthread_t th;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -373,16 +411,40 @@ static void start_compiler_thread() {
     if (pthread_create(&th, &attr, compiler_thread, nullptr) != 0) fatal("tier2: thread");
 }
 
-void tier2_after_fork() {
+// Sampling (tier-2 hotness, --profile) uses one CPU-time timer per guest thread that signals that
+// very thread: a process-wide ITIMER_PROF delivers SIGPROF to an arbitrary thread, often one
+// sleeping in a syscall, which starved busy threads of samples.
+static bool g_sampling;
+
+void tier2_thread_start(ThreadCtx* t) {
+    if (!g_sampling || !t || t->prof_timer_ok) return;
+    struct sigevent sev {};
+    sev.sigev_notify = SIGEV_THREAD_ID;
+    sev.sigev_signo = kSampleSig;
+    sev._sigev_un._tid = (int)syscall(SYS_gettid);
+    timer_t tm;
+    if (syscall(SYS_timer_create, CLOCK_THREAD_CPUTIME_ID, &sev, &tm) != 0) return;
+    struct itimerspec its {};
+    its.it_interval.tv_nsec = 1000000;
+    its.it_value.tv_nsec = 1000000;
+    syscall(SYS_timer_settime, tm, 0, &its, nullptr);
+    t->prof_timer = tm;
+    t->prof_timer_ok = true;
+}
+
+void tier2_thread_stop(ThreadCtx* t) {
+    if (t && t->prof_timer_ok) { syscall(SYS_timer_delete, t->prof_timer); t->prof_timer_ok = false; }
+}
+
+void tier2_after_fork(ThreadCtx* t) {
+    if (t) t->prof_timer_ok = false;   // POSIX timers are not inherited by fork
+    tier2_thread_start(t);
     if (!g_t2_enabled) return;
+    release_host_fd(g_pipe[0]);
+    release_host_fd(g_pipe[1]);
     close(g_pipe[0]);
     close(g_pipe[1]);
     start_compiler_thread();
-    // the ITIMER_PROF timer is not inherited by fork
-    struct itimerval it {};
-    it.it_interval.tv_usec = 1000;
-    it.it_value.tv_usec = 1000;
-    setitimer(ITIMER_PROF, &it, nullptr);
 }
 
 void tier2_init(bool enable) {
@@ -392,11 +454,10 @@ void tier2_init(bool enable) {
     struct sigaction sa {};
     sa.sa_sigaction = sample_handler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
-    sigaction(SIGPROF, &sa, nullptr);
-    struct itimerval it {};
-    it.it_interval.tv_usec = 1000;
-    it.it_value.tv_usec = 1000;
-    setitimer(ITIMER_PROF, &it, nullptr);
+    sa.sa_flags |= SA_ONSTACK;
+    sigaction(kSampleSig, &sa, nullptr);
+    g_sampling = true;
+    tier2_thread_start(tls_thread);   // the main thread; others start theirs in thread_trampoline
 }
 
 }  // namespace xef

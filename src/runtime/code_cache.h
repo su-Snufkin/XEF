@@ -2,12 +2,24 @@
 #pragma once
 #include <atomic>
 #include <mutex>
+#include <unordered_map>
+#include <vector>
 
 #include "common/common.h"
 
 namespace xef {
 
 struct BlockMeta;
+
+// Host code offset -> guest instruction, recorded at every guest memory access (fault mapping).
+struct PcMapEntry {
+    u32 host_off;      // offset of the host instruction from BlockMeta::code
+    u16 guest_off;     // guest pc - BlockMeta::start
+    u16 borrowed;      // host regs borrowed as temporaries: their guest value is in CpuState
+    u8 flags_loc;      // where the guest NZCV is: PCF_EFLAGS / PCF_SPILL / PCF_UNKNOWN
+    u8 pad[3];
+};
+enum : u8 { PCF_EFLAGS = 0, PCF_SPILL = 1, PCF_UNKNOWN = 2 };
 
 // Runtime feedback for a tier-2 region.
 struct RegionInfo {
@@ -17,6 +29,36 @@ struct RegionInfo {
     u64 samples;
     bool demoted;
     u8* sig_exit;         // region -> canonical transfer + exit_to_runtime (signal delivery)
+    u8 map[32];           // region register mapping: guest reg -> host reg (0xff: CpuState)
+    BlockMeta** blocks;   // member blocks (tier 2 code)
+    int nblocks;
+    struct Branch { u8* field; int target; };   // aligned rel32 of jumps to member blocks
+    Branch* branches;
+    int nbranches;
+    bool killed;          // invalidated: member blocks are patched to leave the region
+};
+
+// Guest code range a translation depends on (its own instructions or decode-ahead).
+struct GuestRange {
+    GuestAddr lo, hi;
+};
+
+// Collects the guest ranges read by decode-ahead (NZCV liveness) while translating.
+struct PeekLog {
+    static constexpr int kMax = 32;
+    GuestRange r[kMax];
+    int n = 0;
+    bool overflow = false;
+    void add(GuestAddr lo, GuestAddr hi) {
+        for (int i = 0; i < n; i++)
+            if (lo <= r[i].hi && hi >= r[i].lo) {   // merge touching ranges
+                if (lo < r[i].lo) r[i].lo = lo;
+                if (hi > r[i].hi) r[i].hi = hi;
+                return;
+            }
+        if (n == kMax) { overflow = true; return; }
+        r[n++] = {lo, hi};
+    }
 };
 
 enum ExitKind : u8 {
@@ -35,6 +77,8 @@ struct ExitInfo {
     u8 kind;
     u8 linked;
 };
+
+enum : u8 { BF_DEAD = 1 };   // BlockMeta::flags
 
 struct BlockMeta {
     GuestAddr start;
@@ -104,6 +148,21 @@ public:
     BlockMeta* find_by_host(const u8* p) const;
     void register_block(BlockMeta* b);
 
+    // per-block host->guest pc maps
+    void set_pcmap(BlockMeta* b, const PcMapEntry* e, int n);
+    const PcMapEntry* find_pc(const BlockMeta* b, const u8* host) const;
+
+    // ---- invalidation (all with `lock` held) ----
+    // Records that `b` depends on guest code in [lo, hi) (its body) and on the peeked ranges.
+    void add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog* peeks);
+    // Kills every translation depending on [lo, hi). Returns true if any was found.
+    bool invalidate_range(GuestAddr lo, GuestAddr hi);
+    void invalidate_block(BlockMeta* b);
+    // Drops IBTC entries of the blocks killed since the last scrub (after invalidation).
+    void scrub_ibtcs();
+    // Bumped by every invalidation: translations that started earlier must not be published.
+    std::atomic<u64> epoch{0};
+
     std::mutex lock;   // serializes translation / linking (off the hot path)
     RuntimeStubs stubs;
 
@@ -120,6 +179,15 @@ private:
     std::atomic<BlockMeta**>* l1_ = nullptr;
     BlockMeta** by_host_ = nullptr;
     size_t nby_host_ = 0, cap_by_host_ = 0;
+    struct Dep { BlockMeta* b; GuestAddr lo, hi; };
+    std::unordered_map<u64, std::vector<Dep>> deps_;   // guest page -> translations depending on it
+    void kill_region(RegionInfo* ri);
+    std::vector<IbtcEntry*> ibtcs_;
+    std::vector<GuestAddr> killed_;   // start pcs of blocks killed since the last scrub_ibtcs
+    std::mutex ibtc_lock_;
+    PcMapEntry* pcmap_ = nullptr;
+    u32 npcmap_ = 0, cap_pcmap_ = 0;
+    std::mutex pcmap_lock_;
 };
 
 extern CodeCache g_cache;

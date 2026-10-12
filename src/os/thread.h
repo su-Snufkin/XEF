@@ -21,6 +21,10 @@ struct ThreadCtx {
     siginfo_t pending_info[65];
     volatile bool stepping = false;
     u64 ss_sp = 0, ss_size = 0;
+    int sync_sig = 0;               // synchronous fault waiting for frame setup
+    timer_t prof_timer {};          // per-thread sampling timer (kSampleSig, tier2.cpp)
+    bool prof_timer_ok = false;
+    siginfo_t sync_info;
 };
 
 ThreadCtx* thread_create(CpuState* parent);

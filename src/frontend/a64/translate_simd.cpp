@@ -1066,6 +1066,28 @@ static bool simd_crypto_aes(Translator& t, u32 i) {
     }
 }
 
+// SHA1 / SHA256: three-register (0101 1110 000 Rm 0 opc 00 Rn Rd) and
+// two-register (0101 1110 0010 1000 opc 10 Rn Rd) forms; all operate on whole Q registers.
+static bool simd_crypto_sha3(Translator& t, u32 i) {
+    S s(t);
+    int opcode = bits(i, 14, 12), rd = bits(i, 4, 0), rn = bits(i, 9, 5), rm = bits(i, 20, 16);
+    static const u16 ops[7] = {V_SHA1C, V_SHA1P, V_SHA1M, V_SHA1SU0, V_SHA256H, V_SHA256H2, V_SHA256SU1};
+    if (opcode == 7) return false;
+    s.setV(rd, s.vop(ops[opcode], 4, 0, s.V(rd), s.V(rn), s.V(rm)));
+    return true;
+}
+
+static bool simd_crypto_sha2(Translator& t, u32 i) {
+    S s(t);
+    int opcode = bits(i, 16, 12), rd = bits(i, 4, 0), rn = bits(i, 9, 5);
+    switch (opcode) {
+    case 0: s.setV(rd, s.vop(V_SHA1H, 4, 0, s.V(rn))); return true;
+    case 1: s.setV(rd, s.vop(V_SHA1SU1, 4, 0, s.V(rd), s.V(rn))); return true;
+    case 2: s.setV(rd, s.vop(V_SHA256SU0, 4, 0, s.V(rd), s.V(rn))); return true;
+    default: return false;
+    }
+}
+
 bool Translator::simd_fp(u32 i) {
     u32 b2824 = bits(i, 28, 24);
     // Scalar floating point (not Advanced SIMD): bit 30 = 0, bits 28:24 = 11110 / 11111
@@ -1079,6 +1101,10 @@ bool Translator::simd_fp(u32 i) {
     u32 b2824s = bits(i, 28, 24);
     // AES: 0100 1110 0010 1000 0xxx 10
     if (bits(i, 31, 24) == 0x4E && bits(i, 21, 17) == 0x14 && bits(i, 11, 10) == 2) return simd_crypto_aes(*this, i);
+    if (bits(i, 31, 24) == 0x5E && bits(i, 23, 22) == 0) {
+        if (!bit(i, 21) && !bit(i, 15) && bits(i, 11, 10) == 0) return simd_crypto_sha3(*this, i);
+        if (bits(i, 21, 17) == 0x14 && bits(i, 11, 10) == 2) return simd_crypto_sha2(*this, i);
+    }
     if ((b2824s & 0xF) == 0xE) {  // x1110: three same/diff/misc/across/copy/permute/ext/tbl
         if (bit(i, 21)) {
             if (bit(i, 10)) return simd_three_same(*this, i, scalar);

@@ -3,6 +3,7 @@
 #include <sys/mman.h>
 
 #include "backend/x64/assembler.h"
+#include "runtime/cpu_state.h"
 
 namespace xef {
 
@@ -81,11 +82,13 @@ IbtcEntry* CodeCache::new_ibtc() {
     if (p == MAP_FAILED) fatal("ibtc alloc");
     IbtcEntry* t = (IbtcEntry*)p;
     for (int i = 0; i < kIbtcEntries; i++) { t[i].guest = 1; t[i].host = 0; }
+    std::lock_guard<std::mutex> g(ibtc_lock_);
+    ibtcs_.push_back(t);
     return t;
 }
 
 void CodeCache::register_block(BlockMeta* b) {
-    // fixed-size index (no reallocation: read lock-free from the SIGPROF sampler)
+    // fixed-size index (no reallocation: read lock-free from the sampling handler)
     if (!by_host_) {
         cap_by_host_ = 1 << 24;
         void* p = mmap(nullptr, cap_by_host_ * sizeof(BlockMeta*), PROT_READ | PROT_WRITE,
@@ -108,6 +111,142 @@ BlockMeta* CodeCache::find_by_host(const u8* p) const {
     BlockMeta* b = by_host_[lo - 1];
     // stubs follow the body; accept anything up to the next block
     return b;
+}
+
+void CodeCache::set_pcmap(BlockMeta* b, const PcMapEntry* e, int n) {
+    std::lock_guard<std::mutex> g(pcmap_lock_);
+    if (!pcmap_) {
+        cap_pcmap_ = 1u << 26;
+        void* p = mmap(nullptr, (size_t)cap_pcmap_ * sizeof(PcMapEntry), PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (p == MAP_FAILED) fatal("pc map alloc");
+        pcmap_ = (PcMapEntry*)p;
+    }
+    if (npcmap_ + (u32)n > cap_pcmap_) { b->host_pc_map_len = 0; return; }  // degrade: no fault mapping
+    memcpy(pcmap_ + npcmap_, e, sizeof(PcMapEntry) * n);
+    b->host_pc_map_off = npcmap_;
+    b->host_pc_map_len = (u32)n;
+    npcmap_ += (u32)n;
+}
+
+// Last recorded access at or before `host` (entries are in increasing host order). Called from
+// signal handlers: no locks, the entries of a published block never change.
+const PcMapEntry* CodeCache::find_pc(const BlockMeta* b, const u8* host) const {
+    if (!pcmap_ || !b->host_pc_map_len || host < b->code) return nullptr;
+    u32 off = (u32)(host - b->code);
+    const PcMapEntry* best = nullptr;
+    for (u32 i = 0; i < b->host_pc_map_len; i++) {
+        const PcMapEntry& e = pcmap_[b->host_pc_map_off + i];
+        if (e.host_off > off) break;
+        best = &e;
+    }
+    return best;
+}
+
+// ------------------------------------------------------------------ invalidation
+
+void CodeCache::add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog* peeks) {
+    auto add = [&](GuestAddr l, GuestAddr h) {
+        if (h <= l) return;
+        for (u64 pg = l >> 12; pg <= (h - 1) >> 12; pg++) deps_[pg].push_back({b, l, h});
+    };
+    add(lo, hi);
+    if (peeks)
+        for (int i = 0; i < peeks->n; i++) add(peeks->r[i].lo, peeks->r[i].hi);
+}
+
+bool CodeCache::invalidate_range(GuestAddr lo, GuestAddr hi) {
+    epoch.fetch_add(1, std::memory_order_seq_cst);
+    if (hi <= lo || deps_.empty()) return false;
+    bool found = false;
+    auto scan = [&](std::vector<Dep>& v) {
+        size_t k = 0;
+        for (size_t i = 0; i < v.size(); i++) {
+            Dep d = v[i];
+            if (d.b->flags & BF_DEAD) continue;          // drop stale entries
+            if (d.lo < hi && d.hi > lo) { invalidate_block(d.b); found = true; continue; }
+            v[k++] = d;
+        }
+        v.resize(k);
+    };
+    u64 first = lo >> 12, last = (hi - 1) >> 12;
+    if (last - first + 1 > deps_.size()) {
+        for (auto it = deps_.begin(); it != deps_.end();) {
+            if (it->first >= first && it->first <= last) scan(it->second);
+            if (it->second.empty()) it = deps_.erase(it); else ++it;
+        }
+    } else {
+        for (u64 pg = first; pg <= last; pg++) {
+            auto it = deps_.find(pg);
+            if (it == deps_.end()) continue;
+            scan(it->second);
+            if (it->second.empty()) deps_.erase(it);
+        }
+    }
+    return found;
+}
+
+void CodeCache::invalidate_block(BlockMeta* b) {
+    if (b->flags & BF_DEAD) return;
+    b->flags |= BF_DEAD;
+    killed_.push_back(b->start);
+    if (lookup(b->start) == b) unpublish(b->start);
+    // exits of other blocks that jump here go back to their link stubs
+    for (ExitInfo* e = b->incoming; e; e = e->next_in) {
+        i32 rel = (i32)(e->stub - (e->site + 4));
+        __atomic_store_n((i32*)e->site, rel, __ATOMIC_RELEASE);
+        e->linked = 0;
+    }
+    b->incoming = nullptr;
+    if (b->region) kill_region(b->region);
+}
+
+// A region jumps between its blocks directly, so a thread may stay inside it indefinitely. Every
+// jump to a member block is retargeted (atomic store of its rel32) to a stub that leaves
+// through the region's exit path; the runtime then re-dispatches at that block's guest pc.
+// Code itself is never rewritten: other threads may be executing it.
+void CodeCache::kill_region(RegionInfo* ri) {
+    if (ri->killed) return;
+    ri->killed = true;
+    ri->demoted = true;
+    invalidate_block(ri->entry);
+    if (ri->head_t1 && lookup(ri->head_t1->start) == ri->head_t1) unpublish(ri->head_t1->start);
+    if (ri->head_t1) killed_.push_back(ri->head_t1->start);
+    u8* stub[64];
+    for (int i = 0; i < ri->nblocks && i < 64; i++) {
+        BlockMeta* m = ri->blocks[i];
+        m->flags |= BF_DEAD;
+        killed_.push_back(m->start);
+        u8* s = alloc_code(64);
+        x64::Assembler as(s, 64);
+        as.mov_imm(x64::RAX, m->start);   // rax is free at block boundaries
+        as.mov(8, x64::mem(x64::R15, XEF_ST(pc)), x64::RAX);
+        as.mov_imm(8, x64::mem(x64::R15, XEF_ST(exit_reason)), EXIT_LOOKUP);
+        as.jmp_rel32(ri->sig_exit);
+        commit_code(s, as.size());
+        stub[i] = s;
+    }
+    for (int k = 0; k < ri->nbranches; k++) {
+        const RegionInfo::Branch& br = ri->branches[k];
+        i32 rel = (i32)(stub[br.target] - (br.field + 4));
+        __atomic_store_n((i32*)br.field, rel, __ATOMIC_SEQ_CST);   // within one cache line: atomic
+    }
+}
+
+void CodeCache::scrub_ibtcs() {
+    // an IBTC entry for pc can only sit in slot (pc >> 2) & mask, so only the killed blocks' slots
+    // need a look (a full scan of every thread's table made code-writing JITs crawl)
+    std::lock_guard<std::mutex> g(ibtc_lock_);
+    for (GuestAddr pc : killed_) {
+        size_t slot = (pc >> 2) & (kIbtcEntries - 1);
+        for (IbtcEntry* t : ibtcs_) {
+            if (__atomic_load_n(&t[slot].guest, __ATOMIC_ACQUIRE) != pc) continue;
+            BlockMeta* b = lookup(pc);
+            if (!b || b->code != (u8*)__atomic_load_n(&t[slot].host, __ATOMIC_ACQUIRE))
+                __atomic_store_n(&t[slot].guest, 1ull, __ATOMIC_RELEASE);
+        }
+    }
+    killed_.clear();
 }
 
 void link_exit(ExitInfo* e, u8* host) {
