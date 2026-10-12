@@ -55,6 +55,31 @@ ThreadCtx* thread_create(CpuState* parent) {
 static std::atomic<int> g_live_threads{1};
 int guest_thread_count() { return g_live_threads.load(); }
 
+// TIDs of the guest's threads (not XEF's compiler thread or host library workers): /proc/self/task
+// lists only these, or programs signalling every thread (Firefox's sandbox setup) wait forever
+static constexpr int kMaxTids = 8192;
+static std::atomic<int> g_tids[kMaxTids];
+static void guest_tid_add(int tid) {
+    for (auto& e : g_tids) {
+        int z = 0;
+        if (e.compare_exchange_strong(z, tid)) return;
+    }
+}
+static void guest_tid_remove(int tid) {
+    for (auto& e : g_tids) {
+        int x = tid;
+        if (e.compare_exchange_strong(x, 0)) return;
+    }
+}
+bool is_guest_tid(int tid) {
+    for (auto& e : g_tids) if (e.load(std::memory_order_relaxed) == tid) return true;
+    return false;
+}
+void guest_tid_init() {   // process start and fork child: just the calling thread
+    for (auto& e : g_tids) e.store(0, std::memory_order_relaxed);
+    guest_tid_add((int)syscall(SYS_gettid));
+}
+
 void thread_exit(CpuState* st, int code) {
     ThreadCtx* t = st->thread;
     if (g_live_threads.fetch_sub(1) == 1) {
@@ -63,6 +88,7 @@ void thread_exit(CpuState* st, int code) {
         syscall(SYS_exit_group, code);
     }
     tier2_thread_stop(t);
+    guest_tid_remove((int)syscall(SYS_gettid));
     if (t && t->clear_child_tid) {
         __atomic_store_n((u32*)t->clear_child_tid, 0, __ATOMIC_SEQ_CST);
         syscall(SYS_futex, t->clear_child_tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
@@ -87,6 +113,7 @@ static void* thread_trampoline(void* arg) {
     ThreadCtx* t = ts->t;
     int tid = (int)syscall(SYS_gettid);
     t->tid = tid;
+    guest_tid_add(tid);
     // like the kernel: both tid stores happen before the new thread runs guest code. (glibc passes
     // the same address as ptid and ctid; a parent-side store after the child started could
     // overwrite the 0 written when the thread exits, and pthread_join would wait forever.)
@@ -141,6 +168,7 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         if (stack) st->x[kGuestSP] = stack;
         if (flags & kCloneSettls) st->tpidr_el0 = tls;
         g_live_threads.store(1);
+        guest_tid_init();
         if (st->thread) st->thread->tid = (int)syscall(SYS_gettid);
         tier2_after_fork(st->thread);
         return 0;

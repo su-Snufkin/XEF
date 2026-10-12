@@ -70,9 +70,6 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64); fuzzer go ustawia.
 
 ## Następne kroki (priorytet)
-- Firefox: sandbox procesów potomnych (seccomp ustawiany sygnałem do każdego wątku) zgłasza wątek, który
-  nie odpowiada w 10 s -> sprawdzić dostarczanie sygnału do wątku zablokowanego w syscallu
-  (dziś: `MOZ_DISABLE_*_SANDBOX=1`), oraz czy prctl/seccomp gościa jest emulowany sensownie.
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
    znalezione bloki; testy Pythona (w tym asyncio, ssl) przechodzą po naprawie slotów spill
    i dostarczania sygnałów (test_socket: tylko VSOCK — środowisko).
@@ -86,6 +83,11 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 4. Trwały cache AOT, thunki bibliotek.
 
 ## Pułapki, na które już wpadliśmy
+- seccomp gościa (filtry BPF z numerami AArch64) nie może trafić na hosta — zabijałby syscalle XEF:
+  `seccomp()` = ENOSYS, `PR_SET/GET_SECCOMP` = EINVAL (jądro bez seccomp, jak qemu-user). Udawanie
+  sukcesu bez egzekwowania psuje Firefoksa (chroot + broker przez SIGSYS).
+- `/proc/self/task` pokazuje tylko wątki gościa (rejestr TID w thread.cpp): Firefox sygnalizował każdy
+  wątek z listy, łącznie z wątkiem kompilatora tier 2, i czekał na odpowiedź.
 - Wywołanie helpera C (`emit_call_c`) niszczy rejestry tymczasowe: wartości żywe po wywołaniu, także
   jego argumenty, muszą zostać wyrzucone przed nim (adres IC IVAU używany dalej -> Firefox flushował
   od adresu 0 całą przestrzeń). Weryfikator pomija bloki z helperami, test: t_icflush.

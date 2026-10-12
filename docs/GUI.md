@@ -38,7 +38,7 @@ Verified with `--host-gl`:
 | Hedgewars 1.0 | Qt 5 frontend starts the Free Pascal engine (SDL2 + GL); simple game against the CPU team | `hedgewars-hostgl.jpg` |
 | FlightGear 2020.3 | OpenSceneGraph, Nasal, Qt 5; Cessna 172P cockpit at KSFO after ~110 s of loading. Needs `DBUS_FATAL_WARNINGS=0` without a session bus (fgfs passes a NULL connection to libdbus, natively too); `--disable-terrasync` | `flightgear-hostgl.jpg` |
 | OpenTTD 13.4 | SDL2, title screen with the running demo game (`-m null -s null`: no music/sound drivers) | `openttd.jpg` |
-| Firefox 157 | Mozilla PPA build (`XEF_REPOS=http://ppa.launchpad.net/mozillateam/ppa/ubuntu tools/mkrootfs.sh firefox`): GTK3 UI, page with CSS animation, canvas and SpiderMonkey JIT. Needs the `MOZ_DISABLE_*_SANDBOX=1` variables for now (a sandboxed child process reports a thread that does not answer the seccomp setup signal) and an existing `-profile` directory | `firefox.jpg` |
+| Firefox 157 | Mozilla PPA build (`XEF_REPOS=http://ppa.launchpad.net/mozillateam/ppa/ubuntu tools/mkrootfs.sh firefox`): GTK3 UI, page with CSS animation, canvas and the SpiderMonkey JIT; multi-process. XEF reports no seccomp (like qemu-user), so the sandbox runs without its seccomp layer. Needs an existing `-profile` directory | `firefox.jpg` |
 | LibreOffice 24.2 Writer | GTK3; ready in ~15 s; typing, spell checking (no --host-gl needed) | `libreoffice-writer.jpg` |
 | OpenSCAD 2021 | Qt 5 + CGAL (needs FP rounding modes: FPCR -> MXCSR); CSG preview on host GL | `openscad-hostgl.jpg` |
 | Inkscape 1.2 | GTK3 welcome dialog | `inkscape.jpg` |

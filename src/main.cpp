@@ -114,6 +114,7 @@ int main(int argc, char** argv, char** envp) {
     syscalls_init(img);
     GuestAddr sp = setup_stack(img, argc - i, argv + i, envp);
 
+    guest_tid_init();
     ThreadCtx* t = thread_create(nullptr);
     CpuState* st = t->st;
     signals_thread_init(t);
