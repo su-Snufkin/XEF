@@ -339,10 +339,10 @@ void T1::release_operands(const Inst& in) {
 }
 
 // Before guest register g is overwritten: move live values that alias it.
-void T1::evacuate_guest(int g, int upto) {
+void T1::evacuate_guest(int g, int upto, Val keep) {
     for (int v = 1; v < cur_; v++) {
         VI& x = vi_[v];
-        if (x.dead || x.last <= upto) continue;
+        if (x.dead || x.last <= upto || v == keep) continue;
         if (x.home == g) x.home = -1;
         if ((x.k == L_GREG || x.k == L_GMEM) && x.g == g) {
             Reg t = alloc_temp();
@@ -499,7 +499,7 @@ void T1::emit_inst(Val v) {
             Reg h = host(g);
             if ((x.k == L_GREG || x.k == L_REG) && x.reg == h) {
                 // already there (dest hint)
-                evacuate_guest(g, cur_);  // other aliases of the old value were moved at def time
+                evacuate_guest(g, cur_, src);  // other aliases of the old value were moved at def time
                 x.home = (i8)g;
                 if (x.k == L_GREG) x.g = (u8)g;
                 return;

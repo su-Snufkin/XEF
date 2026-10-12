@@ -210,7 +210,7 @@ private:
     void load_into(Reg dst, Val v, int size);
     void pin(Val v) { v = resolve(v); if (vi_[v].k == L_REG || vi_[v].k == L_GREG) pinned_ |= 1 << vi_[v].reg; }
     void release_operands(const Inst& in);
-    void evacuate_guest(int g, int upto);
+    void evacuate_guest(int g, int upto, Val keep = 0);   // keep: the value being written (stays in g)
     Reg dest_for(Val v, int size);
     Reg dest_hint(Val v);
     void finish_def(Val v, Reg r);
