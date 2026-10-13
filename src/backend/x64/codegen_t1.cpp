@@ -142,7 +142,7 @@ void T1::analyze() {
         if (x.dead) continue;
         if (in.op == Op::FCmpFlags && !(live_out_ && fid(v) == final_flags_)) {
             bool ok = true, m1 = true, m2 = true, gflag_active = false;
-            for (int u = v + 1; u < n && ok; u++) {
+            for (int u = v + 1; u < n && ok && (u <= x.last || gflag_active); u++) {
                 const Inst& c = I(u);
                 if (c.op == Op::SetFlags) { gflag_active = (fid(c.a) == v); continue; }
                 if (vi_[u].dead) continue;
@@ -178,7 +178,7 @@ void T1::analyze() {
         bool full = in.op != Op::FlagsLogic && !x.rres;
         if (!full && in.op != Op::FlagsLogic) {
             if (live_out_ && fid(v) == final_flags_) full = true;
-            for (int u = v + 1; u < n && !full; u++) {
+            for (int u = v + 1; u < n && u <= L && !full; u++) {
                 const Inst& c = I(u);
                 if (vi_[u].dead || c.op == Op::SetFlags) continue;
                 bool uses_f = false;
@@ -213,7 +213,7 @@ void T1::analyze() {
         {
             bool need_c = live_out_ && fid(v) == final_flags_, only_cond = true, barrier = false;
             int first = 0, between = 0;
-            for (int u = v + 1; u < n; u++) {
+            for (int u = v + 1; u < n && u <= x.last; u++) {
                 const Inst& c = I(u);
                 if (vi_[u].dead || c.op == Op::SetFlags || c.op == Op::Nop || c.op == Op::Const) continue;
                 bool uses_f = false;
