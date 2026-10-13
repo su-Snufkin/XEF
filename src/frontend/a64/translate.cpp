@@ -898,12 +898,14 @@ static thread_local PeekLog* tls_peek;
 void set_peek_log(PeekLog* log) { tls_peek = log; }
 
 // AAPCS64 does not preserve NZCV across calls, and compiled code never passes values in it, so
-// flags are dead at calls and returns. XEF_STRICT_FLAGS=1 drops this assumption (hand-written
-// assembly with flag-passing subroutines).
+// flags are dead at calls and returns. The same holds for indirect branches (BR): their targets
+// are function entries (PLT, tail calls), jump-table cases and computed-goto labels, which
+// compilers never enter with NZCV live (the runtime reports a BR target that reads NZCV first).
+// XEF_STRICT_FLAGS=1 drops these assumptions (hand-written assembly passing flags around).
 bool g_abi_flags = !getenv("XEF_STRICT_FLAGS");
 
 static bool abi_kills_flags(Op op) {
-    return g_abi_flags && (op == Op::ExitCall || op == Op::ExitCallIndirect || op == Op::ExitRet);
+    return g_abi_flags && (op == Op::ExitCall || op == Op::ExitCallIndirect || op == Op::ExitRet || op == Op::ExitIndirect);
 }
 
 // Fast NZCV classification of the commonest encodings for the lookahead below (translating each
@@ -1044,6 +1046,28 @@ static bool nzcv_live_any(const GuestAddr* pcs, int n) {
 }
 
 bool nzcv_live_at(GuestAddr pc, int) { return nzcv_live_any(&pc, 1); }
+
+// True only if the straight-line code at pc certainly reads NZCV before writing it (the unknown
+// cases nzcv_live_at must count as live are not reported).
+bool nzcv_read_first(GuestAddr pc) {
+    for (int i = 0; i < 16; i++, pc += 4) {
+        if (!guest_readable(pc)) return false;
+        GuestAddr t1 = 0, t2 = 0;
+        QuickFlags q = quick_flags(*(const u32*)pc, pc, &t1, &t2);
+        if (q == Q_UNKNOWN) q = slow_flags(pc, &t1, &t2);
+        if (q == Q_READ) {   // an actual read, not the conservative answer for SVC / BR / undefined
+            static thread_local ir::Block* scratch = new ir::Block();
+            scratch->clear(pc);
+            Translator tr(*scratch);
+            tr.step(pc, *(const u32*)pc);
+            for (int v = 1; v < scratch->n; v++)
+                if (scratch->insts[v].op == Op::GetFlags) return true;
+            return false;
+        }
+        if (q != Q_NONE) return false;
+    }
+    return false;
+}
 
 static void compute_flags_liveness(ir::Block& blk) {
     const Inst* term = nullptr;

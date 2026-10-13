@@ -67,7 +67,7 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   (X25519/TLS). `XEF_SPLIT` przyjmuje listę zakresów (`0-a,b-7fffffffffff` = dziel wszystko poza [a,b)).
 - `XEF_CHECK_NZCV=1` — szybka klasyfikacja NZCV w lookahead (`quick_flags`, translate.cpp) porównywana z
   translatorem przy każdym bloku; uruchom z nią fuzzer i duże programy po zmianach w dekoderze.
-- `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64); fuzzer go ustawia.
+- `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64) i BR (cele: wejścia funkcji, tablice skoków, computed goto; runtime ostrzega, gdy cel BR czyta NZCV jako pierwsze); fuzzer go ustawia.
 
 ## Następne kroki (priorytet)
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić

@@ -200,6 +200,15 @@ static void run_guest(ThreadCtx* t, bool nested) {
         case EXIT_LOOKUP: {
             if (g_opt.stats) g_stats.exits_lookup++;
             host = get_or_translate(t, st->pc);
+            {   // indirect branches / returns assume NZCV dead at their target (a64::g_abi_flags)
+                static bool warned;
+                if (a64::g_abi_flags && !warned && a64::nzcv_read_first(st->pc)) {
+                    warned = true;
+                    char d[512];
+                    log_msg("warning: indirect branch target %s reads NZCV set before the branch; "
+                            "if the program misbehaves, run with XEF_STRICT_FLAGS=1", describe_addr(st->pc, d, sizeof d));
+                }
+            }
             if (!g_opt.trace) g_cache.ibtc_insert(ibtc, st->pc, host);
             // an invalidation between lookup and insert may have missed this entry
             if (BlockMeta* nb = g_cache.lookup(st->pc); !nb || nb->code != host)

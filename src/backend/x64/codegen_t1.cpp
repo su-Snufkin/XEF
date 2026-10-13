@@ -2047,7 +2047,7 @@ void T1::emit_terminator(Val v) {
         pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
-        emit_ibtc_probe();
+        emit_ibtc_probe(!live_out_);
         return;
     }
     case Op::ExitCall: {
@@ -2073,7 +2073,7 @@ void T1::emit_terminator(Val v) {
         as_.lea(8, RSP, mem(RSP, 8));
         exit_jmp(in.imm2);
         as_.bind(probe);
-        emit_ibtc_probe();
+        emit_ibtc_probe(!live_out_);
         return;
     }
     case Op::ExitRet: {
@@ -2081,6 +2081,16 @@ void T1::emit_terminator(Val v) {
         pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
+        if (!live_out_) {   // NZCV dead at the return: cmp + jne
+            Label miss;
+            as_.alu(CMP, 8, RAX, mem(RSP, 8));
+            as_.jcc(CNE, miss);
+            as_.ret();
+            as_.bind(miss);
+            as_.mov(8, RSP, mem(R15, XEF_ST(jit_stack_top)));
+            emit_ibtc_probe(true);
+            return;
+        }
         // compare guest return address on the native stack with target (flag-free)
         as_.mov(8, RCX, mem(RSP, 8));
         as_.not_(8, RCX);

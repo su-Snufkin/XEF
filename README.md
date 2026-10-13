@@ -52,7 +52,7 @@ SuperTuxKart, Warzone 2100, GIMP, WebKitGTK with WebGL, vkcube, ...) with screen
 | `XEF_SPLIT=lo-hi[,lo-hi]` | debugging: translate blocks starting there one instruction at a time (bisecting translation bugs) |
 | `XEF_DUMP=lo-hi` | limit `--dump-ir` / `--dump-code` to blocks starting in the range |
 | `XEF_CHECK_NZCV=1` | debugging: check the fast NZCV-liveness lookahead against the translator on every block |
-| `XEF_STRICT_FLAGS=1` | do not assume NZCV is dead at calls/returns (hand-written asm passing flags) |
+| `XEF_STRICT_FLAGS=1` | do not assume NZCV is dead at calls, returns and indirect branches (hand-written asm passing flags; XEF warns when an indirect branch target reads NZCV first) |
 
 ## Documentation
 

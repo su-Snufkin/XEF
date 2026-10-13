@@ -383,11 +383,20 @@ private:
         as_.mov_imm(8, mem(R15, XEF_ST(exit_reason)), (i32)reason);
         as_.jmp_rel32(g_cache.stubs.exit_to_runtime);
     }
-    // inline IBTC probe on RAX (guest target); flag-free
-    void emit_ibtc_probe() {
+    // inline IBTC probe on RAX (guest target); flag-free unless flags_free (EFLAGS dead here)
+    void emit_ibtc_probe(bool flags_free = false) {
         as_.movzx16(RCX, RAX);
         as_.mov(8, R11, mem(R15, XEF_ST(ibtc)));
         as_.lea(8, R11, mem(R11, RCX, 2, 0));      // r11 = &table[(pc>>2) & 16383] (16-byte entries)
+        if (flags_free) {
+            Label miss;
+            as_.alu(CMP, 8, RAX, mem(R11));
+            as_.jcc(CNE, miss);
+            as_.jmp(mem(R11, 8));
+            as_.bind(miss);
+            as_.jmp_rel32(g_cache.stubs.ibtc_miss);
+            return;
+        }
         as_.mov(8, RCX, mem(R11));
         as_.not_(8, RCX);
         as_.lea(8, RCX, mem(RCX, RAX, 0, 1));
