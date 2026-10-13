@@ -43,6 +43,11 @@ constexpr SseOp PBLENDW = P3A(0x0E), PSADBW = P(0xF6), PHADDW = P38(0x01), PHADD
 constexpr SseOp PHMINPOSUW = P38(0x41);
 constexpr SseOp PACKUSWB = P(0x67), PACKSSWB = P(0x63), PACKSSDW = P(0x6B), PACKUSDW = P38(0x2B);
 constexpr SseOp PMULHRSW = P38(0x0B);
+constexpr SseOp AESENC = P38(0xDC), AESENCLAST = P38(0xDD), AESDEC = P38(0xDE), AESDECLAST = P38(0xDF);
+constexpr SseOp AESIMC_ = P38(0xDB), PCLMULQDQ = P3A(0x44);
+// SHA extensions: legacy SSE encodings only (no VEX form); SHA256RNDS2 reads XMM0 implicitly
+constexpr SseOp SHA256RNDS2 = {0, 2, 0xCB, 0}, SHA256MSG1 = {0, 2, 0xCC, 0}, SHA256MSG2 = {0, 2, 0xCD, 0};
+constexpr SseOp SHA1RNDS4 = {0, 3, 0xCC, 0};
 constexpr SseOp VCVTPH2PS = P38(0x13), VCVTPS2PH = P3A(0x1D);          // F16C (VEX only)
 constexpr SseOp VPSLLVQ = {0x66, 2, 0x47, 1}, VPSRLVQ = {0x66, 2, 0x45, 1}; // AVX2
 constexpr SseOp PMOVZX[5] = {{}, P38(0x30), P38(0x33), {}, P38(0x35)};   // bw, wd, dq
@@ -978,6 +983,158 @@ void T1::emit_vop(Val v) {
         u64 lo = es == 1 ? 0x0e0c0a0806040200ull : 0x0d0c090805040100ull;
         as_.xop_m(PSHUFB, d, d, vconst_mem(lo, 0x8080808080808080ull));
         vi_[v].clean_vec = 8;
+        return;
+    }
+    // ---------------- crypto (AES-NI, PCLMULQDQ)
+    // ARM AESE/AESD = (Inv)SubBytes((Inv)ShiftRows(a ^ b)) = aes{enc,dec}last(a ^ b, 0); followed by
+    // AESMC/AESIMC of that value only, the pair is one aes{enc,dec}(a ^ b, 0).
+    case V_AESE: case V_AESD: {
+        if (!g_host.aes) return helper();
+        bool enc = in.sub == V_AESE;
+        Val mc = 0;
+        if (vi_[v].uses == 1)
+            for (int u = v + 1; u < b_.n; u++) {
+                const Inst& c = I(u);
+                if (vi_[u].dead) continue;
+                if (c.a == v || c.b == v || c.c == v) {
+                    if (c.op == Op::VOp && c.sub == (enc ? V_AESMC : V_AESIMC) && c.a == v) mc = (Val)u;
+                    break;
+                }
+            }
+        if (mc) {   // the mix-columns op becomes an alias of this value
+            if (vi_[v].last < vi_[mc].last) vi_[v].last = vi_[mc].last;
+            vi_[mc].k = L_ALIAS;
+            vi_[mc].folded = true;
+        }
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        Xmm z = alloc_x(); xpinned_ |= 1 << z;
+        as_.xop(PXOR, z, z, z);
+        as_.xop(PXOR, d, a, b);
+        as_.xop(mc ? (enc ? AESENC : AESDEC) : (enc ? AESENCLAST : AESDECLAST), d, d, z);
+        return;
+    }
+    case V_AESMC: {   // MixColumns(x) = aesenc(aesdeclast(x, 0), 0): SubBytes/ShiftRows cancel
+        if (!g_host.aes) return helper();
+        Xmm a = A();
+        Xmm d = new_x(v);
+        Xmm z = alloc_x(); xpinned_ |= 1 << z;
+        as_.xop(PXOR, z, z, z);
+        as_.xop(AESDECLAST, d, a, z);
+        as_.xop(AESENC, d, d, z);
+        return;
+    }
+    case V_AESIMC: {
+        if (!g_host.aes) return helper();
+        Xmm a = A();
+        Xmm d = new_x(v);
+        as_.xop1(AESIMC_, d, a);
+        return;
+    }
+    // SHA-256: ARM keeps ABCD / EFGH (A in lane 0), SHA-NI ABEF / CDGH (A in lane 3); both
+    // SHA256H and SHA256H2 run the 4 rounds (two sha256rnds2) and keep their half of the state.
+    case V_SHA256H: case V_SHA256H2: {
+        if (!g_host.sha) return helper();
+        evict_x(0);
+        xpinned_ |= 1;
+        Xmm a = A(), b = B(), w = C();
+        Xmm x = in.sub == V_SHA256H ? a : b, y = in.sub == V_SHA256H ? b : a;
+        Xmm abef = alloc_x(); xpinned_ |= 1 << abef;
+        Xmm cdgh = alloc_x(); xpinned_ |= 1 << cdgh;
+        as_.xop(SHUFPS, abef, y, x, 0x11);
+        as_.xop(SHUFPS, cdgh, y, x, 0xBB);
+        as_.movaps(XMM0, w);
+        as_.legacy_rr(SHA256RNDS2, cdgh, abef);   // rounds 0, 1: cdgh <- ABEF2 (CDGH2 = ABEF0)
+        as_.xop1(PSHUFD, XMM0, w, 0x0E);
+        as_.legacy_rr(SHA256RNDS2, abef, cdgh);   // rounds 2, 3: abef <- ABEF4 (CDGH4 = ABEF2)
+        Xmm d = new_x(v);
+        as_.xop(SHUFPS, d, abef, cdgh, in.sub == V_SHA256H ? 0xBB : 0x11);
+        return;
+    }
+    case V_SHA256SU0: {   // a[e] + sigma0(next word): sha256msg1
+        if (!g_host.sha) return helper();
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        if (d == b) { Xmm t = alloc_x(); xpinned_ |= 1 << t; as_.movaps(t, b); b = t; }
+        if (d != a) as_.movaps(d, a);
+        as_.legacy_rr(SHA256MSG1, d, b);
+        return;
+    }
+    case V_SHA256SU1: {   // sha256msg2(a + {b1, b2, b3, c0}, c)
+        if (!g_host.sha) return helper();
+        Xmm a = A(), b = B(), c = C();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        as_.xop(PALIGNR, t, c, b, 4);
+        as_.xop(PADD[4], t, t, a);
+        if (d == c) { Xmm u = alloc_x(); xpinned_ |= 1 << u; as_.movaps(u, c); c = u; }
+        as_.movaps(d, t);
+        as_.legacy_rr(SHA256MSG2, d, c);
+        return;
+    }
+    // SHA-1 C/P/M: 4 rounds with lanes reversed; SHA-NI adds the round constant itself (taken back
+    // out of W) and E enters through W0
+    case V_SHA1C: case V_SHA1P: case V_SHA1M: {
+        if (!g_host.sha) return helper();
+        Xmm a = A(), b = B(), c = C();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        Xmm e = alloc_x(); xpinned_ |= 1 << e;
+        int f = in.sub == V_SHA1C ? 0 : in.sub == V_SHA1P ? 1 : 2;
+        static const u32 K[3] = {0x5A827999u, 0x6ED9EBA1u, 0x8F1BBCDCu};
+        u64 nk = (u64)(u32)-K[f] * 0x100000001ull;
+        as_.xop1(PSHUFD, t, c, 0x1B);
+        as_.xop_m(PADD[4], t, t, vconst_mem(nk, nk));
+        as_.xshift_imm(0x73, 7, e, b, 12);                     // pslldq: E (lane 0) -> lane 3
+        as_.xop(PADD[4], t, t, e);
+        as_.xop1(PSHUFD, e, a, 0x1B);
+        as_.legacy_rr(SHA1RNDS4, e, t);
+        as_.db((u8)f);
+        as_.xop1(PSHUFD, d, e, 0x1B);
+        return;
+    }
+    case V_SHA1H: {   // rol(a0, 30), upper lanes zero
+        Xmm a = A();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        as_.xshift_imm(0x72, 6, d, a, 30);
+        as_.xshift_imm(0x72, 2, t, a, 2);
+        as_.xop(POR, d, d, t);
+        zero_upper(d, 4);
+        vi_[v].clean_vec = 4;
+        return;
+    }
+    case V_SHA1SU0: {   // {a2, a3, b0, b1} ^ a ^ c
+        Xmm a = A(), b = B(), c = C();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        as_.xop(PALIGNR, t, b, a, 8);
+        as_.xop(PXOR, t, t, a);
+        as_.xop(PXOR, d, t, c);
+        return;
+    }
+    case V_SHA1SU1: {   // t = a ^ {b1, b2, b3, 0}; rol(t, 1), lane 3 also ^ rol(t0, 2)
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        Xmm u = alloc_x(); xpinned_ |= 1 << u;
+        as_.xshift_imm(0x73, 3, t, b, 4);           // psrldq 4
+        as_.xop(PXOR, t, t, a);
+        as_.xshift_imm(0x73, 7, u, t, 12);          // pslldq 12: t0 -> lane 3
+        as_.xshift_imm(0x72, 6, d, t, 1);
+        as_.xshift_imm(0x72, 2, t, t, 31);
+        as_.xop(POR, d, d, t);
+        as_.xshift_imm(0x72, 6, t, u, 2);
+        as_.xshift_imm(0x72, 2, u, u, 30);
+        as_.xop(POR, t, t, u);
+        as_.xop(PXOR, d, d, t);
+        return;
+    }
+    case V_PMULL: {   // 64 x 64 -> 128 carry-less (PMULL / PMULL2 via the high-half operands)
+        if (es != 8 || !g_host.pclmul) return helper();
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        as_.xop(PCLMULQDQ, d, a, b, 0x00);
         return;
     }
     case V_SHRN: {
