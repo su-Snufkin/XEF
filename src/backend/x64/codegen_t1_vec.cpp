@@ -2300,6 +2300,7 @@ void T1::emit_vop(Val v) {
         return;
     }
     case V_FMAX: case V_FMIN: case V_FMAXNM: case V_FMINNM: {
+        if (in.sub == V_FMAXNM || in.sub == V_FMINNM) return helper();
         bool isMax = in.sub == V_FMAX || in.sub == V_FMAXNM;
         bool nm = in.sub == V_FMAXNM || in.sub == V_FMINNM;
         if (es != 4 && es != 8) return helper();
@@ -2311,6 +2312,7 @@ void T1::emit_vop(Val v) {
     }
     // pairwise: element i of the result is f(concat(a, b)[2i], concat(a, b)[2i+1])
     case V_FMAXP: case V_FMINP: case V_FMAXNMP: case V_FMINNMP: {
+        if (in.sub == V_FMAXNMP || in.sub == V_FMINNMP) return helper();
         bool isMax = in.sub == V_FMAXP || in.sub == V_FMAXNMP;
         bool nm = in.sub == V_FMAXNMP || in.sub == V_FMINNMP;
         if (es != 4 && es != 8) return helper();
@@ -2327,8 +2329,8 @@ void T1::emit_vop(Val v) {
             as_.xop(PUNPCKH[8], od, a, b);
         } else if (half) {   // 2S: [a0 a1 b0 b1] -> evens [a0 b0], odds [a1 b1]
             as_.xop(PUNPCKL[8], od, a, b);
-            as_.xop(SHUFPS, ev, od, od, 0x88);
-            as_.xop(SHUFPS, od, od, od, 0xDD);
+            as_.xop1(PSHUFD, ev, od, 0x08);
+            as_.xop1(PSHUFD, od, od, 0x0D);
         } else {
             as_.xop(SHUFPS, ev, a, b, 0x88);
             as_.xop(SHUFPS, od, a, b, 0xDD);
@@ -2441,12 +2443,14 @@ void T1::emit_vop(Val v) {
             Xmm a = A();
             Xmm d = new_x(v);
             as_.xop1(VCVTPH2PS, d, a);
+            finish(d);
             return;
         }
         if (es != 8) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
         as_.xop1({0, 1, 0x5A, 0}, d, a);   // cvtps2pd
+        finish(d);
         return;
     }
     case V_FCVTN: {
@@ -2454,14 +2458,14 @@ void T1::emit_vop(Val v) {
             Xmm a = A();
             Xmm d = new_x(v);
             as_.xop1(VCVTPS2PH, a, d, 0);           // ModRM.reg = source, rm = destination
-            vi_[v].clean_vec = 8;
+            finish(d);
             return;
         }
         if (es != 8) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
         as_.xop1({0x66, 1, 0x5A, 0}, d, a);   // cvtpd2ps (zeroes upper 64)
-        vi_[v].clean_vec = 8;
+        finish(d);
         return;
     }
     case V_SCVTF: case V_SCVTF_FIX: {
