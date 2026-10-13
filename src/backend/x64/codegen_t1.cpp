@@ -1970,13 +1970,21 @@ void T1::emit_terminator(Val v) {
         return;
     }
     case Op::ExitCbz: {
-        // flag-free: mov rcx, v ; jrcxz
         int s = sz(I(in.a).ty);
+        bool nz = in.aux;
+        if (!live_out_) {   // EFLAGS are free at the exit: test + jcc (macro-fused)
+            Opnd o = opnd(in.a, true, false, s);
+            if (o.k == Opnd::M) as_.alu_imm(CMP, s, o.m, 0);
+            else as_.test(s, o.r, o.r);
+            exit_jcc(nz ? CNE : CE, in.imm);
+            exit_jmp(in.imm2);
+            return;
+        }
+        // flag-free: mov rcx, v ; jrcxz
         take_reg(RCX);
         pinned_ |= 1 << RCX;
         ensure_flags();   // first: may read values from registers the load below reuses
         load_into(RCX, in.a, s);
-        bool nz = in.aux;
         u8* j = as_.jrcxz_fwd();
         // not zero
         exit_jmp(nz ? in.imm : in.imm2);
@@ -1987,6 +1995,21 @@ void T1::emit_terminator(Val v) {
     case Op::ExitTbz: {
         int b = in.size;
         bool nz = in.aux;
+        if (!live_out_) {   // EFLAGS are free at the exit: test r, 1 << b (macro-fused) or bt
+            Reg r = to_reg(in.a, 8);
+            Cond c;
+            if (b <= 31) {
+                if (b <= 7 && r < 4) as_.test_imm(1, r, (i32)(1u << b));
+                else as_.test_imm(4, r, (i32)(1u << b));
+                c = nz ? CNE : CE;
+            } else {
+                as_.bt_imm(8, r, (u8)b);
+                c = nz ? CB : CAE;
+            }
+            exit_jcc(c, in.imm);
+            exit_jmp(in.imm2);
+            return;
+        }
         take_reg(R11);
         pinned_ |= 1 << R11;
         load_into(R11, in.a, 8);
