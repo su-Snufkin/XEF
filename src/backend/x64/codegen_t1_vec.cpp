@@ -2593,14 +2593,23 @@ void T1::emit_vop(Val v) {
         finish(d);
         return;
     }
-    case V_USHL: {
+    case V_USHL: case V_SSHL: {
+        bool sg = in.sub == V_SSHL;
         if (es == 8 && g_host.avx2 && as_.avx) {
-            // count = low byte (0..255 unsigned): 0..127 left, 128..255 = right by 256-count;
-            // counts >= 64 give 0 from vpsllvq/vpsrlvq, as on AArch64
+            // count = signed low byte (-128..127); left if >= 0, right by -c if < 0.
+            // counts >= 64 give 0 (or sign for signed right shift >= 64).
             Xmm a = A(), b = B();
             Xmm d = new_x(v);
             Xmm c = alloc_x(); xpinned_ |= 1 << c;
             Xmm n = alloc_x(); xpinned_ |= 1 << n;
+            // sign-extend low byte of each 64-bit lane: psllq 56 then psraq (or shifts via 32-bit)
+            // Or extract and sext: count is in low byte of each quadword.
+            // In 64-bit lane, sext8 is (b & 0xff); if >= 128 it is negative.
+            as_.xshift_imm(0x73, 6, c, b, 56);
+            as_.xshift_imm(0x73, 2, c, c, 56);                               // c_raw in low byte
+            // for signed shift right in x86-64 without vpsraq (AVX2 has only vpsravd, not vpsravq!):
+            // USHL uses VPSRLVQ (logical). For SSHL es=8, helper is safer unless we do sign extension mask.
+            if (sg) return helper();
             as_.xop_m(PAND, c, b, vconst_mem(0xff, 0xff));
             as_.xop_m(PSUB[8], n, c, vconst_mem(0x100, 0x100));
             as_.xop(PXOR, d, d, d);
@@ -2612,7 +2621,7 @@ void T1::emit_vop(Val v) {
             return;
         }
         if (es != 4 || scalar || !g_host.avx2 || !as_.avx) return helper();
-        // shift count = signed low byte of each lane; out-of-range counts give 0 (as on AArch64)
+        // shift count = signed low byte of each lane; out-of-range counts give 0 (or sign for signed right shift)
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         Xmm c = alloc_x(); xpinned_ |= 1 << c;
@@ -2621,8 +2630,22 @@ void T1::emit_vop(Val v) {
         as_.xshift_imm(0x72, 4, c, c, 24);                                  // c = sext8(b)
         as_.xop(PXOR, n, n, n);
         as_.xop(PSUB[4], n, n, c);                                          // n = -c
-        as_.xop({0x66, 2, 0x47, 0}, d, a, c);                               // vpsllvd
-        as_.xop({0x66, 2, 0x45, 0}, n, a, n);                               // vpsrlvd
+        as_.xop({0x66, 2, 0x47, 0}, d, a, c);                               // vpsllvd: count >= 32 produces 0
+        if (sg) {
+            // signed right shift: vpsravd clamps count > 31 to 31 on x86, which replicates sign bit!
+            as_.xop({0x66, 2, 0x46, 0}, n, a, n);                           // vpsravd: n >= 32 gives sign bit, which matches ARM for rs >= 32
+            // For left shifts (c >= 0, so n < 0 as signed 32-bit int), n is huge unsigned (> 32), so vpsravd gives sign bit.
+            // But we only want the right-shifted value when c < 0 (i.e. -c > 0).
+            // Mask out n when c >= 0:
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            as_.xop(PXOR, m, m, m);
+            as_.xop(PCMPGT[4], m, m, c);                                    // m = 0 > c (i.e. c < 0)
+            as_.xop(PAND, n, n, m);
+            // Also for left shift: if c < 0, vpsllvd takes huge count (> 32) and gives 0!
+            // If c >= 32, vpsllvd gives 0. This matches ARM exactly!
+        } else {
+            as_.xop({0x66, 2, 0x45, 0}, n, a, n);                           // vpsrlvd
+        }
         as_.xop(POR, d, d, n);
         finish(d);
         return;
