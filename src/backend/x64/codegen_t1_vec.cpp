@@ -1503,11 +1503,11 @@ void T1::emit_vop(Val v) {
         return;
     }
     // ---------------- saturating narrows (es = destination element size, 1 or 2)
-    case V_SQXTN: case V_UQXTN: case V_UQSHRN: case V_UQRSHRN: case V_SQSHRUN: case V_SQRSHRUN: {
+    case V_SQXTN: case V_UQXTN: case V_SQXTUN: case V_SQSHRN: case V_SQRSHRN: case V_UQSHRN: case V_UQRSHRN: case V_SQSHRUN: case V_SQRSHRUN: {
         if (es > 2 || scalar) return helper();
         bool uns = in.sub == V_UQXTN || in.sub == V_UQSHRN || in.sub == V_UQRSHRN;   // unsigned source
-        bool shift = in.sub != V_SQXTN && in.sub != V_UQXTN;
-        bool rnd = in.sub == V_UQRSHRN || in.sub == V_SQRSHRUN;
+        bool shift = in.sub != V_SQXTN && in.sub != V_UQXTN && in.sub != V_SQXTUN;
+        bool rnd = in.sub == V_UQRSHRN || in.sub == V_SQSHRUN || in.sub == V_SQRSHRN || in.sub == V_SQRSHRUN;
         int sh = (int)in.imm;
         u8 opc = es == 1 ? 0x71 : 0x72;
         Xmm a = A();
@@ -1530,7 +1530,8 @@ void T1::emit_vop(Val v) {
             src = d;
         }
         as_.xop(PXOR, z, z, z);
-        SseOp pk = in.sub == V_SQXTN ? (es == 1 ? PACKSSWB : PACKSSDW) : (es == 1 ? PACKUSWB : PACKUSDW);
+        bool signed_dest = (in.sub == V_SQXTN || in.sub == V_SQSHRN || in.sub == V_SQRSHRN);
+        SseOp pk = signed_dest ? (es == 1 ? PACKSSWB : PACKSSDW) : (es == 1 ? PACKUSWB : PACKUSDW);
         as_.xop(pk, d, src, z);
         vi_[v].clean_vec = 8;
         return;
@@ -2663,35 +2664,7 @@ void T1::emit_vop(Val v) {
         as_.xop_m(PSHUFB, d, d, vconst_mem(lo, 0x8080808080808080ull));
         return;
     }
-    case V_SQRSHRN: case V_SQSHRN: {   // signed (rounding) shift right narrow, saturating
-        if (es > 2 || scalar) return helper();
-        int sh = (int)in.imm;
-        bool rnd = in.sub == V_SQRSHRN;
-        Xmm a = A();
-        Xmm d = new_x(v);
-        u8 opc = es == 1 ? 0x71 : 0x72;
-        as_.xshift_imm(opc, 4, d, a, (u8)sh);                               // arithmetic
-        if (rnd) {   // + bit (sh-1): no overflow since the shifted value has sh spare bits
-            Xmm t = alloc_x(); xpinned_ |= 1 << t;
-            as_.xshift_imm(opc, 2, t, a, (u8)(sh - 1));
-            u64 one = es == 1 ? 0x0001000100010001ull : 0x0000000100000001ull;
-            as_.xop_m(PAND, t, t, vconst_mem(one, one));
-            as_.xop(PADD[es * 2], d, d, t);
-        }
-        Xmm z = alloc_x(); xpinned_ |= 1 << z;
-        as_.xop(PXOR, z, z, z);
-        as_.xop(es == 1 ? PACKSSWB : PACKSSDW, d, d, z);
-        return;
-    }
-    case V_SQXTUN: {
-        if (es > 2 || scalar) return helper();
-        Xmm a = A();
-        Xmm d = new_x(v);
-        Xmm z = alloc_x(); xpinned_ |= 1 << z;
-        as_.xop(PXOR, z, z, z);
-        as_.xop(es == 1 ? PACKUSWB : PACKUSDW, d, a, z);
-        return;
-    }
+
     case V_SQDMULH: case V_SQRDMULH: {
         if (es != 2 && es != 4) return helper();
         bool rnd = in.sub == V_SQRDMULH;
