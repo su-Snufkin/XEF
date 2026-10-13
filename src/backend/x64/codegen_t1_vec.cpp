@@ -311,6 +311,22 @@ void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool sca
     SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
     Xmm t = alloc_x(); xpinned_ |= 1 << t;
     Xmm u = alloc_x(); xpinned_ |= 1 << u;
+    // FMAXNM/FMINNM treat only a quiet NaN as missing: a signaling NaN is propagated, quieted,
+    // the first operand's first (FPProcessNaNs). Lanes where x is a signaling NaN: d = x | quiet bit.
+    auto snan_wins = [&](Xmm x) {
+        u64 abs = es == 8 ? 0x7FFFFFFFFFFFFFFFull : 0x7FFFFFFF7FFFFFFFull;
+        u64 inf = es == 8 ? 0x7FF0000000000000ull : 0x7F8000007F800000ull;
+        u64 qmin = es == 8 ? 0x7FF7FFFFFFFFFFFFull : 0x7FBFFFFF7FBFFFFFull;   // largest signaling NaN
+        u64 qbit = es == 8 ? 0x0008000000000000ull : 0x0040000000400000ull;
+        as_.xop_m(PAND, t, x, vconst_mem(abs, abs));            // t = |x|
+        as_.xop_m(PCMPGT[es], u, t, vconst_mem(inf, inf));      // u = NaN
+        as_.xop_m(PCMPGT[es], t, t, vconst_mem(qmin, qmin));    // t = quiet NaN
+        as_.xop(PANDN, t, t, u);                                // t = signaling NaN
+        as_.xop_m(POR, u, x, vconst_mem(qbit, qbit));           // u = x quieted
+        as_.xop(PAND, u, u, t);
+        as_.xop(PANDN, t, t, d);
+        as_.xop(POR, d, t, u);
+    };
     if (nm && as_.avx) {
         // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
         // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
@@ -320,6 +336,8 @@ void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool sca
         as_.xop(cmp, u, a, t, 0);
         as_.xop(isMax ? PAND : POR, t, a, t);
         as_.vblendv(es == 8, d, d, t, u);
+        snan_wins(b);
+        snan_wins(a);
         return;
     }
     as_.xop(op, d, a, b);
@@ -344,6 +362,8 @@ void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool sca
         as_.xop(PAND, t, a, u);
         as_.xop(PANDN, u, u, d);
         as_.xop(POR, d, t, u);
+        snan_wins(b);
+        snan_wins(a);
     }
 }
 
@@ -2307,7 +2327,6 @@ void T1::emit_vop(Val v) {
         return;
     }
     case V_FMAX: case V_FMIN: case V_FMAXNM: case V_FMINNM: {
-        if (in.sub == V_FMAXNM || in.sub == V_FMINNM) return helper();
         bool isMax = in.sub == V_FMAX || in.sub == V_FMAXNM;
         bool nm = in.sub == V_FMAXNM || in.sub == V_FMINNM;
         if (es != 4 && es != 8) return helper();
@@ -2319,7 +2338,6 @@ void T1::emit_vop(Val v) {
     }
     // pairwise: element i of the result is f(concat(a, b)[2i], concat(a, b)[2i+1])
     case V_FMAXP: case V_FMINP: case V_FMAXNMP: case V_FMINNMP: {
-        if (in.sub == V_FMAXNMP || in.sub == V_FMINNMP) return helper();
         bool isMax = in.sub == V_FMAXP || in.sub == V_FMAXNMP;
         bool nm = in.sub == V_FMAXNMP || in.sub == V_FMINNMP;
         if (es != 4 && es != 8) return helper();
@@ -2348,8 +2366,7 @@ void T1::emit_vop(Val v) {
     }
     // across lanes (4S): f(f(a0, a1), f(a2, a3))
     case V_FMAXV: case V_FMINV: case V_FMAXNMV: case V_FMINNMV: {
-        // FMAXNMV/FMINNMV disagree with qemu on some inputs: helper until understood
-        if (es != 4 || half || in.sub == V_FMAXNMV || in.sub == V_FMINNMV) return helper();
+        if (es != 4 || half) return helper();
         bool isMax = in.sub == V_FMAXV || in.sub == V_FMAXNMV;
         bool nm = in.sub == V_FMAXNMV || in.sub == V_FMINNMV;
         Xmm a = A();

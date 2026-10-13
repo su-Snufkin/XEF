@@ -85,7 +85,7 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   AES/PMULL/SHA (TLS), RADDHN (simd 7x), fuzja tst/test, flagi liczone przy konsumencie.
 - Nie pomogło (wycofane): inline cache dla BR/BLR — miejsca `br` w interpreterach (CPython) są
   megamorficzne, IC dokładał ~5% cykli; `calls` (4 cele) też wolniejsze.
-- Znane: FMAXNM/FMINNM traktują sygnalizujący NaN jak cichy (fuzzer z --tmpl to pokazuje; tak było wcześniej).
+- FMAXNM/FMINNM(P/V) natywnie, z dokładną obsługą sygnalizującego NaN (propagowany, wyciszony; najpierw operand 1).
 
 ## Następne kroki (priorytet)
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
