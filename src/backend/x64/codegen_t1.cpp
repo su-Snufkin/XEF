@@ -513,9 +513,10 @@ void T1::release_operands(const Inst& in) {
 void T1::evacuate_guest(int g, int upto, Val keep) {
     // one pass (this runs for every SetReg): aliases of g's current value move to temporaries, and
     // values not yet touched (L_NONE GetReg of g) read the *old* value, so they are materialized now
-    for (int v = 1; v < cur_; v++) {
+    for (int i = 0; i < nlive_; i++) {
+        Val v = live_[i];
         VI& x = vi_[v];
-        if (x.dead || x.last <= upto || v == keep) continue;
+        if (x.last <= upto || v == keep) continue;
         if (x.home == g) x.home = -1;
         if ((x.k == L_GREG || x.k == L_GMEM) && x.g == g) {
             Reg t = alloc_temp();
@@ -631,10 +632,12 @@ bool T1::run_body() {
     analyze();
     u8* start = as_.cur();
     (void)start;
+    nlive_ = 0;
     for (int v = 1; v < b_.n; v++) {
         cur_ = v;
         pinned_ = 0;
         xpinned_ = 0;
+        if (v > 1) note_defined((Val)(v - 1));
         if (vi_[v].dead || vi_[v].folded) continue;
         if (as_.overflow()) return false;
         // values whose last use is behind us (also those only read through folded nodes or

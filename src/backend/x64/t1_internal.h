@@ -96,6 +96,19 @@ private:
     }
     u16 xpinned_ = 0;
     int cur_ = 0;
+    // values defined before cur_ that are used after their definition, ascending (entries whose
+    // last use is behind cur_ are dropped lazily): what evacuate_guest / evacuate_vreg look at
+    Val live_[kMaxBlockInsts];
+    int nlive_ = 0;
+    void note_defined(Val u) {
+        if (vi_[u].dead || vi_[u].last <= u) return;
+        if (nlive_ >= 64) {
+            int k = 0;
+            for (int i = 0; i < nlive_; i++) if (vi_[live_[i]].last > cur_) live_[k++] = live_[i];
+            nlive_ = k;
+        }
+        live_[nlive_++] = u;
+    }
     Val eflags_ = kEntryFlags;  // flags value currently in EFLAGS (0 = garbage)
     Val spilled_flags_ = 0;
     Val final_flags_ = kEntryFlags;
@@ -236,7 +249,7 @@ private:
     void load_into(Reg dst, Val v, int size);
     void pin(Val v) { v = resolve(v); if (vi_[v].k == L_REG || vi_[v].k == L_GREG) pinned_ |= 1 << vi_[v].reg; }
     void release_operands(const Inst& in);
-    void evacuate_guest(int g, int upto, Val keep = 0);   // keep: the value being written (stays in g)
+    void evacuate_guest(int g, int upto, Val keep = 0);   // keep: the value being written (stays in g); upto: cur_
     Reg dest_for(Val v, int size, Reg reuse = NOREG);
     // a temporary whose value has its last use in the current instruction (NOREG: none)
     Reg dying_temp(Reg avoid1 = NOREG, Reg avoid2 = NOREG) const {

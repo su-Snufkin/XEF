@@ -156,9 +156,10 @@ Xmm T1::xreg(Val v) {
 }
 
 void T1::evacuate_vreg(int g, int upto, Val keep) {
-    for (int v = 1; v < cur_; v++) {
+    for (int i = 0; i < nlive_; i++) {
+        Val v = live_[i];
         VI& x = vi_[v];
-        if (x.dead || x.last <= upto || v == keep) continue;
+        if (x.last <= upto || v == keep) continue;
         const Inst& in = I(v);
         bool lazy = x.k == L_NONE && in.op == Op::VGet && in.aux == g;
         if (x.vhome == g || lazy) {
