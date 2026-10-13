@@ -156,10 +156,13 @@ Xmm T1::xreg(Val v) {
 }
 
 void T1::evacuate_vreg(int g, int upto, Val keep) {
+    int k = 0;   // as evacuate_guest: entries used no later than cur_ (= upto) are dropped
     for (int i = 0; i < nlive_; i++) {
         Val v = live_[i];
         VI& x = vi_[v];
-        if (x.last <= upto || v == keep) continue;
+        if (x.last <= upto) continue;
+        live_[k++] = v;
+        if (v == keep) continue;
         const Inst& in = I(v);
         bool lazy = x.k == L_NONE && in.op == Op::VGet && in.aux == g;
         if (x.vhome == g || lazy) {
@@ -172,6 +175,7 @@ void T1::evacuate_vreg(int g, int upto, Val keep) {
             x.vhome = -1;
         }
     }
+    nlive_ = k;
 }
 
 Xmm T1::new_x(Val v, int reuse) {

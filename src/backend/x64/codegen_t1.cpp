@@ -506,10 +506,14 @@ void T1::release_operands(const Inst& in) {
 void T1::evacuate_guest(int g, int upto, Val keep) {
     // one pass (this runs for every SetReg): aliases of g's current value move to temporaries, and
     // values not yet touched (L_NONE GetReg of g) read the *old* value, so they are materialized now
+    // (upto is cur_: entries used no later than here are dropped from the list on the way)
+    int k = 0;
     for (int i = 0; i < nlive_; i++) {
         Val v = live_[i];
         VI& x = vi_[v];
-        if (x.last <= upto || v == keep) continue;
+        if (x.last <= upto) continue;
+        live_[k++] = v;
+        if (v == keep) continue;
         if (x.home == g) x.home = -1;
         if ((x.k == L_GREG || x.k == L_GMEM) && x.g == g) {
             Reg t = alloc_temp();
@@ -523,6 +527,7 @@ void T1::evacuate_guest(int g, int upto, Val keep) {
             assign_reg((Val)v, t);
         }
     }
+    nlive_ = k;
 }
 
 // Destination hint: if v's only use is the immediately following SetReg of a mapped guest
