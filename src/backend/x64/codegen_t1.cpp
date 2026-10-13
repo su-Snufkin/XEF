@@ -81,7 +81,7 @@ void T1::analyze() {
     // backward: liveness, DCE, alias last-use propagation
     // vset_later[g]: guest V register g is written again later in the block with nothing in
     // between that reads its CpuState slot or may fault (a signal handler must see it)
-    // set_later[g]: the same for guest X registers kept in CpuState (not in a host register)
+    // set_later[g]: the same for guest X registers
     bool vset_later[32] = {}, set_later[32] = {};
     for (int v = n - 1; v >= 1; v--) {
         const Inst& in = I(v);
@@ -93,7 +93,7 @@ void T1::analyze() {
             break;
         case Op::VGet: vset_later[in.aux & 31] = false; break;
         case Op::SetReg:
-            if (in.aux < 32 && !mapped(in.aux)) {
+            if (in.aux < 32) {
                 if (set_later[in.aux]) { x.dead = true; continue; }
                 set_later[in.aux] = true;
             }
@@ -681,6 +681,11 @@ void T1::emit_inst(Val v) {
             }
             pinned_ |= 1 << h;
             evacuate_guest(g, cur_);
+            if (is_c(src)) {   // any 64-bit constant goes straight into the host register
+                as_.mov_imm(h, cv(src));
+                x.home = (i8)g;
+                return;
+            }
             pin(src);
             Opnd o = opnd(src, true, true, 8);
             emit_mov_opnd(8, h, o);
