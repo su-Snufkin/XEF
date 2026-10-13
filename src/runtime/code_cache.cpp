@@ -156,13 +156,13 @@ void CodeCache::set_pcmap(BlockMeta* b, const PcMapEntry* e, int n) {
 const PcMapEntry* CodeCache::find_pc(const BlockMeta* b, const u8* host) const {
     if (!pcmap_ || !b->host_pc_map_len || host < b->code) return nullptr;
     u32 off = (u32)(host - b->code);
-    const PcMapEntry* best = nullptr;
-    for (u32 i = 0; i < b->host_pc_map_len; i++) {
-        const PcMapEntry& e = pcmap_[b->host_pc_map_off + i];
-        if (e.host_off > off) break;
-        best = &e;
+    const PcMapEntry* e = pcmap_ + b->host_pc_map_off;
+    u32 lo = 0, hi = b->host_pc_map_len;   // first entry past off
+    while (lo < hi) {
+        u32 mid = (lo + hi) / 2;
+        if (e[mid].host_off <= off) lo = mid + 1; else hi = mid;
     }
-    return best;
+    return lo ? &e[lo - 1] : nullptr;
 }
 
 // ------------------------------------------------------------------ invalidation

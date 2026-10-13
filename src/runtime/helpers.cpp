@@ -20,9 +20,17 @@ void vconst_pool_init() {
     g_pool_end = g_pool + sz;
 }
 
+// open-addressing index of the pool (entry number + 1; 0 = empty), at most half full
+static u16 g_pool_index[8192];
+
 u8* vconst_pool_get(u64 lo, u64 hi) {
     // called with the translation lock held
-    for (u8* p = g_pool; p < g_pool_ptr; p += 16) {
+    constexpr u32 kMask = sizeof g_pool_index / sizeof g_pool_index[0] - 1;
+    u32 h = (u32)(((lo * 0x9E3779B97F4A7C15ull) ^ (hi * 0xC2B2AE3D27D4EB4Full)) >> 40) & kMask;
+    for (;; h = (h + 1) & kMask) {
+        u16 e = g_pool_index[h];
+        if (!e) break;
+        u8* p = g_pool + (size_t)(e - 1) * 16;
         u64 a, b;
         memcpy(&a, p, 8);
         memcpy(&b, p + 8, 8);
@@ -33,6 +41,7 @@ u8* vconst_pool_get(u64 lo, u64 hi) {
     memcpy(p, &lo, 8);
     memcpy(p + 8, &hi, 8);
     g_pool_ptr += 16;
+    g_pool_index[h] = (u16)((p - g_pool) / 16 + 1);
     return p;
 }
 
