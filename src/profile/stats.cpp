@@ -65,11 +65,25 @@ void profile_report() {
         snprintf(path, sizeof path, "/tmp/xef-hot%zu.guest", i);
         int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);   // guest code may be unmapped by now
         if (fd >= 0) { ssize_t w = write(fd, (void*)b->start, b->end - b->start); (void)w; close(fd); }
+        // per host-instruction sample counts (tools/annotate_hot.py)
+        snprintf(path, sizeof path, "/tmp/xef-hot%zu.counts", i);
+        if (FILE* f = fopen(path, "w")) {
+            fprintf(f, "# guest %#lx..%#lx host %p tier %d\n", (unsigned long)b->start, (unsigned long)b->end,
+                    (void*)b->code, (int)b->tier);
+            std::map<u32, int> off;
+            for (int k = 0; k < n; k++) {
+                u8* p = (u8*)g_samples[k];
+                if (p >= b->code && p < b->code + b->code_size) off[(u32)(p - b->code)]++;
+            }
+            for (auto& [o, c] : off) fprintf(f, "%u %d\n", o, c);
+            fclose(f);
+        }
     }
     for (size_t i = 0; i < counts.size() && i < 25; i++) {
         BlockMeta* b = counts[i].first;
-        fprintf(stderr, "  %5.1f%%  guest %#lx..%#lx  (%d insns, host %u bytes @%p)\n", 100.0 * counts[i].second / n,
-                (unsigned long)b->start, (unsigned long)b->end, (int)((b->end - b->start) / 4), b->code_size, b->code);
+        fprintf(stderr, "  %5.1f%%  guest %#lx..%#lx  (%d insns, host %u bytes @%p) %s\n", 100.0 * counts[i].second / n,
+                (unsigned long)b->start, (unsigned long)b->end, (int)((b->end - b->start) / 4), b->code_size, b->code,
+                b->tier == 2 ? "t2" : b->tier == 3 ? "t1 (region failed)" : b->tier == 4 ? "t1 (demoted)" : "t1");
     }
     // outside translated code: XEF functions via addr2line, everything else by mapping
     std::map<std::string, int> where;
