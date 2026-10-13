@@ -481,6 +481,13 @@ public:
         } else legacy_rm(o, d, m, imm >= 0 ? 1 : 0);
         if (imm >= 0) db((u8)imm);
     }
+    // AVX vblendvps/vblendvpd d, s1, s2, mask: d = mask (sign bit per lane) ? s2 : s1
+    void vblendv(bool pd, int d, int s1, int s2, int mask) {
+        vex(3, 1, false, 0, d, s1, 0, s2);
+        db(pd ? 0x4B : 0x4A);
+        modrm_rr(d, s2);
+        db((u8)(mask << 4));
+    }
     // shift-by-immediate group (66 0F 71/72/73 /ext ib): dst = src SHIFT imm
     void xshift_imm(u8 opc, int ext, int d, int s, u8 imm) {
         if (avx) {

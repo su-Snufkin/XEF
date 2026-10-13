@@ -1506,6 +1506,24 @@ void T1::emit_vop(Val v) {
     case V_FMAX: case V_FMIN: case V_FMAXNM: case V_FMINNM: {
         bool isMax = in.sub == V_FMAX || in.sub == V_FMAXNM;
         bool nm = in.sub == V_FMAXNM || in.sub == V_FMINNM;
+        if (nm && as_.avx) {
+            // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
+            // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
+            Xmm a = A(), b = B();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            Xmm u = alloc_x(); xpinned_ |= 1 << u;
+            SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
+            u8 opc = isMax ? 0x5F : 0x5D;
+            as_.xop(cmp, u, b, b, 3);
+            as_.vblendv(es == 8, t, b, a, u);
+            as_.xop(scalar ? FPS(opc, es) : FPV(opc, es), d, a, t);
+            as_.xop(cmp, u, a, t, 0);
+            as_.xop(isMax ? PAND : POR, t, a, t);
+            as_.vblendv(es == 8, d, d, t, u);
+            finish(d);
+            return;
+        }
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
