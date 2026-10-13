@@ -385,26 +385,26 @@ private:
         as_.jmp_rel32(g_cache.stubs.exit_to_runtime);
     }
     // inline IBTC probe on RAX (guest target); flag-free unless flags_free (EFLAGS dead here)
+    // entry of pc: [r15 + (pc & 0xffff) * 4 + kIbtcDisp] = table[(pc >> 2) & 16383] (16-byte entries)
     void emit_ibtc_probe(bool flags_free = false) {
-        as_.movzx16(RCX, RAX);
-        as_.mov(8, R11, mem(R15, XEF_ST(ibtc)));
-        as_.lea(8, R11, mem(R11, RCX, 2, 0));      // r11 = &table[(pc>>2) & 16383] (16-byte entries)
         if (flags_free) {
             Label miss;
-            as_.alu(CMP, 8, RAX, mem(R11));
+            as_.movzx16(RCX, RAX);
+            as_.alu(CMP, 8, RAX, mem(R15, RCX, 2, kIbtcDisp));
             as_.jcc(CNE, miss);
-            as_.jmp(mem(R11, 8));
+            as_.jmp(mem(R15, RCX, 2, kIbtcDisp + 8));
             as_.bind(miss);
             as_.jmp_rel32(g_cache.stubs.ibtc_miss);
             return;
         }
-        as_.mov(8, RCX, mem(R11));
+        as_.movzx16(R11, RAX);
+        as_.mov(8, RCX, mem(R15, R11, 2, kIbtcDisp));
         as_.not_(8, RCX);
         as_.lea(8, RCX, mem(RCX, RAX, 0, 1));
         u8* j = as_.jrcxz_fwd();
         as_.jmp_rel32(g_cache.stubs.ibtc_miss);
         as_.patch_rel8_here(j);
-        as_.jmp(mem(R11, 8));
+        as_.jmp(mem(R15, R11, 2, kIbtcDisp + 8));
     }
     void record_pc() {
         if (npc_ < 1024) {  // host->guest pc map for faults

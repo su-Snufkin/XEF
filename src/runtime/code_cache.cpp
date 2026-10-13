@@ -101,11 +101,8 @@ void CodeCache::unpublish(GuestAddr pc) {
     if (l2) __atomic_store_n(&l2[(pc >> 2) & ((1u << 22) - 1)], nullptr, __ATOMIC_RELEASE);
 }
 
-IbtcEntry* CodeCache::new_ibtc() {
-    void* p = mmap(nullptr, sizeof(IbtcEntry) * kIbtcEntries, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) fatal("ibtc alloc");
-    IbtcEntry* t = (IbtcEntry*)p;
+IbtcEntry* CodeCache::init_ibtc(void* mem) {
+    IbtcEntry* t = (IbtcEntry*)mem;
     for (int i = 0; i < kIbtcEntries; i++) { t[i].guest = 1; t[i].host = 0; }
     std::lock_guard<std::mutex> g(ibtc_lock_);
     ibtcs_.push_back(t);

@@ -152,7 +152,7 @@ public:
         __atomic_store_n(&e.host, (u64)host, __ATOMIC_RELEASE);
         __atomic_store_n(&e.guest, pc, __ATOMIC_RELEASE);
     }
-    IbtcEntry* new_ibtc();
+    IbtcEntry* init_ibtc(void* mem);   // kIbtcBytes at mem (after the thread's CpuState)
 
     bool contains(const void* p) const { return (const u8*)p >= base_ && (const u8*)p < base_ + size_; }
     u8* base() const { return base_; }

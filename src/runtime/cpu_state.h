@@ -58,6 +58,12 @@ struct alignas(64) CpuState {
 
 constexpr int kStateBias = 128;
 
+// The thread's IBTC table (16384 x {guest, host}) sits at a fixed offset after its CpuState, so
+// translated code indexes it straight from R15: cmp rax, [r15 + idx*4 + kIbtcDisp].
+constexpr size_t kIbtcOffset = (sizeof(CpuState) + 4095) & ~(size_t)4095;
+constexpr size_t kIbtcBytes = 16384 * 16;
+constexpr int kIbtcDisp = (int)kIbtcOffset - kStateBias;
+
 constexpr int st_off(size_t off) { return (int)off - kStateBias; }
 #define XEF_ST(field) (::xef::st_off(offsetof(::xef::CpuState, field)))
 constexpr int st_x(int r) { return (int)(r * 8) - kStateBias; }

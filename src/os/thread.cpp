@@ -28,9 +28,11 @@ namespace xef {
 int g_main_argc_xef = 0;
 char** g_xef_argv = nullptr;
 
+static_assert(sizeof(IbtcEntry) * kIbtcEntries == kIbtcBytes, "IBTC layout (cpu_state.h)");
+
 ThreadCtx* thread_create(CpuState* parent) {
     ThreadCtx* t = new ThreadCtx();
-    void* sp = mmap(nullptr, sizeof(CpuState), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* sp = mmap(nullptr, kIbtcOffset + kIbtcBytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (sp == MAP_FAILED) fatal("cannot allocate CpuState");
     t->st = (CpuState*)sp;
     if (parent) memcpy(t->st, parent, sizeof(CpuState));
@@ -48,7 +50,7 @@ ThreadCtx* thread_create(CpuState* parent) {
     ((u64*)top)[1] = ~0ull;
     t->st->jit_stack_top = (u64)top;
     t->st->jit_sp = (u64)top;
-    t->st->ibtc = g_cache.new_ibtc();
+    t->st->ibtc = g_cache.init_ibtc((u8*)t->st + kIbtcOffset);
     return t;
 }
 
