@@ -634,8 +634,11 @@ bool T1::run_body() {
         // flag rematerialization, which release_operands does not see) give their registers back
         for (int i = 0; i < ntemps_; i++)
             if (Val o = owner_[temps_[i]]; o && vi_[o].last < v) owner_[temps_[i]] = 0;
-        for (int x = 0; x < 16; x++)
-            if (Val o = xowner_[x]; o && vi_[o].last < v) xowner_[x] = 0;
+        u64 xw[4];   // any XMM owned? (most blocks have no vector code)
+        memcpy(xw, xowner_, sizeof xw);
+        if (xw[0] | xw[1] | xw[2] | xw[3])
+            for (int x = 0; x < 16; x++)
+                if (Val o = xowner_[x]; o && vi_[o].last < v) xowner_[x] = 0;
         emit_inst((Val)v);
         if (borrowed_) restore_borrowed();
         if (!is_terminator(I(v).op)) release_operands(I(v));

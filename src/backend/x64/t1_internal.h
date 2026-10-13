@@ -323,7 +323,9 @@ private:
         return e;
     }
     struct RegionStub { Label l; GuestAddr target; };
-    RegionStub rstubs_[64];
+    // raw storage: constructing 64 labels per block cost more than the (tier-2 only) stubs
+    alignas(RegionStub) unsigned char rstubs_raw_[sizeof(RegionStub) * 64];
+    RegionStub* const rstubs_ = reinterpret_cast<RegionStub*>(rstubs_raw_);
     int nrstubs_ = 0;
     bool internal(GuestAddr t) const { return ctx_ && ctx_->region && ctx_->is_internal(ctx_->user, t); }
     void raw_exit_jmp(GuestAddr target) {
@@ -344,8 +346,7 @@ private:
             // rel32 retargeted atomically when the region is invalidated
             if (internal(target)) { as_.keep_field_in_line(1); as_.db(0xE9); as_.dd(0); add_fix(target); return; }
             XEF_ASSERT(nrstubs_ < 64);
-            RegionStub& r = rstubs_[nrstubs_++];
-            r.l = Label(); r.target = target;
+            RegionStub& r = *new (&rstubs_[nrstubs_++]) RegionStub{Label(), target};
             as_.jmp(r.l);
             return;
         }
@@ -360,8 +361,7 @@ private:
                 return;
             }
             XEF_ASSERT(nrstubs_ < 64);
-            RegionStub& r = rstubs_[nrstubs_++];
-            r.l = Label(); r.target = target;
+            RegionStub& r = *new (&rstubs_[nrstubs_++]) RegionStub{Label(), target};
             as_.jcc(c, r.l);
             return;
         }

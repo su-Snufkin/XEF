@@ -88,8 +88,7 @@ static bool compile_region(GuestAddr head) {
     u64 ep = g_cache.epoch.load(std::memory_order_seq_cst);
     // every guest range decoded ahead while forming the region becomes an invalidation dependency
     static PeekLog peeks;
-    peeks.n = 0;
-    peeks.overflow = false;
+    peeks.reset();
     a64::set_peek_log(&peeks);
     struct ClearPeek { ~ClearPeek() { a64::set_peek_log(nullptr); } } clear_peek;
     ir::Block& blk = *g_t2_blk;
@@ -335,7 +334,7 @@ static bool compile_region(GuestAddr head) {
         meta->end = blk.end;
         meta->tier = 2;
         meta->region = ri;
-        outs[i] = backend::CodegenOut();
+        outs[i].reset();
         backend::CodegenCtx c = ctx;
         c.fall_pc = k + 1 < nord && !helper_of[i] ? R.pcs[lay[k + 1]] : 0;
         u8* bcode = as.cur();

@@ -54,6 +54,8 @@ struct CodegenOut {
     int npcmap = 0;
     InternalFix fixes[64];
     int nfixes = 0;
+    // for reuse; fixes[] is not cleared (only the first nfixes entries are meaningful)
+    void reset() { size = 0; nexits = 0; pcmap = nullptr; npcmap = 0; nfixes = 0; }
 };
 
 // Emits canonical -> region (enter=true) or region -> canonical register transfers.

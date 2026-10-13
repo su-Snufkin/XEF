@@ -122,8 +122,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
             if (!chain_blk[nc]) chain_blk[nc] = new ir::Block();
             a64::TranslateOpts o = topt;
             if (nc && split_here(cur)) o.max_insts = 1;
-            peeks[nc].n = 0;
-            peeks[nc].overflow = false;
+            peeks[nc].reset();
             a64::set_peek_log(&peeks[nc]);
             a64::translate_block(cur, *chain_blk[nc], o);
             a64::set_peek_log(nullptr);
@@ -157,7 +156,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         meta->start = pcs[k];
         meta->end = b.end;
         meta->tier = 1;
-        outs[k] = backend::CodegenOut();
+        outs[k].reset();
         backend::CodegenCtx ctx;
         ctx.fall_pc = k + 1 < nc ? pcs[k + 1] : 0;
         meta->code = as.cur();

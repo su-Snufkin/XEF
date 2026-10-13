@@ -2,7 +2,6 @@
 #pragma once
 #include <atomic>
 #include <mutex>
-#include <unordered_map>
 #include <vector>
 
 #include "common/common.h"
@@ -49,12 +48,20 @@ struct PeekLog {
     static constexpr int kMax = 32;
     GuestRange r[kMax];
     int n = 0;
+    int last = 0;   // range merged into most recently (the lookahead peeks consecutive instructions)
     bool overflow = false;
+    void reset() { n = 0; last = 0; overflow = false; }
     void add(GuestAddr lo, GuestAddr hi) {
+        if (last < n && lo <= r[last].hi && hi >= r[last].lo) {
+            if (lo < r[last].lo) r[last].lo = lo;
+            if (hi > r[last].hi) r[last].hi = hi;
+            return;
+        }
         for (int i = 0; i < n; i++)
             if (lo <= r[i].hi && hi >= r[i].lo) {   // merge touching ranges
                 if (lo < r[i].lo) r[i].lo = lo;
                 if (hi > r[i].hi) r[i].hi = hi;
+                last = i;
                 return;
             }
         if (n == kMax) {
@@ -69,8 +76,10 @@ struct PeekLog {
             if (best_cost > (1u << 20)) { overflow = true; return; }   // far apart: give up instead
             if (lo < r[best].lo) r[best].lo = lo;
             if (hi > r[best].hi) r[best].hi = hi;
+            last = best;
             return;
         }
+        last = n;
         r[n++] = {lo, hi};
     }
 };
@@ -208,8 +217,16 @@ private:
     u64* code_pages_ = nullptr;   // mark_code bitmap
     BlockMeta** by_host_ = nullptr;
     size_t nby_host_ = 0, cap_by_host_ = 0;
-    struct Dep { BlockMeta* b; GuestAddr lo, hi; };
-    std::unordered_map<u64, std::vector<Dep>> deps_;   // guest page -> translations depending on it
+    // guest page -> translations depending on it: an open-addressing table of list heads into a
+    // node pool (a hash map of vectors cost a hash division and a vector reallocation per block)
+    struct DepNode { BlockMeta* b; GuestAddr lo, hi; u32 next; };   // next: 0 = end of list
+    struct DepPage { u64 page; u32 head; };                          // page ~0: empty (never removed)
+    std::vector<DepNode> dep_nodes_;   // [0] unused
+    u32 dep_free_ = 0;                 // free nodes, linked through next
+    size_t dep_live_ = 0;              // nodes in page lists
+    std::vector<DepPage> dep_pages_;   // power-of-two size, at most half full
+    size_t dep_npages_ = 0;
+    u32* dep_head(u64 page, bool create);
     void kill_region(RegionInfo* ri);
     std::vector<IbtcEntry*> ibtcs_;
     std::vector<GuestAddr> killed_;   // start pcs of blocks killed since the last scrub_ibtcs

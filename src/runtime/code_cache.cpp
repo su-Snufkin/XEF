@@ -167,11 +167,50 @@ const PcMapEntry* CodeCache::find_pc(const BlockMeta* b, const u8* host) const {
 
 // ------------------------------------------------------------------ invalidation
 
+static constexpr u64 kNoPage = ~0ull;
+
+u32* CodeCache::dep_head(u64 page, bool create) {
+    if (dep_pages_.empty()) {
+        if (!create) return nullptr;
+        dep_pages_.assign(1024, DepPage{kNoPage, 0});
+    }
+    if (create && (dep_npages_ + 1) * 2 > dep_pages_.size()) {   // grow before taking a slot pointer
+        std::vector<DepPage> old;
+        old.swap(dep_pages_);
+        dep_pages_.assign(old.size() * 2, DepPage{kNoPage, 0});
+        size_t mask = dep_pages_.size() - 1;
+        for (const DepPage& p : old)
+            if (p.page != kNoPage)
+                for (size_t i = (p.page * 0x9E3779B97F4A7C15ull) >> 40 & mask;; i = (i + 1) & mask)
+                    if (dep_pages_[i].page == kNoPage) { dep_pages_[i] = p; break; }
+    }
+    size_t mask = dep_pages_.size() - 1;
+    for (size_t i = (page * 0x9E3779B97F4A7C15ull) >> 40 & mask;; i = (i + 1) & mask) {
+        DepPage& p = dep_pages_[i];
+        if (p.page == page) return &p.head;
+        if (p.page == kNoPage) {
+            if (!create) return nullptr;
+            p = DepPage{page, 0};
+            dep_npages_++;
+            return &p.head;
+        }
+    }
+}
+
 void CodeCache::add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog* peeks) {
     mark_code(lo, hi, peeks);   // normally already marked by the translator
+    if (dep_nodes_.empty()) dep_nodes_.push_back(DepNode{});
     auto add = [&](GuestAddr l, GuestAddr h) {
         if (h <= l) return;
-        for (u64 pg = l >> 12; pg <= (h - 1) >> 12; pg++) deps_[pg].push_back({b, l, h});
+        for (u64 pg = l >> 12; pg <= (h - 1) >> 12; pg++) {
+            u32 n = dep_free_;
+            if (n) dep_free_ = dep_nodes_[n].next;
+            else { n = (u32)dep_nodes_.size(); dep_nodes_.push_back(DepNode{}); }
+            u32* head = dep_head(pg, true);
+            dep_nodes_[n] = DepNode{b, l, h, *head};
+            *head = n;
+            dep_live_++;
+        }
     };
     // the lookahead usually reads right past the block end: merge it into the body's range first
     // (one dependency entry instead of several per block)
@@ -189,31 +228,28 @@ void CodeCache::add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog
 
 bool CodeCache::invalidate_range(GuestAddr lo, GuestAddr hi) {
     epoch.fetch_add(1, std::memory_order_seq_cst);
-    if (hi <= lo || deps_.empty()) return false;
+    if (hi <= lo || !dep_live_) return false;
     bool found = false;
-    auto scan = [&](std::vector<Dep>& v) {
-        size_t k = 0;
-        for (size_t i = 0; i < v.size(); i++) {
-            Dep d = v[i];
-            if (d.b->flags & BF_DEAD) continue;          // drop stale entries
-            if (d.lo < hi && d.hi > lo) { invalidate_block(d.b); found = true; continue; }
-            v[k++] = d;
+    // invalidate_block does not touch the dependency index: list links stay valid while scanning
+    auto scan = [&](u32* link) {
+        while (u32 i = *link) {
+            DepNode& d = dep_nodes_[i];
+            bool drop = d.b->flags & BF_DEAD;   // stale entry
+            if (!drop && d.lo < hi && d.hi > lo) { invalidate_block(d.b); found = true; drop = true; }
+            if (!drop) { link = &d.next; continue; }
+            *link = d.next;
+            d.next = dep_free_;
+            dep_free_ = i;
+            dep_live_--;
         }
-        v.resize(k);
     };
     u64 first = lo >> 12, last = (hi - 1) >> 12;
-    if (last - first + 1 > deps_.size()) {
-        for (auto it = deps_.begin(); it != deps_.end();) {
-            if (it->first >= first && it->first <= last) scan(it->second);
-            if (it->second.empty()) it = deps_.erase(it); else ++it;
-        }
+    if (last - first + 1 > dep_npages_) {
+        for (DepPage& p : dep_pages_)
+            if (p.page != kNoPage && p.page >= first && p.page <= last) scan(&p.head);
     } else {
-        for (u64 pg = first; pg <= last; pg++) {
-            auto it = deps_.find(pg);
-            if (it == deps_.end()) continue;
-            scan(it->second);
-            if (it->second.empty()) deps_.erase(it);
-        }
+        for (u64 pg = first; pg <= last; pg++)
+            if (u32* h = dep_head(pg, false)) scan(h);
     }
     return found;
 }
