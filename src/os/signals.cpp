@@ -461,8 +461,13 @@ i64 sig_rt_sigsuspend(CpuState* st, u64 set, u64 sigsetsize) {
     if (sigsetsize != 8) return -EINVAL;
     u64 old = host_blocked();
     u64 tmp = *(u64*)set & ~kInternalSigs;
-    long r = syscall(SYS_rt_sigsuspend, &tmp, 8);
-    r = r < 0 ? -errno : r;
+    // XEF's own signals (the tier-2 sampling timer, ...) stay unblocked and also end the host
+    // sigsuspend: wait again until a signal for the guest is pending
+    long r;
+    do {
+        r = syscall(SYS_rt_sigsuspend, &tmp, 8);
+        r = r < 0 ? -errno : r;
+    } while (r == -EINTR && !(__atomic_load_n(&st->thread->pending, __ATOMIC_SEQ_CST) & ~tmp));
     // deliver now with the temporary mask; the handler's sigreturn restores the old mask
     st->x[0] = (u64)r;
     deliver_pending_masked(st, old, tmp);
