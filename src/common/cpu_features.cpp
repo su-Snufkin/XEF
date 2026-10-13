@@ -34,7 +34,10 @@ void detect_host_features() {
         g_host.fsgsbase = b & bit_FSGSBASE;
         g_host.sha = b & bit_SHA;
     }
-    if (__get_cpuid(0x80000001, &a, &b, &c, &d)) g_host.lzcnt = c & bit_LZCNT;
+    if (__get_cpuid(0x80000001, &a, &b, &c, &d)) {
+        g_host.lzcnt = c & bit_LZCNT;
+        g_host.prefetchw = c & bit_PRFCHW;
+    }
     if (getenv("XEF_NO_AVX")) g_host.avx = g_host.avx2 = g_host.fma = g_host.f16c = false;
     if (getenv("XEF_NO_BMI")) g_host.bmi1 = g_host.bmi2 = false;
 }

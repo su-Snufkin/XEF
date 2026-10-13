@@ -33,7 +33,7 @@ enum Cond : u8 { EQ, NE, HS, LO, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL, NV 
     X(Adc) X(Sbc)                                                         \
     X(Load) X(Store)                                                      \
     X(LoadExcl) X(StoreExcl) X(ClearExcl) X(AtomicRMW) X(Cas)             \
-    X(Barrier)                                                            \
+    X(Barrier) X(Prefetch)                                                \
     X(GetSys) X(SetSys)                                                   \
     X(VGet) X(VSet) X(VLoad) X(VStore) X(VOp) X(VToGpr) X(GprToV)         \
     X(VConst) X(VSelect) X(FToI) X(IToF)                                  \

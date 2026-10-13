@@ -659,7 +659,8 @@ bool Translator::ldst_reg(u32 i) {
     } else return false;
 
     if (prfm) {
-        // prefetch: nop
+        // prefetch hint: aux = prfop (type in bits 4:3, target cache level in 2:1, streaming in 0)
+        if (bits(rt, 4, 3) != 1) ir_.emit(Op::Prefetch, Type::None, addr, kNone, kNone, 0, (u8)rt);   // PLI: ignored
     } else if (load) {
         if (wb && !v && rt == rn && rt != 31) {
             // unpredictable; follow writeback-then-load-wins semantics of most cores

@@ -405,6 +405,8 @@ public:
     void xadd(int size, const Mem& m, Reg r) { lock(); op_rm(size, {0x0F, (u8)(size == 1 ? 0xC0 : 0xC1)}, r, m); }
     void cmpxchg16b(const Mem& m) { lock(); op_rm(8, {0x0F, 0xC7}, 1, m); }
     void mfence() { db(0x0F); db(0xAE); db(0xF0); }
+    // prefetch{nta,t0,t1,t2} [m] (0F 18 /hint), prefetchw [m] (0F 0D /1)
+    void prefetch(bool write, int hint, const Mem& m) { op_rm(4, {0x0F, (u8)(write ? 0x0D : 0x18)}, hint, m); }
     void lock_or_rsp() { db(0xF0); db(0x83); db(0x0C); db(0x24); db(0x00); }  // lock or dword [rsp], 0
 
     // ---- SSE / AVX (xmm) ----

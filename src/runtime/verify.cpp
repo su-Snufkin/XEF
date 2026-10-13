@@ -133,7 +133,7 @@ bool interpret(const Block& b, const CpuState& in, Expect& ex) {
         int bits = tbits(i.ty);
         u64 r = 0;
         switch (i.op) {
-        case Op::Nop: case Op::Barrier: continue;
+        case Op::Nop: case Op::Barrier: case Op::Prefetch: continue;
         case Op::Const: r = i.imm; break;
         case Op::GetReg: r = ex.x[i.aux & 31]; break;
         case Op::SetReg: ex.x[i.aux & 31] = A; continue;

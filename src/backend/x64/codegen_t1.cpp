@@ -248,7 +248,9 @@ void T1::analyze() {
     //   materialized (ldp/stp: sp+16 feeds one load directly and one through +8)
     // - Add(base, reg | Shl(reg, k)) whose single use is an address
     // The values the folded nodes read stay live until the access itself.
-    auto is_mem = [](Op op) { return op == Op::Load || op == Op::Store || op == Op::VLoad || op == Op::VStore; };
+    auto is_mem = [](Op op) {
+        return op == Op::Load || op == Op::Store || op == Op::VLoad || op == Op::VStore || op == Op::Prefetch;
+    };
     auto extend_to = [&](Val o, i32 L) {
         while (o) {
             if (vi_[o].last < L) vi_[o].last = L;
@@ -764,6 +766,14 @@ void T1::emit_inst(Val v) {
         }
         // BAR_ISB / LOAD / STORE: nothing under TSO (see docs/memory-model.md)
         return;
+    case Op::Prefetch: {   // never faults: no pc map entry
+        Mem m = addr_mem(in.a);
+        u32 type = (in.aux >> 3) & 3, level = (in.aux >> 1) & 3;
+        if (type == 2 && g_host.prefetchw) as_.prefetch(true, 1, m);      // PST
+        else if (in.aux & 1) as_.prefetch(false, 0, m);                  // STRM: prefetchnta
+        else as_.prefetch(false, level == 0 ? 1 : level == 1 ? 2 : 3, m);  // L1/L2/L3: prefetcht0/1/2
+        return;
+    }
     case Op::GetSys: case Op::SetSys: emit_sys(v); return;
     case Op::VGet: case Op::VSet: case Op::VLoad: case Op::VStore: case Op::VOp:
     case Op::VToGpr: case Op::GprToV: case Op::FCmpFlags: case Op::FCCmpFlags:

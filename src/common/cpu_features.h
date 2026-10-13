@@ -10,6 +10,7 @@ struct HostFeatures {
     bool lzcnt = false, fma = false, f16c = false;
     bool cmpxchg16b = false, fsgsbase = false;
     bool aes = false, pclmul = false, sha = false;
+    bool prefetchw = false;
 };
 
 extern HostFeatures g_host;

@@ -151,6 +151,7 @@ private:
         case Op::SetReg: case Op::SetFlags: case Op::Store: case Op::Load:
         case Op::LoadExcl: case Op::StoreExcl: case Op::ClearExcl: case Op::AtomicRMW: case Op::Cas:
         case Op::Barrier: case Op::SetSys: case Op::Helper: case Op::VSet: case Op::VStore: case Op::VLoad:
+        case Op::Prefetch:
         case Op::UDiv: case Op::SDiv:  // keep (cheap to keep, safe)
             return true;
         default: return is_terminator(in.op);
