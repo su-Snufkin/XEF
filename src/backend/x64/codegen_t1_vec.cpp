@@ -895,10 +895,80 @@ void T1::emit_vop(Val v) {
         finish(d);
         return;
     }
-    case V_UQADD: if (es == 1) { finish(bin(PADDUSB)); return; } if (es == 2) { finish(bin(PADDUSW)); return; } return helper();
-    case V_UQSUB: if (es == 1) { finish(bin(PSUBUSB)); return; } if (es == 2) { finish(bin(PSUBUSW)); return; } return helper();
-    case V_SQADD: if (es == 1) { finish(bin(PADDSB)); return; } if (es == 2) { finish(bin(PADDSW)); return; } return helper();
-    case V_SQSUB: if (es == 1) { finish(bin(PSUBSB)); return; } if (es == 2) { finish(bin(PSUBSW)); return; } return helper();
+    case V_UQADD: {
+        if (es == 1) { finish(bin(PADDUSB)); return; }
+        if (es == 2) { finish(bin(PADDUSW)); return; }
+        if (es == 4) {
+            // d = a + b; if d < a (i.e. max(a, d) != d), saturate to ~0
+            Xmm a = A(), b = B();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            as_.xop(PADD[4], d, a, b);
+            as_.xop(PMAXU[4], t, a, d);
+            as_.xop(PCMPEQ[4], t, t, d);                     // ~0 if no overflow, 0 if overflow
+            as_.xop(PAND, d, d, t);
+            as_.xop_m(PXOR, t, t, vconst_mem(~0ull, ~0ull)); // ~0 if overflow, 0 if not
+            as_.xop(POR, d, d, t);
+            finish(d);
+            return;
+        }
+        return helper();
+    }
+    case V_UQSUB: {
+        if (es == 1) { finish(bin(PSUBUSB)); return; }
+        if (es == 2) { finish(bin(PSUBUSW)); return; }
+        if (es == 4) {
+            // max(0, a - b) = a - min(a, b)
+            Xmm a = A(), b = B();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            as_.xop(PMINU[4], t, a, b);
+            as_.xop(PSUB[4], d, a, t);
+            finish(d);
+            return;
+        }
+        return helper();
+    }
+    case V_SQADD: case V_SQSUB: {
+        if (es == 1) { finish(bin(in.sub == V_SQADD ? PADDSB : PSUBSB)); return; }
+        if (es == 2) { finish(bin(in.sub == V_SQADD ? PADDSW : PSUBSW)); return; }
+        if (es == 4) {
+            bool is_add = in.sub == V_SQADD;
+            Xmm a = A(), b = B();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            as_.xop(is_add ? PADD[4] : PSUB[4], d, a, b);
+            // overflow condition:
+            // add: ((d ^ a) & (d ^ b)) has sign bit set
+            // sub: ((a ^ b) & (d ^ a)) has sign bit set
+            if (is_add) {
+                as_.xop(PXOR, t, d, a);
+                as_.xop(PXOR, m, d, b);
+                as_.xop(PAND, m, m, t);
+            } else {
+                as_.xop(PXOR, t, a, b);
+                as_.xop(PXOR, m, d, a);
+                as_.xop(PAND, m, m, t);
+            }
+            as_.xshift_imm(0x72, 4, m, m, 31);               // arithmetic >> 31: ~0 if overflow, 0 otherwise
+            // sat_val = (psrad(a, 31) ^ 0x7fffffff)
+            as_.xshift_imm(0x72, 4, t, a, 31);
+            u64 max_int = 0x7fffffff7fffffffull;
+            as_.xop_m(PXOR, t, t, vconst_mem(max_int, max_int));
+            // d = (d & ~m) | (sat_val & m)
+            if (as_.avx) {
+                as_.vblendv(false, d, d, t, m);
+            } else {
+                as_.xop(PAND, t, t, m);
+                as_.xop(PANDN, d, m, d);
+                as_.xop(POR, d, d, t);
+            }
+            finish(d);
+            return;
+        }
+        return helper();
+    }
     case V_UABD: case V_SABD: case V_UABDL: case V_SABDL: {
         if (es == 8) return helper();
         bool sg = in.sub == V_SABD || in.sub == V_SABDL;
