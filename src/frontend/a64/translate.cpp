@@ -1174,7 +1174,7 @@ void translate_block(GuestAddr pc, ir::Block& blk, const TranslateOpts& opts) {
         if (!cont) break;
     }
     blk.end = cur;
-    compute_flags_liveness(blk);
+    if (opts.flags_liveness) compute_flags_liveness(blk);
 }
 
 }  // namespace xef::a64

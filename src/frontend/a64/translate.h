@@ -11,6 +11,7 @@ void set_peek_log(PeekLog* log);
 struct TranslateOpts {
     int max_insts = 128;          // max guest instructions per block
     bool stop_at_page = false;
+    bool flags_liveness = true;   // false: skip the NZCV lookahead (flags_live_out stays true)
 };
 
 // Reads guest code at `pc` and fills `blk`. Always produces a terminated block.

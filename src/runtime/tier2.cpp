@@ -94,15 +94,21 @@ static bool compile_region(GuestAddr head) {
     ir::Block& blk = *g_t2_blk;
     a64::TranslateOpts topt;
     topt.max_insts = g_opt.max_block_insts;
+    topt.flags_liveness = false;   // the region's own NZCV dataflow below decides flags_live_out
 
-    // ---- region formation: BFS over hot direct successors
+    // ---- region formation: BFS over hot direct successors. Everything the passes below need
+    // about a member is recorded here (by position in R), so it is decoded once more only for
+    // code generation.
     Region R;
     R.pcs[R.n++] = head;
     int uses[32] = {0}, writes[32] = {0};
     int vuses[32] = {0}, vwrites[32] = {0};
+    bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], helper_of[kMaxRegionBlocks];
+    GuestAddr f_succ[kMaxRegionBlocks][2];
+    int f_nsucc[kMaxRegionBlocks];
     for (int qi = 0; qi < R.n; qi++) {
         a64::translate_block(R.pcs[qi], blk, topt);
-        GuestAddr succ[2];
+        GuestAddr* succ = f_succ[qi];
         int ns = 0;
         if (has_unsupported(blk) || !direct_terminator(blk, succ, &ns)) {
             if (qi == 0) {
@@ -114,12 +120,17 @@ static bool compile_region(GuestAddr head) {
             qi--;
             continue;
         }
+        f_nsucc[qi] = ns;
+        f_reads[qi] = f_writes[qi] = helper_of[qi] = false;
         for (int v = 1; v < blk.n; v++) {
             const ir::Inst& in = blk.insts[v];
             if (in.op == ir::Op::GetReg || in.op == ir::Op::SetReg) uses[in.aux] += 1;
             if (in.op == ir::Op::SetReg) writes[in.aux] += 1;
             if (in.op == ir::Op::VGet || in.op == ir::Op::VSet) vuses[in.aux] += 1;
             if (in.op == ir::Op::VSet) vwrites[in.aux] += 1;
+            if (in.op == ir::Op::GetFlags) f_reads[qi] = true;
+            if (in.op == ir::Op::SetFlags) f_writes[qi] = true;
+            if (in.op == ir::Op::Helper) helper_of[qi] = true;
         }
         for (int k = 0; k < ns; k++) {
             if (R.contains(succ[k]) || R.n >= kMaxRegionBlocks) continue;
@@ -133,13 +144,8 @@ static bool compile_region(GuestAddr head) {
     }
     // a region is only worth it if it loops back into itself
     bool loops = false;
-    for (int i = 0; i < R.n && !loops; i++) {
-        a64::translate_block(R.pcs[i], blk, topt);
-        GuestAddr succ[2];
-        int ns = 0;
-        direct_terminator(blk, succ, &ns);
-        for (int k = 0; k < ns; k++) if (R.contains(succ[k])) loops = true;
-    }
+    for (int i = 0; i < R.n && !loops; i++)
+        for (int k = 0; k < f_nsucc[i]; k++) if (R.contains(f_succ[i][k])) loops = true;
     if (!loops) {
         if (hm->exec_count < (u64)g_tier2_threshold * 16) hm->tier = 1;  // allow retry once successors are translated
         XEF_LOG(1, "tier2: %#lx: no loop among %d blocks", (unsigned long)head, R.n);
@@ -147,18 +153,8 @@ static bool compile_region(GuestAddr head) {
     }
 
     // ---- NZCV liveness over the region CFG (more precise than per-block lookahead)
-    bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], f_live_in[kMaxRegionBlocks];
-    bool f_live_out[kMaxRegionBlocks];
-    GuestAddr f_succ[kMaxRegionBlocks][2];
-    int f_nsucc[kMaxRegionBlocks];
+    bool f_live_in[kMaxRegionBlocks], f_live_out[kMaxRegionBlocks];
     for (int i = 0; i < R.n; i++) {
-        a64::translate_block(R.pcs[i], blk, topt);
-        f_reads[i] = f_writes[i] = false;
-        for (int v = 1; v < blk.n; v++) {
-            if (blk.insts[v].op == ir::Op::GetFlags) f_reads[i] = true;
-            if (blk.insts[v].op == ir::Op::SetFlags) f_writes[i] = true;
-        }
-        direct_terminator(blk, f_succ[i], &f_nsucc[i]);
         f_live_in[i] = f_reads[i];
         f_live_out[i] = false;
     }
@@ -301,17 +297,9 @@ static bool compile_region(GuestAddr head) {
     // member with a helper call (IC IVAU) ends its chain: the code after it is entered by a jump,
     // which region invalidation can retarget.
     int lay[kMaxRegionBlocks], nord = 0;
-    bool placed[kMaxRegionBlocks] = {}, helper_of[kMaxRegionBlocks];
+    bool placed[kMaxRegionBlocks] = {};
     int fall_of[kMaxRegionBlocks];
-    for (int i = 0; i < R.n; i++) {
-        a64::translate_block(R.pcs[i], blk, topt);
-        helper_of[i] = false;
-        for (int v = 1; v < blk.n; v++) if (blk.insts[v].op == ir::Op::Helper) helper_of[i] = true;
-        GuestAddr succ[2];
-        int ns = 0;
-        direct_terminator(blk, succ, &ns);
-        fall_of[i] = ns ? idx_of(succ[ns - 1]) : -1;
-    }
+    for (int i = 0; i < R.n; i++) fall_of[i] = f_nsucc[i] ? idx_of(f_succ[i][f_nsucc[i] - 1]) : -1;
     for (int i = 0; i < R.n; i++)
         for (int cur = i; cur >= 0 && !placed[cur];) {
             placed[cur] = true;
