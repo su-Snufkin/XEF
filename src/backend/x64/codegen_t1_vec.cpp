@@ -1507,7 +1507,7 @@ void T1::emit_vop(Val v) {
         if (es > 2 || scalar) return helper();
         bool uns = in.sub == V_UQXTN || in.sub == V_UQSHRN || in.sub == V_UQRSHRN;   // unsigned source
         bool shift = in.sub != V_SQXTN && in.sub != V_UQXTN && in.sub != V_SQXTUN;
-        bool rnd = in.sub == V_UQRSHRN || in.sub == V_SQSHRUN || in.sub == V_SQRSHRN || in.sub == V_SQRSHRUN;
+        bool rnd = in.sub == V_UQRSHRN || in.sub == V_SQRSHRN || in.sub == V_SQRSHRUN;
         int sh = (int)in.imm;
         u8 opc = es == 1 ? 0x71 : 0x72;
         Xmm a = A();
@@ -2149,25 +2149,37 @@ void T1::emit_vop(Val v) {
             return;
         }
         if (es == 4) {
-            if (half) return helper();
             Xmm a = A();
             Xmm d = new_x(v);
             if (is_addv) {
-                as_.xop(PHADDD, d, a, a);
-                as_.xop(PHADDD, d, d, d);
+                if (half) {
+                    Xmm t = alloc_x(); xpinned_ |= 1 << t;
+                    as_.xop1(PSHUFD, t, a, 0x01);
+                    as_.xop(PADD[4], d, a, t);
+                } else {
+                    as_.xop(PHADDD, d, a, a);
+                    as_.xop(PHADDD, d, d, d);
+                }
                 zero_upper(d, 4);
                 vi_[v].clean_vec = 4;
                 return;
             }
             // es == 4 UADDLV / SADDLV (widening to 64-bit result)
             Xmm t = alloc_x(); xpinned_ |= 1 << t;
-            as_.xop1(PSHUFD, t, a, 0x08);
-            as_.xop1(is_saddlv ? PMOVSX[4] : PMOVZX[4], d, t);
-            as_.xop1(PSHUFD, t, a, 0x0D);
-            as_.xop1(is_saddlv ? PMOVSX[4] : PMOVZX[4], t, t);
-            as_.xop(PADD[8], d, d, t);
-            as_.xop1(PSHUFD, t, d, 0xEE);
-            as_.xop(PADD[8], d, d, t);
+            if (half) {
+                // half vector: a[0] and a[1]
+                as_.xop1(is_saddlv ? PMOVSX[4] : PMOVZX[4], d, a);          // widens low 2 lanes
+                as_.xop1(PSHUFD, t, d, 0xEE);                               // high 64-bit half
+                as_.xop(PADD[8], d, d, t);
+            } else {
+                as_.xop1(PSHUFD, t, a, 0x08);
+                as_.xop1(is_saddlv ? PMOVSX[4] : PMOVZX[4], d, t);
+                as_.xop1(PSHUFD, t, a, 0x0D);
+                as_.xop1(is_saddlv ? PMOVSX[4] : PMOVZX[4], t, t);
+                as_.xop(PADD[8], d, d, t);
+                as_.xop1(PSHUFD, t, d, 0xEE);
+                as_.xop(PADD[8], d, d, t);
+            }
             zero_upper(d, 8);
             vi_[v].clean_vec = 8;
             return;
@@ -2766,6 +2778,7 @@ void T1::emit_vop(Val v) {
             0x11, 0x10, 0x10, 0x0f, 0x0f, 0x0e, 0x0d, 0x0d, 0x0c, 0x0c, 0x0b, 0x0b, 0x0a, 0x0a, 0x09, 0x09,
             0x08, 0x07, 0x07, 0x06, 0x06, 0x05, 0x05, 0x04, 0x04, 0x03, 0x03, 0x02, 0x02, 0x01, 0x01, 0x00
         };
+        clobber_flags();
         Xmm a = A();
         Xmm d = new_x(v);
         Xmm idx = alloc_x(); xpinned_ |= 1 << idx;
@@ -2780,8 +2793,8 @@ void T1::emit_vop(Val v) {
         // lane-by-lane lookup of (256 + table[idx]) << 23
         for (int i = 0; i < (half ? 2 : 4); i++) {
             as_.xop_gx(PEXTRD, idx, ridx, i);
-            as_.movzx_load(rval, Mem(rtbl, ridx, 1, 0), 1);
-            as_.alu_imm(ADD, 4, rval, 256);
+            as_.movzx_load(rval, mem(rtbl, ridx, 0, 0), 1);
+            as_.lea(4, rval, mem(rval, 256));
             as_.shift_imm(SHL, 4, rval, 23);
             as_.xop_gx(PINSRD, d, rval, i, d);
         }
@@ -2790,6 +2803,7 @@ void T1::emit_vop(Val v) {
         as_.xop(PCMPGT[4], m, m, a);                       // m = 0 > a (i.e. bit 31 is 1)
         as_.xop_m(PXOR, m, m, vconst_mem(~0ull, ~0ull));   // m = bit 31 is 0 -> 0xffffffff
         as_.xop(POR, d, d, m);                             // if bit 31 == 0: result = 0xffffffff
+        if (half) zero_upper(d, 8);
         finish(d);
         return;
     }
@@ -2826,6 +2840,7 @@ void T1::emit_vop(Val v) {
             0x08, 0x08, 0x08, 0x08, 0x07, 0x07, 0x06, 0x06, 0x06, 0x06, 0x05, 0x05, 0x05, 0x05, 0x04, 0x04,
             0x04, 0x04, 0x03, 0x03, 0x03, 0x03, 0x02, 0x02, 0x02, 0x02, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00
         };
+        clobber_flags();
         Xmm a = A();
         Xmm d = new_x(v);
         Xmm idx = alloc_x(); xpinned_ |= 1 << idx;
@@ -2841,8 +2856,8 @@ void T1::emit_vop(Val v) {
         // lane-by-lane lookup of (256 + table[idx]) << 23
         for (int i = 0; i < (half ? 2 : 4); i++) {
             as_.xop_gx(PEXTRD, idx, ridx, i);
-            as_.movzx_load(rval, Mem(rtbl, ridx, 1, 0), 1);
-            as_.alu_imm(ADD, 4, rval, 256);
+            as_.movzx_load(rval, mem(rtbl, ridx, 0, 0), 1);
+            as_.lea(4, rval, mem(rval, 256));
             as_.shift_imm(SHL, 4, rval, 23);
             as_.xop_gx(PINSRD, d, rval, i, d);
         }
@@ -2852,6 +2867,7 @@ void T1::emit_vop(Val v) {
         as_.xop_m(PAND, m, a, vconst_mem(c0, c0));
         as_.xop_m(PCMPEQ[4], m, m, vconst_mem(0, 0));       // m = 0xffffffff if (a & 0xc0000000) == 0
         as_.xop(POR, d, d, m);
+        if (half) zero_upper(d, 8);
         finish(d);
         return;
     }
