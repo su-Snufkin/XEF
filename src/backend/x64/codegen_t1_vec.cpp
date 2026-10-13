@@ -1031,6 +1031,129 @@ void T1::emit_vop(Val v) {
         vi_[v].clean_vec = 8;
         return;
     }
+    // ---------------- halving add/sub (es 1, 2): signed forms work on values biased by 0x80..
+    case V_SRHADD: case V_SHADD: case V_UHSUB: case V_SHSUB: {
+        if (es > 2) return helper();
+        bool sg = in.sub != V_UHSUB;
+        u64 bias = es == 1 ? 0x8080808080808080ull : 0x8000800080008000ull;
+        u64 one = es == 1 ? 0x0101010101010101ull : 0x0001000100010001ull;
+        SseOp avg = es == 1 ? PAVGB : PAVGW;
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        Xmm u = alloc_x(); xpinned_ |= 1 << u;
+        Xmm x = a, y = b;
+        if (sg) {
+            as_.xop_m(PXOR, t, a, vconst_mem(bias, bias));
+            as_.xop_m(PXOR, u, b, vconst_mem(bias, bias));
+            x = t; y = u;
+        }
+        if (in.sub == V_UHSUB || in.sub == V_SHSUB) {   // a - ceil((a + b) / 2) = floor((a - b) / 2)
+            as_.xop(avg, d, x, y);
+            as_.xop(PSUB[es], d, x, d);
+        } else {
+            as_.xop(avg, d, x, y);                       // (a + b + 1) >> 1 (biased)
+            if (in.sub == V_SHADD) {                     // - ((a ^ b) & 1)
+                Xmm w = alloc_x(); xpinned_ |= 1 << w;
+                as_.xop(PXOR, w, x, y);
+                as_.xop_m(PAND, w, w, vconst_mem(one, one));
+                as_.xop(PSUB[es], d, d, w);
+            }
+            as_.xop_m(PXOR, d, d, vconst_mem(bias, bias));
+        }
+        finish(d);
+        return;
+    }
+    // ---------------- rounding shift right (+ accumulate): (x >> s) + ((x >> (s - 1)) & 1)
+    case V_URSHR_I: case V_SRSHR_I: case V_URSRA: case V_SRSRA: {
+        bool sg = in.sub == V_SRSHR_I || in.sub == V_SRSRA;
+        bool acc = in.sub == V_URSRA || in.sub == V_SRSRA;
+        int sh = (int)in.imm;
+        if (es == 1 || (sg && es == 8) || sh < 1) return helper();
+        u8 opc = es == 2 ? 0x71 : es == 4 ? 0x72 : 0x73;
+        u64 one = es == 2 ? 0x0001000100010001ull : es == 4 ? 0x0000000100000001ull : 1ull;
+        Xmm a = A();
+        Xmm cc = acc ? C() : a;
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        as_.xshift_imm(opc, sg ? 4 : 2, d, a, (u8)(sh > 255 ? 255 : sh));
+        as_.xshift_imm(opc, 2, t, a, (u8)(sh - 1));
+        as_.xop_m(PAND, t, t, vconst_mem(one, one));
+        as_.xop(PADD[es], d, d, t);
+        if (acc) as_.xop(PADD[es], d, d, cc);
+        finish(d);
+        return;
+    }
+    // ---------------- saturating narrows (es = destination element size, 1 or 2)
+    case V_SQXTN: case V_UQXTN: case V_UQSHRN: case V_UQRSHRN: case V_SQSHRUN: case V_SQRSHRUN: {
+        if (es > 2 || scalar) return helper();
+        bool uns = in.sub == V_UQXTN || in.sub == V_UQSHRN || in.sub == V_UQRSHRN;   // unsigned source
+        bool shift = in.sub != V_SQXTN && in.sub != V_UQXTN;
+        bool rnd = in.sub == V_UQRSHRN || in.sub == V_SQRSHRUN;
+        int sh = (int)in.imm;
+        u8 opc = es == 1 ? 0x71 : 0x72;
+        Xmm a = A();
+        Xmm d = new_x(v);
+        Xmm z = alloc_x(); xpinned_ |= 1 << z;
+        Xmm src = a;
+        if (shift) {
+            as_.xshift_imm(opc, uns ? 2 : 4, d, a, (u8)sh);
+            if (rnd) {   // + bit (sh-1): the shifted value has sh spare bits, no overflow
+                as_.xshift_imm(opc, 2, z, a, (u8)(sh - 1));
+                u64 one = es == 1 ? 0x0001000100010001ull : 0x0000000100000001ull;
+                as_.xop_m(PAND, z, z, vconst_mem(one, one));
+                as_.xop(PADD[es * 2], d, d, z);
+            }
+            src = d;
+        }
+        if (uns) {   // unsigned source: clamp to the narrow maximum, then the (signed) pack sees no negatives
+            u64 mx = es == 1 ? 0x00ff00ff00ff00ffull : 0x0000ffff0000ffffull;
+            as_.xop_m(es == 1 ? PMINU[2] : PMINU[4], d, src, vconst_mem(mx, mx));
+            src = d;
+        }
+        as_.xop(PXOR, z, z, z);
+        SseOp pk = in.sub == V_SQXTN ? (es == 1 ? PACKSSWB : PACKSSDW) : (es == 1 ? PACKUSWB : PACKUSDW);
+        as_.xop(pk, d, src, z);
+        vi_[v].clean_vec = 8;
+        return;
+    }
+    // ---------------- absolute difference and accumulate
+    case V_UABA: case V_SABA: case V_UABAL: case V_SABAL: {
+        if (es == 8) return helper();
+        bool sg = in.sub == V_SABA || in.sub == V_SABAL;
+        bool lng = in.sub == V_UABAL || in.sub == V_SABAL;
+        Xmm a = A(), b = B(), c = C();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        as_.xop(sg ? PMAXS[es] : PMAXU[es], d, a, b);
+        as_.xop(sg ? PMINS[es] : PMINU[es], t, a, b);
+        as_.xop(PSUB[es], d, d, t);                   // |a - b| (fits the element width, unsigned)
+        if (lng) as_.xop1(PMOVZX[es], d, d);
+        as_.xop(PADD[lng ? es * 2 : es], d, d, c);
+        finish(d);
+        return;
+    }
+    // ---------------- saturating abs / neg
+    case V_SQABS: {   // pabs leaves the minimum as 0x80..; as unsigned min(that, 0x7f..) saturates it
+        if (es == 8) return helper();
+        Xmm a = A();
+        Xmm d = new_x(v);
+        u64 mx = es == 1 ? 0x7f7f7f7f7f7f7f7full : es == 2 ? 0x7fff7fff7fff7fffull : 0x7fffffff7fffffffull;
+        as_.xop1(PABS[es], d, a);
+        as_.xop_m(PMINU[es], d, d, vconst_mem(mx, mx));
+        finish(d);
+        return;
+    }
+    case V_SQNEG: {
+        if (es > 2) return helper();
+        Xmm a = A();
+        Xmm d = new_x(v);
+        Xmm z = alloc_x(); xpinned_ |= 1 << z;
+        as_.xop(PXOR, z, z, z);
+        as_.xop(es == 1 ? PSUBSB : PSUBSW, d, z, a);
+        finish(d);
+        return;
+    }
     // ---------------- pairwise add long (+ accumulate): es = source element size
     case V_UADDLP: case V_SADDLP: case V_UADALP: case V_SADALP: {
         if (es == 8) return helper();
