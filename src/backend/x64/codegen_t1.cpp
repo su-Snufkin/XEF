@@ -326,6 +326,21 @@ void T1::analyze() {
         }
         extend_to(ad.a, v);
     }
+    // Add(a, Shl(x, 1..3)) where the Shl has no other use: one lea d, [a + x << k]
+    for (int v = 1; v < n; v++) {
+        const Inst& in = I(v);
+        if (vi_[v].dead || vi_[v].folded || in.op != Op::Add) continue;
+        for (int side = 0; side < 2; side++) {
+            Val s = side ? in.a : in.b;
+            const Inst& sh = I(s);
+            if (sh.op != Op::Shl || sh.ty != in.ty || vi_[s].uses != 1 || vi_[s].dead || vi_[s].folded) continue;
+            if (I(sh.b).op != Op::Const || I(sh.b).imm < 1 || I(sh.b).imm > 3) continue;
+            vi_[s].folded = true;
+            vi_[v].lea = (u8)(side + 1);
+            extend_to(sh.a, v);
+            break;
+        }
+    }
 }
 
 // ------------------------------------------------------------------ registers
@@ -501,7 +516,11 @@ Reg T1::dest_hint(Val v) {
     int nx = v + 1;
     Val cur = v;
     for (;;) {
-        while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded || I(nx).op == Op::Nop)) nx++;
+        // flags ops and SetFlags read SSA values only (never a guest register), so they may sit
+        // between v and its SetReg (ands: And, FlagsLogic, SetFlags, Zext, SetReg)
+        while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded || I(nx).op == Op::Nop || I(nx).op == Op::SetFlags ||
+                             I(nx).op == Op::FlagsLogic || I(nx).op == Op::FlagsSub || I(nx).op == Op::FlagsAdd))
+            nx++;
         // look through alias views (e.g. the zero-extension of a 32-bit result) before SetReg
         if (nx < b_.n && I(nx).a == cur && is_alias_op(I(nx)) && I(nx).op != Op::GetFlags) { cur = (Val)nx++; continue; }
         break;
@@ -816,6 +835,26 @@ void T1::emit_binop(Val v) {
     const Inst& in = I(v);
     int s = sz(in.ty);
     Val a = in.a, b = in.b;
+    if (vi_[v].lea) {   // a + (x << k): flag-free, one instruction
+        Val sh = vi_[v].lea == 1 ? b : a, o = vi_[v].lea == 1 ? a : b;
+        int k = (int)I(I(sh).b).imm;
+        pin(o); pin(I(sh).a);
+        Reg rx = to_reg(I(sh).a);
+        pinned_ |= 1 << rx;
+        Mem m;
+        Reg ro = NOREG;
+        if (is_c(o) && fits_i32(o, s)) m = mem_idx(rx, k, (i32)cv(o));
+        else {
+            ro = to_reg(o);
+            pinned_ |= 1 << ro;
+            m = mem(ro, rx, k, 0);
+        }
+        auto dies = [&](Reg r) { return r != NOREG && owner_[r] && vi_[owner_[r]].last <= cur_; };
+        Reg d = dest_for(v, s, dies(ro) ? ro : dies(rx) ? rx : NOREG);
+        as_.lea(s, d, m);
+        finish_def(v, d);
+        return;
+    }
     // fuse with an immediately following flags op on the same operands
     int nx = v + 1;
     while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded)) nx++;
