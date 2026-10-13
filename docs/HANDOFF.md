@@ -78,6 +78,14 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   zdezasemblowany kod gorących bloków z rozkładem próbek na instrukcje hosta.
 - `XEF_REGSTATS=1 --profile`: dostępy do rejestrów gościa ważone próbkami (wybór mapowania).
 - Python: `build/xef -L .tools/rootfs-arm64 /usr/bin/python3 /tmp/bench.py` (skrypt w rootfs/tmp).
+- **Czas translacji** liczy się w realnych programach: start Pythona z importem ~70 modułów to ~45%
+  czasu w translatorze, benchmark shaderów GLES (`bench/micro/gles_shader.c`, llvmpipe) ~55%.
+  `--stats` podaje `translation time`; fazy najlepiej mierzyć tymczasowymi licznikami rdtsc
+  (dekodowanie / lookahead NZCV / analyze / emisja / zależności) i `build/pstat` (instructions:u).
+- `tools/codecmp.py XEF_A XEF_B -- prog args`: czy dwie wersje XEF generują ten sam kod hosta
+  (bez ASLR, `--dump-code`, adresy helperów i rel32 ignorowane). Każda zmiana translatora, która
+  ma nie zmieniać kodu, powinna przejść ten test (Python z `PYTHONHASHSEED=0`; JIT-y gościa i
+  wątki są niedeterministyczne).
 
 ## Wnioski z sesji 2026-10-13 (co pomogło, co nie)
 - Pomogło: prefetch z PRFM (zstd -12%), NZCV martwe przy BR + krótsze RET/IBTC (Python -12%, calls -30%),
@@ -86,6 +94,26 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - Nie pomogło (wycofane): inline cache dla BR/BLR — miejsca `br` w interpreterach (CPython) są
   megamorficzne, IC dokładał ~5% cykli; `calls` (4 cele) też wolniejsze.
 - FMAXNM/FMINNM(P/V) natywnie, z dokładną obsługą sygnalizującego NaN (propagowany, wyciszony; najpierw operand 1).
+
+## Wnioski z sesji 2026-10-13 (2): szybkość translacji, regresja FMAXNM
+- Lookahead NZCV: `mincore` przy każdej zmianie strony kosztował więcej niż dekodowanie (cache
+  stron per wątek, unieważniany przez `g_cache.epoch`); `quick_flags` obejmuje teraz hinty PAC/BTI,
+  load/store we wszystkich trybach adresowania, BR/BLR, logiczne/bitfield/EXTR/extended/mnożenia/
+  MRS (sprawdzane przeciw `slow_flags` na milionach losowych kodowań). Zakresy peek są logowane
+  per prosty odcinek i tylko dla odpowiedzi „martwe” (odpowiedź „żywe” nie zależy od kodu).
+- Zależności unieważnień: blok łańcucha rejestrował się raz na każdego późniejszego członka
+  (kwadratowo); teraz jeden scalony zbiór zakresów; indeks to tablica open addressing + pula węzłów.
+- `analyze()`: kandydaci składania adresów wyznaczani w przebiegach liveness, remat tylko po
+  producentach flag, przebiegi bez szans na dopasowanie pomijane. `evacuate_guest`/`evacuate_vreg`
+  chodzą po liście żywych wartości. Wszystko bajtowo identyczne (tools/codecmp.py).
+- Błąd: mapa host-PC→gość dla członków łańcucha i regionów tier 2 miała przesunięcia od początku
+  wspólnego asemblera — SIGSEGV gościa w takim bloku zabijał XEF (t_sigsegv_chain).
+- Regresja z 0a08d54: FMAXNM/FMINNM(P) poszły do helpera C (simd 3,5 s zamiast 0,23 s, klatki
+  GLES 5×). Teraz natywnie i dokładnie dla sygnalizującego NaN; poprawka sNaN jest omijana skokiem
+  (`cmpunord` + `ptest`), gdy żadna linia nie jest NaN, a flagi gościa są martwe/tanie do odtworzenia.
+  Sprawdzaj `--stats` („vector ops via C helper”) na benchmarkach po zmianach w codegen_t1_vec.
+- Znane (istniało wcześniej): `XEF_NO_AVX=1` — t_crypto, t_simd_conv, t_string, t_threads różnią
+  się od qemu (ścieżki SSE bez AVX nie są pokryte testami poza fuzzerem).
 
 ## Następne kroki (priorytet)
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
