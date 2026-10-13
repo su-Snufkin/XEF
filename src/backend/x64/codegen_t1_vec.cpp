@@ -2632,7 +2632,7 @@ void T1::emit_vop(Val v) {
             finish(d);
             return;
         }
-        if (es != 4 || scalar || !g_host.avx2 || !as_.avx) return helper();
+        if (es != 4 || !g_host.avx2 || !as_.avx) return helper();
         // shift count = signed low byte of each lane; out-of-range counts give 0 (or sign for signed right shift)
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
