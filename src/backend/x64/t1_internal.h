@@ -295,6 +295,7 @@ private:
     Xmm new_x(Val v, int reuse = -1);
     void emit_vop(Val v);
     void emit_crc32_clmul(Val v);
+    void emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool scalar);
     void emit_vec_helper(Val v);
     void load_vconst(Xmm x, u64 lo, u64 hi);
     Mem vconst_mem(u64 lo, u64 hi);

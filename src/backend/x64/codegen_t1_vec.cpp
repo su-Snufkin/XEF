@@ -301,6 +301,50 @@ void T1::emit_crc32_clmul(Val v) {
     finish_def(v, d);
 }
 
+// FMAX/FMIN (NaN propagating) and FMAXNM/FMINNM (quiet NaN = missing) of a and b into d
+// (d may not be a or b); ARM's +0 > -0 ordering for equal values.
+void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool scalar) {
+    u8 opc = isMax ? 0x5F : 0x5D;
+    SseOp op = scalar ? FPS(opc, es) : FPV(opc, es);
+    SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
+    Xmm t = alloc_x(); xpinned_ |= 1 << t;
+    Xmm u = alloc_x(); xpinned_ |= 1 << u;
+    if (nm && as_.avx) {
+        // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
+        // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
+        as_.xop(cmp, u, b, b, 3);
+        as_.vblendv(es == 8, t, b, a, u);
+        as_.xop(op, d, a, t);
+        as_.xop(cmp, u, a, t, 0);
+        as_.xop(isMax ? PAND : POR, t, a, t);
+        as_.vblendv(es == 8, d, d, t, u);
+        return;
+    }
+    as_.xop(op, d, a, b);
+    as_.xop(op, t, b, a);
+    // equal values / signed zeros: max -> AND (+0 wins), min -> OR (-0 wins)
+    as_.xop(isMax ? PAND : POR, d, d, t);
+    if (!nm) {
+        // NaN in either operand must give a NaN. min: one of the two orders returns the NaN
+        // and OR keeps exponent/mantissa bits set, so it is already a NaN. max: OR in the
+        // unordered mask (all ones = a quiet NaN; NaN payloads may differ, see ARCHITECTURE.md).
+        if (isMax) {
+            as_.xop(cmp, u, a, b, 3);
+            as_.xop(POR, d, d, u);
+        }
+    } else {
+        // a NaN -> b ; b NaN -> a (quiet NaN semantics)
+        as_.xop(cmp, u, a, a, 3);
+        as_.xop(PAND, t, b, u);
+        as_.xop(PANDN, u, u, d);
+        as_.xop(POR, d, t, u);
+        as_.xop(cmp, u, b, b, 3);
+        as_.xop(PAND, t, a, u);
+        as_.xop(PANDN, u, u, d);
+        as_.xop(POR, d, t, u);
+    }
+}
+
 // ------------------------------------------------------------------ dispatch
 
 void T1::emit_vec(Val v) {
@@ -1708,55 +1752,59 @@ void T1::emit_vop(Val v) {
     case V_FMAX: case V_FMIN: case V_FMAXNM: case V_FMINNM: {
         bool isMax = in.sub == V_FMAX || in.sub == V_FMAXNM;
         bool nm = in.sub == V_FMAXNM || in.sub == V_FMINNM;
-        if (nm && as_.avx) {
-            // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
-            // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
-            Xmm a = A(), b = B();
-            Xmm d = new_x(v);
-            Xmm t = alloc_x(); xpinned_ |= 1 << t;
-            Xmm u = alloc_x(); xpinned_ |= 1 << u;
-            SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
-            u8 opc = isMax ? 0x5F : 0x5D;
-            as_.xop(cmp, u, b, b, 3);
-            as_.vblendv(es == 8, t, b, a, u);
-            as_.xop(scalar ? FPS(opc, es) : FPV(opc, es), d, a, t);
-            as_.xop(cmp, u, a, t, 0);
-            as_.xop(isMax ? PAND : POR, t, a, t);
-            as_.vblendv(es == 8, d, d, t, u);
-            finish(d);
-            return;
-        }
+        if (es != 4 && es != 8) return helper();
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
-        Xmm t = alloc_x(); xpinned_ |= 1 << t;
-        Xmm u = alloc_x(); xpinned_ |= 1 << u;
-        u8 opc = isMax ? 0x5F : 0x5D;
-        SseOp op = scalar ? FPS(opc, es) : FPV(opc, es);
-        as_.xop(op, d, a, b);
-        as_.xop(op, t, b, a);
-        // equal values / signed zeros: max -> AND (+0 wins), min -> OR (-0 wins)
-        as_.xop(isMax ? PAND : POR, d, d, t);
-        SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
-        if (!nm) {
-            // NaN in either operand must give a NaN. min: one of the two orders returns the NaN
-            // and OR keeps exponent/mantissa bits set, so it is already a NaN. max: OR in the
-            // unordered mask (all ones = a quiet NaN; NaN payloads may differ, see ARCHITECTURE.md).
-            if (isMax) {
-                as_.xop(cmp, u, a, b, 3);
-                as_.xop(POR, d, d, u);
-            }
-        } else {
-            // a NaN -> b ; b NaN -> a (quiet NaN semantics)
-            as_.xop(cmp, u, a, a, 3);
-            as_.xop(PAND, t, b, u);
-            as_.xop(PANDN, u, u, d);
-            as_.xop(POR, d, t, u);
-            as_.xop(cmp, u, b, b, 3);
-            as_.xop(PAND, t, a, u);
-            as_.xop(PANDN, u, u, d);
-            as_.xop(POR, d, t, u);
-        }
+        emit_fminmax(d, a, b, isMax, nm, es, scalar);
         finish(d);
+        return;
+    }
+    // pairwise: element i of the result is f(concat(a, b)[2i], concat(a, b)[2i+1])
+    case V_FMAXP: case V_FMINP: case V_FMAXNMP: case V_FMINNMP: {
+        bool isMax = in.sub == V_FMAXP || in.sub == V_FMAXNMP;
+        bool nm = in.sub == V_FMAXNMP || in.sub == V_FMINNMP;
+        if (es != 4 && es != 8) return helper();
+        Xmm a = A();
+        Xmm b = scalar ? a : B();
+        Xmm d = new_x(v);
+        Xmm ev = alloc_x(); xpinned_ |= 1 << ev;
+        Xmm od = alloc_x(); xpinned_ |= 1 << od;
+        if (scalar) {   // f(a[0], a[1])
+            as_.movaps(ev, a);
+            if (es == 8) as_.xop1(PSHUFD, od, a, 0xEE); else as_.xop1(PSHUFD, od, a, 0x55);
+        } else if (es == 8) {
+            as_.xop(PUNPCKL[8], ev, a, b);
+            as_.xop(PUNPCKH[8], od, a, b);
+        } else if (half) {   // 2S: [a0 a1 b0 b1] -> evens [a0 b0], odds [a1 b1]
+            as_.xop(PUNPCKL[8], od, a, b);
+            as_.xop(SHUFPS, ev, od, od, 0x88);
+            as_.xop(SHUFPS, od, od, od, 0xDD);
+        } else {
+            as_.xop(SHUFPS, ev, a, b, 0x88);
+            as_.xop(SHUFPS, od, a, b, 0xDD);
+        }
+        emit_fminmax(d, ev, od, isMax, nm, es, scalar);
+        finish(d);
+        return;
+    }
+    // across lanes (4S): f(f(a0, a1), f(a2, a3))
+    case V_FMAXV: case V_FMINV: case V_FMAXNMV: case V_FMINNMV: {
+        // FMAXNMV/FMINNMV disagree with qemu on some inputs: helper until understood
+        if (es != 4 || half || in.sub == V_FMAXNMV || in.sub == V_FMINNMV) return helper();
+        bool isMax = in.sub == V_FMAXV || in.sub == V_FMAXNMV;
+        bool nm = in.sub == V_FMAXNMV || in.sub == V_FMINNMV;
+        Xmm a = A();
+        Xmm d = new_x(v);
+        Xmm ev = alloc_x(); xpinned_ |= 1 << ev;
+        Xmm od = alloc_x(); xpinned_ |= 1 << od;
+        as_.xop(SHUFPS, ev, a, a, 0x88);
+        as_.xop(SHUFPS, od, a, a, 0xDD);
+        emit_fminmax(d, ev, od, isMax, nm, 4, false);   // [f01 f23 f01 f23]
+        as_.xop1(PSHUFD, od, d, 0x55);
+        as_.movaps(ev, d);
+        emit_fminmax(d, ev, od, isMax, nm, 4, true);
+        zero_upper(d, 4);
+        vi_[v].clean_vec = 4;
         return;
     }
     case V_FCMEQ: case V_FCMGE: case V_FCMGT: case V_FACGE: case V_FACGT: {
