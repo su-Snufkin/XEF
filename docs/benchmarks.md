@@ -2,16 +2,30 @@
 
 Each benchmark is built from the same source with the same flags (-O2) for x86-64 (native) and AArch64 (static). Times are best-of-N wall clock. "XEF vs native" is native time / XEF time (100% = native speed). Newest results first. Regenerate with `bench/build.sh && bench/run.py`.
 
+## 2026-10-13 — 13th Gen Intel(R) Core(TM) i7-13620H (commit e9aa5f4) — flags at consumers, PRFM, BR flags dead, regmap per compiler, fall-through chains, crypto/CRC native
+
+| benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
+|---|---:|---:|---:|---:|---:|
+| coremark — CoreMark (200k iterations) | 6.541 | 8.362 | — | 78% | — |
+| intloop — integer loops (sieve, hash, counting) | 0.580 | 0.516 | — | 112% | — |
+| fploop — FP loops (matmul, n-body, mandelbrot) | 0.207 | 0.252 | — | 82% | — |
+| calls — calls + indirect branches (fib, fn pointers, interpreter) | 0.408 | 0.553 | — | 74% | — |
+| simd — auto-vectorized NEON loops (saxpy, dot, u8 blend, s16 saturate, SAD, clamp, cvt) | 0.141 | 0.230 | — | 61% | — |
+| zstd-c — zstd -6 compress 48 MB text | 0.537 | 0.781 | — | 69% | — |
+| zstd-d — zstd decompress 48 MB text | 0.043 | 0.076 | — | 57% | — |
+
 ## 2026-10-13 — 13th Gen Intel(R) Core(TM) i7-13620H (commit 161053f) — optimized
 
 | benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
 |---|---:|---:|---:|---:|---:|
 | coremark — CoreMark (200k iterations) | 6.512 | 9.741 | — | 67% | — |
 | intloop — integer loops (sieve, hash, counting) | 0.590 | 0.522 | — | 113% | — |
-| fploop — FP loops (matmul, n-body, mandelbrot) | 0.208 | 0.152 | — | 137% | — |
+| fploop — FP loops (matmul, n-body, mandelbrot) | 0.208 | 0.152 | — | 137%* | — |
 | calls — calls + indirect branches (fib, fn pointers, interpreter) | 0.407 | 0.938 | — | 43% | — |
 | zstd-c — zstd -6 compress 48 MB text | 0.541 | 1.131 | — | 48% | — |
 | zstd-d — zstd decompress 48 MB text | 0.044 | 0.101 | — | 43% | — |
+
+\* invalid: the tier-2 stale-XMM bug of 452f9a4 made the mandelbrot loop exit early (wrong result); fixed in b2cfb22.
 
 ## 2026-10-12 — Intel(R) Xeon(R) Processor @ 2.80GHz (commit 6b132b7) — flags dead at calls, DSE, spill fixes
 
