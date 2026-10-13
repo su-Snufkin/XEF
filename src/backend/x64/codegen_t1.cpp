@@ -138,7 +138,37 @@ void T1::analyze() {
         const Inst& in = I(v);
         VI& x = vi_[v];
         x.rres = 0;
-        if (x.dead || !(in.op == Op::FlagsSub || in.op == Op::FlagsAdd || in.op == Op::FlagsLogic)) continue;
+        x.fcmp_mode = 0;
+        if (x.dead) continue;
+        if (in.op == Op::FCmpFlags && !(live_out_ && fid(v) == final_flags_)) {
+            bool ok = true, m1 = true, m2 = true, gflag_active = false;
+            for (int u = v + 1; u < n && ok; u++) {
+                const Inst& c = I(u);
+                if (c.op == Op::SetFlags) { gflag_active = (fid(c.a) == v); continue; }
+                if (vi_[u].dead) continue;
+                if (gflag_active && (c.op == Op::Load || c.op == Op::Store || c.op == Op::VLoad || c.op == Op::VStore ||
+                                     c.op == Op::LoadExcl || c.op == Op::StoreExcl || c.op == Op::Cas || c.op == Op::AtomicRMW))
+                    ok = false;
+                bool uses_f = false;
+                for_operands(c, [&](Val o) { if (fid(o) == v) uses_f = true; });
+                if (!uses_f) continue;
+                if (c.op != Op::ExitCond && c.op != Op::Select && c.op != Op::VSelect) { ok = false; break; }
+                switch ((ir::Cond)c.aux) {
+                case ir::GT: case ir::LE: case ir::GE: case ir::LT: m2 = false; break;
+                case ir::MI: case ir::LO: case ir::PL: case ir::HS: case ir::HI: case ir::LS: m1 = false; break;
+                case ir::VS: case ir::VC: break;
+                default: ok = false; break;
+                }
+            }
+            if (ok && (m1 || m2)) {
+                x.fcmp_mode = m1 ? 1 : 2;
+                i32 L = x.last;
+                if (vi_[in.a].last < L) vi_[in.a].last = L;
+                if (vi_[in.b].last < L) vi_[in.b].last = L;
+            }
+            continue;
+        }
+        if (!(in.op == Op::FlagsSub || in.op == Op::FlagsAdd || in.op == Op::FlagsLogic)) continue;
         if (in.op == Op::FlagsLogic) x.rres = in.a;
         else if (v > 1 && I(v - 1).op == (in.op == Op::FlagsSub ? Op::Sub : Op::Add) && I(v - 1).a == in.a &&
                  I(v - 1).b == in.b && !vi_[v - 1].dead)
@@ -213,24 +243,35 @@ void T1::analyze() {
             });
         }
         for (int v = 1; v < n; v++) {
-            if (vi_[v].addr_c) { vi_[v].folded = true; continue; }
-            const Inst& in = I(v);
-            if (vi_[v].dead || !is_mem(in.op) || !vi_[in.a].addr_c) continue;
-            Val r = in.a;
-            while (vi_[r].addr_c) r = I(r).a;
-            extend_to(r, v);
+            if (vi_[v].addr_c) vi_[v].folded = true;
         }
     }
     for (int v = 1; v < n; v++) {
         const Inst& in = I(v);
         if (vi_[v].dead || !is_mem(in.op)) continue;
         Val a = in.a;
-        if (vi_[a].addr_c) continue;
+        i64 disp = 0;
+        while (vi_[a].addr_c) {
+            disp += (i64)I(I(a).b).imm;
+            a = I(a).a;
+        }
         const Inst& ad = I(a);
-        if (ad.op != Op::Add || vi_[a].uses != 1 || ad.ty != Type::I64) continue;
+        if (ad.op == Op::Shl && ad.ty == Type::I64 && I(ad.b).op == Op::Const && I(ad.b).imm <= 3 &&
+            vi_[a].uses == 1) {
+            vi_[a].folded = true;
+            extend_to(ad.a, v);
+            continue;
+        }
+        if (ad.op != Op::Add || vi_[a].uses != 1 || ad.ty != Type::I64) {
+            extend_to(a, v);
+            continue;
+        }
         const Inst& rhs = I(ad.b);
         if (rhs.op == Op::Const) {
-            if ((i64)rhs.imm != (i32)rhs.imm) continue;
+            if (disp + (i64)rhs.imm != (i32)(disp + (i64)rhs.imm)) {
+                extend_to(a, v);
+                continue;
+            }
             vi_[a].folded = true;
         } else if (rhs.op == Op::Shl && I(rhs.b).op == Op::Const && I(rhs.b).imm <= 3 && vi_[ad.b].uses == 1 &&
                    rhs.ty == Type::I64) {
@@ -434,10 +475,19 @@ Reg T1::dest_hint(Val v) {
     return NOREG;
 }
 
-Reg T1::dest_for(Val v, int size) {
+Reg T1::dest_for(Val v, int size, Reg reuse) {
     (void)size;
     Reg h = dest_hint(v);
-    Reg r = h != NOREG ? h : alloc_temp();
+    if (h != NOREG) {
+        pinned_ |= 1 << h;
+        return h;
+    }
+    if (reuse != NOREG && owner_[reuse] && vi_[owner_[reuse]].last <= cur_) {
+        owner_[reuse] = 0;
+        pinned_ |= 1 << reuse;
+        return reuse;
+    }
+    Reg r = alloc_temp();
     pinned_ |= 1 << r;
     return r;
 }
@@ -455,37 +505,40 @@ void T1::finish_def(Val v, Reg r) {
 }
 
 Mem T1::addr_mem(Val a) {
-    if (vi_[a].addr_c) {
-        i32 disp = 0;
-        while (vi_[a].addr_c) { disp += (i32)I(I(a).b).imm; a = I(a).a; }
-        if (is_c(a) && (i64)(cv(a) + disp) == (i32)(cv(a) + disp)) { Mem m; m.disp = (i32)(cv(a) + disp); return m; }
-        Reg base = to_reg(a);
-        pinned_ |= 1 << base;
-        return mem(base, disp);
+    i32 disp = 0;
+    while (vi_[a].addr_c) {
+        disp += (i32)I(I(a).b).imm;
+        a = I(a).a;
     }
     const Inst& ad = I(a);
     if (vi_[a].folded) {
+        if (ad.op == Op::Shl) {
+            Reg idx = to_reg(ad.a);
+            pinned_ |= 1 << idx;
+            if (idx == RSP) fatal("codegen: rsp index");
+            return mem_idx(idx, (int)I(ad.b).imm, disp);
+        }
         const Inst& rhs = I(ad.b);
         Reg base = to_reg(ad.a);
         pinned_ |= 1 << base;
-        if (rhs.op == Op::Const) return mem(base, (i32)rhs.imm);
+        if (rhs.op == Op::Const) return mem(base, disp + (i32)rhs.imm);
         if (rhs.op == Op::Shl && vi_[ad.b].folded) {
             Reg idx = to_reg(rhs.a);
             pinned_ |= 1 << idx;
             if (idx == RSP) fatal("codegen: rsp index");
-            return mem(base, idx, (int)I(rhs.b).imm, 0);
+            return mem(base, idx, (int)I(rhs.b).imm, disp);
         }
         Reg idx = to_reg(ad.b);
         pinned_ |= 1 << idx;
-        return mem(base, idx, 0, 0);
+        return mem(base, idx, 0, disp);
     }
     if (is_c(a)) {
-        u64 x = cv(a);
-        if ((i64)x == (i32)x) { Mem m; m.disp = (i32)x; return m; }
+        i64 x = (i64)cv(a) + disp;
+        if (x == (i32)x) { Mem m; m.disp = (i32)x; return m; }
     }
     Reg r = to_reg(a);
     pinned_ |= 1 << r;
-    return mem(r, 0);
+    return mem(r, disp);
 }
 
 // ------------------------------------------------------------------ main loop
@@ -516,7 +569,7 @@ bool T1::run() {
             as_.lea(8, RAX, mem(RAX, 1));
             as_.mov(8, rip(ctx_->exit_counter), RAX);
         }
-        emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, false);
+        emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, false);
         raw_exit_jmp(rstubs_[i].target);
     }
     // link stubs (cold)
@@ -727,15 +780,15 @@ void T1::emit_binop(Val v) {
         pinned_ |= 1 << ra;
         Reg d;
         if (in.op == Op::Add && fits_i32(b, s)) {
-            d = dest_for(v, s);
+            d = dest_for(v, s, ra);
             as_.lea(s, d, mem(ra, (i32)cv(b)));
         } else if (in.op == Op::Sub) {
-            d = dest_for(v, s);
+            d = dest_for(v, s, ra);
             as_.lea(s, d, mem(ra, -(i32)cv(b)));
         } else {
             Reg rb = to_reg(b);
             pinned_ |= 1 << rb;
-            d = dest_for(v, s);
+            d = dest_for(v, s, ra);
             as_.lea(s, d, mem(ra, rb, 0, 0));
         }
         finish_def(v, d);
@@ -766,11 +819,14 @@ void T1::emit_binop(Val v) {
     if (in.op == Op::And && is_c(b) && !fuse) {
         u64 m = cv(b);
         if (m == 0xff || m == 0xffff || (m == 0xffffffffull && s == 8)) {
-            Reg ra = to_reg(a); pinned_ |= 1 << ra;
-            Reg d = dest_for(v, s);
-            if (m == 0xff) as_.movzx8(d, ra);
-            else if (m == 0xffff) as_.movzx16(d, ra);
-            else as_.mov(4, d, ra);
+            Opnd oa = opnd(a, true, false, s);
+            if (oa.k == Opnd::R) pinned_ |= 1 << oa.r;
+            Reg d = dest_for(v, s, oa.k == Opnd::R ? oa.r : NOREG);
+            int msz = m == 0xff ? 1 : m == 0xffff ? 2 : 4;
+            if (oa.k == Opnd::M) as_.movzx_load(d, oa.m, msz);
+            else if (msz == 1) as_.movzx8(d, oa.r);
+            else if (msz == 2) as_.movzx16(d, oa.r);
+            else as_.mov(4, d, oa.r);
             finish_def(v, d);
             return;
         }
@@ -782,7 +838,7 @@ void T1::emit_binop(Val v) {
         if (in.op == Op::AndNot && g_host.bmi1) {
             Reg ra = to_reg(a); pinned_ |= 1 << ra;
             Reg rb = to_reg(b); pinned_ |= 1 << rb;
-            d = dest_for(v, s);
+            d = dest_for(v, s, ra);
             as_.andn(s, d, rb, ra);
         } else {
             Opnd oa = opnd(a, true, true, s);
@@ -790,7 +846,7 @@ void T1::emit_binop(Val v) {
             Opnd ob = opnd(b, true, true, s);
             if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
             AluOp op = in.op == Op::AndNot ? AND : in.op == Op::OrNot ? OR : XOR;
-            d = dest_for(v, s);
+            d = dest_for(v, s, ob.k == Opnd::R ? ob.r : NOREG);
             Reg t = d;
             if (oa.k == Opnd::R && oa.r == d) { t = alloc_temp(); pinned_ |= 1 << t; }
             emit_mov_opnd(s, t, ob);
@@ -804,13 +860,15 @@ void T1::emit_binop(Val v) {
         Opnd ob = opnd(b, true, true, s);
         if (ob.k == Opnd::I) {
             Reg ra = to_reg(a); pinned_ |= 1 << ra;
-            d = dest_for(v, s);
+            d = dest_for(v, s, ra);
             as_.imul_imm(s, d, ra, (i32)ob.imm);
         } else {
             if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
             Opnd oa = opnd(a, true, false, s);
             if (oa.k == Opnd::R) pinned_ |= 1 << oa.r;
-            d = dest_for(v, s);
+            Reg reuse = (oa.k == Opnd::R && owner_[oa.r] && vi_[owner_[oa.r]].last <= cur_) ? oa.r
+                      : (ob.k == Opnd::R ? ob.r : NOREG);
+            d = dest_for(v, s, reuse);
             if (ob.k == Opnd::R && ob.r == d) {
                 if (oa.k == Opnd::R) as_.imul(s, d, oa.r); else as_.imul(s, d, oa.m);
             } else {
@@ -828,7 +886,9 @@ void T1::emit_binop(Val v) {
         if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
         Opnd oa = opnd(a, true, true, s);
         if (oa.k == Opnd::R) pinned_ |= 1 << oa.r;
-        d = dest_for(v, s);
+        Reg reuse = (oa.k == Opnd::R && owner_[oa.r] && vi_[owner_[oa.r]].last <= cur_) ? oa.r
+                  : (comm && ob.k == Opnd::R ? ob.r : NOREG);
+        d = dest_for(v, s, reuse);
         if (oa.k == Opnd::R && oa.r == d) emit_alu(op, s, d, ob);
         else if (ob.k == Opnd::R && ob.r == d) {
             if (comm) emit_alu(op, s, d, oa);
@@ -867,13 +927,13 @@ void T1::emit_shift(Val v) {
         int k = (int)(cv(b) & (bitsz - 1));
         Reg ra = to_reg(a); pinned_ |= 1 << ra;
         if (in.op == Op::Ror && g_host.bmi2) {
-            Reg d = dest_for(v, s);
+            Reg d = dest_for(v, s, ra);
             as_.rorx(s, d, ra, (u8)k);
             finish_def(v, d);
             return;
         }
         if (in.op == Op::Shl && k >= 1 && k <= 3 && fneed) {
-            Reg d = dest_for(v, s);
+            Reg d = dest_for(v, s, ra);
             as_.lea(s, d, mem_idx(ra, k, 0));
             finish_def(v, d);
             return;
@@ -881,7 +941,7 @@ void T1::emit_shift(Val v) {
         if (fneed && g_host.bmi2 && in.op != Op::Ror) {
             Reg t = alloc_temp(); pinned_ |= 1 << t;
             as_.mov_imm(t, (u64)k);
-            Reg d = dest_for(v, s);
+            Reg d = dest_for(v, s, ra);
             if (in.op == Op::Shl) as_.shlx(s, d, ra, t);
             else if (in.op == Op::Lshr) as_.shrx(s, d, ra, t);
             else as_.sarx(s, d, ra, t);
@@ -889,7 +949,7 @@ void T1::emit_shift(Val v) {
             return;
         }
         clobber_flags();
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, ra);
         if (d != ra) as_.mov(s, d, ra);
         ShiftOp op = in.op == Op::Shl ? SHL : in.op == Op::Lshr ? SHR : in.op == Op::Ashr ? SAR : ROR;
         as_.shift_imm(op, s, d, (u8)k);
@@ -900,7 +960,7 @@ void T1::emit_shift(Val v) {
     if (g_host.bmi2 && in.op != Op::Ror) {
         Reg ra = to_reg(a); pinned_ |= 1 << ra;
         Reg rb = to_reg(b); pinned_ |= 1 << rb;
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, ra);
         if (in.op == Op::Shl) as_.shlx(s, d, ra, rb);
         else if (in.op == Op::Lshr) as_.shrx(s, d, ra, rb);
         else as_.sarx(s, d, ra, rb);
@@ -917,7 +977,7 @@ void T1::emit_shift(Val v) {
         load_into(RCX, b, 4);
     } else pinned_ |= 1 << RCX;
     Reg ra = to_reg(a); pinned_ |= 1 << ra;
-    Reg d = dest_for(v, s);
+    Reg d = dest_for(v, s, ra != RCX ? ra : NOREG);
     if (d == RCX) { Reg t = alloc_temp(); pinned_ |= 1 << t; d = t; }
     if (d != ra) as_.mov(s, d, ra);
     ShiftOp op = in.op == Op::Shl ? SHL : in.op == Op::Lshr ? SHR : in.op == Op::Ashr ? SAR : ROR;
@@ -933,14 +993,14 @@ void T1::emit_misc_unary(Val v) {
     Reg ra = to_reg(a); pinned_ |= 1 << ra;
     switch (in.op) {
     case Op::Not: {
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, ra);
         if (d != ra) as_.mov(s, d, ra);
         as_.not_(s, d);  // NOT does not affect flags
         finish_def(v, d);
         return;
     }
     case Op::Bswap: {
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, ra);
         if (d != ra || s == 4) as_.mov(s, d, ra);
         as_.bswap(s, d);
         finish_def(v, d);
@@ -948,7 +1008,7 @@ void T1::emit_misc_unary(Val v) {
     }
     case Op::Rev32InWords: {
         clobber_flags();
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, ra);
         if (d != ra) as_.mov(8, d, ra);
         as_.bswap(8, d);
         as_.shift_imm(ROR, 8, d, 32);
@@ -960,7 +1020,7 @@ void T1::emit_misc_unary(Val v) {
     clobber_flags();
     switch (in.op) {
     case Op::Neg: {
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, ra);
         if (d != ra) as_.mov(s, d, ra);
         as_.neg(s, d);
         finish_def(v, d);
@@ -976,7 +1036,7 @@ void T1::emit_misc_unary(Val v) {
             as_.alu(XOR, s, t, ra);
             src = t;
         }
-        d = dest_for(v, s);
+        d = dest_for(v, s, ra);
         if (g_host.lzcnt) as_.lzcnt(s, d, src);
         else {
             // bsr: undefined for 0 -> use cmov
@@ -991,7 +1051,7 @@ void T1::emit_misc_unary(Val v) {
         return;
     }
     case Op::Rev16: {
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, s == 4 ? ra : NOREG);
         if (s == 4) {
             if (d != ra) as_.mov(4, d, ra);
             as_.bswap(4, d);
@@ -1017,7 +1077,7 @@ void T1::emit_misc_unary(Val v) {
         // bswap, then swap nibbles, bit-pairs and bits with masks
         Reg t = alloc_temp(); pinned_ |= 1 << t;
         Reg m = alloc_temp(); pinned_ |= 1 << m;
-        Reg x = dest_for(v, s);
+        Reg x = dest_for(v, s, ra);
         if (x == t || x == m) fatal("rbit regs");
         if (x != ra) as_.mov(s, x, ra);
         as_.bswap(s, x);
@@ -1049,20 +1109,32 @@ void T1::emit_ext(Val v) {
     }
     Val a = in.a;
     pin(a);
+    if (in.op == Op::Zext && (from == 8 || from == 16 || from == 32)) {
+        Opnd oa = opnd(a, true, false, s);
+        if (oa.k == Opnd::R) pinned_ |= 1 << oa.r;
+        Reg d = dest_for(v, s, oa.k == Opnd::R ? oa.r : NOREG);
+        if (oa.k == Opnd::M) as_.movzx_load(d, oa.m, from / 8);
+        else if (from == 8) as_.movzx8(d, oa.r);
+        else if (from == 16) as_.movzx16(d, oa.r);
+        else as_.mov(4, d, oa.r);
+        finish_def(v, d);
+        return;
+    }
+    if (in.op == Op::Sext && (from == 8 || from == 16 || (from == 32 && s == 8))) {
+        Opnd oa = opnd(a, true, false, s);
+        if (oa.k == Opnd::R) pinned_ |= 1 << oa.r;
+        Reg d = dest_for(v, s, oa.k == Opnd::R ? oa.r : NOREG);
+        if (oa.k == Opnd::M) as_.movsx_load(s, d, oa.m, from / 8);
+        else as_.movsx(s, d, oa.r, from / 8);
+        finish_def(v, d);
+        return;
+    }
     Reg ra = to_reg(a); pinned_ |= 1 << ra;
     if (in.op == Op::Zext) {
-        if (from == 8 || from == 16 || from == 32) {
-            Reg d = dest_for(v, s);
-            if (from == 8) as_.movzx8(d, ra);
-            else if (from == 16) as_.movzx16(d, ra);
-            else as_.mov(4, d, ra);
-            finish_def(v, d);
-            return;
-        }
         u64 m = (1ull << from) - 1;
         if (m <= 0x7fffffff) {
             clobber_flags();
-            Reg d = dest_for(v, s);
+            Reg d = dest_for(v, s, ra);
             if (d != ra) as_.mov(s, d, ra);
             as_.alu_imm(AND, s, d, (i32)m);
             finish_def(v, d);
@@ -1072,7 +1144,7 @@ void T1::emit_ext(Val v) {
         bool fneed = flags_needed_after(cur_);
         if (fneed && g_host.bmi2) {
             Reg t = alloc_temp(); pinned_ |= 1 << t;
-            Reg d = dest_for(v, s);
+            Reg d = dest_for(v, s, ra);
             as_.mov_imm(t, (u64)(s * 8 - from));
             as_.shlx(s, d, ra, t);
             as_.shrx(s, d, d, t);
@@ -1080,7 +1152,7 @@ void T1::emit_ext(Val v) {
             return;
         }
         clobber_flags();
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, ra);
         if (d != ra) as_.mov(s, d, ra);
         as_.shift_imm(SHL, s, d, (u8)(s * 8 - from));
         as_.shift_imm(SHR, s, d, (u8)(s * 8 - from));
@@ -1088,16 +1160,10 @@ void T1::emit_ext(Val v) {
         return;
     }
     // Sext
-    if (from == 8 || from == 16 || (from == 32 && s == 8)) {
-        Reg d = dest_for(v, s);
-        as_.movsx(s, d, ra, from / 8);
-        finish_def(v, d);
-        return;
-    }
     bool fneed = flags_needed_after(cur_);
     if (fneed && g_host.bmi2) {
         Reg t = alloc_temp(); pinned_ |= 1 << t;
-        Reg d = dest_for(v, s);
+        Reg d = dest_for(v, s, ra);
         as_.mov_imm(t, (u64)(s * 8 - from));
         as_.shlx(s, d, ra, t);
         as_.sarx(s, d, d, t);
@@ -1105,7 +1171,7 @@ void T1::emit_ext(Val v) {
         return;
     }
     clobber_flags();
-    Reg d = dest_for(v, s);
+    Reg d = dest_for(v, s, ra);
     if (d != ra) as_.mov(s, d, ra);
     as_.shift_imm(SHL, s, d, (u8)(s * 8 - from));
     as_.shift_imm(SAR, s, d, (u8)(s * 8 - from));
@@ -1207,8 +1273,30 @@ void T1::emit_flags(Val v, bool, Reg) {
     eflags_ = v;
 }
 
+Cond T1::cond_for(Val f, ir::Cond c) const {
+    f = fid(f);
+    if (f && f != kEntryFlags && vi_[f].fcmp_mode) {
+        switch (c) {
+        case ir::GT: case ir::MI: case ir::LO: return CA;
+        case ir::LE: case ir::PL: case ir::HS: return CBE;
+        case ir::GE: case ir::LS: return CAE;
+        case ir::LT: case ir::HI: return CB;
+        case ir::VS: return CP;
+        case ir::VC: return CNP;
+        default: break;
+        }
+    }
+    return x86_cond(c);
+}
+
 void T1::remat_flags(Val f, u8 cond) {
     const Inst& in = I(f);
+    if (in.op == Op::FCmpFlags) {
+        Xmm xa = xreg(in.a), xb = xreg(in.b);
+        if (vi_[f].fcmp_mode == 2) { Xmm t = xa; xa = xb; xb = t; }
+        as_.xop1({(u8)(in.size == 8 ? 0x66 : 0), 1, 0x2E, 0}, xa, xb);
+        return;
+    }
     int s = in.size / 8;
     bool nz_only = cond == ir::EQ || cond == ir::NE || cond == ir::MI || cond == ir::PL;
     if (in.op == Op::FlagsLogic || (nz_only && vi_[f].rres)) {
@@ -1289,7 +1377,7 @@ void T1::emit_adc_sbc(Val v, bool flags_out, Val) {
 void T1::emit_select(Val v) {
     const Inst& in = I(v);
     int s = sz(in.ty);
-    Cond c = x86_cond((ir::Cond)in.aux);
+    Cond c = cond_for(in.a, (ir::Cond)in.aux);
     pin(in.b); pin(in.c);
     // cset patterns
     if (is_c(in.b) && is_c(in.c)) {
@@ -1757,7 +1845,7 @@ void T1::emit_terminator(Val v) {
         // the final flags value unless something set flags after (impossible: B.cond ends block)
         ensure_flags();
         need_flags(f, in.aux);
-        exit_jcc(x86_cond((ir::Cond)in.aux), in.imm);
+        exit_jcc(cond_for(f, (ir::Cond)in.aux), in.imm);
         exit_jmp(in.imm2);
         return;
     }
@@ -1875,12 +1963,17 @@ void T1::emit_terminator(Val v) {
 
 }  // namespace t1
 
-void emit_region_xfer(Assembler& as, const RegionXfer* x, int n, bool enter) {
+void emit_region_xfer(Assembler& as, const RegionXfer* x, int n, const RegionVXfer* vx, int nv, bool enter) {
     for (int i = 0; i < n; i++) {
         const RegionXfer& r = x[i];
         int from = enter ? r.g_canon : r.g_region, to = enter ? r.g_region : r.g_canon;
         if (from >= 0 && (enter || r.written)) as.mov(8, mem(R15, st_x(from)), r.h);
         if (to >= 0) as.mov(8, r.h, mem(R15, st_x(to)));
+    }
+    for (int i = 0; i < nv; i++) {
+        const RegionVXfer& r = vx[i];
+        if (enter) as.movdqu_load(r.h, mem(R15, st_v(r.g)));
+        else if (r.written) as.movdqu_store(mem(R15, st_v(r.g)), r.h);
     }
 }
 

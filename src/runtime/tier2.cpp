@@ -33,6 +33,7 @@ namespace xef {
 
 using namespace x64;
 using backend::RegionXfer;
+using backend::RegionVXfer;
 
 int g_tier2_threshold = 3;
 static int g_pipe[2] = {-1, -1};
@@ -99,6 +100,7 @@ static bool compile_region(GuestAddr head) {
     Region R;
     R.pcs[R.n++] = head;
     int uses[32] = {0}, writes[32] = {0};
+    int vuses[32] = {0}, vwrites[32] = {0};
     for (int qi = 0; qi < R.n; qi++) {
         a64::translate_block(R.pcs[qi], blk, topt);
         GuestAddr succ[2];
@@ -114,6 +116,8 @@ static bool compile_region(GuestAddr head) {
             const ir::Inst& in = blk.insts[v];
             if (in.op == ir::Op::GetReg || in.op == ir::Op::SetReg) uses[in.aux] += 1;
             if (in.op == ir::Op::SetReg) writes[in.aux] += 1;
+            if (in.op == ir::Op::VGet || in.op == ir::Op::VSet) vuses[in.aux] += 1;
+            if (in.op == ir::Op::VSet) vwrites[in.aux] += 1;
         }
         for (int k = 0; k < ns; k++) {
             if (R.contains(succ[k]) || R.n >= kMaxRegionBlocks) continue;
@@ -134,7 +138,10 @@ static bool compile_region(GuestAddr head) {
         direct_terminator(blk, succ, &ns);
         for (int k = 0; k < ns; k++) if (R.contains(succ[k])) loops = true;
     }
-    if (!loops) return false;
+    if (!loops) {
+        if (hm->exec_count < (u64)g_tier2_threshold * 16) hm->tier = 1;  // allow retry once successors are translated
+        return false;
+    }
 
     // ---- NZCV liveness over the region CFG (more precise than per-block lookahead)
     bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], f_live_in[kMaxRegionBlocks];
@@ -211,6 +218,21 @@ static bool compile_region(GuestAddr head) {
         xfer[nxfer++] = {h, (i8)gr, (i8)gc, gr >= 0 && writes[gr] > 0};
     }
 
+    // ---- vector register mapping (pin up to 10 hot guest V registers in XMM6..XMM15; XMM0..XMM5 stay scratch)
+    u8 vmap[32];
+    memset(vmap, NOREG, sizeof vmap);
+    RegionVXfer vxfer[10];
+    int nvxfer = 0;
+    int vcand[32], nvc = 0;
+    for (int g = 0; g < 32; g++) if (vuses[g] > 0) vcand[nvc++] = g;
+    std::sort(vcand, vcand + nvc, [&](int a, int b) { return vuses[a] > vuses[b]; });
+    for (int i = 0; i < nvc && i < 10; i++) {
+        int g = vcand[i];
+        Xmm h = (Xmm)(XMM6 + i);
+        vmap[g] = (u8)h;
+        vxfer[nvxfer++] = {h, (u8)g, vwrites[g] > 0};
+    }
+
     // ---- runtime feedback record
     RegionInfo* ri = new RegionInfo();
     ri->head_t1 = hm;
@@ -219,7 +241,7 @@ static bool compile_region(GuestAddr head) {
     ri->branches = nullptr;
     ri->nbranches = 0;
     ri->killed = false;
-    for (int g = 0; g < 32; g++) ri->map[g] = (u8)map[g];
+    for (int g = 0; g < 32; g++) { ri->map[g] = (u8)map[g]; ri->vmap[g] = vmap[g]; }
     ri->exit_counter = (u64*)g_cache.alloc_data(8);
     *ri->exit_counter = 0;
 
@@ -227,6 +249,7 @@ static bool compile_region(GuestAddr head) {
     backend::CodegenCtx ctx;
     ctx.exit_counter = ri->exit_counter;
     ctx.map = map;
+    ctx.vmap = vmap;
     ctx.temps = temps;
     ctx.ntemps = ntemps;
     ctx.region = true;
@@ -234,6 +257,8 @@ static bool compile_region(GuestAddr head) {
     ctx.user = &R;
     ctx.xfer = xfer;
     ctx.nxfer = nxfer;
+    ctx.vxfer = vxfer;
+    ctx.nvxfer = nvxfer;
 
     // entry stub
     BlockMeta* entry = g_cache.alloc_meta(0);
@@ -242,7 +267,7 @@ static bool compile_region(GuestAddr head) {
     entry->tier = 2;
     u8* ecode = g_cache.alloc_code(1024);
     Assembler eas(ecode, 1024);
-    backend::emit_region_xfer(eas, xfer, nxfer, true);
+    backend::emit_region_xfer(eas, xfer, nxfer, vxfer, nvxfer, true);
     eas.db(0xE9);
     u8* entry_fix = eas.cur();
     eas.dd(0);
@@ -256,7 +281,7 @@ static bool compile_region(GuestAddr head) {
         // this must come after the entry stub is committed or the two would overlap.
         u8* sc = g_cache.alloc_code(1024);
         Assembler sas(sc, 1024);
-        backend::emit_region_xfer(sas, xfer, nxfer, false);
+        backend::emit_region_xfer(sas, xfer, nxfer, vxfer, nvxfer, false);
         sas.jmp_rel32(g_cache.stubs.exit_to_runtime);
         g_cache.commit_code(sc, sas.size());
         ri->sig_exit = sc;
@@ -347,7 +372,13 @@ static void demote_region(RegionInfo* ri) {
     hm->incoming = entry->incoming;
     entry->incoming = nullptr;
     for (ExitInfo* e = hm->incoming; e; e = e->next_in) link_exit(e, hm->code);
-    hm->tier = 4;  // never promote again
+    if (!(hm->flags & BF_DEMOTED_ONCE)) {
+        hm->flags |= BF_DEMOTED_ONCE;
+        hm->tier = 1;
+        hm->exec_count = 0;
+    } else {
+        hm->tier = 4;  // never promote again
+    }
     if (!(hm->flags & BF_DEAD)) g_cache.publish(hm);
     if (g_opt.stats) g_stats.regions_demoted++;
     XEF_LOG(1, "tier2: demoted region %#lx (exits=%lu samples=%lu)", (unsigned long)hm->start,
@@ -398,7 +429,8 @@ static void sample_handler(int sig, siginfo_t* si, void* ctx) {
         }
         return;
     }
-    if (b->tier == 1 && c == (u64)g_tier2_threshold && g_pipe[1] >= 0) {
+    u64 th = (u64)g_tier2_threshold;
+    if (b->tier == 1 && (c == th || c == th * 4 || c == th * 16) && g_pipe[1] >= 0) {
         GuestAddr pc = b->start;
         ssize_t w = write(g_pipe[1], &pc, sizeof pc);
         (void)w;

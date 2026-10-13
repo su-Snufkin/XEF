@@ -30,6 +30,7 @@ struct RegionInfo {
     bool demoted;
     u8* sig_exit;         // region -> canonical transfer + exit_to_runtime (signal delivery)
     u8 map[32];           // region register mapping: guest reg -> host reg (0xff: CpuState)
+    u8 vmap[32];          // region vector mapping: guest V reg -> host Xmm (0xff: CpuState)
     BlockMeta** blocks;   // member blocks (tier 2 code)
     int nblocks;
     struct Branch { u8* field; int target; };   // aligned rel32 of jumps to member blocks
@@ -78,7 +79,7 @@ struct ExitInfo {
     u8 linked;
 };
 
-enum : u8 { BF_DEAD = 1 };   // BlockMeta::flags
+enum : u8 { BF_DEAD = 1, BF_DEMOTED_ONCE = 2 };   // BlockMeta::flags
 
 struct BlockMeta {
     GuestAddr start;

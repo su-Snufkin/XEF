@@ -258,6 +258,8 @@ static bool deliver_sync_fault(int sig, siginfo_t* si, ucontext_t* uc) {
     for (int g = 0; g < 32; g++) {
         x64::Reg h = block_host_reg(b, g);
         if (h != x64::NOREG && !(e->borrowed & (1 << h))) st->x[g] = (u64)gr[host_greg_index(h)];
+        if (b && b->region && b->region->vmap[g] != x64::NOREG && uc->uc_mcontext.fpregs)
+            memcpy(&st->v[g], &uc->uc_mcontext.fpregs->_xmm[b->region->vmap[g]], 16);
     }
     st->pc = b->start + e->guest_off;
     u64 efl = e->flags_loc == PCF_SPILL ? st->flags_spill : (u64)gr[REG_EFL];

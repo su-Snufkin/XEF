@@ -19,15 +19,25 @@ struct RegionXfer {
     bool written; // g_region is written inside the region (needs write-back on exit)
 };
 
+// One host XMM register holding a guest V register inside a tier-2 region.
+struct RegionVXfer {
+    x64::Xmm h;
+    u8 g;         // guest V reg (0..31) held in h inside the region
+    bool written; // g is written inside the region (needs write-back on exit)
+};
+
 struct CodegenCtx {
     const x64::Reg* map = nullptr;   // guest -> host (nullptr: canonical regmap)
     const x64::Reg* temps = nullptr;
     int ntemps = 0;
+    const u8* vmap = nullptr;        // guest V -> host Xmm (nullptr: all in CpuState)
     bool region = false;
     bool (*is_internal)(void* user, GuestAddr target) = nullptr;
     void* user = nullptr;
     const RegionXfer* xfer = nullptr;
     int nxfer = 0;
+    const RegionVXfer* vxfer = nullptr;
+    int nvxfer = 0;
     u64* exit_counter = nullptr;   // region exit counter (RIP-addressable)
 };
 
@@ -46,7 +56,8 @@ struct CodegenOut {
 };
 
 // Emits canonical -> region (enter=true) or region -> canonical register transfers.
-void emit_region_xfer(x64::Assembler& as, const RegionXfer* x, int n, bool enter);
+void emit_region_xfer(x64::Assembler& as, const RegionXfer* x, int n,
+                      const RegionVXfer* vx, int nv, bool enter);
 
 // Emits tier-1 code for `b` at as.cur(). Exits are recorded in meta->exits
 // and point at per-exit link stubs emitted after the block body.

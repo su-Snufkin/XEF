@@ -122,6 +122,12 @@ public:
             default: break;
             }
         }
+        if (is_const(a) && !is_const(b)) {
+            if (op == Op::Add || op == Op::And || op == Op::Or || op == Op::Xor || op == Op::Mul) {
+                Val t = a; a = b; b = t;
+            } else if (op == Op::Sub && cval(a) == 0)
+                return unop(Op::Neg, ty, b);
+        }
         if (is_const(b)) {
             u64 y = cval(b);
             switch (op) {
@@ -133,17 +139,9 @@ public:
                 if (y == mask(ty)) return a;
                 if (y == 0) return b;
                 break;
-            default: break;
-            }
-        }
-        if (is_const(a)) {
-            u64 x = cval(a);
-            switch (op) {
-            case Op::Add: case Op::Or: case Op::Xor:
-                if (x == 0) return b;
-                break;
-            case Op::And:
-                if (x == 0) return a;
+            case Op::Mul:
+                if (y == 1) return a;
+                if (y == 0) return b;
                 break;
             default: break;
             }

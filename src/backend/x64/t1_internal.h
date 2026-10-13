@@ -17,20 +17,22 @@ Cond x86_cond(ir::Cond c);
 
 namespace t1 {
 
-enum LocKind : u8 { L_NONE, L_REG, L_GREG, L_GMEM, L_CONST, L_SPILL, L_ALIAS, L_XMM, L_VMEM, L_VSPILL };
+enum LocKind : u8 { L_NONE, L_REG, L_GREG, L_GMEM, L_CONST, L_SPILL, L_ALIAS, L_XMM, L_VXMM, L_VMEM, L_VSPILL };
 
 struct VI {
     LocKind k = L_NONE;
-    u8 reg = 0;        // host reg (L_REG / L_GREG) or xmm
+    u8 reg = 0;        // host reg (L_REG / L_GREG) or xmm (L_XMM / L_VXMM)
     u8 g = 0;          // guest reg index for L_GREG / L_GMEM
     i8 home = -1;      // guest reg whose current value equals this value
     i8 slot = -1;      // spill slot
-    i8 vhome = -1;     // vector register whose CpuState slot holds this value
+    i8 vhome = -1;     // vector register whose CpuState slot / mapped XMM holds this value
     Val rres = 0;      // flags values: result value usable for test-based remat (Z/N)
     bool dead = false;
     bool folded = false;
     bool addr_c = false;   // constant add used only as a memory address: folded into [base + disp]
     bool clean32 = false;
+    u8 clean_vec = 0;      // 4 or 8: bits above 32 or 64 of this V128 value are known zero
+    u8 fcmp_mode = 0;      // FCmpFlags: 1 = direct ucomis(a,b), 2 = swapped ucomis(b,a)
     u16 uses = 0;
     i32 last = 0;
 };
@@ -53,6 +55,12 @@ public:
             map_ = ctx->map;
             ntemps_ = 0;
             for (int i = 0; i < ctx->ntemps; i++) temps_[ntemps_++] = ctx->temps[i];
+        }
+        memset(vmap_, NOREG, sizeof vmap_);
+        if (ctx && ctx->vmap) {
+            memcpy(vmap_, ctx->vmap, 32);
+            for (int g = 0; g < 32; g++)
+                if (vmap_[g] != NOREG) xtemp_mask_ &= ~(1u << vmap_[g]);
         }
     }
     bool run();
@@ -104,17 +112,23 @@ private:
     const Reg* map_ = regmap::kMap;
     Reg temps_[12] = {RAX, RCX, R11};
     int ntemps_ = 3;
+    u8 vmap_[32];
+    u16 xtemp_mask_ = 0xffff;
     Reg host(int g) const { return map_[g]; }
     bool mapped(int g) const { return map_[g] != NOREG; }
+    Xmm vhost(int g) const { return (Xmm)vmap_[g]; }
+    bool vmapped(int g) const { return vmap_[g] != NOREG; }
     bool is_temp_reg(Reg r) const { for (int i = 0; i < ntemps_; i++) if (temps_[i] == r) return true; return false; }
     static bool caller_saved(Reg r) {
         return r == RAX || r == RCX || r == RDX || r == RSI || r == RDI || r == R8 || r == R9 || r == R10 || r == R11;
     }
     void save_caller_saved_guests() {
         for (int g = 0; g < 32; g++) if (mapped(g) && caller_saved(host(g))) as_.mov(8, gmem(g), host(g));
+        for (int g = 0; g < 32; g++) if (vmapped(g)) as_.movdqu_store(mem(R15, st_v(g)), vhost(g));
     }
     void restore_caller_saved_guests() {
         for (int g = 0; g < 32; g++) if (mapped(g) && caller_saved(host(g))) as_.mov(8, host(g), gmem(g));
+        for (int g = 0; g < 32; g++) if (vmapped(g)) as_.movdqu_load(vhost(g), mem(R15, st_v(g)));
     }
 
     const Inst& I(Val v) const { return b_.insts[v]; }
@@ -157,8 +171,10 @@ private:
     bool remat_ok(Val f) const {
         if (!f || f == kEntryFlags) return false;
         Op o = I(f).op;
-        return o == Op::FlagsSub || o == Op::FlagsAdd || o == Op::FlagsLogic;
+        return o == Op::FlagsSub || o == Op::FlagsAdd || o == Op::FlagsLogic ||
+               (o == Op::FCmpFlags && vi_[f].fcmp_mode != 0);
     }
+    Cond cond_for(Val f, ir::Cond c) const;
     void clobber_flags() {
         if (flags_needed_after(cur_) && !remat_ok(eflags_)) {
             as_.pushfq();
@@ -212,7 +228,7 @@ private:
     void pin(Val v) { v = resolve(v); if (vi_[v].k == L_REG || vi_[v].k == L_GREG) pinned_ |= 1 << vi_[v].reg; }
     void release_operands(const Inst& in);
     void evacuate_guest(int g, int upto, Val keep = 0);   // keep: the value being written (stays in g)
-    Reg dest_for(Val v, int size);
+    Reg dest_for(Val v, int size, Reg reuse = NOREG);
     Reg dest_hint(Val v);
     void finish_def(Val v, Reg r);
     bool is_c(Val v) const { return I(resolve(v)).op == Op::Const; }
@@ -257,9 +273,9 @@ private:
     Xmm alloc_x();
     void evict_x(int x);
     Xmm xreg(Val v);
-    void xpin(Val v) { v = resolve(v); if (vi_[v].k == L_XMM) xpinned_ |= 1 << vi_[v].reg; }
-    void evacuate_vreg(int r, int upto);
-    Xmm new_x(Val v) { Xmm x = alloc_x(); vi_[v].k = L_XMM; vi_[v].reg = x; xowner_[x] = v; xpinned_ |= 1 << x; return x; }
+    void xpin(Val v) { v = resolve(v); if (vi_[v].k == L_XMM || vi_[v].k == L_VXMM) xpinned_ |= 1 << vi_[v].reg; }
+    void evacuate_vreg(int r, int upto, Val keep = 0);
+    Xmm new_x(Val v, int reuse = -1);
     void emit_vop(Val v);
     void emit_vec_helper(Val v);
     void load_vconst(Xmm x, u64 lo, u64 hi);

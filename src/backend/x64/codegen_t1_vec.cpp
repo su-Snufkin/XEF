@@ -67,10 +67,10 @@ using namespace sse;
 
 Xmm T1::alloc_x() {
     for (int i = 0; i < 16; i++)
-        if (!xowner_[i] && !(xpinned_ & (1 << i))) return (Xmm)i;
+        if ((xtemp_mask_ & (1 << i)) && !xowner_[i] && !(xpinned_ & (1 << i))) return (Xmm)i;
     int best = -1, best_score = -1;
     for (int i = 0; i < 16; i++) {
-        if (xpinned_ & (1 << i)) continue;
+        if (!(xtemp_mask_ & (1 << i)) || (xpinned_ & (1 << i))) continue;
         Val o = xowner_[i];
         int score = vi_[o].last + (vi_[o].vhome >= 0 ? 100000 : 0);
         if (score > best_score) { best_score = score; best = i; }
@@ -85,7 +85,8 @@ void T1::evict_x(int x) {
     if (!o) return;
     VI& vi = vi_[o];
     if (vi.vhome >= 0) {
-        vi.k = L_VMEM;
+        if (vmapped(vi.vhome)) { vi.k = L_VXMM; vi.reg = vhost(vi.vhome); }
+        else vi.k = L_VMEM;
     } else {
         auto free_slot = [&]() {
             for (int i = 0; i < 64; i++) if (!(vspill_used_ & (1ull << i))) return i;
@@ -120,8 +121,16 @@ Xmm T1::xreg(Val v) {
     Val r = resolve(v);
     VI& x = vi_[r];
     const Inst& in = I(r);
-    if (x.k == L_XMM) { xpinned_ |= 1 << x.reg; return (Xmm)x.reg; }
-    if (x.k == L_NONE && in.op == Op::VGet) { x.k = L_VMEM; x.vhome = (i8)in.aux; }
+    if (x.k == L_XMM || x.k == L_VXMM) { xpinned_ |= 1 << x.reg; return (Xmm)x.reg; }
+    if (x.k == L_NONE && in.op == Op::VGet) {
+        int g = in.aux;
+        if (vmapped(g)) {
+            x.k = L_VXMM; x.reg = vhost(g); x.vhome = (i8)g;
+            xpinned_ |= 1 << x.reg;
+            return (Xmm)x.reg;
+        }
+        x.k = L_VMEM; x.vhome = (i8)g;
+    }
     if (x.k == L_NONE && in.op == Op::VConst) {
         Xmm t = new_x(r);
         load_vconst(t, in.imm, in.imm2);
@@ -140,22 +149,56 @@ Xmm T1::xreg(Val v) {
     return t;
 }
 
-void T1::evacuate_vreg(int g, int upto) {
+void T1::evacuate_vreg(int g, int upto, Val keep) {
     for (int v = 1; v < cur_; v++) {
         VI& x = vi_[v];
-        if (x.dead || x.last <= upto) continue;
+        if (x.dead || x.last <= upto || v == keep) continue;
         const Inst& in = I(v);
         bool lazy = x.k == L_NONE && in.op == Op::VGet && in.aux == g;
         if (x.vhome == g || lazy) {
-            if (x.k == L_VMEM || lazy) {
-                if (lazy) { x.k = L_VMEM; x.vhome = (i8)g; }
+            if (x.k == L_VXMM || x.k == L_VMEM || lazy) {
                 Xmm t = alloc_x();
-                as_.movdqu_load(t, mem(R15, st_v(g)));
+                if (vmapped(g)) as_.movaps(t, vhost(g));
+                else as_.movdqu_load(t, mem(R15, st_v(g)));
                 x.k = L_XMM; x.reg = t; xowner_[t] = (Val)v;
             }
             x.vhome = -1;
         }
     }
+}
+
+Xmm T1::new_x(Val v, int reuse) {
+    if (v == cur_) {
+        int nx = v + 1;
+        while (nx < b_.n && (vi_[nx].dead || vi_[nx].folded || I(nx).op == Op::Nop)) nx++;
+        if (nx < b_.n) {
+            const Inst& s = I(nx);
+            if (s.op == Op::VSet && vmapped(s.aux) && resolve(s.a) == v) {
+                Xmm h = vhost(s.aux);
+                if (!(xpinned_ & (1 << h)) || (int)h == reuse) {
+                    xpinned_ |= 1 << h;
+                    evacuate_vreg(s.aux, cur_);
+                    vi_[v].k = L_VXMM;
+                    vi_[v].reg = h;
+                    vi_[v].vhome = (i8)s.aux;
+                    return h;
+                }
+            }
+        }
+    }
+    if (reuse >= 0 && (xtemp_mask_ & (1 << reuse)) && xowner_[reuse] && vi_[xowner_[reuse]].last <= cur_) {
+        vi_[v].k = L_XMM;
+        vi_[v].reg = (u8)reuse;
+        xowner_[reuse] = v;
+        xpinned_ |= 1 << reuse;
+        return (Xmm)reuse;
+    }
+    Xmm x = alloc_x();
+    vi_[v].k = L_XMM;
+    vi_[v].reg = x;
+    xowner_[x] = v;
+    xpinned_ |= 1 << x;
+    return x;
 }
 
 void T1::zero_upper(Xmm x, int bytes) {
@@ -213,11 +256,33 @@ void T1::emit_vec(Val v) {
     const Inst& in = I(v);
     switch (in.op) {
     case Op::VGet: return;  // lazy: lives in CpuState until used
-    case Op::VConst: return;  // materialized on use
+    case Op::VConst:
+        if (in.imm2 == 0) vi_[v].clean_vec = (in.imm >> 32) == 0 ? 4 : 8;
+        return;  // materialized on use
     case Op::VSet: {
         int g = in.aux;
         Val src = resolve(in.a);
         VI& x = vi_[src];
+        if (vmapped(g)) {
+            Xmm h = vhost(g);
+            if ((x.k == L_VXMM || x.k == L_XMM) && x.reg == h) {
+                evacuate_vreg(g, cur_, src);
+                x.vhome = (i8)g;
+                x.k = L_VXMM;
+                return;
+            }
+            xpinned_ |= 1 << h;
+            evacuate_vreg(g, cur_);
+            if (x.k == L_NONE && I(src).op == Op::VConst && x.last <= cur_) {
+                load_vconst(h, I(src).imm, I(src).imm2);
+                return;
+            }
+            Xmm t = xreg(src);
+            if (t != h) as_.movaps(h, t);
+            if (x.k == L_XMM && xowner_[x.reg] == src) xowner_[x.reg] = 0;
+            if (I(src).op != Op::VConst) { x.k = L_VXMM; x.reg = h; x.vhome = (i8)g; }
+            return;
+        }
         if (x.k == L_VMEM && x.vhome == g) return;  // writing back the same value
         evacuate_vreg(g, cur_);
         Xmm t = xreg(src);
@@ -231,12 +296,13 @@ void T1::emit_vec(Val v) {
         record_pc();
         switch (in.size) {
         case 16: as_.movdqu_load(x, m); break;
-        case 8: as_.movq_load(x, m); break;
-        case 4: as_.movd_load(x, m); break;
+        case 8: as_.movq_load(x, m); vi_[v].clean_vec = 8; break;
+        case 4: as_.movd_load(x, m); vi_[v].clean_vec = 4; break;
         case 2: case 1: {
             Reg t = alloc_temp(); pinned_ |= 1 << t;
             as_.movzx_load(t, m, in.size);
             as_.movd_xr(x, t);
+            vi_[v].clean_vec = 4;
             break;
         }
         default: fatal("vload size");
@@ -297,6 +363,8 @@ void T1::emit_vec(Val v) {
             case 4: as_.xop1(PSHUFD, d, d, 0); break;
             default: as_.xop1(PSHUFD, d, d, 0x44); break;
             }
+        } else {
+            vi_[v].clean_vec = es == 8 ? 8 : 4;
         }
         return;
     }
@@ -321,11 +389,16 @@ void T1::emit_vec(Val v) {
         return;
     }
     case Op::VSelect: {
+        auto is_clean = [&](Val u, int bytes) {
+            u8 c = vi_[resolve(u)].clean_vec;
+            return c != 0 && c <= bytes;
+        };
         if (in.aux == ir::AL || in.aux == ir::NV) {
             Xmm xt = xreg(in.b);
             Xmm d = new_x(v);
             as_.movaps(d, xt);
-            zero_upper(d, in.size);
+            if (!is_clean(in.b, in.size)) zero_upper(d, in.size);
+            if (in.size == 4 || in.size == 8) vi_[v].clean_vec = in.size;
             return;
         }
         Xmm xt = xreg(in.b);
@@ -333,10 +406,11 @@ void T1::emit_vec(Val v) {
         Xmm d = new_x(v);
         as_.movaps(d, xf);
         need_flags(in.a, in.aux);
-        u8* j = as_.jcc_fwd8(invert(x86_cond((ir::Cond)in.aux)));
+        u8* j = as_.jcc_fwd8(invert(cond_for(in.a, (ir::Cond)in.aux)));
         as_.movaps(d, xt);
         as_.patch_rel8_here(j);
-        zero_upper(d, in.size);
+        if (!(is_clean(in.b, in.size) && is_clean(in.c, in.size))) zero_upper(d, in.size);
+        if (in.size == 4 || in.size == 8) vi_[v].clean_vec = in.size;
         return;
     }
     case Op::FCmpFlags: emit_fcmp(v); return;
@@ -367,6 +441,14 @@ void T1::emit_fcmp_seq(Val a, Val b, int fs, bool) {
 
 void T1::emit_fcmp(Val v) {
     const Inst& in = I(v);
+    if (vi_[v].fcmp_mode) {
+        Xmm xa = xreg(in.a), xb = xreg(in.b);
+        clobber_flags();
+        if (vi_[v].fcmp_mode == 2) { Xmm t = xa; xa = xb; xb = t; }
+        as_.xop1({(u8)(in.size == 8 ? 0x66 : 0), 1, 0x2E, 0}, xa, xb);
+        eflags_ = v;
+        return;
+    }
     xpin(in.a); xpin(in.b);
     take_reg(RAX); take_reg(RCX); take_reg(R11);
     clobber_flags();
@@ -386,7 +468,7 @@ void T1::emit_fccmp(Val v) {
         emit_fcmp_seq(in.a, in.b, in.size, false);
     } else {
         Label then, done;
-        as_.jcc(x86_cond(c), then);
+        as_.jcc(cond_for(in.c, c), then);
         emit_set_const_flags((u32)in.imm);
         as_.jmp(done);
         as_.bind(then);
@@ -493,7 +575,7 @@ void T1::emit_itof(Val v) {
     bool sgn = in.aux & 1;
     Type st = I(in.a).ty;
     bool src64 = st == Type::I64;
-    if (in.imm != 0 || (!sgn && src64) || (fs != 4 && fs != 8)) {
+    if ((!sgn && src64) || (fs != 4 && fs != 8) || in.imm > 64) {
         Reg r = to_reg(in.a); pinned_ |= 1 << r;
         Reg t = alloc_temp(); pinned_ |= 1 << t;
         if (src64) as_.mov(8, t, r); else as_.mov(4, t, r);
@@ -514,6 +596,7 @@ void T1::emit_itof(Val v) {
         xpinned_ = 0;
         Xmm d = new_x(v);
         as_.xop_gx(MOVQ_XR, d, RAX);
+        if (fs == 4 || fs == 8) vi_[v].clean_vec = fs;
         return;
     }
     Reg r = to_reg(in.a); pinned_ |= 1 << r;
@@ -530,6 +613,11 @@ void T1::emit_itof(Val v) {
         cvt.w = src64;
         as_.xop_gx(cvt, d, r, -1, d);
     }
+    if (in.imm != 0) {
+        u64 scale = fs == 8 ? ((u64)(1023 - in.imm) << 52) : ((u64)(127 - in.imm) << 23);
+        as_.xop_m(FPS(0x59, fs), d, d, vconst_mem(scale, 0));
+    }
+    vi_[v].clean_vec = (u8)fs;
 }
 
 // ------------------------------------------------------------------ vector ops
@@ -542,9 +630,15 @@ void T1::emit_vop(Val v) {
     auto A = [&]() { return xreg(in.a); };
     auto B = [&]() { return xreg(in.b); };
     auto C = [&]() { return xreg(in.c); };
+    auto is_clean = [&](Val u, int bytes) {
+        u8 c = vi_[resolve(u)].clean_vec;
+        return c != 0 && c <= bytes;
+    };
     auto bin = [&](SseOp o) -> Xmm {
         Xmm a = A(), b = B();
-        Xmm d = new_x(v);
+        int reuse = (vi_[resolve(in.a)].last <= cur_ && a != b) ? (int)a
+                  : (as_.avx && vi_[resolve(in.b)].last <= cur_ && b != a) ? (int)b : -1;
+        Xmm d = new_x(v, reuse);
         as_.xop(o, d, a, b);
         return d;
     };
@@ -560,6 +654,7 @@ void T1::emit_vop(Val v) {
     };
     auto finish = [&](Xmm d, bool already_zeroed = false) {
         if (!already_zeroed && out_bytes < 16) zero_upper(d, out_bytes);
+        if (out_bytes == 4 || out_bytes == 8) vi_[v].clean_vec = (u8)out_bytes;
     };
     auto helper = [&]() { emit_vec_helper(v); };
 
@@ -567,14 +662,14 @@ void T1::emit_vop(Val v) {
     (void)avx;
     switch (in.sub) {
     // ---------------- bitwise
-    case V_AND: finish(bin(PAND)); return;
-    case V_ORR: finish(bin(POR)); return;
-    case V_EOR: finish(bin(PXOR)); return;
+    case V_AND: finish(bin(PAND), is_clean(in.a, out_bytes) || is_clean(in.b, out_bytes)); return;
+    case V_ORR: finish(bin(POR), is_clean(in.a, out_bytes) && is_clean(in.b, out_bytes)); return;
+    case V_EOR: finish(bin(PXOR), is_clean(in.a, out_bytes) && is_clean(in.b, out_bytes)); return;
     case V_BIC: {  // a & ~b = pandn(b, a)
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         as_.xop(PANDN, d, b, a);
-        finish(d);
+        finish(d, is_clean(in.a, out_bytes));
         return;
     }
     case V_ORN: {
@@ -843,20 +938,25 @@ void T1::emit_vop(Val v) {
         return;
     }
     // ---------------- widening / narrowing
-    case V_UXTL: case V_SXTL: {
+    case V_UXTL: case V_SXTL: case V_SHLL: {
         if (es == 8) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
-        as_.xop1(in.sub == V_UXTL ? PMOVZX[es] : PMOVSX[es], d, a);
+        as_.xop1(in.sub == V_SXTL ? PMOVSX[es] : PMOVZX[es], d, a);
+        if (in.sub == V_SHLL) {
+            u8 opc = es == 1 ? 0x71 : es == 2 ? 0x72 : 0x73;
+            as_.xshift_imm(opc, 6, d, d, (u8)(es * 8));
+        }
         return;
     }
     case V_XTN: {
         Xmm a = A();
         Xmm d = new_x(v);
-        if (es == 4) { as_.xop1(PSHUFD, d, a, 0x08); zero_upper(d, 8); return; }
+        if (es == 4) { as_.xop1(PSHUFD, d, a, 0x08); zero_upper(d, 8); vi_[v].clean_vec = 8; return; }
         u64 lo = es == 1 ? 0x0e0c0a0806040200ull : 0x0d0c090805040100ull;
         as_.xop_m(PSHUFB, d, a, vconst_mem(lo, 0x8080808080808080ull));
         if (scalar) zero_upper(d, es);
+        else vi_[v].clean_vec = 8;
         return;
     }
     case V_SHRN: {
@@ -865,9 +965,10 @@ void T1::emit_vop(Val v) {
         Xmm d = new_x(v);
         u8 opc = es == 1 ? 0x71 : es == 2 ? 0x72 : 0x73;   // shift the wide source elements
         as_.xshift_imm(opc, 2, d, a, (u8)sh);
-        if (es == 4) { as_.xop1(PSHUFD, d, d, 0x08); zero_upper(d, 8); return; }
+        if (es == 4) { as_.xop1(PSHUFD, d, d, 0x08); zero_upper(d, 8); vi_[v].clean_vec = 8; return; }
         u64 lo = es == 1 ? 0x0e0c0a0806040200ull : 0x0d0c090805040100ull;
         as_.xop_m(PSHUFB, d, d, vconst_mem(lo, 0x8080808080808080ull));
+        vi_[v].clean_vec = 8;
         return;
     }
     case V_UMULL: case V_SMULL: case V_UMLAL: case V_SMLAL: case V_UMLSL: case V_SMLSL: {
@@ -939,7 +1040,7 @@ void T1::emit_vop(Val v) {
                 as_.xop(PUNPCKL[8], d, a, b);
                 as_.xop_m(PSHUFB, d, d, vconst_mem(lo, 0x8080808080808080ull));
             }
-            finish(d);
+            finish(d, es != 4);
             return;
         }
         if (es == 8) { as_.xop(second ? PUNPCKH[8] : PUNPCKL[8], d, a, b); return; }
@@ -982,6 +1083,7 @@ void T1::emit_vop(Val v) {
             as_.xop(PUNPCKL[8], d, a, b);
             as_.xshift_imm(0x73, 3, d, d, (u8)in.imm);
             zero_upper(d, 8);
+            vi_[v].clean_vec = 8;
         }
         return;
     }
@@ -989,14 +1091,15 @@ void T1::emit_vop(Val v) {
         Xmm tab = A(), idx = B();
         const Inst& ci = I(resolve(in.c));
         bool zero_old = ci.op == Op::VConst && ci.imm == 0 && ci.imm2 == 0;
-        Xmm d = new_x(v);
         if (zero_old && in.imm == 0) {
+            Xmm d = new_x(v);
             // TBL single register: indices >= 16 must give 0 -> saturating add sets bit 7
             as_.xop_m(PADDUSB, d, idx, vconst_mem(0x7070707070707070ull, 0x7070707070707070ull));
             as_.xop(PSHUFB, d, tab, d);
             return;
         }
         Xmm old = C();
+        Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
         Xmm m = alloc_x(); xpinned_ |= 1 << m;
         u64 off = rep(in.imm & 0xff, 1);
@@ -1017,8 +1120,8 @@ void T1::emit_vop(Val v) {
         Xmm a = A();
         Xmm d = new_x(v);
         if (scalar) {
-            if (es == 8) { if (idx) as_.xshift_imm(0x73, 3, d, a, 8); else as_.xop1(MOVQ_XX, d, a); return; }
-            if (es == 4) { as_.xop(INSERTPS, d, a, a, (idx << 6) | 0x0E); return; }
+            if (es == 8) { if (idx) as_.xshift_imm(0x73, 3, d, a, 8); else as_.xop1(MOVQ_XX, d, a); vi_[v].clean_vec = 8; return; }
+            if (es == 4) { as_.xop(INSERTPS, d, a, a, (idx << 6) | 0x0E); vi_[v].clean_vec = 4; return; }
             u64 lo = 0x8080808080808080ull;
             if (es == 2) lo = (lo & ~0xffffull) | (u64)(idx * 2) | ((u64)(idx * 2 + 1) << 8);
             else lo = (lo & ~0xffull) | (u64)idx;
@@ -1056,8 +1159,15 @@ void T1::emit_vop(Val v) {
     case V_ZEXT: {
         Xmm a = A();
         Xmm d = new_x(v);
-        if (es == 8) as_.xop1(MOVQ_XX, d, a);
-        else { as_.movaps(d, a); zero_upper(d, es); }
+        if ((es == 4 || es == 8) && is_clean(in.a, es)) {
+            as_.movaps(d, a);
+        } else if (es == 8) {
+            as_.xop1(MOVQ_XX, d, a);
+        } else {
+            as_.movaps(d, a);
+            zero_upper(d, es);
+        }
+        if (es == 4 || es == 8) vi_[v].clean_vec = (u8)es;
         return;
     }
     case V_REV16: case V_REV32: case V_REV64: {
@@ -1099,6 +1209,7 @@ void T1::emit_vop(Val v) {
     }
     // ---------------- reductions
     case V_ADDV: case V_UADDLV: {
+        if (!(es == 1 || (es == 2 && in.sub == V_ADDV) || (es == 4 && in.sub == V_ADDV && !half))) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
         if (es == 1) {
@@ -1120,14 +1231,11 @@ void T1::emit_vop(Val v) {
             zero_upper(d, 2);
             return;
         }
-        if (es == 4 && in.sub == V_ADDV && !half) {
-            as_.xop(PHADDD, d, a, a);
-            as_.xop(PHADDD, d, d, d);
-            zero_upper(d, 4);
-            return;
-        }
-        xowner_[d] = 0; vi_[v].k = L_NONE;
-        return helper();
+        as_.xop(PHADDD, d, a, a);
+        as_.xop(PHADDD, d, d, d);
+        zero_upper(d, 4);
+        vi_[v].clean_vec = 4;
+        return;
     }
     case V_UMAXV: case V_UMINV: case V_SMAXV: case V_SMINV: {
         if (es == 8) return helper();
@@ -1146,15 +1254,18 @@ void T1::emit_vop(Val v) {
             as_.xop(o, d, d, t);
         }
         zero_upper(d, es);
+        if (es == 4) vi_[v].clean_vec = 4;
         return;
     }
     // ---------------- floating point
     case V_FADD: case V_FSUB: case V_FMUL: case V_FDIV: {
         u8 opc = in.sub == V_FADD ? 0x58 : in.sub == V_FSUB ? 0x5C : in.sub == V_FMUL ? 0x59 : 0x5E;
         Xmm a = A(), b = B();
-        Xmm d = new_x(v);
+        int reuse = (vi_[resolve(in.a)].last <= cur_ && a != b) ? (int)a
+                  : (as_.avx && vi_[resolve(in.b)].last <= cur_ && b != a) ? (int)b : -1;
+        Xmm d = new_x(v, reuse);
         as_.xop(scalar ? FPS(opc, es) : FPV(opc, es), d, a, b);
-        finish(d);
+        finish(d, scalar && as_.avx && is_clean(in.a, es));
         return;
     }
     case V_FSQRT: {
@@ -1162,25 +1273,35 @@ void T1::emit_vop(Val v) {
         Xmm d = new_x(v);
         if (scalar) as_.xop(FPS(0x51, es), d, a, a);
         else as_.xop1(FPV(0x51, es), d, a);
-        finish(d);
+        finish(d, scalar && as_.avx && is_clean(in.a, es));
         return;
     }
     case V_FABS: case V_FNEG: {
         Xmm a = A();
         u64 m = es == 8 ? 0x8000000000000000ull : 0x8000000080000000ull;
         Xmm d = new_x(v);
-        if (in.sub == V_FABS) as_.xop_m(PAND, d, a, vconst_mem(~m, ~m));
-        else as_.xop_m(PXOR, d, a, vconst_mem(m, m));
-        finish(d);
+        if (in.sub == V_FABS) {
+            u64 lo = (out_bytes == 4) ? 0x7fffffffull : ~m;
+            u64 hi = (out_bytes < 16) ? 0 : ~m;
+            as_.xop_m(PAND, d, a, vconst_mem(lo, hi));
+            finish(d, out_bytes == 4 || out_bytes == 8);
+        } else {
+            u64 lo = (out_bytes == 4) ? 0x80000000ull : m;
+            u64 hi = (out_bytes < 16) ? 0 : m;
+            as_.xop_m(PXOR, d, a, vconst_mem(lo, hi));
+            finish(d, is_clean(in.a, out_bytes));
+        }
         return;
     }
     case V_FNMUL: {
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         u64 m = es == 8 ? 0x8000000000000000ull : 0x8000000080000000ull;
+        u64 lo = (out_bytes == 4) ? 0x80000000ull : m;
+        u64 hi = (out_bytes < 16) ? 0 : m;
         as_.xop(scalar ? FPS(0x59, es) : FPV(0x59, es), d, a, b);
-        as_.xop_m(PXOR, d, d, vconst_mem(m, m));
-        finish(d);
+        as_.xop_m(PXOR, d, d, vconst_mem(lo, hi));
+        finish(d, scalar && as_.avx && is_clean(in.a, es));
         return;
     }
     case V_FMLA: case V_FMLS: case V_FMADD: case V_FMSUB: case V_FNMADD: case V_FNMSUB: {
@@ -1190,14 +1311,18 @@ void T1::emit_vop(Val v) {
         bool neg_a = in.sub == V_FMLS || in.sub == V_FMSUB || in.sub == V_FNMADD;
         bool neg_c = in.sub == V_FNMADD || in.sub == V_FNMSUB;
         Xmm a = A(), b = B(), c = C();
-        Xmm d = new_x(v);
+        Val rc = resolve(in.c);
+        int reuse = (!neg_c && vi_[rc].last <= cur_ && c != a && c != b) ? (int)c : -1;
+        Xmm d = new_x(v, reuse);
         u64 m = es == 8 ? 0x8000000000000000ull : 0x8000000080000000ull;
-        if (neg_c) as_.xop_m(PXOR, d, c, vconst_mem(m, m));
-        else as_.movaps(d, c);
+        u64 lo = (out_bytes == 4) ? 0x80000000ull : m;
+        u64 hi = (out_bytes < 16) ? 0 : m;
+        if (neg_c) as_.xop_m(PXOR, d, c, vconst_mem(lo, hi));
+        else if (d != c) as_.movaps(d, c);
         Xmm x = a;
-        if (neg_a) { x = alloc_x(); xpinned_ |= 1 << x; as_.xop_m(PXOR, x, a, vconst_mem(m, m)); }
+        if (neg_a) { x = alloc_x(); xpinned_ |= 1 << x; as_.xop_m(PXOR, x, a, vconst_mem(lo, hi)); }
         as_.xop(scalar ? FMA231S(0xB8, es) : FMA231V(0xB8, es), d, x, b);
-        finish(d);
+        finish(d, scalar && is_clean(in.c, es));
         return;
     }
     case V_FMAX: case V_FMIN: case V_FMAXNM: case V_FMINNM: {
@@ -1260,9 +1385,11 @@ void T1::emit_vop(Val v) {
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         u64 m = es == 8 ? 0x7fffffffffffffffull : 0x7fffffff7fffffffull;
+        u64 lo = (out_bytes == 4) ? 0x7fffffffull : m;
+        u64 hi = (out_bytes < 16) ? 0 : m;
         as_.xop(scalar ? FPS(0x5C, es) : FPV(0x5C, es), d, a, b);
-        as_.xop_m(PAND, d, d, vconst_mem(m, m));
-        finish(d);
+        as_.xop_m(PAND, d, d, vconst_mem(lo, hi));
+        finish(d, out_bytes == 4 || out_bytes == 8);
         return;
     }
     case V_FADDP: {
@@ -1301,7 +1428,7 @@ void T1::emit_vop(Val v) {
         Xmm d = new_x(v);
         if (scalar) as_.xop(ROUNDS(es), d, a, a, mode | 8);
         else as_.xop1(ROUNDV(es), d, a, mode | 8);
-        finish(d);
+        finish(d, scalar && as_.avx && is_clean(in.a, es));
         return;
     }
     case V_FCVTS2D: case V_FCVTD2S: {
@@ -1310,6 +1437,7 @@ void T1::emit_vop(Val v) {
         as_.xop(PXOR, d, d, d);
         SseOp cvt = {(u8)(in.sub == V_FCVTS2D ? 0xF3 : 0xF2), 1, 0x5A, 0};
         as_.xop(cvt, d, d, a);
+        vi_[v].clean_vec = in.sub == V_FCVTS2D ? 8 : 4;
         return;
     }
     case V_FCVTL: {
@@ -1330,21 +1458,47 @@ void T1::emit_vop(Val v) {
             Xmm a = A();
             Xmm d = new_x(v);
             as_.xop1(VCVTPS2PH, a, d, 0);           // ModRM.reg = source, rm = destination
+            vi_[v].clean_vec = 8;
             return;
         }
         if (es != 8) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
         as_.xop1({0x66, 1, 0x5A, 0}, d, a);   // cvtpd2ps (zeroes upper 64)
+        vi_[v].clean_vec = 8;
         return;
     }
-    case V_SCVTF: {
-        if (es != 4) return helper();
+    case V_SCVTF: case V_SCVTF_FIX: {
+        int fb = in.sub == V_SCVTF_FIX ? (int)in.imm : 0;
+        if ((es != 4 && es != 8) || fb > 64) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
-        if (scalar) { as_.xop(PXOR, d, d, d); as_.xop(INSERTPS, d, d, a, 0x0E); as_.xop1({0, 1, 0x5B, 0}, d, d); }
-        else as_.xop1({0, 1, 0x5B, 0}, d, a);
-        finish(d);
+        if (es == 4) {
+            if (scalar) { as_.xop(PXOR, d, d, d); as_.xop(INSERTPS, d, d, a, 0x0E); as_.xop1({0, 1, 0x5B, 0}, d, d); }
+            else as_.xop1({0, 1, 0x5B, 0}, d, a);
+            if (fb) {
+                u64 scale = (u64)(127 - fb) << 23;
+                as_.xop_m(scalar ? FPS(0x59, 4) : FPV(0x59, 4), d, d, vconst_mem(scale | (scale << 32), scale | (scale << 32)));
+            }
+            finish(d, scalar);
+            return;
+        }
+        Reg r = alloc_temp(); pinned_ |= 1 << r;
+        as_.xop_gx(MOVQ_RX, a, r);
+        as_.xop(PXOR, d, d, d);
+        as_.xop_gx({0xF2, 1, 0x2A, 1}, d, r, -1, d);
+        if (!scalar) {
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            as_.xop_gx(PEXTRQ, a, r, 1);
+            as_.xop(PXOR, t, t, t);
+            as_.xop_gx({0xF2, 1, 0x2A, 1}, t, r, -1, t);
+            as_.xop(PUNPCKL[8], d, d, t);
+        }
+        if (fb) {
+            u64 scale = (u64)(1023 - fb) << 52;
+            as_.xop_m(scalar ? FPS(0x59, 8) : FPV(0x59, 8), d, d, vconst_mem(scale, scale));
+        }
+        finish(d, scalar);
         return;
     }
     case V_FCVTZS: {
@@ -1374,22 +1528,62 @@ void T1::emit_vop(Val v) {
         Xmm d = new_x(v);
         if (scalar) as_.xop(ROUNDS(es), d, a, a, 4);
         else as_.xop1(ROUNDV(es), d, a, 4);
-        finish(d);
+        finish(d, scalar && as_.avx && is_clean(in.a, es));
         return;
     }
-    case V_UCVTF: {
-        if (es != 4) return helper();
-        // exact halves: f(hi16) * 65536 + f(lo16), one rounding in the final add
+    case V_UCVTF: case V_UCVTF_FIX: {
+        int fb = in.sub == V_UCVTF_FIX ? (int)in.imm : 0;
+        if ((es != 4 && es != 8) || fb > 64) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
-        Xmm t = alloc_x(); xpinned_ |= 1 << t;
-        as_.xshift_imm(0x72, 2, t, a, 16);                                  // psrld t, a, 16
-        as_.xop1({0, 1, 0x5B, 0}, t, t);                                    // cvtdq2ps
-        as_.xop_m(FPV(0x59, 4), t, t, vconst_mem(0x4780000047800000ull, 0x4780000047800000ull));
-        as_.xop_m(PAND, d, a, vconst_mem(0x0000ffff0000ffffull, 0x0000ffff0000ffffull));
-        as_.xop1({0, 1, 0x5B, 0}, d, d);
-        as_.xop(FPV(0x58, 4), d, d, t);                                     // addps
-        finish(d);
+        if (es == 4) {
+            // exact halves: f(hi16) * 65536 + f(lo16), one rounding in the final add
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            as_.xshift_imm(0x72, 2, t, a, 16);                                  // psrld t, a, 16
+            as_.xop1({0, 1, 0x5B, 0}, t, t);                                    // cvtdq2ps
+            as_.xop_m(FPV(0x59, 4), t, t, vconst_mem(0x4780000047800000ull, 0x4780000047800000ull));
+            as_.xop_m(PAND, d, a, vconst_mem(0x0000ffff0000ffffull, 0x0000ffff0000ffffull));
+            as_.xop1({0, 1, 0x5B, 0}, d, d);
+            as_.xop(FPV(0x58, 4), d, d, t);                                     // addps
+            if (fb) {
+                u64 scale = (u64)(127 - fb) << 23;
+                as_.xop_m(scalar ? FPS(0x59, 4) : FPV(0x59, 4), d, d, vconst_mem(scale | (scale << 32), scale | (scale << 32)));
+            }
+            finish(d);
+            return;
+        }
+        clobber_flags();
+        Reg r = alloc_temp(); pinned_ |= 1 << r;
+        Reg s = alloc_temp(); pinned_ |= 1 << s;
+        auto cvt_lane = [&](Xmm dst) {
+            Label big, done;
+            as_.xop(PXOR, dst, dst, dst);
+            as_.test(8, r, r);
+            as_.jcc(CS, big);
+            as_.xop_gx({0xF2, 1, 0x2A, 1}, dst, r, -1, dst);
+            as_.jmp(done);
+            as_.bind(big);
+            as_.mov(8, s, r);
+            as_.shift_imm(SHR, 8, s, 1);
+            as_.alu_imm(AND, 4, r, 1);
+            as_.alu(OR, 8, s, r);
+            as_.xop_gx({0xF2, 1, 0x2A, 1}, dst, s, -1, dst);
+            as_.xop(FPS(0x58, 8), dst, dst, dst);
+            as_.bind(done);
+        };
+        as_.xop_gx(MOVQ_RX, a, r);
+        cvt_lane(d);
+        if (!scalar) {
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            as_.xop_gx(PEXTRQ, a, r, 1);
+            cvt_lane(t);
+            as_.xop(PUNPCKL[8], d, d, t);
+        }
+        if (fb) {
+            u64 scale = (u64)(1023 - fb) << 52;
+            as_.xop_m(scalar ? FPS(0x59, 8) : FPV(0x59, 8), d, d, vconst_mem(scale, scale));
+        }
+        finish(d, scalar);
         return;
     }
     case V_FCVTZU_FIX: case V_FCVTZU: {
