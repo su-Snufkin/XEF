@@ -1921,6 +1921,31 @@ void T1::emit_vop(Val v) {
         finish(d, scalar && is_clean(in.c, es));
         return;
     }
+    case V_FRECPS: case V_FRSQRTS: {
+        if (!g_host.fma || !as_.avx || (es != 4 && es != 8)) return helper();
+        bool rsq = in.sub == V_FRSQRTS;
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        Xmm x = alloc_x(); xpinned_ |= 1 << x;
+        u64 m = es == 8 ? 0x8000000000000000ull : 0x8000000080000000ull;
+        u64 lo = (out_bytes == 4) ? 0x80000000ull : m;
+        u64 hi = (out_bytes < 16) ? 0 : m;
+        as_.xop_m(PXOR, x, a, vconst_mem(lo, hi));                                  // x = -a
+        u64 k = es == 4 ? (rsq ? 0x4040000040400000ull : 0x4000000040000000ull)
+                        : (rsq ? 0x4008000000000000ull : 0x4000000000000000ull);
+        u64 klo = (out_bytes == 4) ? (k & 0xffffffffull) : k;
+        u64 khi = (out_bytes < 16) ? 0 : k;
+        load_vconst(d, klo, khi);                                                   // d = k (2.0 or 3.0)
+        as_.xop(scalar ? FMA231S(0xB8, es) : FMA231V(0xB8, es), d, x, b);          // d = k + (-a)*b = k - a*b
+        if (rsq) {
+            u64 h = es == 4 ? 0x3f0000003f000000ull : 0x3fe0000000000000ull;
+            u64 hlo = (out_bytes == 4) ? (h & 0xffffffffull) : h;
+            u64 hhi = (out_bytes < 16) ? 0 : h;
+            as_.xop_m(scalar ? FPS(0x59, es) : FPV(0x59, es), d, d, vconst_mem(hlo, hhi)); // d = d * 0.5
+        }
+        finish(d);
+        return;
+    }
     case V_FMAX: case V_FMIN: case V_FMAXNM: case V_FMINNM: {
         bool isMax = in.sub == V_FMAX || in.sub == V_FMAXNM;
         bool nm = in.sub == V_FMAXNM || in.sub == V_FMINNM;
