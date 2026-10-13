@@ -879,20 +879,52 @@ void T1::emit_vop(Val v) {
         finish(d);
         return;
     }
-    case V_UHADD: {   // (a + b) >> 1 = pavg(a, b) - ((a ^ b) & 1)
-        if (es > 2) return helper();
+    case V_UHADD: {   // (a + b) >> 1
+        if (es > 4) return helper();
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
-        as_.xop(es == 1 ? PAVGB : PAVGW, d, a, b);
-        as_.xop(PXOR, t, a, b);
-        u64 one = es == 1 ? 0x0101010101010101ull : 0x0001000100010001ull;
-        as_.xop_m(PAND, t, t, vconst_mem(one, one));
-        as_.xop(PSUB[es], d, d, t);
+        if (es <= 2) {
+            as_.xop(es == 1 ? PAVGB : PAVGW, d, a, b);
+            as_.xop(PXOR, t, a, b);
+            u64 one = es == 1 ? 0x0101010101010101ull : 0x0001000100010001ull;
+            as_.xop_m(PAND, t, t, vconst_mem(one, one));
+            as_.xop(PSUB[es], d, d, t);
+        } else {
+            // es == 4: (a >> 1) + (b >> 1) + ((a & b) & 1)
+            u64 one = 0x0000000100000001ull;
+            as_.xshift_imm(0x72, 2, d, a, 1);
+            as_.xshift_imm(0x72, 2, t, b, 1);
+            as_.xop(PADD[4], d, d, t);
+            Xmm w = alloc_x(); xpinned_ |= 1 << w;
+            as_.xop(PAND, w, a, b);
+            as_.xop_m(PAND, w, w, vconst_mem(one, one));
+            as_.xop(PADD[4], d, d, w);
+        }
         finish(d);
         return;
     }
-    case V_URHADD: if (es == 1) { finish(bin(PAVGB)); return; } if (es == 2) { finish(bin(PAVGW)); return; } return helper();
+    case V_URHADD: {
+        if (es == 1) { finish(bin(PAVGB)); return; }
+        if (es == 2) { finish(bin(PAVGW)); return; }
+        if (es == 4) {
+            // (a >> 1) + (b >> 1) + ((a | b) & 1)
+            Xmm a = A(), b = B();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            Xmm w = alloc_x(); xpinned_ |= 1 << w;
+            u64 one = 0x0000000100000001ull;
+            as_.xshift_imm(0x72, 2, d, a, 1);
+            as_.xshift_imm(0x72, 2, t, b, 1);
+            as_.xop(PADD[4], d, d, t);
+            as_.xop(POR, w, a, b);
+            as_.xop_m(PAND, w, w, vconst_mem(one, one));
+            as_.xop(PADD[4], d, d, w);
+            finish(d);
+            return;
+        }
+        return helper();
+    }
     case V_ADDP: {
         if (scalar) {  // d = a[0] + a[1] (64-bit)
             Xmm a = A();
@@ -1157,35 +1189,62 @@ void T1::emit_vop(Val v) {
         vi_[v].clean_vec = 8;
         return;
     }
-    // ---------------- halving add/sub (es 1, 2): signed forms work on values biased by 0x80..
+    // ---------------- halving add/sub: es 1, 2 use pavg; es 4 uses shift + bit-carry formulas
     case V_SRHADD: case V_SHADD: case V_UHSUB: case V_SHSUB: {
-        if (es > 2) return helper();
-        bool sg = in.sub != V_UHSUB;
-        u64 bias = es == 1 ? 0x8080808080808080ull : 0x8000800080008000ull;
-        u64 one = es == 1 ? 0x0101010101010101ull : 0x0001000100010001ull;
-        SseOp avg = es == 1 ? PAVGB : PAVGW;
+        if (es > 4) return helper();
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
-        Xmm u = alloc_x(); xpinned_ |= 1 << u;
-        Xmm x = a, y = b;
-        if (sg) {
-            as_.xop_m(PXOR, t, a, vconst_mem(bias, bias));
-            as_.xop_m(PXOR, u, b, vconst_mem(bias, bias));
-            x = t; y = u;
-        }
-        if (in.sub == V_UHSUB || in.sub == V_SHSUB) {   // a - ceil((a + b) / 2) = floor((a - b) / 2)
-            as_.xop(avg, d, x, y);
-            as_.xop(PSUB[es], d, x, d);
-        } else {
-            as_.xop(avg, d, x, y);                       // (a + b + 1) >> 1 (biased)
-            if (in.sub == V_SHADD) {                     // - ((a ^ b) & 1)
-                Xmm w = alloc_x(); xpinned_ |= 1 << w;
-                as_.xop(PXOR, w, x, y);
-                as_.xop_m(PAND, w, w, vconst_mem(one, one));
-                as_.xop(PSUB[es], d, d, w);
+        if (es <= 2) {
+            bool sg = in.sub != V_UHSUB;
+            u64 bias = es == 1 ? 0x8080808080808080ull : 0x8000800080008000ull;
+            u64 one = es == 1 ? 0x0101010101010101ull : 0x0001000100010001ull;
+            SseOp avg = es == 1 ? PAVGB : PAVGW;
+            Xmm u = alloc_x(); xpinned_ |= 1 << u;
+            Xmm x = a, y = b;
+            if (sg) {
+                as_.xop_m(PXOR, t, a, vconst_mem(bias, bias));
+                as_.xop_m(PXOR, u, b, vconst_mem(bias, bias));
+                x = t; y = u;
             }
-            as_.xop_m(PXOR, d, d, vconst_mem(bias, bias));
+            if (in.sub == V_UHSUB || in.sub == V_SHSUB) {   // a - ceil((a + b) / 2) = floor((a - b) / 2)
+                as_.xop(avg, d, x, y);
+                as_.xop(PSUB[es], d, x, d);
+            } else {
+                as_.xop(avg, d, x, y);                       // (a + b + 1) >> 1 (biased)
+                if (in.sub == V_SHADD) {                     // - ((a ^ b) & 1)
+                    Xmm w = alloc_x(); xpinned_ |= 1 << w;
+                    as_.xop(PXOR, w, x, y);
+                    as_.xop_m(PAND, w, w, vconst_mem(one, one));
+                    as_.xop(PSUB[es], d, d, w);
+                }
+                as_.xop_m(PXOR, d, d, vconst_mem(bias, bias));
+            }
+            finish(d);
+            return;
+        }
+        // es == 4:
+        bool sg = in.sub != V_UHSUB;
+        u8 opc = 0x72;
+        int ext = sg ? 4 : 2;
+        u64 one = 0x0000000100000001ull;
+        as_.xshift_imm(opc, ext, d, a, 1);
+        as_.xshift_imm(opc, ext, t, b, 1);
+        if (in.sub == V_UHSUB || in.sub == V_SHSUB) {
+            // (a >> 1) - (b >> 1) - ((~a & b) & 1)
+            Xmm w = alloc_x(); xpinned_ |= 1 << w;
+            as_.xop(PSUB[4], d, d, t);
+            as_.xop(PANDN, w, a, b);                         // ~a & b
+            as_.xop_m(PAND, w, w, vconst_mem(one, one));
+            as_.xop(PSUB[4], d, d, w);
+        } else {
+            // (a >> 1) + (b >> 1) + (round_or_carry_bit)
+            // SHADD: (a & b) & 1; SRHADD: (a | b) & 1
+            Xmm w = alloc_x(); xpinned_ |= 1 << w;
+            as_.xop(PADD[4], d, d, t);
+            as_.xop(in.sub == V_SHADD ? PAND : POR, w, a, b);
+            as_.xop_m(PAND, w, w, vconst_mem(one, one));
+            as_.xop(PADD[4], d, d, w);
         }
         finish(d);
         return;
