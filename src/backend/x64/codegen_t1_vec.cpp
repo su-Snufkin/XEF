@@ -1651,11 +1651,18 @@ void T1::emit_vop(Val v) {
                 as_.xop_m(PADD[4], d, d, vconst_mem(0x0001000000010000ull, 0x0001000000010000ull));
             }
         } else {   // es == 4: widen the even and the odd words, add as quadwords
-            as_.xop1(PSHUFD, t, a, 0x08);
-            as_.xop1(sg ? PMOVSX[4] : PMOVZX[4], d, t);
-            as_.xop1(PSHUFD, t, a, 0x0D);
-            as_.xop1(sg ? PMOVSX[4] : PMOVZX[4], t, t);
-            as_.xop(PADD[8], d, d, t);
+            if (half) {
+                // half vector: a[0] and a[1] -> single quadword result at lane 0
+                as_.xop1(sg ? PMOVSX[4] : PMOVZX[4], d, a);          // widens low 2 lanes [a0, a1]
+                as_.xop1(PSHUFD, t, d, 0xEE);                       // high 64-bit half (a1)
+                as_.xop(PADD[8], d, d, t);                          // d0 = a0 + a1
+            } else {
+                as_.xop1(PSHUFD, t, a, 0x08);
+                as_.xop1(sg ? PMOVSX[4] : PMOVZX[4], d, t);
+                as_.xop1(PSHUFD, t, a, 0x0D);
+                as_.xop1(sg ? PMOVSX[4] : PMOVZX[4], t, t);
+                as_.xop(PADD[8], d, d, t);
+            }
         }
         if (acc) as_.xop(PADD[es * 2], d, d, cc);
         finish(d);
