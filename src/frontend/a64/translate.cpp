@@ -884,13 +884,23 @@ bool Translator::dp_reg(u32 i) {
 
 // ---------------------------------------------------------------- NZCV liveness lookahead
 
+// Pages found mapped, per thread. The NZCV lookahead hops between pages (branch targets), and
+// a mincore syscall per hop cost more than the decoding. Every unmap (munmap, mremap, brk shrink,
+// mmap MAP_FIXED, mprotect) bumps g_cache.epoch, which empties the cache.
 bool guest_readable(GuestAddr pc) {
-    static thread_local GuestAddr last_ok = 1;
+    constexpr int kWays = 64;
+    static thread_local GuestAddr ok_pages[kWays];   // page | 1 (0 = empty)
+    static thread_local u64 ok_epoch;
     GuestAddr page = pc & ~0xfffull;
-    if (page == last_ok) return true;
+    GuestAddr& slot = ok_pages[(page >> 12) & (kWays - 1)];
+    u64 ep = g_cache.epoch.load(std::memory_order_acquire);
+    if (ep != ok_epoch) {
+        memset(ok_pages, 0, sizeof ok_pages);
+        ok_epoch = ep;
+    } else if (slot == (page | 1)) return true;
     unsigned char v;
     if (mincore((void*)page, 4096, &v) != 0) return false;
-    last_ok = page;
+    slot = page | 1;
     return true;
 }
 
@@ -963,6 +973,63 @@ static QuickFlags quick_flags(u32 i, GuestAddr pc, GuestAddr* t1, GuestAddr* t2)
         *t1 = pc + (GuestAddr)(sext((i >> 5) & 0x3FFF, 14) * 4);
         *t2 = pc + 4;
         return Q_CB;
+    }
+    if ((i & 0xFFFFF01F) == 0xD503201F) return Q_NONE;                 // HINT: NOP, PACIASP, AUTIASP, BTI, ...
+    // load/store register: unscaled, post-/pre-index, unprivileged; register offset (option<1> set)
+    if ((i & 0x3B200000) == 0x38000000 || ((i & 0x3B200C00) == 0x38200800 && (i & (1u << 14)))) {
+        u32 size = i >> 30, opc = (i >> 22) & 3;
+        if (i & (1u << 26)) return ((((opc & 2) << 1) | size) <= 4) ? Q_NONE : Q_UNKNOWN;
+        return (opc == 3 && size >= 2) ? Q_UNKNOWN : Q_NONE;
+    }
+    if ((i & 0xFFFFFC1F) == 0xD61F0000 || (i & 0xFFFFFC1F) == 0xD63F0000)   // BR / BLR
+        return abi_kills_flags(Op::ExitIndirect) ? Q_WRITE : Q_READ;
+    if ((i & 0x1F800000) == 0x12000000) {           // logical immediate
+        u64 imm;
+        bool n = i & (1u << 22);
+        if ((!sf && n) || !decode_bit_masks(n, (i >> 10) & 0x3F, (i >> 16) & 0x3F, true, sf ? 64 : 32, &imm))
+            return Q_UNKNOWN;
+        return ((i >> 29) & 3) == 3 ? Q_WRITE : Q_NONE;
+    }
+    if ((i & 0x1F800000) == 0x13000000) {           // bitfield (SBFM / BFM / UBFM)
+        u32 immr = (i >> 16) & 0x3F, imms = (i >> 10) & 0x3F;
+        if (((i >> 29) & 3) == 3 || ((i >> 22) & 1) != sf || (!sf && (immr >= 32 || imms >= 32))) return Q_UNKNOWN;
+        return Q_NONE;
+    }
+    if ((i & 0x1F800000) == 0x13800000) {           // EXTR
+        if (((i >> 29) & 3) || ((i >> 22) & 1) != sf || (i & (1u << 21)) || ((i >> 10) & 0x3F) >= (sf ? 64u : 32u))
+            return Q_UNKNOWN;
+        return Q_NONE;
+    }
+    if ((i & 0x1F200000) == 0x0B200000) {           // ADD/SUB(S), extended register
+        if (((i >> 22) & 3) || ((i >> 10) & 7) > 4) return Q_UNKNOWN;
+        return (i & (1u << 29)) ? Q_WRITE : Q_NONE;
+    }
+    if ((i & 0x1F000000) == 0x1B000000) {           // data-processing, 3 source (MADD, SMULL, UMULH, ...)
+        u32 op31 = (i >> 21) & 7, o0 = (i >> 15) & 1;
+        if ((i >> 29) & 3) return Q_UNKNOWN;
+        if (op31 == 0) return Q_NONE;
+        if (op31 == 1 || op31 == 5) return sf ? Q_NONE : Q_UNKNOWN;
+        if (op31 == 2 || op31 == 6) return sf && !o0 ? Q_NONE : Q_UNKNOWN;
+        return Q_UNKNOWN;
+    }
+    if ((i & 0x1FE00000) == 0x1AC00000) {           // data-processing, 1 and 2 source
+        u32 opc = (i >> 10) & 0x3F;
+        if (i & (1u << 29)) return Q_UNKNOWN;
+        if (i & (1u << 30)) {                       // RBIT, REV*, CLZ, CLS
+            if ((i >> 16) & 0x1F) return Q_UNKNOWN;
+            return (opc <= 2 || opc == 4 || opc == 5 || (opc == 3 && sf)) ? Q_NONE : Q_UNKNOWN;
+        }
+        if (opc == 2 || opc == 3 || (opc >= 8 && opc <= 11)) return Q_NONE;    // UDIV, SDIV, LSLV ... RORV
+        if (opc >= 16 && opc <= 23) return ((opc & 3) == 3) == (bool)sf ? Q_NONE : Q_UNKNOWN;   // CRC32*
+        return Q_UNKNOWN;
+    }
+    // NZCV readers (Q_READ is also what an encoding the translator rejects amounts to)
+    if ((i & 0x1FE00000) == 0x1A400000 || (i & 0x1FE0FC00) == 0x1A000000) return Q_READ;   // CCMP/CCMN, ADC/SBC(S)
+    if ((i & 0xFFF00000) == 0xD5300000) {           // MRS
+        u32 op0 = (i >> 19) & 3, op1 = (i >> 16) & 7, crn = (i >> 12) & 0xF, crm = (i >> 8) & 0xF, op2 = (i >> 5) & 7;
+        if (op0 == 3 && op1 == 3 && crn == 4 && crm == 2 && op2 == 0) return Q_READ;   // MRS NZCV
+        if (sysreg_id(op0, op1, crn, crm, op2) >= 0 || (op0 == 3 && op1 == 0 && crn == 0)) return Q_NONE;
+        return Q_UNKNOWN;
     }
     return Q_UNKNOWN;
 }

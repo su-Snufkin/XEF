@@ -411,6 +411,7 @@ static i64 do_brk(u64 newbrk) {
         g_brk_mapped = need;
     } else if (need < g_brk_mapped) {
         munmap((void*)need, g_brk_mapped - need);
+        code_invalidate_range(need, g_brk_mapped - need);   // like munmap (also drops cached page lookups)
         g_brk_mapped = need;
     }
     g_brk_cur = newbrk;
