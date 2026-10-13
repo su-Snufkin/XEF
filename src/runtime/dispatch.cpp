@@ -86,11 +86,11 @@ static GuestAddr fall_through(const ir::Block& b) {
 }
 
 // Translate the block at pc (caller holds no lock). Returns its BlockMeta.
-// Up to kChain blocks are translated together when each falls through into the next one that
+// Up to kChain (8) blocks are translated together when each falls through into the next one that
 // is not translated yet: they are laid out back to back (no jump between them), their exit
 // stubs after the last body. A member depends on the guest code of every member after it.
 static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
-    constexpr int kChain = 4;
+    constexpr int kChain = 8;
     u64 t0 = g_opt.stats ? stats_now() : 0;
     static thread_local ir::Block* chain_blk[kChain];
     chain_blk[0] = t->blk;
