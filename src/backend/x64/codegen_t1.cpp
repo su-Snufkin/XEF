@@ -326,6 +326,17 @@ void T1::analyze() {
         }
         extend_to(ad.a, v);
     }
+    // Clz(Rbit(x)) (count trailing zeros: rbit + clz) where the Rbit has no other use: tzcnt x
+    if (g_host.bmi1)
+        for (int v = 1; v < n; v++) {
+            const Inst& in = I(v);
+            if (vi_[v].dead || in.op != Op::Clz) continue;
+            Val r = in.a;
+            if (I(r).op != Op::Rbit || I(r).ty != in.ty || vi_[r].uses != 1 || vi_[r].dead) continue;
+            vi_[r].folded = true;
+            vi_[v].tz = true;
+            extend_to(I(r).a, v);
+        }
     // Add(a, Shl(x, 1..3)) where the Shl has no other use: one lea d, [a + x << k]
     for (int v = 1; v < n; v++) {
         const Inst& in = I(v);
@@ -478,7 +489,10 @@ void T1::release_operands(const Inst& in) {
         Val r = resolve(o);
         VI& x = vi_[r];
         // folded address arithmetic: what it reads is used by this access
-        if (x.folded && (I(r).op == Op::Add || I(r).op == Op::Shl || I(r).op == Op::And)) { release_operands(I(r)); return; }
+        if (x.folded && (I(r).op == Op::Add || I(r).op == Op::Shl || I(r).op == Op::And || I(r).op == Op::Rbit)) {
+            release_operands(I(r));
+            return;
+        }
         if (x.last <= cur_) {
             if (x.k == L_REG && owner_[x.reg] == r) owner_[x.reg] = 0;
             if (x.k == L_XMM && xowner_[x.reg] == r) xowner_[x.reg] = 0;
@@ -1095,6 +1109,18 @@ void T1::emit_shift(Val v) {
 
 void T1::emit_misc_unary(Val v) {
     const Inst& in = I(v);
+    if (vi_[v].tz) {   // clz(rbit(x)) = tzcnt(x), also 32/64 for x = 0
+        int s = sz(in.ty);
+        Val x = I(in.a).a;
+        pin(x);
+        Reg rx = to_reg(x);
+        pinned_ |= 1 << rx;
+        clobber_flags();
+        Reg d = dest_for(v, s, rx);
+        as_.tzcnt(s, d, rx);
+        finish_def(v, d);
+        return;
+    }
     int s = sz(in.ty);
     Val a = in.a;
     pin(a);

@@ -37,6 +37,7 @@ struct VI {
     bool defer = false;    // flags values: computed at the first consumer instead of here
     bool tfold = false;    // FlagsLogic of a single-use And: test x, y (the And is not computed)
     u8 lea = 0;            // Add with a folded Shl(x, 1..3) operand (1: b, 2: a): lea d, [o + x << k]
+    bool tz = false;       // Clz of a folded single-use Rbit: tzcnt
     u16 uses = 0;
     i32 last = 0;
 };
