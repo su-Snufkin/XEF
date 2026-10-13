@@ -1908,7 +1908,6 @@ void T1::emit_vop(Val v) {
         return;
     }
     case V_TRN1: case V_TRN2: {
-        if (es == 1) return helper();
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         bool second = in.sub == V_TRN2;
@@ -1923,6 +1922,43 @@ void T1::emit_vop(Val v) {
             if (!second) { as_.xshift_imm(0x73, 7, t, b, 2); as_.xop(PBLENDW, d, a, t, 0xAA); }
             else { as_.xshift_imm(0x73, 3, t, a, 2); as_.xop(PBLENDW, d, t, b, 0xAA); }
             break;
+        case 1: {
+            if (half) {
+                // half vector: a has [a0..a7], b has [b0..b7] in low 8 bytes
+                // PUNPCKL[1] produces:
+                // byte 0: a0, byte 1: b0, byte 2: a1, byte 3: b1,
+                // byte 4: a2, byte 5: b2, byte 6: a3, byte 7: b3,
+                // byte 8: a4, byte 9: b4, byte 10: a5, byte 11: b5,
+                // byte 12: a6, byte 13: b6, byte 14: a7, byte 15: b7.
+                // trn1 wants: [a0, b0, a2, b2, a4, b4, a6, b6] = bytes 0, 1, 4, 5, 8, 9, 12, 13
+                // trn2 wants: [a1, b1, a3, b3, a5, b5, a7, b7] = bytes 2, 3, 6, 7, 10, 11, 14, 15
+                as_.xop(PUNPCKL[1], d, a, b);
+                u64 mask = second ? 0x0f0e0b0a07060302ull : 0x0d0c090805040100ull;
+                as_.xop_m(PSHUFB, d, d, vconst_mem(mask, 0x8080808080808080ull));
+            } else {
+                // full vector:
+                // t = unpackl(a, b): lanes 0..7 of a and b interleaved
+                // u = unpackh(a, b): lanes 8..15 of a and b interleaved
+                // In each 8-byte block of t (lanes 0..3 and 4..7):
+                // trn1 selects:
+                // lanes 0..3: bytes 0, 1, 4, 5
+                // lanes 4..7: bytes 8, 9, 12, 13
+                // so t contributes low 8 bytes of d: bytes 0, 1, 4, 5, 8, 9, 12, 13
+                // trn2 selects:
+                // lanes 0..3: bytes 2, 3, 6, 7
+                // lanes 4..7: bytes 10, 11, 14, 15
+                // so t contributes low 8 bytes of d: bytes 2, 3, 6, 7, 10, 11, 14, 15
+                // And u contributes the exact same byte pattern from lanes 8..15 into high 8 bytes of d!
+                Xmm u = alloc_x(); xpinned_ |= 1 << u;
+                as_.xop(PUNPCKL[1], t, a, b);
+                as_.xop(PUNPCKH[1], u, a, b);
+                u64 m = second ? 0x0f0e0b0a07060302ull : 0x0d0c090805040100ull;
+                as_.xop_m(PSHUFB, t, t, vconst_mem(m, 0x8080808080808080ull));
+                as_.xop_m(PSHUFB, u, u, vconst_mem(m, 0x8080808080808080ull));
+                as_.xop(PUNPCKL[8], d, t, u);
+            }
+            break;
+        }
         default: fatal("trn bytes");
         }
         finish(d);
