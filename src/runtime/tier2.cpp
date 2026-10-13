@@ -339,7 +339,7 @@ static bool compile_region(GuestAddr head) {
         backend::CodegenCtx c = ctx;
         c.fall_pc = k + 1 < nord && !helper_of[i] ? R.pcs[lay[k + 1]] : 0;
         u8* bcode = as.cur();
-        gens[k] = backend::emit_region_body(blk, as, meta, outs[i], c);
+        gens[k] = backend::emit_region_body(blk, as, meta, outs[i], c, true);
         if (!gens[k]) {
             for (int q = 0; q < k; q++) backend::finish_region_body(gens[q], false);
             XEF_LOG(1, "tier2: %#lx: code generation failed for block %#lx", (unsigned long)head, (unsigned long)R.pcs[i]);

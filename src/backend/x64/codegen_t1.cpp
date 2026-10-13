@@ -2173,22 +2173,32 @@ struct RegionBodyGen {
     CodegenOut* out;
     alignas(t1::T1) u8 storage[sizeof(t1::T1)];
     t1::T1* t;
+    RegionBodyGen* next_free;
 };
 
+// Large objects (IR copy + T1 state, ~0.5 MB): recycled per thread, not malloc'd per block
+static thread_local RegionBodyGen* tls_free_gens;
+
 RegionBodyGen* emit_region_body(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out,
-                                const CodegenCtx& ctx) {
-    RegionBodyGen* g = new RegionBodyGen;
-    g->blk.start = b.start;
-    g->blk.end = b.end;
-    g->blk.n = b.n;
-    g->blk.guest_insts = b.guest_insts;
-    g->blk.flags_live_out = b.flags_live_out;
-    memcpy(g->blk.insts, b.insts, sizeof(b.insts[0]) * b.n);
-    memcpy(g->blk.pc_off, b.pc_off, sizeof(b.pc_off[0]) * b.n);
+                                const CodegenCtx& ctx, bool copy_ir) {
+    RegionBodyGen* g = tls_free_gens;
+    if (g) tls_free_gens = g->next_free;
+    else g = new RegionBodyGen;
+    const Block* src = &b;
+    if (copy_ir) {
+        g->blk.start = b.start;
+        g->blk.end = b.end;
+        g->blk.n = b.n;
+        g->blk.guest_insts = b.guest_insts;
+        g->blk.flags_live_out = b.flags_live_out;
+        memcpy(g->blk.insts, b.insts, sizeof(b.insts[0]) * b.n);
+        memcpy(g->blk.pc_off, b.pc_off, sizeof(b.pc_off[0]) * b.n);
+        src = &g->blk;
+    }
     g->ctx = ctx;
     g->out = &out;
     u8* start = as.cur();
-    g->t = new (g->storage) t1::T1(g->blk, as, meta, out, &g->ctx);
+    g->t = new (g->storage) t1::T1(*src, as, meta, out, &g->ctx);
     as.avx = g_host.avx;
     bool ok = g->t->run_body();
     out.size = (size_t)(as.cur() - start);
@@ -2199,7 +2209,8 @@ RegionBodyGen* emit_region_body(const Block& b, Assembler& as, BlockMeta* meta, 
 bool finish_region_body(RegionBodyGen* g, bool emit_cold) {
     bool ok = !emit_cold || g->t->run_cold();
     g->t->~T1();
-    delete g;
+    g->next_free = tls_free_gens;
+    tls_free_gens = g;
     return ok;
 }
 

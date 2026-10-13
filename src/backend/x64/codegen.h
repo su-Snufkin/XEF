@@ -62,8 +62,10 @@ void emit_region_xfer(x64::Assembler& as, const RegionXfer* x, int n,
 
 // Tier-2 region members: body first (out.size = body bytes), exit stubs after all bodies.
 struct RegionBodyGen;
+// copy_ir: keep a copy of b (the caller reuses it before finish_region_body); otherwise b must
+// stay unchanged until then
 RegionBodyGen* emit_region_body(const ir::Block& b, x64::Assembler& as, BlockMeta* meta, CodegenOut& out,
-                                const CodegenCtx& ctx);
+                                const CodegenCtx& ctx, bool copy_ir);
 bool finish_region_body(RegionBodyGen* g, bool emit_cold);   // emits the cold stubs, frees g
 
 // Emits tier-1 code for `b` at as.cur(). Exits are recorded in meta->exits

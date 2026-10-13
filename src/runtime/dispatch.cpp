@@ -53,28 +53,50 @@ static void trace_dump() {
     }
 }
 
-// Translate the block at pc (caller holds no lock). Returns host entry.
+// XEF_SPLIT=lo-hi[,lo-hi...] (debugging aid): blocks starting there are translated one
+// instruction at a time (bisecting translation bugs)
+static bool split_here(GuestAddr pc) {
+    static u64 rng[8][2];
+    static int nrng = [] {
+        int n = 0;
+        const char* e = getenv("XEF_SPLIT");
+        while (e && *e && n < 8) {
+            if (sscanf(e, "%lx-%lx", &rng[n][0], &rng[n][1]) == 2) n++;
+            e = strchr(e, ',');
+            if (e) e++;
+        }
+        return n;
+    }();
+    for (int i = 0; i < nrng; i++)
+        if (pc >= rng[i][0] && pc < rng[i][1]) return true;
+    return false;
+}
+
+// Where a block continues without a jump: the not-taken side of its conditional exit or the
+// target of its unconditional one (0: indirect / call / helper call inside -> no fall-through).
+static GuestAddr fall_through(const ir::Block& b) {
+    GuestAddr ft = 0;
+    for (int v = 1; v < b.n; v++) {
+        const ir::Inst& in = b.insts[v];
+        if (in.op == ir::Op::Helper) return 0;   // IC IVAU: what follows must be entered by a jump
+        if (in.op == ir::Op::ExitJump) ft = in.imm;
+        else if (in.op == ir::Op::ExitCond || in.op == ir::Op::ExitCbz || in.op == ir::Op::ExitTbz) ft = in.imm2;
+    }
+    return ft;
+}
+
+// Translate the block at pc (caller holds no lock). Returns its BlockMeta.
+// Up to kChain blocks are translated together when each falls through into the next one that
+// is not translated yet: they are laid out back to back (no jump between them), their exit
+// stubs after the last body. A member depends on the guest code of every member after it.
 static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
+    constexpr int kChain = 4;
     u64 t0 = g_opt.stats ? stats_now() : 0;
-    ir::Block& blk = *t->blk;
+    static thread_local ir::Block* chain_blk[kChain];
+    chain_blk[0] = t->blk;
     a64::TranslateOpts topt;
     topt.max_insts = g_opt.max_block_insts;
-    {   // debugging aid: XEF_SPLIT=lo-hi[,lo-hi...] translates blocks starting there one
-        // instruction at a time (bisecting translation bugs)
-        static u64 rng[8][2];
-        static int nrng = [] {
-            int n = 0;
-            const char* e = getenv("XEF_SPLIT");
-            while (e && *e && n < 8) {
-                if (sscanf(e, "%lx-%lx", &rng[n][0], &rng[n][1]) == 2) n++;
-                e = strchr(e, ',');
-                if (e) e++;
-            }
-            return n;
-        }();
-        for (int i = 0; i < nrng; i++)
-            if (pc >= rng[i][0] && pc < rng[i][1]) topt.max_insts = 1;
-    }
+    if (split_here(pc)) topt.max_insts = 1;
     if (!a64::guest_readable(pc)) {
         char lr[512];
         CpuState* st = t->st;
@@ -87,58 +109,94 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         fatal("guest jumped to unmapped address %#lx (lr=%s, exit reason %lu)", (unsigned long)pc,
               describe_addr(st->x[30], lr, sizeof lr), (unsigned long)st->exit_reason);
     }
-    PeekLog peeks;
+    bool chain_ok = !g_opt.trace && !g_opt.dump_ir && !g_opt.dump_code;
+    static thread_local PeekLog peeks[kChain];
+    GuestAddr pcs[kChain];
+    int nc = 0;
     u64 ep;
     std::unique_lock<std::mutex> lk(g_cache.lock, std::defer_lock);
     for (;;) {
         ep = g_cache.epoch.load(std::memory_order_seq_cst);
-        peeks.n = 0;
-        peeks.overflow = false;
-        a64::set_peek_log(&peeks);
-        a64::translate_block(pc, blk, topt);
-        a64::set_peek_log(nullptr);
-        if (peeks.overflow) blk.flags_live_out = true;   // don't depend on code we can't track
-        g_cache.mark_code(pc, blk.end, peeks.overflow ? nullptr : &peeks);   // before the epoch check
+        nc = 0;
+        for (GuestAddr cur = pc;;) {
+            if (!chain_blk[nc]) chain_blk[nc] = new ir::Block();
+            a64::TranslateOpts o = topt;
+            if (nc && split_here(cur)) o.max_insts = 1;
+            peeks[nc].n = 0;
+            peeks[nc].overflow = false;
+            a64::set_peek_log(&peeks[nc]);
+            a64::translate_block(cur, *chain_blk[nc], o);
+            a64::set_peek_log(nullptr);
+            ir::Block& b = *chain_blk[nc];
+            if (peeks[nc].overflow) b.flags_live_out = true;   // don't depend on code we can't track
+            g_cache.mark_code(cur, b.end, peeks[nc].overflow ? nullptr : &peeks[nc]);   // before the epoch check
+            pcs[nc++] = cur;
+            GuestAddr ft = chain_ok ? fall_through(b) : 0;
+            bool again = ft && nc < kChain && a64::guest_readable(ft) && !g_cache.lookup(ft);
+            for (int k = 0; k < nc && again; k++) if (pcs[k] == ft) again = false;
+            if (!again) break;
+            cur = ft;
+        }
         lk.lock();
         if (g_cache.epoch.load(std::memory_order_seq_cst) == ep) break;
         lk.unlock();   // code was invalidated meanwhile: decode again
     }
-    if (g_opt.dump_ir && g_opt.dump_wants(pc)) ir::dump(blk, stderr);
+    if (g_opt.dump_ir && g_opt.dump_wants(pc)) ir::dump(*chain_blk[0], stderr);
     if (BlockMeta* b = g_cache.lookup(pc)) return b;  // raced with another thread
-    int nexits = backend::count_exits(blk);
-    BlockMeta* meta = g_cache.alloc_meta(nexits);
-    meta->start = pc;
-    meta->end = blk.end;
+    for (int k = 1; k < nc; k++)
+        if (g_cache.lookup(pcs[k])) { nc = k; break; }   // translated by another thread meanwhile
     const size_t kMax = 256 * 1024;
-    u8* code = g_cache.alloc_code(kMax);
-    x64::Assembler as(code, kMax);
-    backend::CodegenOut out;
-    if (!backend::emit_tier1(blk, as, meta, out)) fatal("block at %#lx too large", (unsigned long)pc);
-    meta->code = code;
-    meta->code_size = (u32)out.size;
-    meta->tier = 1;
-    g_cache.commit_code(code, out.size);
-    g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
-    if (g_opt.dump_code && g_opt.dump_wants(pc)) dump_code(code, out.size, pc);
-    // link exits whose targets already exist
-    for (int i = 0; i < out.nexits; i++) {
-        ExitInfo* e = &meta->exits[i];
-        if (BlockMeta* tb = g_opt.trace ? nullptr : g_cache.lookup(e->target)) {
-            link_exit(e, tb->code);
-            e->next_in = tb->incoming;
-            tb->incoming = e;
-        }
+    u8* code = g_cache.alloc_code(kMax * nc);
+    x64::Assembler as(code, kMax * nc);
+    BlockMeta* metas[kChain];
+    static thread_local backend::CodegenOut outs[kChain];
+    backend::RegionBodyGen* gens[kChain];
+    for (int k = 0; k < nc; k++) {
+        ir::Block& b = *chain_blk[k];
+        BlockMeta* meta = g_cache.alloc_meta(backend::count_exits(b));
+        meta->start = pcs[k];
+        meta->end = b.end;
+        meta->tier = 1;
+        outs[k] = backend::CodegenOut();
+        backend::CodegenCtx ctx;
+        ctx.fall_pc = k + 1 < nc ? pcs[k + 1] : 0;
+        meta->code = as.cur();
+        gens[k] = backend::emit_region_body(b, as, meta, outs[k], ctx, false);
+        if (!gens[k]) fatal("block at %#lx too large", (unsigned long)pcs[k]);
+        meta->code_size = (u32)outs[k].size;
+        g_cache.set_pcmap(meta, outs[k].pcmap, outs[k].npcmap);
+        metas[k] = meta;
     }
-    g_cache.register_block(meta);
-    g_cache.add_deps(meta, pc, blk.end, peeks.overflow ? nullptr : &peeks);
-    g_cache.publish(meta);
+    for (int k = 0; k < nc; k++)
+        if (!backend::finish_region_body(gens[k], true)) fatal("block at %#lx too large", (unsigned long)pcs[k]);
+    g_cache.commit_code(code, as.size());
+    for (int k = 0; k < nc; k++) {
+        BlockMeta* meta = metas[k];
+        if (g_opt.dump_code && g_opt.dump_wants(pcs[k])) dump_code(meta->code, meta->code_size, pcs[k]);
+        meta->nexits = (u16)outs[k].nexits;
+        // link exits whose targets already exist
+        for (int i = 0; i < meta->nexits; i++) {
+            ExitInfo* e = &meta->exits[i];
+            if (BlockMeta* tb = g_opt.trace ? nullptr : g_cache.lookup(e->target)) {
+                link_exit(e, tb->code);
+                e->next_in = tb->incoming;
+                tb->incoming = e;
+            }
+        }
+        g_cache.register_block(meta);
+        for (int j = k; j < nc; j++)
+            g_cache.add_deps(meta, pcs[j], chain_blk[j]->end, peeks[j].overflow ? nullptr : &peeks[j]);
+    }
+    for (int k = nc - 1; k >= 0; k--) g_cache.publish(metas[k]);
     if (g_opt.stats) {
-        g_stats.blocks_t1++;
-        g_stats.guest_insts_translated += blk.guest_insts;
-        g_stats.host_bytes += out.size;
+        for (int k = 0; k < nc; k++) {
+            g_stats.blocks_t1++;
+            g_stats.guest_insts_translated += chain_blk[k]->guest_insts;
+            g_stats.host_bytes += metas[k]->code_size;
+        }
         g_stats.translate_ns += stats_now() - t0;
     }
-    return meta;
+    return metas[0];
 }
 
 u8* get_or_translate(ThreadCtx* t, GuestAddr pc) {
