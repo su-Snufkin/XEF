@@ -42,7 +42,7 @@ constexpr SseOp PSHUFB = P38(0x00), PALIGNR = P3A(0x0F), PSHUFD = P(0x70);
 constexpr SseOp PBLENDW = P3A(0x0E), PSADBW = P(0xF6), PHADDW = P38(0x01), PHADDD = P38(0x02);
 constexpr SseOp PHMINPOSUW = P38(0x41);
 constexpr SseOp PACKUSWB = P(0x67), PACKSSWB = P(0x63), PACKSSDW = P(0x6B), PACKUSDW = P38(0x2B);
-constexpr SseOp PMULHRSW = P38(0x0B);
+constexpr SseOp PMULHRSW = P38(0x0B), PMADDUBSW = P38(0x04), PMADDWD = P(0xF5);
 constexpr SseOp AESENC = P38(0xDC), AESENCLAST = P38(0xDD), AESDEC = P38(0xDE), AESDECLAST = P38(0xDF);
 constexpr SseOp AESIMC_ = P38(0xDB), PCLMULQDQ = P3A(0x44);
 // SHA extensions: legacy SSE encodings only (no VEX form); SHA256RNDS2 reads XMM0 implicitly
@@ -1029,6 +1029,39 @@ void T1::emit_vop(Val v) {
         u64 lo = es == 1 ? 0x0e0c0a0806040200ull : 0x0d0c090805040100ull;
         as_.xop_m(PSHUFB, d, d, vconst_mem(lo, 0x8080808080808080ull));
         vi_[v].clean_vec = 8;
+        return;
+    }
+    // ---------------- pairwise add long (+ accumulate): es = source element size
+    case V_UADDLP: case V_SADDLP: case V_UADALP: case V_SADALP: {
+        if (es == 8) return helper();
+        bool sg = in.sub == V_SADDLP || in.sub == V_SADALP;
+        bool acc = in.sub == V_UADALP || in.sub == V_SADALP;
+        Xmm a = A();
+        Xmm cc = acc ? C() : a;
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        if (es == 1) {   // pmaddubsw: unsigned bytes of the first operand x signed bytes of the second
+            if (sg) {
+                load_vconst(t, 0x0101010101010101ull, 0x0101010101010101ull);
+                as_.xop(PMADDUBSW, d, t, a);
+            } else as_.xop_m(PMADDUBSW, d, a, vconst_mem(0x0101010101010101ull, 0x0101010101010101ull));
+        } else if (es == 2) {   // pmaddwd is signed: bias unsigned halves by -0x8000, add 0x10000 back
+            u64 one = 0x0001000100010001ull;
+            if (sg) as_.xop_m(PMADDWD, d, a, vconst_mem(one, one));
+            else {
+                as_.xop_m(PXOR, t, a, vconst_mem(0x8000800080008000ull, 0x8000800080008000ull));
+                as_.xop_m(PMADDWD, d, t, vconst_mem(one, one));
+                as_.xop_m(PADD[4], d, d, vconst_mem(0x0001000000010000ull, 0x0001000000010000ull));
+            }
+        } else {   // es == 4: widen the even and the odd words, add as quadwords
+            as_.xop1(PSHUFD, t, a, 0x08);
+            as_.xop1(sg ? PMOVSX[4] : PMOVZX[4], d, t);
+            as_.xop1(PSHUFD, t, a, 0x0D);
+            as_.xop1(sg ? PMOVSX[4] : PMOVZX[4], t, t);
+            as_.xop(PADD[8], d, d, t);
+        }
+        if (acc) as_.xop(PADD[es * 2], d, d, cc);
+        finish(d);
         return;
     }
     // ---------------- crypto (AES-NI, PCLMULQDQ)
