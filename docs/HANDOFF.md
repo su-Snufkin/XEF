@@ -1,4 +1,4 @@
-# XEF — notatka przekazania (stan na 2026-10-12)
+# XEF — notatka przekazania (stan na 2026-10-13)
 
 Ten plik jest dla następnej sesji. Pełny opis architektury: `docs/ARCHITECTURE.md`.
 Specyfikacja projektu (od użytkownika): szybki translator AArch64 → x86-64, user-mode Linux;
@@ -6,7 +6,7 @@ wydajność jest priorytetem zaraz po poprawności. Użytkownik akceptuje każdy
 jest „rozwijaj XEF dopóki nie skończą się tokeny”.
 
 **Zasady repo:** commity BEZ stopki „Co-Authored-By: Claude”; autor zawsze `su-Snufkin <341201482+su-Snufkin@users.noreply.github.com>` (ustawione w `git config` repo; nie podawaj `-c user.email`).
-Remote: `git@github.com:su-Snufkin/XEF.git`; bieżąca praca na gałęzi `claude/upbeat-wright-ausggy` (`git push -u origin claude/upbeat-wright-ausggy`), bez PR-ów bez prośby.
+Remote: `git@github.com:su-Snufkin/XEF.git`; od 2026-10-13 praca bezpośrednio na `main` (`git push origin main`), bez PR-ów bez prośby.
 
 ## Szybki start (nowa maszyna / cloud)
 ```sh
@@ -69,6 +69,24 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   translatorem przy każdym bloku; uruchom z nią fuzzer i duże programy po zmianach w dekoderze.
 - `XEF_STRICT_FLAGS=1` — nie zakładaj, że NZCV jest martwe przy BL/BLR/RET (AAPCS64) i BR (cele: wejścia funkcji, tablice skoków, computed goto; runtime ostrzega, gdy cel BR czyta NZCV jako pierwsze); fuzzer go ustawia.
 
+## Pomiar wydajności (2026-10-13)
+- Czas ścienny jest zaszumiony (turbo, rdzenie P/E): do A/B używaj `build/pstat -r N cmd` (tools/pstat.c:
+  cycles:u / instructions:u / branch-miss przez perf_event_open, bez perf; `cc -O2 -o build/pstat tools/pstat.c`).
+- Regiony tier 2 tworzą się w zależności od próbkowania, więc wyniki z tier 2 bywają bimodalne
+  (`calls`); jakość samego kodu porównuj z `--no-tier2`.
+- `--profile` pokazuje tier bloku i zapisuje `/tmp/xef-hotN.counts`; `tools/annotate_hot.py` daje
+  zdezasemblowany kod gorących bloków z rozkładem próbek na instrukcje hosta.
+- `XEF_REGSTATS=1 --profile`: dostępy do rejestrów gościa ważone próbkami (wybór mapowania).
+- Python: `build/xef -L .tools/rootfs-arm64 /usr/bin/python3 /tmp/bench.py` (skrypt w rootfs/tmp).
+
+## Wnioski z sesji 2026-10-13 (co pomogło, co nie)
+- Pomogło: prefetch z PRFM (zstd -12%), NZCV martwe przy BR + krótsze RET/IBTC (Python -12%, calls -30%),
+  mapowanie rejestrów wg kompilatora (clang: x8-x12), dokładny lookahead NZCV przez pętle, natywne
+  AES/PMULL/SHA (TLS), RADDHN (simd 7x), fuzja tst/test, flagi liczone przy konsumencie.
+- Nie pomogło (wycofane): inline cache dla BR/BLR — miejsca `br` w interpreterach (CPython) są
+  megamorficzne, IC dokładał ~5% cykli; `calls` (4 cele) też wolniejsze.
+- Znane: FMAXNM/FMINNM traktują sygnalizujący NaN jak cichy (fuzzer z --tmpl to pokazuje; tak było wcześniej).
+
 ## Następne kroki (priorytet)
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
    znalezione bloki; testy Pythona (w tym asyncio, ssl) przechodzą po naprawie slotów spill
@@ -78,7 +96,13 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
    Odroczone zapisy rejestrów V (dziś VSet przed każdym dostępem do pamięci jest zachowywany dla
    precyzji SIGSEGV): wymaga zapisu w mapie PC, w którym XMM/slocie jest bieżąca wartość V.
    Pomiar zysku utrudnia szum maszyny (glmark2 ±15%); mierzyć CPU-time przy LP_NUM_THREADS=1.
-2. FP16 arytmetyka (HWCAP FPHP/ASIMDHP), rzadsze operacje NEON wciąż w helperze (`--stats`).
+2. FP16 arytmetyka (HWCAP FPHP/ASIMDHP), rzadsze operacje NEON wciąż w helperze (`--stats`):
+   FRECPE/FRSQRTE (dokładnie jak ARM: tabela), nasycające zwężenia (SQXTN/UQXTN/SQSHRUN...),
+   UADDLP/UADALP, UABA/UABAL, SRHADD/SHADD/UHSUB, URSHR/SRSHR, FMAXV/FMINV, CRC32 (helper C!).
+2a. Regiony tier 2 rzadko powstają w kodzie pełnym wywołań (CPython: „region failed”/„demoted”);
+   tier 1 dominuje w realnych programach. Pomysły: superbloki przez warunkowe skoki (fallthrough
+   bez jmp), układ bloków w regionach (fallthrough zamiast jmp do następnego bloku), DSE zapisów
+   rejestrów gościa między blokami (wymaga rozluźnienia precyzji stanu przy SIGSEGV dla martwych rejestrów).
 3. Zwalnianie kodu (cache rośnie bez końca: inwalidacja tylko odpina bloki), epoki dla wątków.
 4. Trwały cache AOT, thunki bibliotek.
 
