@@ -1218,7 +1218,22 @@ void T1::emit_vop(Val v) {
             finish(d);
             return;
         }
-        if (es == 8 && in.sub == V_SSHR_I) return helper();
+        if (es == 8 && in.sub == V_SSHR_I) {
+            // 64-bit arithmetic shift right by immediate sh
+            Xmm d = new_x(v);
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            as_.xop(PXOR, m, m, m);
+            as_.xop(PCMPGT[8], m, m, a);                     // m = a < 0 ? ~0 : 0
+            if (sh >= 64) {
+                as_.movaps(d, m);
+            } else {
+                as_.xshift_imm(0x73, 2, d, a, (u8)sh);       // unsigned >> sh
+                as_.xshift_imm(0x73, 6, m, m, (u8)(64 - sh));// m << (64 - sh)
+                as_.xop(POR, d, d, m);
+            }
+            finish(d);
+            return;
+        }
         Xmm d = new_x(v);
         u8 opc = es == 2 ? 0x71 : es == 4 ? 0x72 : 0x73;
         int ext = in.sub == V_SHL_I ? 6 : in.sub == V_USHR_I ? 2 : 4;
@@ -1255,7 +1270,24 @@ void T1::emit_vop(Val v) {
             finish(d);
             return;
         }
-        if (es == 8 && in.sub == V_SSRA) return helper();
+        if (es == 8 && in.sub == V_SSRA) {
+            // 64-bit signed shift right and accumulate
+            Xmm a = A(), c = C();
+            Xmm d = new_x(v);
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            as_.xop(PXOR, m, m, m);
+            as_.xop(PCMPGT[8], m, m, a);                     // m = a < 0 ? ~0 : 0
+            if (sh >= 64) {
+                as_.xop(PADD[8], d, c, m);
+            } else {
+                as_.xshift_imm(0x73, 2, d, a, (u8)sh);       // unsigned >> sh
+                as_.xshift_imm(0x73, 6, m, m, (u8)(64 - sh));// m << (64 - sh)
+                as_.xop(POR, d, d, m);
+                as_.xop(PADD[8], d, d, c);
+            }
+            finish(d);
+            return;
+        }
         Xmm a = A(), c = C();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
@@ -1370,7 +1402,36 @@ void T1::emit_vop(Val v) {
         bool sg = in.sub == V_SRSHR_I || in.sub == V_SRSRA;
         bool acc = in.sub == V_URSRA || in.sub == V_SRSRA;
         int sh = (int)in.imm;
-        if ((sg && es == 8) || sh < 1) return helper();
+        if (sh < 1) return helper();
+        if (sg && es == 8) {
+            // 64-bit signed rounding shift right (+ accumulate)
+            Xmm a = A();
+            Xmm cc = acc ? C() : a;
+            Xmm d = new_x(v);
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            // round bit: (a >> (sh - 1)) & 1
+            if (sh - 1 >= 64) {
+                as_.xop(PXOR, t, t, t);
+            } else {
+                as_.xshift_imm(0x73, 2, t, a, (u8)(sh - 1));
+                as_.xop_m(PAND, t, t, vconst_mem(1ull, 1ull));
+            }
+            // signed shifted: (a >> sh) with sign extension
+            as_.xop(PXOR, m, m, m);
+            as_.xop(PCMPGT[8], m, m, a);                     // m = a < 0 ? ~0 : 0
+            if (sh >= 64) {
+                as_.movaps(d, m);
+            } else {
+                as_.xshift_imm(0x73, 2, d, a, (u8)sh);
+                as_.xshift_imm(0x73, 6, m, m, (u8)(64 - sh));
+                as_.xop(POR, d, d, m);
+            }
+            as_.xop(PADD[8], d, d, t);                       // + round bit
+            if (acc) as_.xop(PADD[8], d, d, cc);
+            finish(d);
+            return;
+        }
         if (es == 1) {
             if (sh >= 8) sh = 8;
             Xmm a = A();
