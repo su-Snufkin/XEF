@@ -77,7 +77,7 @@ Xmm T1::alloc_x() {
     for (int i = 0; i < 16; i++) {
         if (!(xtemp_mask_ & (1 << i)) || (xpinned_ & (1 << i))) continue;
         Val o = xowner_[i];
-        int score = vi_[o].last + (vi_[o].vhome >= 0 ? 100000 : 0);
+        int score = vi_[o].last + ((vi_[o].vhome >= 0 || I(o).op == Op::VConst) ? 100000 : 0);
         if (score > best_score) { best_score = score; best = i; }
     }
     if (best < 0) fatal("codegen: out of xmm registers at ir %d", cur_);
@@ -89,7 +89,9 @@ void T1::evict_x(int x) {
     Val o = xowner_[x];
     if (!o) return;
     VI& vi = vi_[o];
-    if (vi.vhome >= 0) {
+    if (I(o).op == Op::VConst) {
+        vi.k = L_NONE;
+    } else if (vi.vhome >= 0) {
         if (vmapped(vi.vhome)) { vi.k = L_VXMM; vi.reg = vhost(vi.vhome); }
         else vi.k = L_VMEM;
     } else {
