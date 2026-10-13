@@ -192,6 +192,8 @@ public:
     // ---- invalidation (all with `lock` held) ----
     // Records that `b` depends on guest code in [lo, hi) (its body) and on the peeked ranges.
     void add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog* peeks);
+    // ... on every range in `ranges` (which must not have overflowed)
+    void add_deps(BlockMeta* b, const PeekLog& ranges);
     // Kills every translation depending on [lo, hi). Returns true if any was found.
     bool invalidate_range(GuestAddr lo, GuestAddr hi);
     void invalidate_block(BlockMeta* b);
@@ -227,6 +229,7 @@ private:
     std::vector<DepPage> dep_pages_;   // power-of-two size, at most half full
     size_t dep_npages_ = 0;
     u32* dep_head(u64 page, bool create);
+    void add_dep_range(BlockMeta* b, GuestAddr lo, GuestAddr hi);
     void kill_region(RegionInfo* ri);
     std::vector<IbtcEntry*> ibtcs_;
     std::vector<GuestAddr> killed_;   // start pcs of blocks killed since the last scrub_ibtcs

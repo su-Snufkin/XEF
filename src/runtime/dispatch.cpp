@@ -183,8 +183,16 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
             }
         }
         g_cache.register_block(meta);
-        for (int j = k; j < nc; j++)
-            g_cache.add_deps(meta, pcs[j], chain_blk[j]->end, peeks[j].overflow ? nullptr : &peeks[j]);
+    }
+    // a member depends on its own code and peeks and on those of every member after it (it falls
+    // through into them): accumulate from the last one, one merged set of ranges per member
+    PeekLog acc;
+    for (int k = nc - 1; k >= 0; k--) {
+        acc.add(pcs[k], chain_blk[k]->end);
+        for (int i = 0; !peeks[k].overflow && i < peeks[k].n; i++) acc.add(peeks[k].r[i].lo, peeks[k].r[i].hi);
+        if (!acc.overflow) { g_cache.add_deps(metas[k], acc); continue; }
+        for (int j = k; j < nc; j++)   // ranges too far apart to merge: one call per member
+            g_cache.add_deps(metas[k], pcs[j], chain_blk[j]->end, peeks[j].overflow ? nullptr : &peeks[j]);
     }
     for (int k = nc - 1; k >= 0; k--) g_cache.publish(metas[k]);
     if (g_opt.stats) {

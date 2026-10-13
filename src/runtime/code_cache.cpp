@@ -197,21 +197,31 @@ u32* CodeCache::dep_head(u64 page, bool create) {
     }
 }
 
+void CodeCache::add_dep_range(BlockMeta* b, GuestAddr l, GuestAddr h) {
+    if (h <= l) return;
+    if (dep_nodes_.empty()) dep_nodes_.push_back(DepNode{});
+    for (u64 pg = l >> 12; pg <= (h - 1) >> 12; pg++) {
+        u32 n = dep_free_;
+        if (n) dep_free_ = dep_nodes_[n].next;
+        else { n = (u32)dep_nodes_.size(); dep_nodes_.push_back(DepNode{}); }
+        u32* head = dep_head(pg, true);
+        dep_nodes_[n] = DepNode{b, l, h, *head};
+        *head = n;
+        dep_live_++;
+    }
+}
+
+void CodeCache::add_deps(BlockMeta* b, const PeekLog& ranges) {
+    XEF_ASSERT(!ranges.overflow);
+    for (int i = 0; i < ranges.n; i++) {
+        mark_code(ranges.r[i].lo, ranges.r[i].hi);   // normally already marked by the translator
+        add_dep_range(b, ranges.r[i].lo, ranges.r[i].hi);
+    }
+}
+
 void CodeCache::add_deps(BlockMeta* b, GuestAddr lo, GuestAddr hi, const PeekLog* peeks) {
     mark_code(lo, hi, peeks);   // normally already marked by the translator
-    if (dep_nodes_.empty()) dep_nodes_.push_back(DepNode{});
-    auto add = [&](GuestAddr l, GuestAddr h) {
-        if (h <= l) return;
-        for (u64 pg = l >> 12; pg <= (h - 1) >> 12; pg++) {
-            u32 n = dep_free_;
-            if (n) dep_free_ = dep_nodes_[n].next;
-            else { n = (u32)dep_nodes_.size(); dep_nodes_.push_back(DepNode{}); }
-            u32* head = dep_head(pg, true);
-            dep_nodes_[n] = DepNode{b, l, h, *head};
-            *head = n;
-            dep_live_++;
-        }
-    };
+    auto add = [&](GuestAddr l, GuestAddr h) { add_dep_range(b, l, h); };
     // the lookahead usually reads right past the block end: merge it into the body's range first
     // (one dependency entry instead of several per block)
     PeekLog all;

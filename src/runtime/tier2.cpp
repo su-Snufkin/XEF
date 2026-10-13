@@ -399,7 +399,11 @@ static bool compile_region(GuestAddr head) {
     }
     for (int i = 0; i < R.n; i++) g_cache.mark_code(metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
     if (g_cache.epoch.load(std::memory_order_seq_cst) != ep) { hm->tier = 1; return false; }   // code changed
-    for (int i = 0; i < R.n; i++) g_cache.add_deps(entry, metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
+    PeekLog all = peeks;   // the region's code and its lookahead: one merged set of ranges
+    for (int i = 0; i < R.n; i++) all.add(metas[i]->start, metas[i]->end);
+    if (!all.overflow) g_cache.add_deps(entry, all);
+    else
+        for (int i = 0; i < R.n; i++) g_cache.add_deps(entry, metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
     // ---- go live: publish the entry and re-point incoming links of the tier-1 head
     entry->incoming = hm->incoming;
     hm->incoming = nullptr;
