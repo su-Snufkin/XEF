@@ -113,7 +113,7 @@ private:
     int nconsts_ = 0;
 
     // register model (canonical for tier 1, region-specific for tier 2)
-    const Reg* map_ = regmap::kMap;
+    const Reg* map_ = regmap::g_map;
     Reg temps_[12] = {RAX, RCX, R11};
     int ntemps_ = 3;
     u8 vmap_[32];

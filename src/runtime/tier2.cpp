@@ -183,7 +183,7 @@ static bool compile_region(GuestAddr head) {
 
     // ---- register mapping
     Reg map[32];
-    memcpy(map, regmap::kMap, sizeof map);
+    memcpy(map, regmap::g_map, sizeof map);
     Reg freed[16];
     int nfree = 0;
     RegionXfer xfer[16];

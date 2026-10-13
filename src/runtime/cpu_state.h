@@ -65,19 +65,23 @@ constexpr int st_v(int r) { return (int)(offsetof(CpuState, v) + r * 16) - kStat
 
 constexpr int kGuestSP = 31;
 
-// ---- Fixed register mapping (see docs/ARCHITECTURE.md §3.2) ----
-// X0-X5 sit in the x86 syscall argument registers, so pass-through syscalls
-// need no moves, and X0-X2 match SysV rdi/rsi/rdx for library thunks. The other
-// host registers hold the guest registers compiled code uses most (static counts
-// over cc1, libstdc++, Qt, fgfs: x0 x1 sp x2 x19 x20 x3 x21 ...; x6/x7/x29 are
-// 2-13x rarer than x19-x21).
+// ---- Canonical register mapping (see docs/ARCHITECTURE.md §3.2) ----
+// Chosen once per process, before any code is generated (regmap::select). Eleven host registers
+// hold the guest registers the program's compiler uses most:
+// - GCC (default): static counts over cc1, libstdc++, Qt, fgfs: x0 x1 sp x2 x19 x20 x3 x21 ...
+//   (x6/x7/x29 are 2-13x rarer than x19-x21); sample-weighted counts of CPython agree.
+//   X0-X5 sit in the x86 syscall argument registers.
+// - clang: x8-x12 are its first scratch registers and carry most of the traffic of clang-built
+//   code (sample-weighted over coremark, zstd and the micro benchmarks: x9 x10 x8 x11 x12 ...),
+//   while x3-x5 and x20/x21 are rare.
+// X0-X2 stay in rdi/rsi/rdx (SysV argument order) in both.
 namespace regmap {
 using namespace x64;
 constexpr Reg kState = R15;
 constexpr Reg kTmp0 = RAX, kTmp1 = RCX, kTmp2 = R11;
 constexpr Reg kUnmapped = NOREG;
 // guest index -> host register (NOREG = lives in CpuState)
-constexpr Reg kMap[32] = {
+constexpr Reg kMapGcc[32] = {
     RDI, RSI, RDX, R10, R8, R9, NOREG, NOREG,          // X0..X7
     NOREG, NOREG, NOREG, NOREG, NOREG, NOREG, NOREG, NOREG,  // X8..X15
     NOREG, NOREG, NOREG, RBX, RBP, R12, NOREG, NOREG,  // X16..X23
@@ -86,8 +90,21 @@ constexpr Reg kMap[32] = {
     R13,                                              // X30 (LR)
     R14,                                              // SP
 };
-inline Reg host(int guest) { return kMap[guest]; }
-inline bool mapped(int guest) { return kMap[guest] != NOREG; }
+constexpr Reg kMapClang[32] = {
+    RDI, RSI, RDX, NOREG, NOREG, NOREG, NOREG, NOREG,  // X0..X7
+    R10, R8, R9, RBX, RBP, NOREG, NOREG, NOREG,        // X8..X15
+    NOREG, NOREG, NOREG, R12, NOREG, NOREG, NOREG, NOREG,  // X16..X23
+    NOREG, NOREG, NOREG, NOREG, NOREG,                // X24..X28
+    NOREG,                                            // X29 (FP)
+    R13,                                              // X30 (LR)
+    R14,                                              // SP
+};
+extern Reg g_map[32];
+inline Reg host(int guest) { return g_map[guest]; }
+inline bool mapped(int guest) { return g_map[guest] != NOREG; }
+// XEF_REGMAP=gcc|clang overrides; otherwise clang when the executable's .comment names clang
+void select(const char* host_exe_path);
+const char* name();
 }  // namespace regmap
 
 }  // namespace xef

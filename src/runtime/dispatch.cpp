@@ -3,7 +3,11 @@
 #include "thunks/thunks.h"
 #include "runtime/verify.h"
 
+#include <elf.h>
 #include <sys/mman.h>
+#include <cstring>
+#include <string>
+#include <vector>
 #include <time.h>
 #include <unistd.h>
 
@@ -288,3 +292,52 @@ extern "C" u64 xef_helper_crc32(u64 crc, u64 data, u64 size_and_c) {
 }
 
 }  // namespace xef
+
+namespace xef::regmap {
+
+Reg g_map[32];
+static const char* g_map_name = "gcc";
+
+// .comment of an ELF file ("GCC: (Ubuntu ...)", "clang version ..."), empty if unreadable
+static std::string elf_comment(const char* path) {
+    std::string out;
+    FILE* f = fopen(path, "rb");
+    if (!f) return out;
+    Elf64_Ehdr eh;
+    if (fread(&eh, sizeof eh, 1, f) == 1 && !memcmp(eh.e_ident, ELFMAG, SELFMAG) && eh.e_shentsize == sizeof(Elf64_Shdr) &&
+        eh.e_shnum > 0 && eh.e_shnum < 4096 && eh.e_shstrndx < eh.e_shnum) {
+        std::vector<Elf64_Shdr> sh(eh.e_shnum);
+        if (fseek(f, (long)eh.e_shoff, SEEK_SET) == 0 && fread(sh.data(), sizeof(Elf64_Shdr), sh.size(), f) == sh.size()) {
+            const Elf64_Shdr& ss = sh[eh.e_shstrndx];
+            std::string names(ss.sh_size < (1u << 20) ? ss.sh_size : 0, '\0');
+            if (!names.empty() && fseek(f, (long)ss.sh_offset, SEEK_SET) == 0 &&
+                fread(&names[0], 1, names.size(), f) == names.size())
+                for (const Elf64_Shdr& s : sh)
+                    if (s.sh_name < names.size() && !strcmp(&names[s.sh_name], ".comment") && s.sh_size < (1u << 16)) {
+                        out.assign(s.sh_size, '\0');
+                        if (fseek(f, (long)s.sh_offset, SEEK_SET) != 0 || fread(&out[0], 1, out.size(), f) != out.size())
+                            out.clear();
+                        break;
+                    }
+        }
+    }
+    fclose(f);
+    return out;
+}
+
+void select(const char* host_exe_path) {
+    bool clang = false;
+    if (const char* e = getenv("XEF_REGMAP")) clang = !strcmp(e, "clang");
+    else if (host_exe_path) {
+        std::string c = elf_comment(host_exe_path);
+        for (char& ch : c) if (!ch) ch = '\n';
+        clang = c.find("clang version") != std::string::npos;
+    }
+    memcpy(g_map, clang ? kMapClang : kMapGcc, sizeof g_map);
+    g_map_name = clang ? "clang" : "gcc";
+    XEF_LOG(1, "register mapping: %s", g_map_name);
+}
+
+const char* name() { return g_map_name; }
+
+}  // namespace xef::regmap

@@ -74,8 +74,6 @@ int main(int argc, char** argv, char** envp) {
     g_xef_argv = argv;
 
     detect_host_features();
-    runtime_init();
-    signals_init();
 
     // scripts: "#!interp [arg]" -> run the (guest) interpreter, like execve does
     std::vector<std::string> sargs;
@@ -108,6 +106,11 @@ int main(int argc, char** argv, char** envp) {
         argc = (int)sargs.size();
         i = 0;
     }
+
+    // the register mapping follows the executable's compiler; code generation starts after this
+    regmap::select(resolve_guest_path(argv[i]).c_str());
+    runtime_init();
+    signals_init();
 
     LoadedImage img;
     if (!load_elf(argv[i], img)) fatal("cannot load %s", argv[i]);

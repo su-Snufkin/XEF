@@ -46,11 +46,16 @@ Strona gościa = 4 KiB (AT_PAGESZ); binarki wyrównane do 16/64 KiB działają b
 
 ### Rejestry (mapowanie kanoniczne, tier 1)
 
-| x86 | gość |
-|---|---|
-| rdi rsi rdx r10 r8 r9 | X0–X5 (= rejestry argumentów `syscall` x86; `memcpy(x0,x1,x2)` = SysV rdi/rsi/rdx) |
-| rbx rbp r12 | X19 X20 X21 (najczęstsze po X0–X3 w skompilowanym kodzie; X6/X7/FP są 2–13× rzadsze) |
-| r13 r14 | LR (X30), SP |
+Mapowanie wybierane raz na proces, przed generowaniem kodu (`regmap::select`): wg kompilatora
+pliku wykonywalnego (`.comment` zawiera „clang version” → clang, inaczej GCC), `XEF_REGMAP=gcc|clang`
+nadpisuje. Statystyki ważone próbkami profilu: `XEF_REGSTATS=1 --profile`.
+
+| x86 | gość (GCC) | gość (clang) |
+|---|---|---|
+| rdi rsi rdx | X0–X2 (`memcpy(x0,x1,x2)` = SysV rdi/rsi/rdx) | X0–X2 |
+| r10 r8 r9 | X3–X5 (rejestry argumentów `syscall` x86) | X8 X9 X10 (pierwsze rejestry robocze clanga) |
+| rbx rbp r12 | X19 X20 X21 (najczęstsze po X0–X3 w kodzie GCC; X6/X7/FP są 2–13× rzadsze) | X11 X12 X19 |
+| r13 r14 | LR (X30), SP | LR (X30), SP |
 | r15 | `CpuState* + 128` (najgorętsze pola w zasięgu disp8) |
 | rsp | stos JIT = natywny stos powrotów (patrz niżej) |
 | rax rcx r11 | temporaria bloku |

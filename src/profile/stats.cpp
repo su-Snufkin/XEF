@@ -12,6 +12,9 @@
 #include <algorithm>
 #include <vector>
 
+#include "frontend/a64/translate.h"
+#include "runtime/cpu_state.h"
+#include "runtime/dispatch.h"
 #include "ir/ir.h"
 #include "runtime/code_cache.h"
 
@@ -84,6 +87,32 @@ void profile_report() {
         fprintf(stderr, "  %5.1f%%  guest %#lx..%#lx  (%d insns, host %u bytes @%p) %s\n", 100.0 * counts[i].second / n,
                 (unsigned long)b->start, (unsigned long)b->end, (int)((b->end - b->start) / 4), b->code_size, b->code,
                 b->tier == 2 ? "t2" : b->tier == 3 ? "t1 (region failed)" : b->tier == 4 ? "t1 (demoted)" : "t1");
+    }
+    // XEF_REGSTATS=1: guest register accesses (GetReg/SetReg) of the sampled blocks, weighted by
+    // their samples: which registers the canonical mapping should keep in host registers
+    if (getenv("XEF_REGSTATS")) {
+        double w[32] = {};
+        static ir::Block blk;
+        a64::TranslateOpts topt;
+        topt.max_insts = g_opt.max_block_insts;
+        for (auto& [b, c] : counts) {
+            if (!a64::guest_readable(b->start)) continue;
+            a64::translate_block(b->start, blk, topt);
+            for (int v = 1; v < blk.n; v++) {
+                const ir::Inst& in = blk.insts[v];
+                if ((in.op == ir::Op::GetReg || in.op == ir::Op::SetReg) && in.aux < 32) w[in.aux] += c;
+            }
+        }
+        int order[32];
+        for (int g = 0; g < 32; g++) order[g] = g;
+        std::sort(order, order + 32, [&](int a, int b) { return w[a] > w[b]; });
+        double tot = 0;
+        for (double x : w) tot += x;
+        fprintf(stderr, "  guest register accesses (sample-weighted), * = mapped:\n   ");
+        for (int i = 0; i < 32; i++)
+            fprintf(stderr, " %s%d%s %.1f%%", order[i] == 31 ? "sp" : "x", order[i] == 31 ? 0 : order[i],
+                    regmap::mapped(order[i]) ? "*" : "", tot ? 100.0 * w[order[i]] / tot : 0.0);
+        fprintf(stderr, "\n");
     }
     // outside translated code: XEF functions via addr2line, everything else by mapping
     std::map<std::string, int> where;
