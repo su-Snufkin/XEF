@@ -2705,9 +2705,10 @@ void T1::emit_vop(Val v) {
         as_.xop_m(PADD[ws], d, a, vconst_mem(rep(rnd, ws), rep(rnd, ws)));
         u8 opc = ws == 2 ? 0x71 : ws == 4 ? 0x72 : 0x73;
         as_.xshift_imm(opc, 2, d, d, (u8)sh);
-        if (es == 4) { as_.xop1(PSHUFD, d, d, 0x08); zero_upper(d, 8); return; }
+        if (es == 4) { as_.xop1(PSHUFD, d, d, 0x08); zero_upper(d, 8); vi_[v].clean_vec = 8; return; }
         u64 lo = es == 1 ? 0x0e0c0a0806040200ull : 0x0d0c090805040100ull;
         as_.xop_m(PSHUFB, d, d, vconst_mem(lo, 0x8080808080808080ull));
+        vi_[v].clean_vec = 8;
         return;
     }
 
