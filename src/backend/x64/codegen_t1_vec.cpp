@@ -255,6 +255,52 @@ void T1::emit_vec_helper(Val v) {
     as_.movdqu_load(d, mem(R15, XEF_ST(vtmp) + 3 * 16));
 }
 
+// CRC32 (IEEE 802.3, reflected, no inversion) of crc (a) and n data bits (b) by Barrett reduction
+// with carry-less multiplies. With barrett(Y) = rev32(rev64(Y) mod P) for a 64-bit Y:
+//   n = 8/16/32: Y = (crc ^ data) << (32 - n)
+//   n = 64:      Y = (clmul(X[31:0], rev32(x^64 mod P)) << 1) ^ X[63:32], X = crc ^ data
+// barrett(Y) = ((clmul(clmul(Y[31:0], u')[31:0], P') ^ Y) >> 32) with the 33-bit reflected
+// P' = 0x1DB710641 and u' = rev33(x^64 / P) = 0x1F7011641 (CRC32C uses the crc32 instruction).
+void T1::emit_crc32_clmul(Val v) {
+    const Inst& in = I(v);
+    int n = in.size * 8;
+    pin(in.a); pin(in.b);
+    Reg rb = to_reg(in.b); pinned_ |= 1 << rb;
+    Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
+    clobber_flags();
+    Reg y = alloc_temp(); pinned_ |= 1 << y;
+    Reg t = alloc_temp(); pinned_ |= 1 << t;
+    Xmm x = alloc_x(); xpinned_ |= 1 << x;
+    as_.mov(4, y, ra);                                    // crc, zero-extended
+    if (n == 64) {
+        as_.alu(XOR, 8, y, rb);                           // X
+        as_.mov(4, t, y);
+        as_.xop_gx(MOVD_XR, x, t);
+        as_.xop_m(PCLMULQDQ, x, x, vconst_mem(0xB1E6B092ull, 0), 0x00);
+        as_.shift_imm(SHR, 8, y, 32);
+        as_.xop_gx(MOVQ_RX, x, t);
+        as_.alu(ADD, 8, t, t);                            // << 1
+        as_.alu(XOR, 8, y, t);                            // Y
+    } else {
+        if (n == 8) as_.movzx8(t, rb);
+        else if (n == 16) as_.movzx16(t, rb);
+        else as_.mov(4, t, rb);
+        as_.alu(XOR, 4, y, t);
+        if (n < 32) as_.shift_imm(SHL, 8, y, (u8)(32 - n));
+    }
+    as_.mov(4, t, y);
+    as_.xop_gx(MOVD_XR, x, t);
+    as_.xop_m(PCLMULQDQ, x, x, vconst_mem(0x1F7011641ull, 0), 0x00);
+    as_.xop_m(PAND, x, x, vconst_mem(0xFFFFFFFFull, 0));
+    as_.xop_m(PCLMULQDQ, x, x, vconst_mem(0x1DB710641ull, 0), 0x00);
+    as_.xop_gx(MOVQ_RX, x, t);
+    as_.alu(XOR, 8, t, y);
+    as_.shift_imm(SHR, 8, t, 32);
+    Reg d = dest_for(v, 4, t);
+    if (d != t) as_.mov(4, d, t);
+    finish_def(v, d);
+}
+
 // ------------------------------------------------------------------ dispatch
 
 void T1::emit_vec(Val v) {

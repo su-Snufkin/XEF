@@ -827,6 +827,7 @@ void T1::emit_inst(Val v) {
             finish_def(v, d);
             return;
         }
+        if (in.sub == 1 && in.aux == 0 && g_host.pclmul) { emit_crc32_clmul(v); return; }
         emit_call_c((void*)&xef_helper_crc32, v, in.a, in.b, (u64)in.size | ((u64)in.aux << 8));
         return;
     }
