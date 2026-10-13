@@ -604,7 +604,9 @@ Mem T1::addr_mem(Val a) {
 
 // ------------------------------------------------------------------ main loop
 
-bool T1::run() {
+bool T1::run() { return run_body() && run_cold(); }
+
+bool T1::run_body() {
     analyze();
     u8* start = as_.cur();
     (void)start;
@@ -628,6 +630,13 @@ bool T1::run() {
         if (x.k == L_REG && x.last <= v && owner_[x.reg] == v) owner_[x.reg] = 0;
         if (x.k == L_XMM && x.last <= v && xowner_[x.reg] == v) xowner_[x.reg] = 0;
     }
+    out_.npcmap = npc_;
+    out_.pcmap = pcmap_;
+    return !as_.overflow();
+}
+
+// Cold code after the body (or, in a region, after all member bodies): exit stubs.
+bool T1::run_cold() {
     // region exits: transfer back to the canonical mapping, then a normal patchable exit
     for (int i = 0; i < nrstubs_; i++) {
         as_.bind(rstubs_[i].l);
@@ -649,8 +658,6 @@ bool T1::run() {
     }
     emit_const_pool();
     out_.nexits = nexits_;
-    out_.npcmap = npc_;
-    out_.pcmap = pcmap_;
     return !as_.overflow();
 }
 
@@ -1963,7 +1970,7 @@ void T1::emit_terminator(Val v) {
     switch (in.op) {
     case Op::ExitJump:
         ensure_flags();
-        exit_jmp(in.imm);
+        if (!falls_to(in.imm)) exit_jmp(in.imm);
         return;
     case Op::ExitCond: {
         Val f = fid(in.a);
@@ -1971,8 +1978,7 @@ void T1::emit_terminator(Val v) {
         // the final flags value unless something set flags after (impossible: B.cond ends block)
         ensure_flags();
         need_flags(f, in.aux);
-        exit_jcc(cond_for(f, (ir::Cond)in.aux), in.imm);
-        exit_jmp(in.imm2);
+        exit_branch(cond_for(f, (ir::Cond)in.aux), in.imm, in.imm2);
         return;
     }
     case Op::ExitCbz: {
@@ -1982,8 +1988,7 @@ void T1::emit_terminator(Val v) {
             Opnd o = opnd(in.a, true, false, s);
             if (o.k == Opnd::M) as_.alu_imm(CMP, s, o.m, 0);
             else as_.test(s, o.r, o.r);
-            exit_jcc(nz ? CNE : CE, in.imm);
-            exit_jmp(in.imm2);
+            exit_branch(nz ? CNE : CE, in.imm, in.imm2);
             return;
         }
         // flag-free: mov rcx, v ; jrcxz
@@ -1995,7 +2000,7 @@ void T1::emit_terminator(Val v) {
         // not zero
         exit_jmp(nz ? in.imm : in.imm2);
         as_.patch_rel8_here(j);
-        exit_jmp(nz ? in.imm2 : in.imm);
+        if (!falls_to(nz ? in.imm2 : in.imm)) exit_jmp(nz ? in.imm2 : in.imm);
         return;
     }
     case Op::ExitTbz: {
@@ -2012,8 +2017,7 @@ void T1::emit_terminator(Val v) {
                 as_.bt_imm(8, r, (u8)b);
                 c = nz ? CB : CAE;
             }
-            exit_jcc(c, in.imm);
-            exit_jmp(in.imm2);
+            exit_branch(c, in.imm, in.imm2);
             return;
         }
         take_reg(R11);
@@ -2040,7 +2044,7 @@ void T1::emit_terminator(Val v) {
         u8* j = as_.jrcxz_fwd();
         exit_jmp(nz ? in.imm : in.imm2);   // bit set
         as_.patch_rel8_here(j);
-        exit_jmp(nz ? in.imm2 : in.imm);   // bit clear
+        if (!falls_to(nz ? in.imm2 : in.imm)) exit_jmp(nz ? in.imm2 : in.imm);   // bit clear
         return;
     }
     case Op::ExitIndirect: {
@@ -2158,6 +2162,44 @@ bool emit_tier1(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out,
     bool ok = t->run();
     out.size = as.size();
     t->~T1();
+    return ok;
+}
+
+// Region member: the body now (out.size = body bytes, pcmap valid), the exit stubs later, after
+// all member bodies, so that a member can fall through into the next one.
+struct RegionBodyGen {
+    Block blk;
+    CodegenCtx ctx;
+    CodegenOut* out;
+    alignas(t1::T1) u8 storage[sizeof(t1::T1)];
+    t1::T1* t;
+};
+
+RegionBodyGen* emit_region_body(const Block& b, Assembler& as, BlockMeta* meta, CodegenOut& out,
+                                const CodegenCtx& ctx) {
+    RegionBodyGen* g = new RegionBodyGen;
+    g->blk.start = b.start;
+    g->blk.end = b.end;
+    g->blk.n = b.n;
+    g->blk.guest_insts = b.guest_insts;
+    g->blk.flags_live_out = b.flags_live_out;
+    memcpy(g->blk.insts, b.insts, sizeof(b.insts[0]) * b.n);
+    memcpy(g->blk.pc_off, b.pc_off, sizeof(b.pc_off[0]) * b.n);
+    g->ctx = ctx;
+    g->out = &out;
+    u8* start = as.cur();
+    g->t = new (g->storage) t1::T1(g->blk, as, meta, out, &g->ctx);
+    as.avx = g_host.avx;
+    bool ok = g->t->run_body();
+    out.size = (size_t)(as.cur() - start);
+    if (!ok) { finish_region_body(g, false); return nullptr; }
+    return g;
+}
+
+bool finish_region_body(RegionBodyGen* g, bool emit_cold) {
+    bool ok = !emit_cold || g->t->run_cold();
+    g->t->~T1();
+    delete g;
     return ok;
 }
 

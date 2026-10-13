@@ -68,6 +68,8 @@ public:
         }
     }
     bool run();
+    bool run_body();
+    bool run_cold();
 
 private:
     const Block& b_;
@@ -366,6 +368,14 @@ private:
         as_.db(0x0F); as_.db((u8)(0x80 | c));
         e->site = as_.cur();
         as_.dd(0);
+    }
+    // region member laid out right after this block: no jump needed to reach it
+    bool falls_to(GuestAddr t) const { return ctx_ && ctx_->region && ctx_->fall_pc && t == ctx_->fall_pc && internal(t); }
+    // two-way block end: jcc to `taken`, else `not_taken`; the target laid out next falls through
+    void exit_branch(Cond c, GuestAddr taken, GuestAddr not_taken) {
+        if (falls_to(taken) && !falls_to(not_taken)) { exit_jcc(invert(c), not_taken); return; }
+        exit_jcc(c, taken);
+        if (!falls_to(not_taken)) exit_jmp(not_taken);
     }
     void exit_call(GuestAddr target) {
         as_.align_field(1, 4);

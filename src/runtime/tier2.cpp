@@ -296,7 +296,38 @@ static bool compile_region(GuestAddr head) {
     static Fix fixes[kMaxRegionBlocks * 64];
     int nfix = 0;
     BlockMeta* metas[kMaxRegionBlocks];
+
+    // ---- layout: chains along the fall-through successor (the not-taken side of a conditional
+    // exit, the target of an unconditional one), so the member laid out next needs no jump. A
+    // member with a helper call (IC IVAU) ends its chain: the code after it is entered by a jump,
+    // which region invalidation can retarget.
+    int lay[kMaxRegionBlocks], nord = 0;
+    bool placed[kMaxRegionBlocks] = {}, helper_of[kMaxRegionBlocks];
+    int fall_of[kMaxRegionBlocks];
     for (int i = 0; i < R.n; i++) {
+        a64::translate_block(R.pcs[i], blk, topt);
+        helper_of[i] = false;
+        for (int v = 1; v < blk.n; v++) if (blk.insts[v].op == ir::Op::Helper) helper_of[i] = true;
+        GuestAddr succ[2];
+        int ns = 0;
+        direct_terminator(blk, succ, &ns);
+        fall_of[i] = ns ? idx_of(succ[ns - 1]) : -1;
+    }
+    for (int i = 0; i < R.n; i++)
+        for (int cur = i; cur >= 0 && !placed[cur];) {
+            placed[cur] = true;
+            lay[nord++] = cur;
+            cur = helper_of[cur] ? -1 : fall_of[cur];
+        }
+
+    // ---- code generation: member bodies back to back, then all their exit stubs
+    const size_t kMax = (size_t)R.n * (64 << 10) + (64 << 10);
+    u8* code = g_cache.alloc_code(kMax);
+    Assembler as(code, kMax);
+    static backend::CodegenOut outs[kMaxRegionBlocks];
+    backend::RegionBodyGen* gens[kMaxRegionBlocks];
+    for (int k = 0; k < nord; k++) {
+        int i = lay[k];
         a64::translate_block(R.pcs[i], blk, topt);
         blk.flags_live_out = f_live_out[i];
         BlockMeta* meta = g_cache.alloc_meta(backend::count_exits(blk));
@@ -304,30 +335,41 @@ static bool compile_region(GuestAddr head) {
         meta->end = blk.end;
         meta->tier = 2;
         meta->region = ri;
-        const size_t kMax = 256 * 1024;
-        u8* code = g_cache.alloc_code(kMax);
-        Assembler as(code, kMax);
-        static backend::CodegenOut out;
-        out = backend::CodegenOut();
-        if (!backend::emit_tier1(blk, as, meta, out, &ctx)) {
+        outs[i] = backend::CodegenOut();
+        backend::CodegenCtx c = ctx;
+        c.fall_pc = k + 1 < nord && !helper_of[i] ? R.pcs[lay[k + 1]] : 0;
+        u8* bcode = as.cur();
+        gens[k] = backend::emit_region_body(blk, as, meta, outs[i], c);
+        if (!gens[k]) {
+            for (int q = 0; q < k; q++) backend::finish_region_body(gens[q], false);
             XEF_LOG(1, "tier2: %#lx: code generation failed for block %#lx", (unsigned long)head, (unsigned long)R.pcs[i]);
             return false;
         }
-        meta->code = code;
-        meta->code_size = (u32)out.size;
-        g_cache.commit_code(code, out.size);
-        g_cache.set_pcmap(meta, out.pcmap, out.npcmap);
+        meta->code = bcode;
+        meta->code_size = (u32)outs[i].size;
+        g_cache.set_pcmap(meta, outs[i].pcmap, outs[i].npcmap);
+        code_of[i] = bcode;
+        metas[i] = meta;
+    }
+    bool cold_ok = true;
+    for (int k = 0; k < nord; k++) cold_ok &= backend::finish_region_body(gens[k], true);
+    if (!cold_ok || as.overflow()) {
+        XEF_LOG(1, "tier2: %#lx: region code too large", (unsigned long)head);
+        return false;
+    }
+    g_cache.commit_code(code, as.size());
+    for (int k = 0; k < nord; k++) {
+        int i = lay[k];
+        BlockMeta* meta = metas[i];
         if (g_opt.dump_code && g_opt.dump_wants(R.pcs[i])) {
             char path[64];
             snprintf(path, sizeof path, "/tmp/xef-t2-%lx.bin", (unsigned long)R.pcs[i]);
-            if (FILE* f = fopen(path, "wb")) { fwrite(code, 1, out.size, f); fclose(f); }
+            if (FILE* f = fopen(path, "wb")) { fwrite(meta->code, 1, meta->code_size, f); fclose(f); }
         }
         g_cache.register_block(meta);
-        meta->nexits = (u16)out.nexits;
-        code_of[i] = code;
-        metas[i] = meta;
+        meta->nexits = (u16)outs[i].nexits;
         ri->blocks[ri->nblocks++] = meta;
-        for (int k = 0; k < out.nfixes; k++) fixes[nfix++] = {out.fixes[k].field, out.fixes[k].target};
+        for (int q = 0; q < outs[i].nfixes; q++) fixes[nfix++] = {outs[i].fixes[q].field, outs[i].fixes[q].target};
     }
     auto code_for = [&](GuestAddr pc) -> u8* {
         for (int i = 0; i < R.n; i++) if (R.pcs[i] == pc) return code_of[i];

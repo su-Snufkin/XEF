@@ -39,6 +39,7 @@ struct CodegenCtx {
     const RegionVXfer* vxfer = nullptr;
     int nvxfer = 0;
     u64* exit_counter = nullptr;   // region exit counter (RIP-addressable)
+    GuestAddr fall_pc = 0;         // region member laid out right after this one (falls through)
 };
 
 struct InternalFix {
@@ -58,6 +59,12 @@ struct CodegenOut {
 // Emits canonical -> region (enter=true) or region -> canonical register transfers.
 void emit_region_xfer(x64::Assembler& as, const RegionXfer* x, int n,
                       const RegionVXfer* vx, int nv, bool enter);
+
+// Tier-2 region members: body first (out.size = body bytes), exit stubs after all bodies.
+struct RegionBodyGen;
+RegionBodyGen* emit_region_body(const ir::Block& b, x64::Assembler& as, BlockMeta* meta, CodegenOut& out,
+                                const CodegenCtx& ctx);
+bool finish_region_body(RegionBodyGen* g, bool emit_cold);   // emits the cold stubs, frees g
 
 // Emits tier-1 code for `b` at as.cur(). Exits are recorded in meta->exits
 // and point at per-exit link stubs emitted after the block body.
