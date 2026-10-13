@@ -4,7 +4,7 @@
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 S=$ROOT/.tools/sysroot-aarch64
 Q=$ROOT/.tools/qemu/usr/bin/qemu-aarch64
-X=${XEF:-$ROOT/build/xef}
+X=${XEF:-$ROOT/build/xef}   # XEF_FLAGS: extra options (e.g. "--tier2-threshold 1")
 OUT=/tmp/xef_guest
 mkdir -p $OUT
 pass=0; fail=0
@@ -23,7 +23,7 @@ for src in "$ROOT"/tests/guest/t_*.c "$ROOT"/tests/guest/t_*.cpp; do
     fi
     if [ -f "${src%.*}.expected" ]; then exp=$(cat "${src%.*}.expected"); ec=0
     else exp=$(XEF_T=v $Q -L $S "$exe" a b 2>&1); ec=$?; fi
-    got=$(XEF_T=v $X -L $S "$exe" a b 2>&1); gc=$?
+    got=$(XEF_T=v $X $XEF_FLAGS -L $S "$exe" a b 2>&1); gc=$?
     if [ "$exp" = "$got" ] && [ $ec = $gc ]; then pass=$((pass+1)); else
       fail=$((fail+1)); echo "FAIL $name-$link$opt (exit qemu=$ec xef=$gc)"
       echo "$exp" > $OUT/exp.txt; echo "$got" > $OUT/got.txt; diff $OUT/exp.txt $OUT/got.txt | head -10

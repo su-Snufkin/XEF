@@ -279,8 +279,11 @@ void T1::emit_vec(Val v) {
             }
             Xmm t = xreg(src);
             if (t != h) as_.movaps(h, t);
-            if (x.k == L_XMM && xowner_[x.reg] == src) xowner_[x.reg] = 0;
-            if (I(src).op != Op::VConst) { x.k = L_VXMM; x.reg = h; x.vhome = (i8)g; }
+            // a constant keeps its temporary (released after its last use); other values move to h
+            if (I(src).op != Op::VConst) {
+                if (x.k == L_XMM && xowner_[x.reg] == src) xowner_[x.reg] = 0;
+                x.k = L_VXMM; x.reg = h; x.vhome = (i8)g;
+            }
             return;
         }
         if (x.k == L_VMEM && x.vhome == g) return;  // writing back the same value
