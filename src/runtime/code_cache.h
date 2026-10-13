@@ -57,7 +57,20 @@ struct PeekLog {
                 if (hi > r[i].hi) r[i].hi = hi;
                 return;
             }
-        if (n == kMax) { overflow = true; return; }
+        if (n == kMax) {
+            // full: widen the range that grows least (a superset only costs extra invalidations)
+            int best = 0;
+            u64 best_cost = ~0ull;
+            for (int i = 0; i < n; i++) {
+                GuestAddr nlo = lo < r[i].lo ? lo : r[i].lo, nhi = hi > r[i].hi ? hi : r[i].hi;
+                u64 cost = (nhi - nlo) - (r[i].hi - r[i].lo);
+                if (cost < best_cost) { best_cost = cost; best = i; }
+            }
+            if (best_cost > (1u << 20)) { overflow = true; return; }   // far apart: give up instead
+            if (lo < r[best].lo) r[best].lo = lo;
+            if (hi > r[best].hi) r[best].hi = hi;
+            return;
+        }
         r[n++] = {lo, hi};
     }
 };

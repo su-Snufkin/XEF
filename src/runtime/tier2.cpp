@@ -106,7 +106,10 @@ static bool compile_region(GuestAddr head) {
         GuestAddr succ[2];
         int ns = 0;
         if (has_unsupported(blk) || !direct_terminator(blk, succ, &ns)) {
-            if (qi == 0) return false;
+            if (qi == 0) {
+                XEF_LOG(1, "tier2: %#lx: head block not supported", (unsigned long)head);
+                return false;
+            }
             // drop it from the region
             R.pcs[qi] = R.pcs[--R.n];
             qi--;
@@ -140,6 +143,7 @@ static bool compile_region(GuestAddr head) {
     }
     if (!loops) {
         if (hm->exec_count < (u64)g_tier2_threshold * 16) hm->tier = 1;  // allow retry once successors are translated
+        XEF_LOG(1, "tier2: %#lx: no loop among %d blocks", (unsigned long)head, R.n);
         return false;
     }
 
@@ -305,7 +309,10 @@ static bool compile_region(GuestAddr head) {
         Assembler as(code, kMax);
         static backend::CodegenOut out;
         out = backend::CodegenOut();
-        if (!backend::emit_tier1(blk, as, meta, out, &ctx)) return false;
+        if (!backend::emit_tier1(blk, as, meta, out, &ctx)) {
+            XEF_LOG(1, "tier2: %#lx: code generation failed for block %#lx", (unsigned long)head, (unsigned long)R.pcs[i]);
+            return false;
+        }
         meta->code = code;
         meta->code_size = (u32)out.size;
         g_cache.commit_code(code, out.size);
@@ -345,7 +352,10 @@ static bool compile_region(GuestAddr head) {
             }
         }
     }
-    if (peeks.overflow) return false;   // dependencies not trackable (abandoned code stays unpublished)
+    if (peeks.overflow) {   // dependencies not trackable (abandoned code stays unpublished)
+        XEF_LOG(1, "tier2: %#lx: too many lookahead ranges", (unsigned long)head);
+        return false;
+    }
     for (int i = 0; i < R.n; i++) g_cache.mark_code(metas[i]->start, metas[i]->end, i ? nullptr : &peeks);
     if (g_cache.epoch.load(std::memory_order_seq_cst) != ep) { hm->tier = 1; return false; }   // code changed
     for (int i = 0; i < R.n; i++) g_cache.add_deps(entry, metas[i]->start, metas[i]->end, i ? nullptr : &peeks);

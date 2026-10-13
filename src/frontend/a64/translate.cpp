@@ -988,39 +988,61 @@ static QuickFlags slow_flags(GuestAddr pc, GuestAddr* t1, GuestAddr* t2) {
     }
 }
 
-static bool nzcv_walk(GuestAddr pc, int depth, bool fast) {
-    for (int i = 0; i < 24; i++) {
-        if (!guest_readable(pc)) return true;
-        if (tls_peek) tls_peek->add(pc, pc + 4);
-        GuestAddr t1 = 0, t2 = 0;
-        QuickFlags q = fast ? quick_flags(*(const u32*)pc, pc, &t1, &t2) : Q_UNKNOWN;
-        if (q == Q_UNKNOWN) q = slow_flags(pc, &t1, &t2);
-        switch (q) {
-        case Q_READ: return true;
-        case Q_WRITE: return false;
-        case Q_B: pc = t1; continue;
-        case Q_BL: return !abi_kills_flags(Op::ExitCall);
-        case Q_RET: return !abi_kills_flags(Op::ExitRet);
-        case Q_CB:
-            if (depth >= 2) return true;
-            return nzcv_walk(t1, depth + 1, fast) || nzcv_walk(t2, depth + 1, fast);
-        default: break;
+// Depth-first search over the guest CFG from `starts` for a read of NZCV that is not preceded
+// by a write. Path heads already queued are not explored again, so loops that never touch NZCV
+// terminate as "dead" (a revisited head adds no new paths). Unknown code, an exhausted budget and
+// indirect branches answer "live".
+static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast) {
+    constexpr int kMaxHeads = 32, kMaxInsts = 160;
+    GuestAddr heads[kMaxHeads];
+    int nheads = 0, next = 0, budget = kMaxInsts;
+    auto push = [&](GuestAddr t) {
+        for (int i = 0; i < nheads; i++) if (heads[i] == t) return true;
+        if (nheads >= kMaxHeads) return false;
+        heads[nheads++] = t;
+        return true;
+    };
+    for (int i = 0; i < nstarts; i++) if (!push(starts[i])) return true;
+    while (next < nheads) {
+        GuestAddr pc = heads[next++];
+        for (;;) {
+            if (--budget < 0) return true;
+            if (!guest_readable(pc)) return true;
+            if (tls_peek) tls_peek->add(pc, pc + 4);
+            GuestAddr t1 = 0, t2 = 0;
+            QuickFlags q = fast ? quick_flags(*(const u32*)pc, pc, &t1, &t2) : Q_UNKNOWN;
+            if (q == Q_UNKNOWN) q = slow_flags(pc, &t1, &t2);
+            bool end = false;
+            switch (q) {
+            case Q_READ: return true;
+            case Q_WRITE: end = true; break;
+            case Q_B: if (!push(t1)) return true; end = true; break;
+            case Q_BL: if (!abi_kills_flags(Op::ExitCall)) return true; end = true; break;
+            case Q_RET: if (!abi_kills_flags(Op::ExitRet)) return true; end = true; break;
+            case Q_CB: if (!push(t1) || !push(t2)) return true; end = true; break;
+            default: break;
+            }
+            if (end) break;
+            pc += 4;
         }
-        pc += 4;
     }
-    return true;
+    return false;
 }
 
-// Returns true if NZCV may be read at `pc` before being overwritten.
-bool nzcv_live_at(GuestAddr pc, int depth) {
+// Returns true if NZCV may be read at any of `pcs` before being overwritten.
+static bool nzcv_live_any(const GuestAddr* pcs, int n) {
     // XEF_CHECK_NZCV=1: debugging aid, compares the fast classification with the translator's
     static const bool check = getenv("XEF_CHECK_NZCV") != nullptr;
-    bool r = nzcv_walk(pc, depth, true);
-    if (check && r != nzcv_walk(pc, depth, false))
-        fatal("nzcv lookahead mismatch at %#lx (fast says %s): %08x %08x %08x %08x", (unsigned long)pc,
-              r ? "live" : "dead", ((const u32*)pc)[0], ((const u32*)pc)[1], ((const u32*)pc)[2], ((const u32*)pc)[3]);
+    bool r = nzcv_walk(pcs, n, true);
+    if (check && r != nzcv_walk(pcs, n, false)) {
+        const u32* w = (const u32*)pcs[0];
+        fatal("nzcv lookahead mismatch at %#lx (fast says %s): %08x %08x %08x %08x", (unsigned long)pcs[0],
+              r ? "live" : "dead", w[0], w[1], w[2], w[3]);
+    }
     return r;
 }
+
+bool nzcv_live_at(GuestAddr pc, int) { return nzcv_live_any(&pc, 1); }
 
 static void compute_flags_liveness(ir::Block& blk) {
     const Inst* term = nullptr;
@@ -1029,9 +1051,11 @@ static void compute_flags_liveness(ir::Block& blk) {
     if (!term) return;
     switch (term->op) {
     case Op::ExitJump: blk.flags_live_out = nzcv_live_at(term->imm, 0); break;
-    case Op::ExitCond: case Op::ExitCbz: case Op::ExitTbz:
-        blk.flags_live_out = nzcv_live_at(term->imm, 0) || nzcv_live_at(term->imm2, 0);
+    case Op::ExitCond: case Op::ExitCbz: case Op::ExitTbz: {
+        GuestAddr t[2] = {term->imm, term->imm2};
+        blk.flags_live_out = nzcv_live_any(t, 2);
         break;
+    }
     default: blk.flags_live_out = !abi_kills_flags(term->op); break;
     }
 }
