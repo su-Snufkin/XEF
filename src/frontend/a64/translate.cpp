@@ -1072,13 +1072,16 @@ static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast) {
         heads[nheads++] = t;
         return true;
     };
+    // only a "dead" answer depends on the code read (a "live" one is what the translator assumes
+    // without looking): the straight-line run read from each head is logged at the end
+    GuestAddr run_end[kMaxHeads];
     for (int i = 0; i < nstarts; i++) if (!push(starts[i])) return true;
     while (next < nheads) {
         GuestAddr pc = heads[next++];
         for (;;) {
             if (--budget < 0) return true;
             if (!guest_readable(pc)) return true;
-            if (tls_peek) tls_peek->add(pc, pc + 4);
+            run_end[next - 1] = pc + 4;
             GuestAddr t1 = 0, t2 = 0;
             QuickFlags q = fast ? quick_flags(*(const u32*)pc, pc, &t1, &t2) : Q_UNKNOWN;
             if (q == Q_UNKNOWN) q = slow_flags(pc, &t1, &t2);
@@ -1096,6 +1099,8 @@ static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast) {
             pc += 4;
         }
     }
+    if (tls_peek)
+        for (int i = 0; i < nheads; i++) tls_peek->add(heads[i], run_end[i]);
     return false;
 }
 
