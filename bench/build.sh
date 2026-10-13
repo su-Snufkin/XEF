@@ -12,7 +12,7 @@ build() {  # name, sources..., extra
   clang $CFLAGS -march=x86-64-v2 "$@" -lm -o $OUT/native/$name
   clang $CFLAGS --target=aarch64-linux-gnu --sysroot=$S -fuse-ld=lld -static "$@" -lm -o $OUT/aarch64/$name
 }
-for b in intloop fploop calls; do build $b $ROOT/bench/micro/$b.c; done
+for b in intloop fploop calls simd; do build $b $ROOT/bench/micro/$b.c; done
 CM=$SRC/coremark
 build coremark -I$CM -I$CM/posix -DPERFORMANCE_RUN=1 -DITERATIONS=60000 -DFLAGS_STR='"-O2"' \
   $CM/core_list_join.c $CM/core_main.c $CM/core_matrix.c $CM/core_state.c $CM/core_util.c $CM/posix/core_portme.c

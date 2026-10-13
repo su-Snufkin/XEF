@@ -962,6 +962,24 @@ void T1::emit_vop(Val v) {
         else vi_[v].clean_vec = 8;
         return;
     }
+    case V_ADDHN: case V_SUBHN: case V_RADDHN: case V_RSUBHN: {   // high halves of a +/- b (+ round)
+        if (es == 8) return helper();
+        int ws = es * 2;
+        bool sub = in.sub == V_SUBHN || in.sub == V_RSUBHN;
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        as_.xop(sub ? PSUB[ws] : PADD[ws], d, a, b);
+        if (in.sub == V_RADDHN || in.sub == V_RSUBHN) {
+            u64 r = rep(1ull << (es * 8 - 1), ws);
+            as_.xop_m(PADD[ws], d, d, vconst_mem(r, r));
+        }
+        as_.xshift_imm(es == 1 ? 0x71 : es == 2 ? 0x72 : 0x73, 2, d, d, (u8)(es * 8));
+        if (es == 4) { as_.xop1(PSHUFD, d, d, 0x08); zero_upper(d, 8); vi_[v].clean_vec = 8; return; }
+        u64 lo = es == 1 ? 0x0e0c0a0806040200ull : 0x0d0c090805040100ull;
+        as_.xop_m(PSHUFB, d, d, vconst_mem(lo, 0x8080808080808080ull));
+        vi_[v].clean_vec = 8;
+        return;
+    }
     case V_SHRN: {
         int sh = (int)in.imm;
         Xmm a = A();
@@ -1710,20 +1728,6 @@ void T1::emit_vop(Val v) {
         Xmm z = alloc_x(); xpinned_ |= 1 << z;
         as_.xop(PXOR, z, z, z);
         as_.xop(es == 1 ? PACKUSWB : PACKUSDW, d, a, z);
-        return;
-    }
-    case V_ADDHN: case V_SUBHN: {
-        if (es == 8) return helper();
-        int ws = es * 2;
-        Xmm a = A(), b = B();
-        Xmm d = new_x(v);
-        as_.xop(in.sub == V_ADDHN ? PADD[ws] : PSUB[ws], d, a, b);
-        u8 opc = ws == 2 ? 0x71 : ws == 4 ? 0x72 : 0x73;
-        as_.xshift_imm(opc, 2, d, d, (u8)(es * 8));                         // high halves, zero-extended
-        if (es == 4) { as_.xop1(PSHUFD, d, d, 0x08); zero_upper(d, 8); return; }
-        Xmm z = alloc_x(); xpinned_ |= 1 << z;
-        as_.xop(PXOR, z, z, z);
-        as_.xop(es == 1 ? PACKUSWB : PACKUSDW, d, d, z);                    // values fit: no saturation
         return;
     }
     case V_SQRDMULH: {

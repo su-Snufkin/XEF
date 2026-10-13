@@ -35,6 +35,7 @@ BENCHES = [
     ('intloop', ['intloop'], 'integer loops (sieve, hash, counting)'),
     ('fploop', ['fploop'], 'FP loops (matmul, n-body, mandelbrot)'),
     ('calls', ['calls'], 'calls + indirect branches (fib, fn pointers, interpreter)'),
+    ('simd', ['simd'], 'auto-vectorized NEON loops (saxpy, dot, u8 blend, s16 saturate, SAD, clamp, cvt)'),
     ('zstd-c', ['zstd', '-q', '-6', '-c', DATA], 'zstd -6 compress 48 MB text'),
     ('zstd-d', ['zstd', '-q', '-d', '-c', DATA + '.zst'], 'zstd decompress 48 MB text'),
 ]
