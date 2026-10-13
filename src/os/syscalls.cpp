@@ -238,8 +238,11 @@ static i64 guest_seccomp_prctl() { return -EINVAL; }
 // worker threads of host libraries behind --host-gl) ----
 int guest_thread_count();
 
+// every openat asks: a prefix test first (snprintf + a getpid syscall per call otherwise)
+static bool is_proc_path(const char* p) { return p && !strncmp(p, "/proc/", 6); }
+
 static bool is_proc_self_file(const char* p, const char* name) {
-    if (!p) return false;
+    if (!is_proc_path(p)) return false;
     char buf[64];
     snprintf(buf, sizeof buf, "/proc/self/%s", name);
     if (!strcmp(p, buf)) return true;
@@ -390,7 +393,7 @@ struct PathArg {
 };
 
 static bool is_proc_self_exe(const char* p) {
-    if (!p) return false;
+    if (!is_proc_path(p)) return false;
     if (!strcmp(p, "/proc/self/exe")) return true;
     char buf[64];
     snprintf(buf, sizeof buf, "/proc/%d/exe", getpid());
