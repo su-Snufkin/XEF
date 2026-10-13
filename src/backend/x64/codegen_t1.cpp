@@ -2080,9 +2080,21 @@ void T1::emit_terminator(Val v) {
     case Op::ExitRet: {
         take_reg(RAX);
         pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
+        if (!live_out_) {   // NZCV dead at the return: cmp + jne, the target register compared in place
+            Opnd o = opnd(in.a, false, false, 8);
+            Label miss;
+            as_.alu(CMP, 8, o.r, mem(RSP, 8));
+            as_.jcc(CNE, miss);
+            as_.ret();
+            as_.bind(miss);
+            if (o.r != RAX) as_.mov(8, RAX, o.r);
+            as_.mov(8, RSP, mem(R15, XEF_ST(jit_stack_top)));
+            emit_ibtc_probe(true);
+            return;
+        }
         load_into(RAX, in.a, 8);
         ensure_flags();
-        if (!live_out_) {   // NZCV dead at the return: cmp + jne
+        if (!live_out_) {
             Label miss;
             as_.alu(CMP, 8, RAX, mem(RSP, 8));
             as_.jcc(CNE, miss);
