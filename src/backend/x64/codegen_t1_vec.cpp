@@ -38,7 +38,7 @@ constexpr SseOp PMULUDQ = P(0xF4), PMULDQ = P38(0x28);
 constexpr SseOp PADDUSB = P(0xDC), PADDUSW = P(0xDD), PSUBUSB = P(0xD8), PSUBUSW = P(0xD9);
 constexpr SseOp PADDSB = P(0xEC), PADDSW = P(0xED), PSUBSB = P(0xE8), PSUBSW = P(0xE9);
 constexpr SseOp PAVGB = P(0xE0), PAVGW = P(0xE3);
-constexpr SseOp PSHUFB = P38(0x00), PALIGNR = P3A(0x0F), PSHUFD = P(0x70);
+constexpr SseOp PSHUFB = P38(0x00), PALIGNR = P3A(0x0F), PSHUFD = P(0x70), PTEST = P38(0x17);
 constexpr SseOp PBLENDW = P3A(0x0E), PSADBW = P(0xF6), PHADDW = P38(0x01), PHADDD = P38(0x02);
 constexpr SseOp PACKUSWB = P(0x67), PACKSSWB = P(0x63), PACKSSDW = P(0x6B), PACKUSDW = P38(0x2B);
 constexpr SseOp PMULHRSW = P38(0x0B), PMADDUBSW = P38(0x04), PMADDWD = P(0xF5);
@@ -327,6 +327,24 @@ void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool sca
         as_.xop(PANDN, t, t, d);
         as_.xop(POR, d, t, u);
     };
+    // Signaling NaNs are rare: unless EFLAGS hold guest flags that are expensive to recreate,
+    // skip the fix-up when no lane of a or b is a NaN at all.
+    Xmm anynan = XMM0;
+    bool skip_ok = nm && (!flags_needed_after(cur_) || remat_ok(eflags_));
+    if (skip_ok) {
+        anynan = alloc_x(); xpinned_ |= 1 << anynan;
+        as_.xop(FPV(0xC2, es), anynan, a, b, 3);   // unordered (all lanes: harmless for scalars)
+    }
+    auto snan_fixup = [&]() {
+        if (!skip_ok) { snan_wins(b); snan_wins(a); return; }
+        clobber_flags();
+        as_.xop1(PTEST, anynan, anynan);
+        Label done;
+        as_.jcc(CE, done);
+        snan_wins(b);
+        snan_wins(a);
+        as_.bind(done);
+    };
     if (nm && as_.avx) {
         // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
         // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
@@ -336,8 +354,7 @@ void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool sca
         as_.xop(cmp, u, a, t, 0);
         as_.xop(isMax ? PAND : POR, t, a, t);
         as_.vblendv(es == 8, d, d, t, u);
-        snan_wins(b);
-        snan_wins(a);
+        snan_fixup();
         return;
     }
     as_.xop(op, d, a, b);
@@ -362,8 +379,7 @@ void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool sca
         as_.xop(PAND, t, a, u);
         as_.xop(PANDN, u, u, d);
         as_.xop(POR, d, t, u);
-        snan_wins(b);
-        snan_wins(a);
+        snan_fixup();
     }
 }
 
