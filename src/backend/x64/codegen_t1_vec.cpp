@@ -2061,11 +2061,13 @@ void T1::emit_vop(Val v) {
         return;
     }
     // ---------------- reductions
-    case V_ADDV: case V_UADDLV: {
-        if (!(es == 1 || (es == 2 && in.sub == V_ADDV) || (es == 4 && in.sub == V_ADDV && !half))) return helper();
-        Xmm a = A();
-        Xmm d = new_x(v);
+    case V_ADDV: case V_UADDLV: case V_SADDLV: {
+        bool is_saddlv = in.sub == V_SADDLV;
+        bool is_addv = in.sub == V_ADDV;
         if (es == 1) {
+            if (is_saddlv) return helper();
+            Xmm a = A();
+            Xmm d = new_x(v);
             Xmm z = alloc_x(); xpinned_ |= 1 << z;
             as_.xop(PXOR, z, z, z);
             if (half) { as_.xop1(MOVQ_XX, d, a); as_.xop(PSADBW, d, d, z); }
@@ -2074,21 +2076,66 @@ void T1::emit_vop(Val v) {
                 as_.xop1(PSHUFD, z, d, 0xEE);
                 as_.xop(PADD[8], d, d, z);
             }
-            zero_upper(d, in.sub == V_ADDV ? 1 : 2);
+            zero_upper(d, is_addv ? 1 : 2);
             return;
         }
-        if (es == 2 && in.sub == V_ADDV) {
-            as_.xop(PHADDW, d, a, a);
-            as_.xop(PHADDW, d, d, d);
-            if (!half) as_.xop(PHADDW, d, d, d);
-            zero_upper(d, 2);
+        if (es == 2) {
+            Xmm a = A();
+            Xmm d = new_x(v);
+            if (is_addv) {
+                as_.xop(PHADDW, d, a, a);
+                as_.xop(PHADDW, d, d, d);
+                if (!half) as_.xop(PHADDW, d, d, d);
+                zero_upper(d, 2);
+                return;
+            }
+            // UADDLV / SADDLV: sum of 2-byte lanes widened to 4 bytes
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            u64 one = 0x0001000100010001ull;
+            if (is_saddlv) {
+                as_.xop_m(PMADDWD, d, a, vconst_mem(one, one));
+            } else {
+                as_.xop_m(PXOR, t, a, vconst_mem(0x8000800080008000ull, 0x8000800080008000ull));
+                as_.xop_m(PMADDWD, d, t, vconst_mem(one, one));
+                as_.xop_m(PADD[4], d, d, vconst_mem(0x0001000000010000ull, 0x0001000000010000ull));
+            }
+            // sum d across 32-bit lanes (4 lanes if full, 2 lanes if half)
+            if (half) {
+                as_.xop1(PSHUFD, t, d, 0x01);
+                as_.xop(PADD[4], d, d, t);
+            } else {
+                as_.xop(PHADDD, d, d, d);
+                as_.xop(PHADDD, d, d, d);
+            }
+            zero_upper(d, 4);
+            vi_[v].clean_vec = 4;
             return;
         }
-        as_.xop(PHADDD, d, a, a);
-        as_.xop(PHADDD, d, d, d);
-        zero_upper(d, 4);
-        vi_[v].clean_vec = 4;
-        return;
+        if (es == 4) {
+            if (half) return helper();
+            Xmm a = A();
+            Xmm d = new_x(v);
+            if (is_addv) {
+                as_.xop(PHADDD, d, a, a);
+                as_.xop(PHADDD, d, d, d);
+                zero_upper(d, 4);
+                vi_[v].clean_vec = 4;
+                return;
+            }
+            // es == 4 UADDLV / SADDLV (widening to 64-bit result)
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            as_.xop1(PSHUFD, t, a, 0x08);
+            as_.xop1(is_saddlv ? PMOVSX[4] : PMOVZX[4], d, t);
+            as_.xop1(PSHUFD, t, a, 0x0D);
+            as_.xop1(is_saddlv ? PMOVSX[4] : PMOVZX[4], t, t);
+            as_.xop(PADD[8], d, d, t);
+            as_.xop1(PSHUFD, t, d, 0xEE);
+            as_.xop(PADD[8], d, d, t);
+            zero_upper(d, 8);
+            vi_[v].clean_vec = 8;
+            return;
+        }
+        return helper();
     }
     case V_UMAXV: case V_UMINV: case V_SMAXV: case V_SMINV: {
         if (es == 8) return helper();
