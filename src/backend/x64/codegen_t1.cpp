@@ -630,8 +630,7 @@ bool T1::run() { return run_body() && run_cold(); }
 
 bool T1::run_body() {
     analyze();
-    u8* start = as_.cur();
-    (void)start;
+    body_start_ = as_.cur();
     nlive_ = 0;
     for (int v = 1; v < b_.n; v++) {
         cur_ = v;

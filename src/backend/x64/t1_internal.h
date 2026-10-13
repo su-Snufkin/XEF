@@ -123,6 +123,7 @@ private:
     struct ColdIbtc { Label l; };
     HostPcEntry pcmap_[1024];
     int npc_ = 0;
+    u8* body_start_ = nullptr;   // BlockMeta::code (chain and region members share the assembler)
     u64 vspill_used_ = 0;   // CpuState::vspill slots in use
     struct ConstFix { u64 lo, hi; u8* field; };
     ConstFix consts_[256];
@@ -437,7 +438,7 @@ private:
         if (npc_ < 1024) {  // host->guest pc map for faults
             HostPcEntry& e = pcmap_[npc_++];
             e = {};
-            e.host_off = (u32)as_.offset();
+            e.host_off = (u32)(as_.cur() - body_start_);
             e.guest_off = (u16)b_.pc_off[cur_];
             e.borrowed = borrowed_;
             Val f = fid(gflags_);
