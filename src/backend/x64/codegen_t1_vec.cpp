@@ -857,10 +857,44 @@ void T1::emit_vop(Val v) {
         if (es == 8) return helper();
         { Xmm a = A(); Xmm d = new_x(v); as_.xop1(PABS[es], d, a); finish(d); }
         return;
-    case V_SMAX: if (es == 8) return helper(); finish(bin(PMAXS[es])); return;
-    case V_SMIN: if (es == 8) return helper(); finish(bin(PMINS[es])); return;
-    case V_UMAX: if (es == 8) return helper(); finish(bin(PMAXU[es])); return;
-    case V_UMIN: if (es == 8) return helper(); finish(bin(PMINU[es])); return;
+    case V_SMAX: case V_SMIN: case V_UMAX: case V_UMIN: {
+        if (es <= 4) {
+            SseOp op = in.sub == V_SMAX ? PMAXS[es] : in.sub == V_SMIN ? PMINS[es]
+                     : in.sub == V_UMAX ? PMAXU[es] : PMINU[es];
+            finish(bin(op));
+            return;
+        }
+        // es == 8:
+        bool sg = in.sub == V_SMAX || in.sub == V_SMIN;
+        bool is_max = in.sub == V_SMAX || in.sub == V_UMAX;
+        Xmm a = A(), b = B();
+        Xmm d = new_x(v);
+        Xmm t = alloc_x(); xpinned_ |= 1 << t;
+        Xmm m = alloc_x(); xpinned_ |= 1 << m;
+        if (sg) {
+            // signed: m = a > b ? ~0 : 0
+            as_.xop(PCMPGT[8], m, a, b);
+        } else {
+            // unsigned: bias both by 0x80.. then pcmpgtq
+            u64 sign = 0x8000000000000000ull;
+            Mem s_mem = vconst_mem(sign, sign);
+            as_.xop_m(PXOR, t, a, s_mem);
+            as_.xop_m(PXOR, m, b, s_mem);
+            as_.xop(PCMPGT[8], m, t, m);                     // m = a > b ? ~0 : 0
+        }
+        // max: m ? a : b; min: m ? b : a
+        Xmm first = is_max ? a : b;
+        Xmm second = is_max ? b : a;
+        if (as_.avx) {
+            as_.vblendv(true, d, second, first, m);
+        } else {
+            as_.xop(PAND, d, first, m);
+            as_.xop(PANDN, t, m, second);
+            as_.xop(POR, d, d, t);
+        }
+        finish(d);
+        return;
+    }
     case V_UQADD: if (es == 1) { finish(bin(PADDUSB)); return; } if (es == 2) { finish(bin(PADDUSW)); return; } return helper();
     case V_UQSUB: if (es == 1) { finish(bin(PSUBUSB)); return; } if (es == 2) { finish(bin(PSUBUSW)); return; } return helper();
     case V_SQADD: if (es == 1) { finish(bin(PADDSB)); return; } if (es == 2) { finish(bin(PADDSW)); return; } return helper();
