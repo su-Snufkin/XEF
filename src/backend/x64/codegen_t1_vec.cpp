@@ -2268,16 +2268,58 @@ void T1::emit_vop(Val v) {
         as_.xop(es == 1 ? PACKUSWB : PACKUSDW, d, a, z);
         return;
     }
-    case V_SQRDMULH: {
-        if (es != 2) return helper();
+    case V_SQDMULH: case V_SQRDMULH: {
+        if (es != 2 && es != 4) return helper();
+        bool rnd = in.sub == V_SQRDMULH;
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
-        as_.xop(PMULHRSW, d, a, b);                                         // (a*b + 0x4000) >> 15
-        as_.xop_m(PCMPEQ[2], t, d, vconst_mem(0x8000800080008000ull, 0x8000800080008000ull));
-        as_.xop(PXOR, d, d, t);                                             // -32768*-32768 saturates
-        finish(d);
-        return;
+        if (es == 2) {
+            if (rnd) {
+                as_.xop(PMULHRSW, d, a, b);                                         // (a*b + 0x4000) >> 15
+            } else {
+                as_.xop(PMULLW, t, a, b);                                           // low 16 bits
+                as_.xshift_imm(0x71, 2, t, t, 15);                                  // unsigned >> 15
+                as_.xop(PMULHW, d, a, b);                                           // high 16 bits (signed)
+                as_.xshift_imm(0x71, 6, d, d, 1);                                   // << 1
+                as_.xop(POR, d, d, t);
+            }
+            as_.xop_m(PCMPEQ[2], t, d, vconst_mem(0x8000800080008000ull, 0x8000800080008000ull));
+            as_.xop(PXOR, d, d, t);                                                 // -32768*-32768 saturates
+            finish(d);
+            return;
+        } else {
+            // es == 4: compute 64-bit signed products for even and odd 32-bit elements.
+            // Result is (prod64 >> 31), i.e., (hi32 << 1) | (lo32 >> 31), saturated if 0x80000000.
+            Xmm u = alloc_x(); xpinned_ |= 1 << u;
+            Xmm w = alloc_x(); xpinned_ |= 1 << w;
+            u64 rnd_val = rnd ? 0x40000000ull : 0ull;
+            Mem rnd_c = vconst_mem(rnd_val, rnd_val);
+            // even lanes (0 and 2): product in d
+            as_.xop(PMULDQ, d, a, b);
+            if (rnd) as_.xop_m(PADD[8], d, d, rnd_c);
+            // odd lanes (1 and 3): product in t
+            as_.xop1(PSHUFD, t, a, 0xF5);
+            as_.xop1(PSHUFD, u, b, 0xF5);
+            as_.xop(PMULDQ, t, t, u);
+            if (rnd) as_.xop_m(PADD[8], t, t, rnd_c);
+            // merge even lanes from d and odd lanes from t into:
+            // w = low 32-bit halves [d0, t0, d1, t1]
+            // u = high 32-bit halves [d0_hi, t0_hi, d1_hi, t1_hi]
+            as_.xop(SHUFPS, w, d, t, 0x88);
+            as_.xop1(PSHUFD, w, w, 0xD8);                                           // [d0_lo, t0_lo, d1_lo, t1_lo]
+            as_.xop(SHUFPS, u, d, t, 0xDD);
+            as_.xop1(PSHUFD, u, u, 0xD8);                                           // [d0_hi, t0_hi, d1_hi, t1_hi]
+            // result = (u << 1) | (w >> 31)
+            as_.xshift_imm(0x72, 6, u, u, 1);                                       // pslld u, 1
+            as_.xshift_imm(0x72, 2, w, w, 31);                                      // psrld w, 31
+            as_.xop(POR, d, u, w);
+            // saturation check: result == 0x80000000 -> flip to 0x7fffffff
+            as_.xop_m(PCMPEQ[4], t, d, vconst_mem(0x8000000080000000ull, 0x8000000080000000ull));
+            as_.xop(PXOR, d, d, t);
+            finish(d);
+            return;
+        }
     }
     default:
         return helper();

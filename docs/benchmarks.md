@@ -2,6 +2,18 @@
 
 Each benchmark is built from the same source with the same flags (-O2) for x86-64 (native) and AArch64 (static). Times are best-of-N wall clock. "XEF vs native" is native time / XEF time (100% = native speed). Newest results first. Regenerate with `bench/build.sh && bench/run.py`.
 
+## 2026-10-13 — 13th Gen Intel(R) Core(TM) i7-13620H (commit 60a1690)
+
+| benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
+|---|---:|---:|---:|---:|---:|
+| coremark — CoreMark (200k iterations) | 6.618 | 8.378 | — | 79% | — |
+| intloop — integer loops (sieve, hash, counting) | 0.579 | 0.516 | — | 112% | — |
+| fploop — FP loops (matmul, n-body, mandelbrot) | 0.208 | 0.252 | — | 82% | — |
+| calls — calls + indirect branches (fib, fn pointers, interpreter) | 0.407 | 0.597 | — | 68% | — |
+| simd — auto-vectorized NEON loops (saxpy, dot, u8 blend, s16 saturate, SAD, clamp, cvt) | 0.141 | 0.229 | — | 62% | — |
+| zstd-c — zstd -6 compress 48 MB text | 0.537 | 0.829 | — | 65% | — |
+| zstd-d — zstd decompress 48 MB text | 0.043 | 0.076 | — | 57% | — |
+
 ## 2026-10-13 — 13th Gen Intel(R) Core(TM) i7-13620H (commit 56993b2)
 
 | benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
