@@ -794,14 +794,52 @@ void T1::emit_vop(Val v) {
     case V_MUL:
         if (es == 2) { finish(bin(PMULLW)); return; }
         if (es == 4) { finish(bin(PMULLD)); return; }
+        if (es == 1) {
+            Xmm a = A(), b = B();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            Xmm u = alloc_x(); xpinned_ |= 1 << u;
+            Mem mask = vconst_mem(0x00ff00ff00ff00ffull, 0x00ff00ff00ff00ffull);
+            as_.xop_m(PAND, d, a, mask);
+            as_.xop_m(PAND, t, b, mask);
+            as_.xop(PMULLW, d, d, t);
+            as_.xshift_imm(0x71, 2, t, a, 8);
+            as_.xshift_imm(0x71, 2, u, b, 8);
+            as_.xop(PMULLW, t, t, u);
+            as_.xshift_imm(0x71, 6, t, t, 8);
+            as_.xop_m(PAND, d, d, mask);
+            as_.xop(POR, d, d, t);
+            finish(d);
+            return;
+        }
         return helper();
     case V_MLA: case V_MLS: {
-        if (es != 2 && es != 4) return helper();
+        if (es != 1 && es != 2 && es != 4) return helper();
         Xmm a = A(), b = B(), c = C();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
-        as_.xop(es == 2 ? PMULLW : PMULLD, t, a, b);
-        as_.xop(in.sub == V_MLA ? PADD[es] : PSUB[es], d, c, t);
+        if (es == 1) {
+            Xmm u = alloc_x(); xpinned_ |= 1 << u;
+            Mem mask = vconst_mem(0x00ff00ff00ff00ffull, 0x00ff00ff00ff00ffull);
+            as_.xop_m(PAND, d, a, mask);
+            as_.xop_m(PAND, t, b, mask);
+            as_.xop(PMULLW, d, d, t);
+            as_.xshift_imm(0x71, 2, t, a, 8);
+            as_.xshift_imm(0x71, 2, u, b, 8);
+            as_.xop(PMULLW, t, t, u);
+            as_.xshift_imm(0x71, 6, t, t, 8);
+            as_.xop_m(PAND, d, d, mask);
+            as_.xop(POR, d, d, t);
+            if (in.sub == V_MLA) {
+                as_.xop(PADD[1], d, d, c);
+            } else {
+                if (as_.avx) as_.xop(PSUB[1], d, c, d);
+                else { as_.xop(PSUB[1], t, c, d); as_.movaps(d, t); }
+            }
+        } else {
+            as_.xop(es == 2 ? PMULLW : PMULLD, t, a, b);
+            as_.xop(in.sub == V_MLA ? PADD[es] : PSUB[es], d, c, t);
+        }
         finish(d);
         return;
     }
@@ -1002,8 +1040,23 @@ void T1::emit_vop(Val v) {
         int sh = (int)in.imm;
         Xmm a = A();
         if (es == 1) {
-            if (in.sub == V_SSHR_I) return helper();
             Xmm d = new_x(v);
+            if (in.sub == V_SSHR_I) {
+                if (sh >= 8) sh = 7;
+                Xmm t = alloc_x(); xpinned_ |= 1 << t;
+                as_.xop1(PMOVSX[1], d, a);
+                as_.xshift_imm(0x71, 4, d, d, (u8)sh);
+                if (!half) {
+                    as_.xop1(PSHUFD, t, a, 0xEE);
+                    as_.xop1(PMOVSX[1], t, t);
+                    as_.xshift_imm(0x71, 4, t, t, (u8)sh);
+                    as_.xop(PACKSSWB, d, d, t);
+                } else {
+                    as_.xop(PACKSSWB, d, d, d);
+                }
+                finish(d);
+                return;
+            }
             if (sh >= 8) { as_.xop(PXOR, d, d, d); finish(d); return; }
             if (in.sub == V_SHL_I) {
                 as_.xshift_imm(0x71, 6, d, a, (u8)sh);
@@ -1025,7 +1078,34 @@ void T1::emit_vop(Val v) {
     }
     case V_USRA: case V_SSRA: {
         int sh = (int)in.imm;
-        if (es == 1 || (es == 8 && in.sub == V_SSRA)) return helper();
+        if (es == 1) {
+            Xmm a = A(), c = C();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            if (in.sub == V_SSRA) {
+                if (sh >= 8) sh = 7;
+                as_.xop1(PMOVSX[1], d, a);
+                as_.xshift_imm(0x71, 4, d, d, (u8)sh);
+                if (!half) {
+                    as_.xop1(PSHUFD, t, a, 0xEE);
+                    as_.xop1(PMOVSX[1], t, t);
+                    as_.xshift_imm(0x71, 4, t, t, (u8)sh);
+                    as_.xop(PACKSSWB, d, d, t);
+                } else {
+                    as_.xop(PACKSSWB, d, d, d);
+                }
+            } else {
+                if (sh >= 8) as_.xop(PXOR, d, d, d);
+                else {
+                    as_.xshift_imm(0x71, 2, d, a, (u8)sh);
+                    as_.xop_m(PAND, d, d, vconst_mem(rep(0xff >> sh, 1), rep(0xff >> sh, 1)));
+                }
+            }
+            as_.xop(PADD[1], d, d, c);
+            finish(d);
+            return;
+        }
+        if (es == 8 && in.sub == V_SSRA) return helper();
         Xmm a = A(), c = C();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
@@ -1113,7 +1193,31 @@ void T1::emit_vop(Val v) {
         bool sg = in.sub == V_SRSHR_I || in.sub == V_SRSRA;
         bool acc = in.sub == V_URSRA || in.sub == V_SRSRA;
         int sh = (int)in.imm;
-        if (es == 1 || (sg && es == 8) || sh < 1) return helper();
+        if ((sg && es == 8) || sh < 1) return helper();
+        if (es == 1) {
+            if (sh >= 8) sh = 8;
+            Xmm a = A();
+            Xmm cc = acc ? C() : a;
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            u64 rnd_val = 1ull << (sh - 1);
+            Mem rnd_c = vconst_mem(rep(rnd_val, 2), rep(rnd_val, 2));
+            as_.xop1(sg ? PMOVSX[1] : PMOVZX[1], d, a);
+            as_.xop_m(PADD[2], d, d, rnd_c);
+            as_.xshift_imm(0x71, sg ? 4 : 2, d, d, (u8)sh);
+            if (!half) {
+                as_.xop1(PSHUFD, t, a, 0xEE);
+                as_.xop1(sg ? PMOVSX[1] : PMOVZX[1], t, t);
+                as_.xop_m(PADD[2], t, t, rnd_c);
+                as_.xshift_imm(0x71, sg ? 4 : 2, t, t, (u8)sh);
+                as_.xop(sg ? PACKSSWB : PACKUSWB, d, d, t);
+            } else {
+                as_.xop(sg ? PACKSSWB : PACKUSWB, d, d, d);
+            }
+            if (acc) as_.xop(PADD[1], d, d, cc);
+            finish(d);
+            return;
+        }
         u8 opc = es == 2 ? 0x71 : es == 4 ? 0x72 : 0x73;
         u64 one = es == 2 ? 0x0001000100010001ull : es == 4 ? 0x0000000100000001ull : 1ull;
         Xmm a = A();
@@ -1189,12 +1293,19 @@ void T1::emit_vop(Val v) {
         return;
     }
     case V_SQNEG: {
-        if (es > 2) return helper();
         Xmm a = A();
         Xmm d = new_x(v);
         Xmm z = alloc_x(); xpinned_ |= 1 << z;
         as_.xop(PXOR, z, z, z);
-        as_.xop(es == 1 ? PSUBSB : PSUBSW, d, z, a);
+        if (es <= 2) {
+            as_.xop(es == 1 ? PSUBSB : PSUBSW, d, z, a);
+        } else {
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            u64 mi = es == 4 ? 0x8000000080000000ull : 0x8000000000000000ull;
+            as_.xop(PSUB[es], d, z, a);
+            as_.xop_m(PCMPEQ[es], t, a, vconst_mem(mi, mi));
+            as_.xop(PXOR, d, d, t);
+        }
         finish(d);
         return;
     }
