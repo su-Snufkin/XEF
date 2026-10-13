@@ -64,11 +64,15 @@ namespace t1 {
 
 void T1::analyze() {
     int n = b_.n;
-    // forward: clean32 (needed by is_alias_op), use counts, the final guest flags value, and
-    // whether the passes looking for Clz / Shl patterns below have anything to do
+    // forward: clean32 (needed by is_alias_op), use counts, the final guest flags value,
+    // whether the passes looking for Clz / Shl patterns below have anything to do, and the
+    // address-folding candidates (addr_c, see below): constant adds with small constants and
+    // bounded chain depth, which keep every partial sum in i32 (cfirst: the first one)
     live_out_ = b_.flags_live_out;
     final_flags_ = kEntryFlags;
     bool has_clz = false, has_shl = false;
+    u8* depth = (u8*)alloca(n);
+    int cfirst = 0;
     for (int v = 1; v < n; v++) {
         const Inst& in = I(v);
         VI& x = vi_[v];
@@ -79,49 +83,73 @@ void T1::analyze() {
         if (in.op == Op::SetFlags) final_flags_ = fid(in.a);
         has_clz |= in.op == Op::Clz;
         has_shl |= in.op == Op::Shl;
+        depth[v] = 0;
+        x.addr_c = false;
+        if (in.op != Op::Add || in.ty != Type::I64 || I(in.b).op != Op::Const) continue;
+        i64 c = (i64)I(in.b).imm;
+        if (c < -(1 << 24) || c > (1 << 24)) continue;
+        int d = (in.a < v && depth[in.a]) ? depth[in.a] + 1 : 1;
+        if (d > 64) continue;
+        depth[v] = (u8)d;
+        x.addr_c = true;
+        if (!cfirst) cfirst = v;
     }
+    auto is_mem = [](Op op) {
+        return op == Op::Load || op == Op::Store || op == Op::VLoad || op == Op::VStore || op == Op::Prefetch;
+    };
     // backward: liveness, DCE, alias last-use propagation
     // vset_later[g]: guest V register g is written again later in the block with nothing in
     // between that reads its CpuState slot or may fault (a signal handler must see it)
     // set_later[g]: the same for guest X registers
-    bool vset_later[32] = {}, set_later[32] = {};
+    // (a flag is set while its stamp equals `now`; clearing them all is ++now)
+    // Address candidates are also checked here: every use must be the address of an access or the
+    // base of a folded add; all uses of a value are seen before the value itself. mfirst: the first
+    // live memory access.
+    u16 vset_later[32] = {}, set_later[32] = {}, now = 1;
+    int mfirst = 0;
     for (int v = n - 1; v >= 1; v--) {
         const Inst& in = I(v);
         VI& x = vi_[v];
         switch (in.op) {
         case Op::VSet:
-            if (vset_later[in.aux & 31]) { x.dead = true; continue; }
-            vset_later[in.aux & 31] = true;
+            if (vset_later[in.aux & 31] == now) { x.dead = true; continue; }
+            vset_later[in.aux & 31] = now;
             break;
-        case Op::VGet: vset_later[in.aux & 31] = false; break;
+        case Op::VGet: vset_later[in.aux & 31] = 0; break;
         case Op::SetReg:
             if (in.aux < 32) {
-                if (set_later[in.aux]) { x.dead = true; continue; }
-                set_later[in.aux] = true;
+                if (set_later[in.aux] == now) { x.dead = true; continue; }
+                set_later[in.aux] = now;
             }
             break;
-        case Op::GetReg: if (in.aux < 32) set_later[in.aux] = false; break;
+        case Op::GetReg: if (in.aux < 32) set_later[in.aux] = 0; break;
         case Op::Load: case Op::Store: case Op::VLoad: case Op::VStore: case Op::LoadExcl: case Op::StoreExcl:
         case Op::AtomicRMW: case Op::Cas: case Op::Helper: case Op::Barrier: case Op::GetSys: case Op::SetSys:
-            memset(vset_later, 0, sizeof vset_later);
-            memset(set_later, 0, sizeof set_later);
+            now++;
             break;
         default:
-            if (is_terminator(in.op)) { memset(vset_later, 0, sizeof vset_later); memset(set_later, 0, sizeof set_later); }
+            if (is_terminator(in.op)) now++;
             break;
         }
         if (!has_side_effects(in) && x.uses == 0 && in.op != Op::SetFlags) {
             // a flags value that is the final guest flags is live at exit
-            if (!(live_out_ && in.ty == Type::Flags && fid(v) == final_flags_)) { x.dead = true; continue; }
+            if (!(live_out_ && in.ty == Type::Flags && fid(v) == final_flags_)) {
+                x.dead = true;
+                x.addr_c = false;
+                continue;
+            }
         }
         if (in.op == Op::SetFlags) continue;  // bookkeeping, not a use
+        if (is_mem(in.op)) mfirst = v;
         i32 mylast = x.last ? x.last : v;
         bool alias = is_alias_op(in);
+        bool mem_a = is_mem(in.op) || x.addr_c;   // in.a may stay an address candidate
         for_operands(in, [&](Val o) {
             VI& y = vi_[o];
             y.uses++;
             i32 l = alias ? mylast : v;
             if (l > y.last) y.last = l;
+            if (y.addr_c && !(mem_a && o == in.a && (o != in.b || !is_mem(in.op)))) y.addr_c = false;
         });
     }
     // terminator keeps final flags alive
@@ -250,9 +278,6 @@ void T1::analyze() {
     //   materialized (ldp/stp: sp+16 feeds one load directly and one through +8)
     // - Add(base, reg | Shl(reg, k)) whose single use is an address
     // The values the folded nodes read stay live until the access itself.
-    auto is_mem = [](Op op) {
-        return op == Op::Load || op == Op::Store || op == Op::VLoad || op == Op::VStore || op == Op::Prefetch;
-    };
     auto extend_to = [&](Val o, i32 L) {
         while (o) {
             if (vi_[o].last < L) vi_[o].last = L;
@@ -260,43 +285,11 @@ void T1::analyze() {
             o = I(o).a;
         }
     };
-    int mfirst = 0;
-    {
-        // candidates: small constants and bounded chain depth keep every partial sum in i32
-        // (cfirst: the first candidate, mfirst: the first memory access; nothing before them matters)
-        u8* depth = (u8*)alloca(n);
-        int cfirst = 0;
-        for (int v = 1; v < n; v++) {
-            const Inst& in = I(v);
-            depth[v] = 0;
-            vi_[v].addr_c = false;
-            if (!mfirst && is_mem(in.op) && !vi_[v].dead) mfirst = v;
-            if (vi_[v].dead || !vi_[v].uses || in.op != Op::Add || in.ty != Type::I64 || I(in.b).op != Op::Const)
-                continue;
-            i64 c = (i64)I(in.b).imm;
-            if (c < -(1 << 24) || c > (1 << 24)) continue;
-            int d = (in.a < v && depth[in.a]) ? depth[in.a] + 1 : 1;
-            if (d > 64) continue;
-            depth[v] = (u8)d;
-            vi_[v].addr_c = true;
-            if (!cfirst) cfirst = v;
-        }
-        // backward: every use must be the address of an access or the base of a folded add
-        for (int v = n - 1; cfirst && v > cfirst; v--) {
-            const Inst& in = I(v);
-            if (vi_[v].dead || in.op == Op::SetFlags) continue;
-            for_operands(in, [&](Val o) {
-                if (!vi_[o].addr_c) return;
-                bool ok = (is_mem(in.op) && o == in.a && o != in.b) || (vi_[v].addr_c && o == in.a);
-                if (!ok) vi_[o].addr_c = false;
-            });
-        }
-        for (int v = cfirst; cfirst && v < n; v++) {
-            if (vi_[v].addr_c) vi_[v].folded = true;
-        }
-    }
-    for (int v = mfirst; mfirst && v < n; v++) {
+    // (the candidates found above: nothing before the first candidate / memory access matters)
+    int lo = cfirst && (!mfirst || cfirst < mfirst) ? cfirst : mfirst;
+    for (int v = lo; lo && v < n; v++) {
         const Inst& in = I(v);
+        if (vi_[v].addr_c) vi_[v].folded = true;
         if (vi_[v].dead || !is_mem(in.op)) continue;
         Val a = in.a;
         i64 disp = 0;
