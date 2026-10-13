@@ -2635,21 +2635,14 @@ void T1::emit_vop(Val v) {
     }
     case V_USHL: case V_SSHL: {
         bool sg = in.sub == V_SSHL;
-        if (es == 8 && g_host.avx2 && as_.avx) {
-            // count = signed low byte (-128..127); left if >= 0, right by -c if < 0.
-            // counts >= 64 give 0 (or sign for signed right shift >= 64).
+        if (es == 8 && !sg && g_host.avx2 && as_.avx) {
+            // count = signed low byte (-128..127): left by c (c = 0..127), right by 256 - c
+            // (c = 128..255, i.e. -128..-1); VPSLLVQ / VPSRLVQ give 0 for counts >= 64.
+            // (SSHL would need an arithmetic VPSRAVQ, which AVX2 lacks: helper.)
             Xmm a = A(), b = B();
             Xmm d = new_x(v);
             Xmm c = alloc_x(); xpinned_ |= 1 << c;
             Xmm n = alloc_x(); xpinned_ |= 1 << n;
-            // sign-extend low byte of each 64-bit lane: psllq 56 then psraq (or shifts via 32-bit)
-            // Or extract and sext: count is in low byte of each quadword.
-            // In 64-bit lane, sext8 is (b & 0xff); if >= 128 it is negative.
-            as_.xshift_imm(0x73, 6, c, b, 56);
-            as_.xshift_imm(0x73, 2, c, c, 56);                               // c_raw in low byte
-            // for signed shift right in x86-64 without vpsraq (AVX2 has only vpsravd, not vpsravq!):
-            // USHL uses VPSRLVQ (logical). For SSHL es=8, helper is safer unless we do sign extension mask.
-            if (sg) return helper();
             as_.xop_m(PAND, c, b, vconst_mem(0xff, 0xff));
             as_.xop_m(PSUB[8], n, c, vconst_mem(0x100, 0x100));
             as_.xop(PXOR, d, d, d);
