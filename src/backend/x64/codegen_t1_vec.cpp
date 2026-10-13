@@ -982,9 +982,41 @@ void T1::emit_vop(Val v) {
         return helper();
     }
     case V_UABD: case V_SABD: case V_UABDL: case V_SABDL: {
-        if (es == 8) return helper();
         bool sg = in.sub == V_SABD || in.sub == V_SABDL;
         bool lng = in.sub == V_UABDL || in.sub == V_SABDL;
+        if (es == 8) {
+            if (lng) return helper();
+            Xmm a = A(), b = B();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            if (sg) {
+                as_.xop(PCMPGT[8], m, a, b);                     // m = a > b ? ~0 : 0
+            } else {
+                u64 sign = 0x8000000000000000ull;
+                Mem s_mem = vconst_mem(sign, sign);
+                as_.xop_m(PXOR, t, a, s_mem);
+                as_.xop_m(PXOR, m, b, s_mem);
+                as_.xop(PCMPGT[8], m, t, m);                     // m = a > b ? ~0 : 0
+            }
+            // max = m ? a : b, min = m ? b : a
+            Xmm mx = alloc_x(); xpinned_ |= 1 << mx;
+            Xmm mn = alloc_x(); xpinned_ |= 1 << mn;
+            if (as_.avx) {
+                as_.vblendv(true, mx, b, a, m);
+                as_.vblendv(true, mn, a, b, m);
+            } else {
+                as_.xop(PAND, mx, a, m);
+                as_.xop(PANDN, t, m, b);
+                as_.xop(POR, mx, mx, t);
+                as_.xop(PAND, mn, b, m);
+                as_.xop(PANDN, t, m, a);
+                as_.xop(POR, mn, mn, t);
+            }
+            as_.xop(PSUB[8], d, mx, mn);                         // |a - b|
+            finish(d);
+            return;
+        }
         Xmm a = A(), b = B();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
@@ -1505,9 +1537,42 @@ void T1::emit_vop(Val v) {
     }
     // ---------------- absolute difference and accumulate
     case V_UABA: case V_SABA: case V_UABAL: case V_SABAL: {
-        if (es == 8) return helper();
         bool sg = in.sub == V_SABA || in.sub == V_SABAL;
         bool lng = in.sub == V_UABAL || in.sub == V_SABAL;
+        if (es == 8) {
+            if (lng) return helper();
+            Xmm a = A(), b = B(), c = C();
+            Xmm d = new_x(v);
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            if (sg) {
+                as_.xop(PCMPGT[8], m, a, b);                     // m = a > b ? ~0 : 0
+            } else {
+                u64 sign = 0x8000000000000000ull;
+                Mem s_mem = vconst_mem(sign, sign);
+                as_.xop_m(PXOR, t, a, s_mem);
+                as_.xop_m(PXOR, m, b, s_mem);
+                as_.xop(PCMPGT[8], m, t, m);                     // m = a > b ? ~0 : 0
+            }
+            // max = m ? a : b, min = m ? b : a
+            Xmm mx = alloc_x(); xpinned_ |= 1 << mx;
+            Xmm mn = alloc_x(); xpinned_ |= 1 << mn;
+            if (as_.avx) {
+                as_.vblendv(true, mx, b, a, m);
+                as_.vblendv(true, mn, a, b, m);
+            } else {
+                as_.xop(PAND, mx, a, m);
+                as_.xop(PANDN, t, m, b);
+                as_.xop(POR, mx, mx, t);
+                as_.xop(PAND, mn, b, m);
+                as_.xop(PANDN, t, m, a);
+                as_.xop(POR, mn, mn, t);
+            }
+            as_.xop(PSUB[8], d, mx, mn);                         // |a - b|
+            as_.xop(PADD[8], d, d, c);                           // + c
+            finish(d);
+            return;
+        }
         Xmm a = A(), b = B(), c = C();
         Xmm d = new_x(v);
         Xmm t = alloc_x(); xpinned_ |= 1 << t;
@@ -1520,8 +1585,23 @@ void T1::emit_vop(Val v) {
         return;
     }
     // ---------------- saturating abs / neg
-    case V_SQABS: {   // pabs leaves the minimum as 0x80..; as unsigned min(that, 0x7f..) saturates it
-        if (es == 8) return helper();
+    case V_SQABS: {
+        if (es == 8) {
+            Xmm a = A();
+            Xmm d = new_x(v);
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            Xmm t = alloc_x(); xpinned_ |= 1 << t;
+            as_.xop(PXOR, m, m, m);
+            as_.xop(PCMPGT[8], m, m, a);                         // m = a < 0 ? ~0 : 0
+            as_.xop(PXOR, d, a, m);
+            as_.xop(PSUB[8], d, d, m);                           // abs = (a ^ m) - m
+            // if a == 0x8000000000000000ull, saturate to 0x7fffffffffffffffull
+            u64 min_val = 0x8000000000000000ull;
+            as_.xop_m(PCMPEQ[8], t, a, vconst_mem(min_val, min_val));
+            as_.xop(PXOR, d, d, t);                             // 0x80.. ^ 0xff.. = 0x7f..
+            finish(d);
+            return;
+        }
         Xmm a = A();
         Xmm d = new_x(v);
         u64 mx = es == 1 ? 0x7f7f7f7f7f7f7f7full : es == 2 ? 0x7fff7fff7fff7fffull : 0x7fffffff7fffffffull;
