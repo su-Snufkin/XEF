@@ -64,7 +64,11 @@ namespace t1 {
 
 void T1::analyze() {
     int n = b_.n;
-    // forward: clean32 (needed by is_alias_op) and use counts
+    // forward: clean32 (needed by is_alias_op), use counts, the final guest flags value, and
+    // whether the passes looking for Clz / Shl patterns below have anything to do
+    live_out_ = b_.flags_live_out;
+    final_flags_ = kEntryFlags;
+    bool has_clz = false, has_shl = false;
     for (int v = 1; v < n; v++) {
         const Inst& in = I(v);
         VI& x = vi_[v];
@@ -72,12 +76,10 @@ void T1::analyze() {
         x.last = 0;
         x.clean32 = in.ty == Type::I32 && !(in.op == Op::Zext && in.size == 32) && in.op != Op::GetReg;
         if (in.op == Op::Zext && in.size == 32 && in.ty == Type::I32) x.clean32 = vi_[in.a].clean32;
+        if (in.op == Op::SetFlags) final_flags_ = fid(in.a);
+        has_clz |= in.op == Op::Clz;
+        has_shl |= in.op == Op::Shl;
     }
-    // final guest flags value
-    live_out_ = b_.flags_live_out;
-    final_flags_ = kEntryFlags;
-    for (int v = 1; v < n; v++)
-        if (I(v).op == Op::SetFlags) final_flags_ = fid(I(v).a);
     // backward: liveness, DCE, alias last-use propagation
     // vset_later[g]: guest V register g is written again later in the block with nothing in
     // between that reads its CpuState slot or may fault (a signal handler must see it)
@@ -258,13 +260,17 @@ void T1::analyze() {
             o = I(o).a;
         }
     };
+    int mfirst = 0;
     {
         // candidates: small constants and bounded chain depth keep every partial sum in i32
+        // (cfirst: the first candidate, mfirst: the first memory access; nothing before them matters)
         u8* depth = (u8*)alloca(n);
+        int cfirst = 0;
         for (int v = 1; v < n; v++) {
             const Inst& in = I(v);
             depth[v] = 0;
             vi_[v].addr_c = false;
+            if (!mfirst && is_mem(in.op) && !vi_[v].dead) mfirst = v;
             if (vi_[v].dead || !vi_[v].uses || in.op != Op::Add || in.ty != Type::I64 || I(in.b).op != Op::Const)
                 continue;
             i64 c = (i64)I(in.b).imm;
@@ -273,9 +279,10 @@ void T1::analyze() {
             if (d > 64) continue;
             depth[v] = (u8)d;
             vi_[v].addr_c = true;
+            if (!cfirst) cfirst = v;
         }
         // backward: every use must be the address of an access or the base of a folded add
-        for (int v = n - 1; v >= 1; v--) {
+        for (int v = n - 1; cfirst && v > cfirst; v--) {
             const Inst& in = I(v);
             if (vi_[v].dead || in.op == Op::SetFlags) continue;
             for_operands(in, [&](Val o) {
@@ -284,11 +291,11 @@ void T1::analyze() {
                 if (!ok) vi_[o].addr_c = false;
             });
         }
-        for (int v = 1; v < n; v++) {
+        for (int v = cfirst; cfirst && v < n; v++) {
             if (vi_[v].addr_c) vi_[v].folded = true;
         }
     }
-    for (int v = 1; v < n; v++) {
+    for (int v = mfirst; mfirst && v < n; v++) {
         const Inst& in = I(v);
         if (vi_[v].dead || !is_mem(in.op)) continue;
         Val a = in.a;
@@ -327,7 +334,7 @@ void T1::analyze() {
         extend_to(ad.a, v);
     }
     // Clz(Rbit(x)) (count trailing zeros: rbit + clz) where the Rbit has no other use: tzcnt x
-    if (g_host.bmi1)
+    if (g_host.bmi1 && has_clz)
         for (int v = 1; v < n; v++) {
             const Inst& in = I(v);
             if (vi_[v].dead || in.op != Op::Clz) continue;
@@ -338,7 +345,7 @@ void T1::analyze() {
             extend_to(I(r).a, v);
         }
     // Add(a, Shl(x, 1..3)) where the Shl has no other use: one lea d, [a + x << k]
-    for (int v = 1; v < n; v++) {
+    for (int v = 1; has_shl && v < n; v++) {
         const Inst& in = I(v);
         if (vi_[v].dead || vi_[v].folded || in.op != Op::Add) continue;
         for (int side = 0; side < 2; side++) {
