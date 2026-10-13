@@ -33,6 +33,9 @@ struct VI {
     bool clean32 = false;
     u8 clean_vec = 0;      // 4 or 8: bits above 32 or 64 of this V128 value are known zero
     u8 fcmp_mode = 0;      // FCmpFlags: 1 = direct ucomis(a,b), 2 = swapped ucomis(b,a)
+    bool need_c = true;    // flags values: some consumer reads C (else no stc/cmc fix-up)
+    bool defer = false;    // flags values: computed at the first consumer instead of here
+    bool tfold = false;    // FlagsLogic of a single-use And: test x, y (the And is not computed)
     u16 uses = 0;
     i32 last = 0;
 };
@@ -193,6 +196,7 @@ private:
         eflags_ = f;
     }
     void remat_flags(Val f, u8 cond);
+    void emit_test(Val f);
     // EFLAGS <- saved value without POPF (slow, microcoded): AH = flags byte, OF via add al,0x7f.
     void restore_spilled_flags() {
         as_.mov(8, mem(R15, XEF_ST(spill) + 15 * 8), RAX);
@@ -229,6 +233,14 @@ private:
     void release_operands(const Inst& in);
     void evacuate_guest(int g, int upto, Val keep = 0);   // keep: the value being written (stays in g)
     Reg dest_for(Val v, int size, Reg reuse = NOREG);
+    // a temporary whose value has its last use in the current instruction (NOREG: none)
+    Reg dying_temp(Reg avoid1 = NOREG, Reg avoid2 = NOREG) const {
+        for (int i = 0; i < ntemps_; i++) {
+            Reg r = temps_[i];
+            if (r != avoid1 && r != avoid2 && owner_[r] && vi_[owner_[r]].last <= cur_) return r;
+        }
+        return NOREG;
+    }
     Reg dest_hint(Val v);
     void finish_def(Val v, Reg r);
     bool is_c(Val v) const { return I(resolve(v)).op == Op::Const; }

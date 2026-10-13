@@ -196,11 +196,51 @@ void T1::analyze() {
                 o = I(o).a;
             }
         };
-        if (full || in.op == Op::FlagsLogic) {
+        // tst x, y: the And feeding only this FlagsLogic becomes test x, y
+        if (in.op == Op::FlagsLogic && I(in.a).op == Op::And && vi_[in.a].uses == 1 && !vi_[in.a].dead &&
+            sz(I(in.a).ty) == in.size / 8) {
+            x.tfold = true;
+            x.rres = 0;
+            vi_[in.a].folded = true;
+            extend(I(in.a).a);
+            extend(I(in.a).b);
+        } else if (full || in.op == Op::FlagsLogic) {
             if (in.a) extend(in.a);
             if (in.b) extend(in.b);
         }
         if (x.rres) extend(x.rres);
+        // consumers: does any read C (or all flags)? may the flags be computed at the first one?
+        {
+            bool need_c = live_out_ && fid(v) == final_flags_, only_cond = true, barrier = false;
+            int first = 0, between = 0;
+            for (int u = v + 1; u < n; u++) {
+                const Inst& c = I(u);
+                if (vi_[u].dead || c.op == Op::SetFlags || c.op == Op::Nop || c.op == Op::Const) continue;
+                bool uses_f = false;
+                for_operands(c, [&](Val o) { if (fid(o) == v) uses_f = true; });
+                if (!uses_f) {
+                    if (!first) {
+                        between++;
+                        if (has_side_effects(c) || c.op == Op::Load || c.op == Op::VLoad || c.op == Op::GetSys ||
+                            is_terminator(c.op))
+                            barrier = true;
+                    }
+                    continue;
+                }
+                if (!first) first = u;
+                if (c.op == Op::ExitCond || c.op == Op::Select || c.op == Op::VSelect) {
+                    switch ((ir::Cond)c.aux) {
+                    case ir::HS: case ir::LO: case ir::HI: case ir::LS: need_c = true; break;
+                    default: break;
+                    }
+                } else {
+                    need_c = true;
+                    only_cond = false;
+                }
+            }
+            x.need_c = need_c;
+            x.defer = first && only_cond && !barrier && between > 0;
+        }
     }
 
     // address folding. Memory accesses take [base + disp], [base + idx] and [base + idx << k]:
@@ -421,7 +461,7 @@ void T1::release_operands(const Inst& in) {
         Val r = resolve(o);
         VI& x = vi_[r];
         // folded address arithmetic: what it reads is used by this access
-        if (x.folded && (I(r).op == Op::Add || I(r).op == Op::Shl)) { release_operands(I(r)); return; }
+        if (x.folded && (I(r).op == Op::Add || I(r).op == Op::Shl || I(r).op == Op::And)) { release_operands(I(r)); return; }
         if (x.last <= cur_) {
             if (x.k == L_REG && owner_[x.reg] == r) owner_[x.reg] = 0;
             if (x.k == L_XMM && xowner_[x.reg] == r) xowner_[x.reg] = 0;
@@ -553,6 +593,12 @@ bool T1::run() {
         xpinned_ = 0;
         if (vi_[v].dead || vi_[v].folded) continue;
         if (as_.overflow()) return false;
+        // values whose last use is behind us (also those only read through folded nodes or
+        // flag rematerialization, which release_operands does not see) give their registers back
+        for (int i = 0; i < ntemps_; i++)
+            if (Val o = owner_[temps_[i]]; o && vi_[o].last < v) owner_[temps_[i]] = 0;
+        for (int x = 0; x < 16; x++)
+            if (Val o = xowner_[x]; o && vi_[o].last < v) xowner_[x] = 0;
         emit_inst((Val)v);
         if (borrowed_) restore_borrowed();
         if (!is_terminator(I(v).op)) release_operands(I(v));
@@ -909,8 +955,8 @@ void T1::emit_binop(Val v) {
     if (fuse) {
         Val f = (Val)nx;
         const Inst& fi = I(f);
-        if (fi.op == Op::FlagsAdd) as_.cmc();
-        else if (fi.op == Op::FlagsLogic) as_.stc();
+        if (fi.op == Op::FlagsAdd && vi_[f].need_c) as_.cmc();
+        else if (fi.op == Op::FlagsLogic && vi_[f].need_c) as_.stc();
         eflags_ = f;
         vi_[f].folded = true;  // skip
     }
@@ -1246,6 +1292,7 @@ void T1::emit_div(Val v) {
 void T1::emit_flags(Val v, bool, Reg) {
     const Inst& in = I(v);
     int s = in.size / 8;
+    if (vi_[v].defer) return;   // the first consumer rematerializes it (EFLAGS keep their value)
     clobber_flags();
     if (in.op == Op::FlagsSub) {
         Opnd ob = opnd(in.b, true, true, s);
@@ -1264,13 +1311,32 @@ void T1::emit_flags(Val v, bool, Reg) {
         Reg t = alloc_temp();
         emit_mov_opnd(s, t, oa);
         emit_alu(ADD, s, t, ob);
-        as_.cmc();
+        if (vi_[v].need_c) as_.cmc();
     } else {  // FlagsLogic
-        Reg r = to_reg(in.a, s);
-        as_.test(s, r, r);
-        as_.stc();
+        emit_test(v);
     }
     eflags_ = v;
+}
+
+// FlagsLogic: N/Z of the value (or of x & y for a folded tst), C = V = 0 (CF set: inverted carry)
+void T1::emit_test(Val f) {
+    const Inst& in = I(f);
+    int s = in.size / 8;
+    if (vi_[f].tfold) {
+        const Inst& an = I(in.a);
+        Opnd ob = opnd(an.b, false, true, s);
+        if (ob.k == Opnd::R) pinned_ |= 1 << ob.r;
+        Reg ra = to_reg(an.a, s);
+        pinned_ |= 1 << ra;
+        if (ob.k == Opnd::I) {
+            if ((u64)ob.imm <= 0x7f && ra < 4) as_.test_imm(1, ra, (i32)ob.imm);   // test al/cl/dl/bl, imm8 (bit 7 clear: SF = 0)
+            else as_.test_imm(s, ra, (i32)ob.imm);
+        } else as_.test(s, ra, ob.r);
+    } else {
+        Reg r = to_reg(in.a, s);
+        as_.test(s, r, r);
+    }
+    if (vi_[f].need_c) as_.stc();
 }
 
 Cond T1::cond_for(Val f, ir::Cond c) const {
@@ -1299,10 +1365,10 @@ void T1::remat_flags(Val f, u8 cond) {
     }
     int s = in.size / 8;
     bool nz_only = cond == ir::EQ || cond == ir::NE || cond == ir::MI || cond == ir::PL;
-    if (in.op == Op::FlagsLogic || (nz_only && vi_[f].rres)) {
+    if (in.op == Op::FlagsLogic) { emit_test(f); return; }
+    if (nz_only && vi_[f].rres) {
         Reg r = to_reg(vi_[f].rres, s);
         as_.test(s, r, r);
-        if (in.op == Op::FlagsLogic) as_.stc();
         return;
     }
     if (in.op == Op::FlagsSub) {
@@ -1323,7 +1389,7 @@ void T1::remat_flags(Val f, u8 cond) {
     Reg t = alloc_temp();
     emit_mov_opnd(s, t, oa);
     emit_alu(ADD, s, t, ob);
-    as_.cmc();
+    if (vi_[f].need_c) as_.cmc();
 }
 
 void T1::emit_adc_sbc(Val v, bool flags_out, Val) {
@@ -1385,7 +1451,7 @@ void T1::emit_select(Val v) {
         u64 m = s == 4 ? 0xffffffffull : ~0ull;
         if ((tv & m) == 1 && fv == 0) {
             need_flags(in.a, in.aux);
-            Reg d = dest_for(v, s);
+            Reg d = dest_for(v, s, dying_temp());
             as_.setcc(c, d);
             as_.movzx8(d, d);
             finish_def(v, d);
@@ -1393,7 +1459,7 @@ void T1::emit_select(Val v) {
         }
         if ((tv & m) == m && fv == 0) {  // csetm
             need_flags(in.a, in.aux);
-            Reg d = dest_for(v, s);
+            Reg d = dest_for(v, s, dying_temp());
             as_.setcc(c, d);
             as_.movzx8(d, d);
             // negate without flags: d = 0 - d via lea? use not+inc... use: d = ~(d-1)
@@ -1409,7 +1475,7 @@ void T1::emit_select(Val v) {
     if (is_c(in.b) && is_c(in.c)) {   // cset with the inverted condition: select(c, 0, 1)
         u64 m = s == 4 ? 0xffffffffull : ~0ull;
         if ((cv(in.b) & m) == 0 && (cv(in.c) & m) == 1) {
-            Reg d = dest_for(v, s);
+            Reg d = dest_for(v, s, dying_temp());
             as_.setcc(invert(c), d);
             as_.movzx8(d, d);
             finish_def(v, d);
@@ -1420,7 +1486,12 @@ void T1::emit_select(Val v) {
     if (ot.k == Opnd::R) pinned_ |= 1 << ot.r;
     Opnd of = opnd(in.c, true, true, s);
     if (of.k == Opnd::R) pinned_ |= 1 << of.r;
-    Reg d = dest_for(v, s);
+    // the flags are in EFLAGS now: any register whose value dies here (an operand, or what the
+    // flags were rematerialized from) can take the result
+    auto dies = [&](Reg r) { return owner_[r] && vi_[owner_[r]].last <= cur_; };
+    Reg reuse = ot.k == Opnd::R && dies(ot.r) ? ot.r : of.k == Opnd::R && dies(of.r) ? of.r
+              : dying_temp(ot.k == Opnd::R ? ot.r : NOREG, of.k == Opnd::R ? of.r : NOREG);
+    Reg d = dest_for(v, s, reuse);
     if (ot.k == Opnd::R && ot.r == d) {
         // d already holds true value: cmov with inverted cond from false value
         if (of.k == Opnd::I) {
