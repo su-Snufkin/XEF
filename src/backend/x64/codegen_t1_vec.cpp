@@ -853,10 +853,22 @@ void T1::emit_vop(Val v) {
         finish(d);
         return;
     }
-    case V_ABS:
-        if (es == 8) return helper();
-        { Xmm a = A(); Xmm d = new_x(v); as_.xop1(PABS[es], d, a); finish(d); }
+    case V_ABS: {
+        Xmm a = A();
+        Xmm d = new_x(v);
+        if (es <= 4) {
+            as_.xop1(PABS[es], d, a);
+        } else {
+            // es == 8: m = (a < 0) ? ~0 : 0 via pcmpgtq(0, a); abs(a) = (a ^ m) - m
+            Xmm m = alloc_x(); xpinned_ |= 1 << m;
+            as_.xop(PXOR, m, m, m);
+            as_.xop(PCMPGT[8], m, m, a);                     // 0 > a
+            as_.xop(PXOR, d, a, m);
+            as_.xop(PSUB[8], d, d, m);
+        }
+        finish(d);
         return;
+    }
     case V_SMAX: case V_SMIN: case V_UMAX: case V_UMIN: {
         if (es <= 4) {
             SseOp op = in.sub == V_SMAX ? PMAXS[es] : in.sub == V_SMIN ? PMINS[es]
