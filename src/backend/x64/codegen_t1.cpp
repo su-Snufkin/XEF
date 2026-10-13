@@ -73,6 +73,8 @@ void T1::analyze() {
     bool has_clz = false, has_shl = false;
     u8* depth = (u8*)alloca(n);
     int cfirst = 0;
+    Val* fprod = (Val*)alloca(n * sizeof(Val));   // flag producers the rematerialization pass looks at
+    int nfprod = 0;
     for (int v = 1; v < n; v++) {
         const Inst& in = I(v);
         VI& x = vi_[v];
@@ -83,6 +85,8 @@ void T1::analyze() {
         if (in.op == Op::SetFlags) final_flags_ = fid(in.a);
         has_clz |= in.op == Op::Clz;
         has_shl |= in.op == Op::Shl;
+        if (in.op == Op::FCmpFlags || in.op == Op::FlagsSub || in.op == Op::FlagsAdd || in.op == Op::FlagsLogic)
+            fprod[nfprod++] = (Val)v;
         depth[v] = 0;
         x.addr_c = false;
         if (in.op != Op::Add || in.ty != Type::I64 || I(in.b).op != Op::Const) continue;
@@ -107,6 +111,7 @@ void T1::analyze() {
     // live memory access.
     u16 vset_later[32] = {}, set_later[32] = {}, now = 1;
     int mfirst = 0;
+    i32 getflags_last = 0;   // last use of the guest flags as of block entry (GetFlags values)
     for (int v = n - 1; v >= 1; v--) {
         const Inst& in = I(v);
         VI& x = vi_[v];
@@ -140,6 +145,7 @@ void T1::analyze() {
             }
         }
         if (in.op == Op::SetFlags) continue;  // bookkeeping, not a use
+        if (in.op == Op::GetFlags && x.last > getflags_last) getflags_last = x.last;   // all its uses are seen
         if (is_mem(in.op)) mfirst = v;
         i32 mylast = x.last ? x.last : v;
         bool alias = is_alias_op(in);
@@ -159,16 +165,15 @@ void T1::analyze() {
         if (final_flags_ == kEntryFlags) entry_flags_last_ = term;
         else if (vi_[final_flags_].last < term) vi_[final_flags_].last = term;
     }
-    for (int v = 1; v < n; v++)
-        if (I(v).op == Op::GetFlags && vi_[v].last > entry_flags_last_) entry_flags_last_ = vi_[v].last;
+    if (getflags_last > entry_flags_last_) entry_flags_last_ = getflags_last;
 
     // flag rematerialization: keep the operands of cheap flag producers alive until the last
     // consumer so clobbered EFLAGS can be recomputed (cmp/test) instead of pushf/popf.
-    for (int v = 1; v < n; v++) {
+    // (rres / fcmp_mode of other values keep their initial 0)
+    for (int fp = 0; fp < nfprod; fp++) {
+        int v = fprod[fp];
         const Inst& in = I(v);
         VI& x = vi_[v];
-        x.rres = 0;
-        x.fcmp_mode = 0;
         if (x.dead) continue;
         if (in.op == Op::FCmpFlags && !(live_out_ && fid(v) == final_flags_)) {
             bool ok = true, m1 = true, m2 = true, gflag_active = false;
