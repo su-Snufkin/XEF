@@ -40,7 +40,6 @@ constexpr SseOp PADDSB = P(0xEC), PADDSW = P(0xED), PSUBSB = P(0xE8), PSUBSW = P
 constexpr SseOp PAVGB = P(0xE0), PAVGW = P(0xE3);
 constexpr SseOp PSHUFB = P38(0x00), PALIGNR = P3A(0x0F), PSHUFD = P(0x70);
 constexpr SseOp PBLENDW = P3A(0x0E), PSADBW = P(0xF6), PHADDW = P38(0x01), PHADDD = P38(0x02);
-constexpr SseOp PHMINPOSUW = P38(0x41);
 constexpr SseOp PACKUSWB = P(0x67), PACKSSWB = P(0x63), PACKSSDW = P(0x6B), PACKUSDW = P38(0x2B);
 constexpr SseOp PMULHRSW = P38(0x0B), PMADDUBSW = P38(0x04), PMADDWD = P(0xF5);
 constexpr SseOp AESENC = P38(0xDC), AESENCLAST = P38(0xDD), AESDEC = P38(0xDE), AESDECLAST = P38(0xDF);
