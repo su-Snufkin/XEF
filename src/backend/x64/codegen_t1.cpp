@@ -8,6 +8,7 @@
 //     block boundary; inside a block EFLAGS hold the most recent flags value
 //     and are spilled only if an instruction must clobber them while live.
 #include "backend/x64/t1_internal.h"
+#include "runtime/dispatch.h"
 
 namespace xef::backend {
 
@@ -2163,6 +2164,13 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitSyscall:
         ensure_flags();
+        // SVC #0 stays inside enter()'s frame (stubs.cpp); XEF_TRACE / XEF_VERIFY want every
+        // block entry to go through run_guest
+        if (in.imm2 == 0 && !g_opt.trace) {
+            as_.mov_imm(RAX, in.imm);
+            as_.jmp_rel32(g_cache.stubs.syscall_exit);
+            return;
+        }
         exit_to_runtime(EXIT_SYSCALL, in.imm, in.imm2, true);
         return;
     case Op::ExitUndef:

@@ -317,6 +317,16 @@ void cpu_run_nested(ThreadCtx* t) { run_guest(t, true); }
 
 // ---- helpers called from JIT code ----
 
+// SVC #0 without leaving enter()'s frame (stubs.cpp, syscall_exit): st->pc and the guest registers
+// are in CpuState. Returns the host code to continue at. Not used under XEF_TRACE / XEF_VERIFY
+// (codegen_t1.cpp), which need every block entry to go through run_guest.
+extern "C" u8* xef_syscall_fast(CpuState* st) {
+    if (g_opt.stats) g_stats.exits_syscall++;
+    do_syscall(st);
+    if (__atomic_load_n(&st->pending_signal, __ATOMIC_ACQUIRE)) signals_deliver_pending(st);
+    return get_or_translate(st->thread, st->pc);
+}
+
 extern "C" u64 xef_helper_sysreg(u64, u64, u64 id) {
     switch (id) {
     case ir::SYS_CNTVCT: {
