@@ -37,7 +37,7 @@ struct RegionInfo {
     int nbranches;
     bool killed;          // invalidated: member blocks are patched to leave the region
     u64* call_counter;    // calls made from inside the region (each pays two register transfers)
-    u32 call_moves;       // moves of one such call's transfers (cost model for evict_region)
+    u32 call_moves;       // cost of one such call in moves: transfers + 16 (cost model for evict_region)
 };
 
 // Guest code range a translation depends on (its own instructions or decode-ahead).

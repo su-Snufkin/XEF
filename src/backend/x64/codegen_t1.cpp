@@ -2156,6 +2156,26 @@ void T1::emit_terminator(Val v) {
         pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
+        if (ctx_ && ctx_->region) {   // as ExitCall: the callee runs with the canonical mapping
+            if (ctx_->call_counter) {
+                as_.mov(8, RCX, rip(ctx_->call_counter));
+                as_.lea(8, RCX, mem(RCX, 1));
+                as_.mov(8, rip(ctx_->call_counter), RCX);
+            }
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, false);
+            as_.mov_imm(RCX, in.imm2);
+            as_.push(RCX);
+            Label probe, back;
+            as_.call(probe);
+            as_.lea(8, RSP, mem(RSP, 8));
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, true);
+            if (!falls_to(in.imm2)) exit_jmp(in.imm2);
+            else as_.jmp(back);
+            as_.bind(probe);
+            emit_ibtc_probe(!live_out_);
+            as_.bind(back);
+            return;
+        }
         as_.mov_imm(RCX, in.imm2);
         as_.push(RCX);
         Label probe;

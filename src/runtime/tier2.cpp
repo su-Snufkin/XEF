@@ -62,7 +62,8 @@ bool direct_terminator(const ir::Block& b, GuestAddr out[2], int* nout) {
         case ir::Op::ExitJump: out[0] = in.imm; *nout = 1; return true;
         case ir::Op::ExitCond: case ir::Op::ExitCbz: case ir::Op::ExitTbz:
             out[0] = in.imm; out[1] = in.imm2; *nout = 2; return true;
-        case ir::Op::ExitCall: out[0] = in.imm2; *nout = 1; return true;   // callee outside the region
+        case ir::Op::ExitCall: case ir::Op::ExitCallIndirect:
+            out[0] = in.imm2; *nout = 1; return true;   // callee outside the region
         default: return false;
         }
     }
@@ -76,7 +77,7 @@ const ir::Inst* terminator(const ir::Block& b) {
 }
 bool is_call(const ir::Block& b) {
     const ir::Inst* t = terminator(b);
-    return t && t->op == ir::Op::ExitCall;
+    return t && (t->op == ir::Op::ExitCall || t->op == ir::Op::ExitCallIndirect);
 }
 bool is_ret(const ir::Block& b) {
     const ir::Inst* t = terminator(b);
@@ -382,7 +383,7 @@ static bool compile_region(GuestAddr head) {
     *ri->exit_counter = 0;
     ri->call_counter = (u64*)g_cache.alloc_data(8);
     *ri->call_counter = 0;
-    ri->call_moves = 0;
+    ri->call_moves = 16;   // the call's own overhead (counter, push, landing pad), in moves
     for (int i = 0; i < nxfer; i++)
         ri->call_moves += (xfer[i].g_region >= 0) * (1 + xfer[i].written) + (xfer[i].g_canon >= 0) * 2;
     for (int i = 0; i < nvxfer; i++) ri->call_moves += 1 + vxfer[i].written;
@@ -591,7 +592,7 @@ static void demote_region(RegionInfo* ri) {
 int g_tier2_max_exits_per_ms = 100000;
 // Calls from inside a region pay a register transfer each way: a region whose calls cost more
 // transfer moves per ms of region time than this is evicted and formed again without calls.
-u64 g_tier2_max_call_moves_per_ms = 18000000;
+u64 g_tier2_max_call_moves_per_ms = 28000000;
 
 // Region with too expensive calls: make threads leave it, retry the head without calls.
 static void evict_calls_region(RegionInfo* ri) {

@@ -57,7 +57,23 @@ static uint32_t jumps(long n) {
     return s + k * 7;
 }
 
+// indirect calls (BLR) inside region loops: every iteration, and occasionally through a table
+typedef uint32_t (*fn_t)(uint32_t);
+__attribute__((noinline)) uint32_t f_a(uint32_t x) { return x * 3 + 1; }
+__attribute__((noinline)) uint32_t f_b(uint32_t x) { return x ^ (x >> 3); }
+static uint32_t indirect(long n, fn_t* fs) {
+    uint32_t a = 1, b = 2, c = 3, d = 4;
+    for (long i = 0; i < n; i++) {
+        a += b ^ c; b += c ^ d; c += d ^ a;
+        if ((i & 3) == 0) d = fs[(i >> 2) & 1](d + a);
+        a = fs[i & 1](a);
+    }
+    return a + b + c + d;
+}
+
 int main(void) {
+    fn_t fs[2] = {f_a, f_b};
+    printf("%u\n", indirect(5000000, fs));
     printf("%u\n", sites(10000000));
     uint32_t f = 0;
     for (int i = 0; i < 40; i++) f += fib(20 + (i & 3));
