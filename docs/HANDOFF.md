@@ -156,6 +156,17 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - FRECPE/FRSQRTE .2S/.4S/skalar f32 natywnie (dokładnie: FZ/DN/RMode, denormale; 10× w pętli
   vrecpe+vrecps); vec_ref miał błąd: |x| ≥ 2^126 dawało 0 zamiast denormala bez FZ.
 - Zdegradowany region blokuje nie próbowane człony (coremark: ~65 regionów → ~25).
+- Inlining BL w regionach + RET w regionie (porównanie X30 z adresami powrotu inlinowanych
+  wywołań); pętla wołająca 5-instrukcyjny liść w każdej iteracji 1.15 → 0.74 s, calls −5%.
+  BLR w regionie (transfer jak BL); koszt wywołania w modelu eksmisji = ruchy + 16.
+- FMAXNM/FMINNM: bez NaN 4 instrukcje (max(a,b) & max(b,a)), dokładna sekwencja NaN w zimnym
+  kodzie za blokiem (`ColdMinMax`, run_cold): simd −7%, shader GLES −8%. Ten wzorzec (rzadki
+  przypadek poza linią) nadaje się też do innych operacji z dużymi poprawkami.
+- Spekulatywna translacja w tle (cele wyjść nowych bloków) była gorsza 2×: codegen trzyma
+  `g_cache.lock`, więc wątek w tle blokuje główny, a ~40% tłumaczonych bloków nigdy nie rusza.
+  Warunek wstępny: codegen bez globalnej blokady (bufory kodu per wątek).
+- Python stdlib: test_posix (sched_rr_get_interval, fexecve) i test_zipfile
+  (test_write_filtered_python_package) padają też na 27f8647 — do naprawy (poprawność).
 - Sprawdzone i odrzucone (bez mierzalnego zysku): mapa GCC z X29 zamiast X5 (Ubuntu noble ma
   frame pointery, X29 to 3–8% dostępów), wagi użyć rejestrów wg próbek w regionie, wyłączenie
   łańcuchów (8% mniej bloków, ten sam czas), leniwe zerowanie górnej połowy wyników skalarnych FP
@@ -169,8 +180,7 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
    i dostarczania sygnałów (test_socket: tylko VSOCK — środowisko).
 1. Wydajność gier: V są już przypinane (XMM6–15), regiony obejmują BL (callee poza regionem).
    W gorącej pętli shadera t2 ≈ t1: koszt to 25+ rejestrów V na 16 XMM (sloty CpuState/vspill)
-   i sekwencje FMAXNM/FMINNM (9 instrukcji). Pomysły: inlining małych liści (BL+RET w regionie
-   z porównaniem X30), szybka ścieżka FMAXNM ze stałą bez NaN/zera.
+   i sama arytmetyka (div/sqrt). Inlining BL i szybkie FMAXNM zrobione.
    Odroczone zapisy rejestrów V (dziś VSet przed każdym dostępem do pamięci jest zachowywany dla
    precyzji SIGSEGV): wymaga zapisu w mapie PC, w którym XMM/slocie jest bieżąca wartość V.
    Pomiar zysku utrudnia szum maszyny (glmark2 ±15%); mierzyć CPU-time przy LP_NUM_THREADS=1.

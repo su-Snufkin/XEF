@@ -107,11 +107,16 @@ Skoki warunkowe nie niszczące flag: CBZ/CBNZ przez `mov rcx,x; jrcxz`, TBZ prze
   rejestry modyfikowane w regionie.
 * **Krawędzie**: wewnętrzne to bezpośrednie `jmp/jcc`; zewnętrzne idą przez stub
   przejścia do mapowania kanonicznego i zwykłe linkowane wyjście.
-* **Wywołania (BL)** mogą być w regionie (tylko na cyklu przez głowę): transfer
+* **Wywołania (BL/BLR)** mogą być w regionie (tylko na cyklu przez głowę). BL do callee
+  przetłumaczonego blisko głowy jest **inlinowany**: skok wewnętrzny do callee (X30 ustawiane
+  jak zwykle), a RET w regionie porównuje X30 z adresami powrotu inlinowanych wywołań (≤ 2)
+  i skacze wewnątrz; inny cel → transfer do mapowania kanonicznego i RET jak w tier 1
+  (zakłada AAPCS64, jak NZCV; wyłączone z `XEF_STRICT_FLAGS=1`). Pozostałe BL/BLR: transfer
   region→kanoniczne, `push`+`call` jak w tier 1, po powrocie (RET wraca tuż za `call`)
-  transfer z powrotem i dalej w regionie. Wywołania są liczone; region, którego wywołania
-  kosztują więcej ruchów transferu na ms niż `XEF_T2_CALL_MOVES` (18M), jest eksmitowany
-  (jak przy zabiciu: wewnętrzne skoki → wyjście) i budowany ponownie bez tych wywołań.
+  transfer z powrotem i dalej w regionie. Takie wywołania są liczone; region, którego
+  wywołania kosztują więcej niż `XEF_T2_CALL_MOVES` (28M) „ruchów” na ms (ruchy transferu
+  + 16 na wywołanie), jest eksmitowany (jak przy zabiciu: wewnętrzne skoki → wyjście)
+  i budowany ponownie bez tych wywołań.
 * **Aktywacja**: linki prowadzące do bloku tier 1 są przepinane na wejście regionu; wpisy
   IBTC głowy są usuwane, a człony łańcucha tier 1 przed głową (wpadające w nią bez skoku)
   zabijane, żeby ich ponowne tłumaczenie skakało do regionu.
