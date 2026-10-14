@@ -24,7 +24,6 @@
 #include <cstring>
 #include <mutex>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "common/cpu_features.h"
@@ -59,7 +58,32 @@ const u8* g_map;             // the cache file at startup (read only)
 size_t g_map_size;
 struct Unit { u32 off; u8 state; };   // state: 0 untried, 1 used, 2 stale / failed
 std::vector<Unit> g_units;
-std::unordered_map<GuestAddr, u32> g_index;   // member start -> unit number
+// member start -> unit number + 1: open addressing, at most half full (0: empty)
+struct Index {
+    struct E { GuestAddr pc; u32 unit; };
+    std::vector<E> t;
+    u64 mask = 0;
+    static u64 h(GuestAddr pc) { return (pc >> 2) * 0x9E3779B97F4A7C15ull; }
+    void init(size_t n) {
+        size_t sz = 16;
+        while (sz < 2 * n) sz *= 2;
+        t.assign(sz, E{0, 0});
+        mask = sz - 1;
+    }
+    void add(GuestAddr pc, u32 unit) {   // first one wins
+        for (u64 i = h(pc) >> 20 & mask;; i = (i + 1) & mask) {
+            if (!t[i].unit) { t[i] = {pc, unit + 1}; return; }
+            if (t[i].pc == pc) return;
+        }
+    }
+    int find(GuestAddr pc) const {
+        if (t.empty()) return -1;
+        for (u64 i = h(pc) >> 20 & mask;; i = (i + 1) & mask) {
+            if (!t[i].unit) return -1;
+            if (t[i].pc == pc) return (int)t[i].unit - 1;
+        }
+    }
+} g_index;
 std::mutex g_mu;                              // g_pending, g_units[].state
 std::vector<u8> g_pending;                    // records captured by this process
 u64 g_next_map = 0x7d0000000000ull;           // mmap_hint
@@ -155,6 +179,8 @@ u64 config_key() {
 }
 
 void index_file() {
+    // a first pass sizes the index (members per unit: at most 8; records are ~200+ bytes)
+    g_index.init(g_map_size / 64 + 16);
     Reader rd{g_map + kHeader, g_map + g_map_size};
     while (rd.ok && rd.p < rd.end) {
         u32 len = rd.get<u32>();
@@ -167,7 +193,7 @@ void index_file() {
         for (u32 m = 0; m < uh.nmem && u.ok; m++) {
             MemberHdr mh = u.get<MemberHdr>();
             u.skip(sizeof(ExitRec) * mh.nexits + sizeof(PcMapEntry) * mh.npc + 16ull * mh.npeek);
-            if (u.ok) g_index.emplace(mh.start, num);
+            if (u.ok) g_index.add(mh.start, num);
         }
     }
 }
@@ -232,7 +258,7 @@ void capture(int nc, const GuestAddr* pcs, const GuestAddr* ends, BlockMeta* con
     // only code at deterministic addresses: executables, interpreter, libraries (mmap_hint);
     // what the kernel placed (JIT buffers) would not be found again
     if (pcs[0] >= __atomic_load_n(&g_next_map, __ATOMIC_RELAXED)) return;
-    if (auto it = g_index.find(pcs[0]); it != g_index.end() && g_units[it->second].state != 2) return;   // in the file
+    if (int u = g_index.find(pcs[0]); u >= 0 && g_units[u].state != 2) return;   // in the file
     for (int k = 0; k < nc; k++) if (peeks[k].overflow) return;
     // relocations: classify, or give up on this chain
     static thread_local RelocRec* rel;
@@ -313,9 +339,9 @@ void capture(int nc, const GuestAddr* pcs, const GuestAddr* ends, BlockMeta* con
 u64 g_misses, g_stale;
 BlockMeta* try_load(GuestAddr pc) {
     if (!g_on || g_units.empty()) return nullptr;
-    auto it = g_index.find(pc);
-    if (it == g_index.end()) { g_misses++; return nullptr; }
-    Unit& un = g_units[it->second];
+    int ui = g_index.find(pc);
+    if (ui < 0) { g_misses++; return nullptr; }
+    Unit& un = g_units[ui];
     if (un.state) return nullptr;
     const u8* base = g_map + un.off;
     Reader rd{base, g_map + g_map_size};
