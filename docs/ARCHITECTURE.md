@@ -107,10 +107,17 @@ Skoki warunkowe nie niszczące flag: CBZ/CBNZ przez `mov rcx,x; jrcxz`, TBZ prze
   rejestry modyfikowane w regionie.
 * **Krawędzie**: wewnętrzne to bezpośrednie `jmp/jcc`; zewnętrzne idą przez stub
   przejścia do mapowania kanonicznego i zwykłe linkowane wyjście.
-* **Aktywacja**: linki prowadzące do bloku tier 1 są przepinane na wejście regionu.
+* **Wywołania (BL)** mogą być w regionie (tylko na cyklu przez głowę): transfer
+  region→kanoniczne, `push`+`call` jak w tier 1, po powrocie (RET wraca tuż za `call`)
+  transfer z powrotem i dalej w regionie. Wywołania są liczone; region, którego wywołania
+  kosztują więcej ruchów transferu na ms niż `XEF_T2_CALL_MOVES` (18M), jest eksmitowany
+  (jak przy zabiciu: wewnętrzne skoki → wyjście) i budowany ponownie bez tych wywołań.
+* **Aktywacja**: linki prowadzące do bloku tier 1 są przepinane na wejście regionu; wpisy
+  IBTC głowy są usuwane, a człony łańcucha tier 1 przed głową (wpadające w nią bez skoku)
+  zabijane, żeby ich ponowne tłumaczenie skakało do regionu.
 * **Sprzężenie zwrotne**: stuby wyjść liczą wyjścia (bez ruszania flag). Region, który
   wychodzi częściej niż 100 000 razy na ms czasu w nim spędzonego, jest degradowany (linki
-  wracają do tier 1).
+  wracają do tier 1); jego nie próbowane jeszcze człony nie zostają głowami regionów.
 * **Dane zmienne** (liczniki, pula stałych) leżą w osobnym obszarze danych na początku
   rezerwacji code cache: są w zasięgu RIP, ale nie dzielą stron z kodem, bo zapisy obok
   wykonywanego kodu wywołują kosztowne „SMC machine clears”.

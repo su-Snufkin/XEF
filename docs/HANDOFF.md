@@ -130,22 +130,55 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   dest hint w `new_x` nadpisujący umierający operand (operandy są w `xpinned_`), nadpisanie stosu
   JIT w `guest_call` (wpisy RET są walidowane adresem gościa: tylko koszt predykcji).
 
+## Wnioski z sesji 2026-10-14 (2): wydajność z listy „Następne kroki”
+- Maszyna w chmurze (Xeon 2.8 GHz, bez perf_event: `build/pstat` nie działa) jest zaszumiona
+  ±3–5%; A/B przez `tools/ab.py` z N ≥ 5, wnioski tylko z dużych różnic. Instrukcje translatora
+  liczy `valgrind --tool=callgrind --smc-check=all` (build z `-g`: `-DCMAKE_CXX_FLAGS=-g`).
+- `tools/setup.sh` / `mkrootfs.sh` potrzebują `bsdtar` (`apt-get install libarchive-tools`);
+  base-files z noble-updates ma `/bin -> usr/bin` (fetch_debs.py zachowuje istniejący katalog).
+  Rootfs z Pythonem: `tools/mkrootfs.sh python3.12 libpython3.12-stdlib libpython3.12-testsuite`
+  (jest tylko `/usr/bin/python3.12`). Benchmark GLES: skompiluj `bench/micro/gles_shader.c` do
+  rootfs/tmp i uruchom z `EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=1`.
+- Głowa regionu będąca członkiem łańcucha tier 1 była wchodzona przez fall-through w kodzie t1
+  (bez linku): pierwsza iteracja pętli shadera llvmpipe w każdym wywołaniu szła w t1 (~25% próbek).
+  Teraz go-live zabija człony łańcucha przed głową i czyści IBTC głowy (gles −5%, zstd -6 −4%).
+- Regiony z BL (callee poza regionem, transfer wokół wywołania), liczniki wywołań, eksmisja przy
+  zbyt częstych (`XEF_T2_CALL_MOVES`); wywołania tylko na cyklu przez głowę (inaczej regiony
+  puchły do 48 bloków kodu za wywołaniami i zstd tracił 8%). Pętla z wywołaniem co 8 iteracji −30%,
+  co 2 −14%, w każdej iteracji: eksmisja po 16 ms. Przy okazji: `kill_region` indeksował stuby
+  w kolejności układu, a skoki w kolejności R — zabity region wznawiał pod złym pc.
+- `--profile` podaje próbki wg pliku gościa i zapisuje `/tmp/xef-prof-guest.txt`;
+  `tools/prof_syms.py` sumuje je per funkcja (llvm-symbolizer). libc to ~1–2% w Pythonie i GLES
+  (thunki memcpy/strlen niewiele by dały).
+- Lookahead NZCV: przebiegi od głowy zapamiętane per wątek i epokę (90M → 45M instrukcji przy
+  imporcie ~45 modułów, translacja −6%; kod bajtowo ten sam — codecmp wymaga, by obie wersje
+  alokowały tak samo, bo host-malloc przesuwa adresy mmap gościa).
+- FRECPE/FRSQRTE .2S/.4S/skalar f32 natywnie (dokładnie: FZ/DN/RMode, denormale; 10× w pętli
+  vrecpe+vrecps); vec_ref miał błąd: |x| ≥ 2^126 dawało 0 zamiast denormala bez FZ.
+- Zdegradowany region blokuje nie próbowane człony (coremark: ~65 regionów → ~25).
+- Sprawdzone i odrzucone (bez mierzalnego zysku): mapa GCC z X29 zamiast X5 (Ubuntu noble ma
+  frame pointery, X29 to 3–8% dostępów), wagi użyć rejestrów wg próbek w regionie, wyłączenie
+  łańcuchów (8% mniej bloków, ten sam czas), leniwe zerowanie górnej połowy wyników skalarnych FP
+  (w pętli daxpy `vmovq` i tak leży na łańcuchu przez granicę iteracji).
+- Translacja nadal ~45–57% startu programów (Python: ~2.7 µs/blok, 60k bloków; callgrind:
+  analyze 20%, emit 23%, dekodowanie 20%, lookahead 9%) — bez jednego gorącego punktu.
+
 ## Następne kroki (priorytet)
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić
    znalezione bloki; testy Pythona (w tym asyncio, ssl) przechodzą po naprawie slotów spill
    i dostarczania sygnałów (test_socket: tylko VSOCK — środowisko).
-1. Wydajność gier: przypinanie rejestrów V do XMM w regionach tier 2 (shadery llvmpipe to gorące
-   pętle NEON), mniej przeładowań stałych wektorowych, regiony obejmujące BL.
+1. Wydajność gier: V są już przypinane (XMM6–15), regiony obejmują BL (callee poza regionem).
+   W gorącej pętli shadera t2 ≈ t1: koszt to 25+ rejestrów V na 16 XMM (sloty CpuState/vspill)
+   i sekwencje FMAXNM/FMINNM (9 instrukcji). Pomysły: inlining małych liści (BL+RET w regionie
+   z porównaniem X30), szybka ścieżka FMAXNM ze stałą bez NaN/zera.
    Odroczone zapisy rejestrów V (dziś VSet przed każdym dostępem do pamięci jest zachowywany dla
    precyzji SIGSEGV): wymaga zapisu w mapie PC, w którym XMM/slocie jest bieżąca wartość V.
    Pomiar zysku utrudnia szum maszyny (glmark2 ±15%); mierzyć CPU-time przy LP_NUM_THREADS=1.
-2. FP16 arytmetyka (HWCAP FPHP/ASIMDHP), rzadsze operacje NEON wciąż w helperze (`--stats`):
-   FRECPE/FRSQRTE (dokładnie jak ARM: tabela), nasycające zwężenia (SQXTN/UQXTN/SQSHRUN...),
-   UADDLP/UADALP, UABA/UABAL, SRHADD/SHADD/UHSUB, URSHR/SRSHR, FMAXV/FMINV, CRC32 (helper C!).
-2a. Regiony tier 2 rzadko powstają w kodzie pełnym wywołań (CPython: „region failed”/„demoted”);
-   tier 1 dominuje w realnych programach. Pomysły: superbloki przez warunkowe skoki (fallthrough
-   bez jmp), układ bloków w regionach (fallthrough zamiast jmp do następnego bloku), DSE zapisów
-   rejestrów gościa między blokami (wymaga rozluźnienia precyzji stanu przy SIGSEGV dla martwych rejestrów).
+2. FP16 arytmetyka (HWCAP FPHP/ASIMDHP); w helperze zostały FRECPE/FRSQRTE f64 i operacje
+   bez AVX (sprawdzaj `--stats` → „vector ops via C helper”).
+2a. Regiony tier 2 rzadko powstają w CPython: głowy kończą się BR (computed goto) / BLR / RET —
+   potrzebny BR w regionie (lokalne IBTC celów-członków). DSE zapisów rejestrów gościa między
+   blokami (wymaga rozluźnienia precyzji stanu przy SIGSEGV dla martwych rejestrów).
 3. Zwalnianie kodu (cache rośnie bez końca: inwalidacja tylko odpina bloki), epoki dla wątków.
 4. Trwały cache AOT, thunki bibliotek.
 

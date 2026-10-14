@@ -14,6 +14,8 @@ Each benchmark is built from the same source with the same flags (-O2) for x86-6
 | zstd-c — zstd -6 compress 48 MB text | 0.837 | 1.430 | — | 59% | — |
 | zstd-d — zstd decompress 48 MB text | 0.079 | 0.134 | — | 58% | — |
 
+Cloud VM (noisy, ±3%). Baseline 27f8647 on the same machine: coremark 11.463, fploop 0.381, calls 0.790, simd 0.424, zstd-c 1.459, zstd-d 0.131 s (the suite has few loops with calls; a loop calling every 8th iteration: −30% CPU time, the GLES shader benchmark −5%, a vrecpe/vrecps loop 1.93 → 0.18 s).
+
 ## 2026-10-13 — 13th Gen Intel(R) Core(TM) i7-13620H (commit e266648) — faster translation; native FMAXNM again (simd was 3.5 s at ebe4955)
 
 | benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
