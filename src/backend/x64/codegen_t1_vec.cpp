@@ -253,7 +253,7 @@ void T1::emit_vec_helper(Val v) {
     u64 desc = (u64)in.sub | ((u64)in.size << 16) | ((u64)in.aux << 24);
     as_.mov_imm(RSI, desc);
     as_.mov_imm(RDX, in.imm);
-    as_.mov_imm(RAX, (u64)&xef_vec_helper);
+    as_.mov_host(RAX, (const void*)&xef_vec_helper);
     as_.call(RAX);
     restore_caller_saved_guests();
     xpinned_ = 0;
@@ -706,7 +706,7 @@ void T1::emit_ftoi(Val v) {
         as_.mov(8, RDI, t);
         as_.mov_imm(RSI, desc);
         as_.mov_imm(RDX, in.imm);
-        as_.mov_imm(RAX, (u64)&xef_ftoi_helper);
+        as_.mov_host(RAX, (const void*)&xef_ftoi_helper);
         as_.call(RAX);
         restore_caller_saved_guests();
         for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) owner_[r] = 0;
@@ -791,7 +791,7 @@ void T1::emit_itof(Val v) {
         as_.mov(8, RDI, t);
         as_.mov_imm(RSI, desc);
         as_.mov_imm(RDX, in.imm);
-        as_.mov_imm(RAX, (u64)&xef_itof_helper);
+        as_.mov_host(RAX, (const void*)&xef_itof_helper);
         as_.call(RAX);
         restore_caller_saved_guests();
         for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg rr = temps_[ti_]; true) owner_[rr] = 0;
@@ -3122,7 +3122,7 @@ void T1::emit_vop(Val v) {
         Reg rtbl = alloc_temp(); pinned_ |= 1 << rtbl;
         Reg ridx = alloc_temp(); pinned_ |= 1 << ridx;
         Reg rval = alloc_temp(); pinned_ |= 1 << rval;
-        as_.mov_imm(rtbl, (u64)kRsqrtOffsetTable);
+        as_.mov_host(rtbl, kRsqrtOffsetTable);
         // idx = ((a >> 23) - 128) & 0x1ff
         as_.xshift_imm(0x72, 2, idx, a, 23);
         as_.xop_m(PSUB[4], idx, idx, vconst_mem(128ull | (128ull << 32), 128ull | (128ull << 32)));

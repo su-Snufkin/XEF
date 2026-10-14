@@ -49,6 +49,23 @@ struct SseOp {
     u8 w;
 };
 
+// Host addresses the code refers to, for the persistent translation cache (runtime/aot.cpp):
+// recorded only while an Assembler has a sink.
+enum RelocKind : u8 {
+    RK_HOST64 = 1,   // 8-byte absolute host address (helper, table) in a mov imm64
+    RK_REL32 = 2,    // rel32 of jmp/jcc/call to an absolute host address
+    RK_RIP32 = 3,    // disp32 of a RIP-relative operand (`trailing` immediate bytes follow it)
+    RK_EXITINFO = 4, // 8-byte ExitInfo* in a link stub
+};
+struct RelocRec { u32 off; u8 kind; u8 trailing; u64 val; };
+struct RelocSink {
+    static constexpr int kMax = 4096;
+    RelocRec r[kMax];
+    int n = 0;
+    bool overflow = false;
+    void add(const RelocRec& x) { if (n < kMax) r[n++] = x; else overflow = true; }
+};
+
 struct Label {
     i32 pos = -1;               // bound offset or -1
     u16 nfix = 0;
@@ -60,6 +77,10 @@ public:
     Assembler() = default;
     Assembler(u8* buf, size_t size) { reset(buf, size); }
     void reset(u8* buf, size_t size) { start_ = p_ = buf; end_ = buf + size; }
+    RelocSink* relocs = nullptr;
+    void reloc(u8 kind, const u8* field, u64 val, int trailing = 0) {
+        if (relocs) relocs->add({(u32)(field - start_), kind, (u8)trailing, val});
+    }
 
     u8* start() const { return start_; }
     u8* cur() const { return p_; }
@@ -97,6 +118,7 @@ public:
         reg &= 7;
         if (m.rip) {
             db((u8)((0 << 6) | (reg << 3) | 5));
+            reloc(RK_RIP32, p_, (u64)m.target, trailing);
             const u8* next = p_ + 4 + trailing;
             i64 rel = m.target - next;
             XEF_ASSERT(rel == (i32)rel);
@@ -212,6 +234,19 @@ public:
         rex(true, 0, 0, dst);
         db((u8)(0xB8 + (dst & 7)));
         dq(imm);
+    }
+    // address of host code or data (helpers, tables): relocated by the translation cache
+    void mov_host(Reg dst, const void* p) {
+        rex(true, 0, 0, dst);
+        db((u8)(0xB8 + (dst & 7)));
+        reloc(RK_HOST64, p_, (u64)p);
+        dq((u64)p);
+    }
+    void mov_exitinfo(Reg dst, const void* e) {
+        rex(true, 0, 0, dst);
+        db((u8)(0xB8 + (dst & 7)));
+        reloc(RK_EXITINFO, p_, (u64)e);
+        dq((u64)e);
     }
     void movzx(Reg dst, Reg src, int from) {
         if (from == 1) movzx8(dst, src);
@@ -339,13 +374,15 @@ public:
     // ---- control flow ----
     // Returns pointer to the rel32 field.
     u8* jmp_rel32(const void* target) {
-        db(0xE9); u8* f = p_; dd(0); patch_rel32(f, (const u8*)target); return f;
+        db(0xE9); u8* f = p_; dd(0); patch_rel32(f, (const u8*)target); reloc(RK_REL32, f, (u64)target); return f;
     }
     u8* jcc_rel32(Cond c, const void* target) {
-        db(0x0F); db((u8)(0x80 | c)); u8* f = p_; dd(0); patch_rel32(f, (const u8*)target); return f;
+        db(0x0F); db((u8)(0x80 | c)); u8* f = p_; dd(0); patch_rel32(f, (const u8*)target);
+        reloc(RK_REL32, f, (u64)target);
+        return f;
     }
     u8* call_rel32(const void* target) {
-        db(0xE8); u8* f = p_; dd(0); patch_rel32(f, (const u8*)target); return f;
+        db(0xE8); u8* f = p_; dd(0); patch_rel32(f, (const u8*)target); reloc(RK_REL32, f, (u64)target); return f;
     }
     void jmp(Label& l) { db(0xE9); use_label(l); }
     void jcc(Cond c, Label& l) { db(0x0F); db((u8)(0x80 | c)); use_label(l); }

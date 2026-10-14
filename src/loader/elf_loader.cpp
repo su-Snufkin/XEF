@@ -1,4 +1,5 @@
 #include "loader/elf_loader.h"
+#include "runtime/aot.h"
 #include "thunks/thunks.h"
 
 #include <elf.h>
@@ -254,7 +255,8 @@ bool load_elf(const char* path, LoadedImage& img) {
         Elf64_Ehdr ieh;
         std::vector<Elf64_Phdr> iph;
         GuestAddr ibias, ilo, ihi;
-        if (!map_object(ihost.c_str(), 0, ieh, iph, ibias, ilo, ihi))
+        // a fixed address while the persistent translation cache is on (guest addresses are absolute)
+        if (!map_object(ihost.c_str(), aot::enabled() ? 0x7c0000000000ull : 0, ieh, iph, ibias, ilo, ihi))
             fatal("cannot load interpreter %s (use --rootfs / XEF_ROOTFS)", interp.c_str());
         img.interp_base = ibias;
         img.entry = ieh.e_entry + ibias;

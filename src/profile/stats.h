@@ -15,6 +15,7 @@ struct Stats {
     u64 regions = 0, regions_demoted = 0;
     u64 invalidations = 0;
     u64 inval_requests = 0, inval_unmarked = 0;   // cache maintenance / unmap calls, and those with no code
+    u64 aot_loaded = 0;   // tier-1 blocks taken from the persistent translation cache
 };
 extern Stats g_stats;
 

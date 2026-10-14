@@ -15,6 +15,7 @@
 #include "os/syscalls.h"
 #include "os/thread.h"
 #include "profile/stats.h"
+#include "runtime/aot.h"
 #include "runtime/dispatch.h"
 #include "runtime/verify.h"
 #include "runtime/tier2.h"
@@ -114,6 +115,7 @@ int main(int argc, char** argv, char** envp) {
     // the register mapping follows the executable's compiler; code generation starts after this
     regmap::select(resolve_guest_path(argv[i]).c_str());
     runtime_init();
+    aot::init(resolve_guest_path(argv[i]).c_str());   // before the loader: library placement
     signals_init();
 
     LoadedImage img;

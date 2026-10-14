@@ -688,7 +688,7 @@ bool T1::run_cold() {
     for (int i = 0; i < nstubs_; i++) {
         ExitInfo* e = stubs_[i].e;
         e->stub = as_.cur();
-        as_.mov_imm64_fixed(RAX, (u64)e);
+        as_.mov_exitinfo(RAX, e);
         as_.jmp_rel32(g_cache.stubs.link_stub);
         Assembler::patch_rel32(e->site, e->stub);
     }
@@ -2009,7 +2009,7 @@ void T1::emit_call_c(void* fn, Val v, Val a, Val b, u64 imm) {
     bool fl = eflags_ != 0 && flags_needed_after(cur_);
     if (fl) { as_.pushfq(); as_.pop(mem(R15, XEF_ST(flags_spill))); spilled_flags_ = eflags_; }
     eflags_ = 0;
-    as_.mov_imm(RAX, (u64)fn);
+    as_.mov_host(RAX, fn);
     as_.call(RAX);
     restore_caller_saved_guests();
     for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) owner_[r] = 0;

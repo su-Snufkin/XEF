@@ -209,6 +209,7 @@ void stats_print() {
             s.blocks_t1 ? (double)s.translate_ns / s.blocks_t1 : 0.0, (unsigned long)s.exits_link,
             (unsigned long)s.exits_lookup, (unsigned long)s.exits_syscall, (unsigned long)s.regions, (unsigned long)s.regions_demoted,
             (unsigned long)s.invalidations, (unsigned long)s.inval_requests, (unsigned long)s.inval_unmarked);
+    if (s.aot_loaded) fprintf(stderr, "  translation cache   : %lu blocks loaded\n", (unsigned long)s.aot_loaded);
     extern u64 g_vec_helper_calls[4096];
     std::vector<std::pair<u64, int>> vh;
     for (int k = 0; k < 4096; k++) if (g_vec_helper_calls[k]) vh.push_back({g_vec_helper_calls[k], k});

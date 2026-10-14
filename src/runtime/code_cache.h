@@ -177,6 +177,7 @@ public:
     // per-block host->guest pc maps
     void set_pcmap(BlockMeta* b, const PcMapEntry* e, int n);
     const PcMapEntry* find_pc(const BlockMeta* b, const u8* host) const;
+    const PcMapEntry* pcmap_of(const BlockMeta* b) const { return pcmap_ ? pcmap_ + b->host_pc_map_off : nullptr; }
 
     // ---- code page filter (lock-free) ----
     // One bit per 64 KiB of guest address space: set before a translation of code there can be
