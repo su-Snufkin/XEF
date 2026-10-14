@@ -39,6 +39,7 @@ struct CodegenCtx {
     const RegionVXfer* vxfer = nullptr;
     int nvxfer = 0;
     u64* exit_counter = nullptr;   // region exit counter (RIP-addressable)
+    u64* call_counter = nullptr;   // region call counter (RIP-addressable)
     GuestAddr fall_pc = 0;         // region member laid out right after this one (falls through)
 };
 

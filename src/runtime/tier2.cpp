@@ -62,10 +62,23 @@ bool direct_terminator(const ir::Block& b, GuestAddr out[2], int* nout) {
         case ir::Op::ExitJump: out[0] = in.imm; *nout = 1; return true;
         case ir::Op::ExitCond: case ir::Op::ExitCbz: case ir::Op::ExitTbz:
             out[0] = in.imm; out[1] = in.imm2; *nout = 2; return true;
+        case ir::Op::ExitCall: out[0] = in.imm2; *nout = 1; return true;   // callee outside the region
         default: return false;
         }
     }
     return false;
+}
+
+bool is_call(const ir::Block& b) {
+    for (int v = b.n - 1; v >= 1; v--)
+        if (ir::is_terminator(b.insts[v].op)) return b.insts[v].op == ir::Op::ExitCall;
+    return false;
+}
+
+// a region with this block's call was evicted (calls too frequent)
+bool no_calls_at(GuestAddr pc) {
+    BlockMeta* m = g_cache.lookup(pc);
+    return m && (m->flags & BF_NOCALLS);
 }
 
 bool has_unsupported(const ir::Block& b) {
@@ -103,14 +116,16 @@ static bool compile_region(GuestAddr head) {
     R.pcs[R.n++] = head;
     int uses[32] = {0}, writes[32] = {0};
     int vuses[32] = {0}, vwrites[32] = {0};
-    bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], helper_of[kMaxRegionBlocks];
+    static u16 b_uses[kMaxRegionBlocks][32], b_writes[kMaxRegionBlocks][32], b_vuses[kMaxRegionBlocks][32],
+        b_vwrites[kMaxRegionBlocks][32];   // per member, summed after pruning
+    bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], helper_of[kMaxRegionBlocks], call_of[kMaxRegionBlocks];
     GuestAddr f_succ[kMaxRegionBlocks][2];
     int f_nsucc[kMaxRegionBlocks];
     for (int qi = 0; qi < R.n; qi++) {
         a64::translate_block(R.pcs[qi], blk, topt);
         GuestAddr* succ = f_succ[qi];
         int ns = 0;
-        if (has_unsupported(blk) || !direct_terminator(blk, succ, &ns)) {
+        if (has_unsupported(blk) || !direct_terminator(blk, succ, &ns) || (is_call(blk) && no_calls_at(R.pcs[qi]))) {
             if (qi == 0) {
                 XEF_LOG(1, "tier2: %#lx: head block not supported", (unsigned long)head);
                 return false;
@@ -122,12 +137,17 @@ static bool compile_region(GuestAddr head) {
         }
         f_nsucc[qi] = ns;
         f_reads[qi] = f_writes[qi] = helper_of[qi] = false;
+        call_of[qi] = is_call(blk);
+        memset(b_uses[qi], 0, sizeof b_uses[qi]);
+        memset(b_writes[qi], 0, sizeof b_writes[qi]);
+        memset(b_vuses[qi], 0, sizeof b_vuses[qi]);
+        memset(b_vwrites[qi], 0, sizeof b_vwrites[qi]);
         for (int v = 1; v < blk.n; v++) {
             const ir::Inst& in = blk.insts[v];
-            if (in.op == ir::Op::GetReg || in.op == ir::Op::SetReg) uses[in.aux] += 1;
-            if (in.op == ir::Op::SetReg) writes[in.aux] += 1;
-            if (in.op == ir::Op::VGet || in.op == ir::Op::VSet) vuses[in.aux] += 1;
-            if (in.op == ir::Op::VSet) vwrites[in.aux] += 1;
+            if (in.op == ir::Op::GetReg || in.op == ir::Op::SetReg) b_uses[qi][in.aux & 31] += in.aux < 32;
+            if (in.op == ir::Op::SetReg) b_writes[qi][in.aux & 31] += in.aux < 32;
+            if (in.op == ir::Op::VGet || in.op == ir::Op::VSet) b_vuses[qi][in.aux & 31] += in.aux < 32;
+            if (in.op == ir::Op::VSet) b_vwrites[qi][in.aux & 31] += in.aux < 32;
             if (in.op == ir::Op::GetFlags) f_reads[qi] = true;
             if (in.op == ir::Op::SetFlags) f_writes[qi] = true;
             if (in.op == ir::Op::Helper) helper_of[qi] = true;
@@ -141,6 +161,66 @@ static bool compile_region(GuestAddr head) {
             if (dist < -16384 || dist > 16384) continue;
             R.pcs[R.n++] = succ[k];
         }
+    }
+    // A call block is kept only on a cycle through the head: the code after other calls is mostly
+    // outside the loop (it would only add transfers and dilute the register choice). Then what
+    // the head no longer reaches goes too.
+    {
+        auto idx = [&](GuestAddr pc) { for (int i = 0; i < R.n; i++) if (R.pcs[i] == pc) return i; return -1; };
+        bool fwd[kMaxRegionBlocks] = {}, bwd[kMaxRegionBlocks] = {}, keep[kMaxRegionBlocks];
+        auto reach = [&](bool* out, const bool* allowed) {
+            int st[kMaxRegionBlocks], sp = 0;
+            out[0] = true;
+            st[sp++] = 0;
+            while (sp) {
+                int i = st[--sp];
+                for (int k = 0; k < f_nsucc[i]; k++) {
+                    int j = idx(f_succ[i][k]);
+                    if (j >= 0 && !out[j] && (!allowed || allowed[j])) { out[j] = true; st[sp++] = j; }
+                }
+            }
+        };
+        reach(fwd, nullptr);
+        for (bool ch = true; ch;) {
+            ch = false;
+            for (int i = 0; i < R.n; i++) {
+                if (bwd[i]) continue;
+                for (int k = 0; k < f_nsucc[i]; k++) {
+                    int j = idx(f_succ[i][k]);
+                    if (j == 0 || (j > 0 && bwd[j])) { bwd[i] = ch = true; break; }
+                }
+            }
+        }
+        for (int i = 0; i < R.n; i++) keep[i] = i == 0 || !call_of[i] || (fwd[i] && bwd[i]);
+        bool reached[kMaxRegionBlocks] = {};
+        reach(reached, keep);
+        int n = 0;
+        for (int i = 0; i < R.n; i++) {
+            if (!reached[i]) continue;
+            if (n != i) {
+                R.pcs[n] = R.pcs[i];
+                f_succ[n][0] = f_succ[i][0];
+                f_succ[n][1] = f_succ[i][1];
+                f_nsucc[n] = f_nsucc[i];
+                f_reads[n] = f_reads[i];
+                f_writes[n] = f_writes[i];
+                helper_of[n] = helper_of[i];
+                call_of[n] = call_of[i];
+                memcpy(b_uses[n], b_uses[i], sizeof b_uses[n]);
+                memcpy(b_writes[n], b_writes[i], sizeof b_writes[n]);
+                memcpy(b_vuses[n], b_vuses[i], sizeof b_vuses[n]);
+                memcpy(b_vwrites[n], b_vwrites[i], sizeof b_vwrites[n]);
+            }
+            n++;
+        }
+        R.n = n;
+        for (int i = 0; i < R.n; i++)
+            for (int g = 0; g < 32; g++) {
+                uses[g] += b_uses[i][g];
+                writes[g] += b_writes[i][g];
+                vuses[g] += b_vuses[i][g];
+                vwrites[g] += b_vwrites[i][g];
+            }
     }
     // a region is only worth it if it loops back into itself
     bool loops = false;
@@ -162,12 +242,13 @@ static bool compile_region(GuestAddr head) {
     bool ext_live[kMaxRegionBlocks][2];
     for (int i = 0; i < R.n; i++)
         for (int k = 0; k < f_nsucc[i]; k++)
-            ext_live[i][k] = idx_of(f_succ[i][k]) < 0 ? a64::nzcv_live_at(f_succ[i][k]) : false;
+            ext_live[i][k] = !call_of[i] && idx_of(f_succ[i][k]) < 0 ? a64::nzcv_live_at(f_succ[i][k]) : false;
     for (bool changed = true; changed;) {
         changed = false;
         for (int i = R.n - 1; i >= 0; i--) {
-            bool out = false;
-            for (int k = 0; k < f_nsucc[i]; k++) {
+            // a call: NZCV is dead at it by the ABI (else live: the callee may read it)
+            bool out = call_of[i] && !a64::g_abi_flags;
+            for (int k = 0; k < f_nsucc[i] && !call_of[i]; k++) {
                 int j = idx_of(f_succ[i][k]);
                 out |= j >= 0 ? f_live_in[j] : ext_live[i][k];
             }
@@ -243,10 +324,17 @@ static bool compile_region(GuestAddr head) {
     for (int g = 0; g < 32; g++) { ri->map[g] = (u8)map[g]; ri->vmap[g] = vmap[g]; }
     ri->exit_counter = (u64*)g_cache.alloc_data(8);
     *ri->exit_counter = 0;
+    ri->call_counter = (u64*)g_cache.alloc_data(8);
+    *ri->call_counter = 0;
+    ri->call_moves = 0;
+    for (int i = 0; i < nxfer; i++)
+        ri->call_moves += (xfer[i].g_region >= 0) * (1 + xfer[i].written) + (xfer[i].g_canon >= 0) * 2;
+    for (int i = 0; i < nvxfer; i++) ri->call_moves += 1 + vxfer[i].written;
 
     // ---- code generation
     backend::CodegenCtx ctx;
     ctx.exit_counter = ri->exit_counter;
+    ctx.call_counter = ri->call_counter;
     ctx.map = map;
     ctx.vmap = vmap;
     ctx.temps = temps;
@@ -355,9 +443,10 @@ static bool compile_region(GuestAddr head) {
         }
         g_cache.register_block(meta);
         meta->nexits = (u16)outs[i].nexits;
-        ri->blocks[ri->nblocks++] = meta;
         for (int q = 0; q < outs[i].nfixes; q++) fixes[nfix++] = {outs[i].fixes[q].field, outs[i].fixes[q].target};
     }
+    // in R order: RegionInfo::Branch::target indexes it (kill_region)
+    for (int i = 0; i < R.n; i++) ri->blocks[ri->nblocks++] = metas[i];
     auto code_for = [&](GuestAddr pc) -> u8* {
         for (int i = 0; i < R.n; i++) if (R.pcs[i] == pc) return code_of[i];
         return nullptr;
@@ -437,6 +526,25 @@ static void demote_region(RegionInfo* ri) {
 }
 
 int g_tier2_max_exits_per_ms = 100000;
+// Calls from inside a region pay a register transfer each way: a region whose calls cost more
+// transfer moves per ms of region time than this is evicted and formed again without calls.
+u64 g_tier2_max_call_moves_per_ms = 18000000;
+
+// Region with too expensive calls: make threads leave it, retry the head without calls.
+static void evict_calls_region(RegionInfo* ri) {
+    if (ri->killed) return;
+    BlockMeta* hm = ri->head_t1;
+    // the members' calls are not taken into regions again (other heads in the same loop)
+    for (int i = 0; i < ri->nblocks; i++)
+        if (BlockMeta* m = g_cache.lookup(ri->blocks[i]->start); m && m->tier != 2) m->flags |= BF_NOCALLS;
+    g_cache.evict_region(ri);
+    if (hm && !(hm->flags & BF_DEAD)) {
+        hm->flags |= BF_NOCALLS;
+        if (hm->tier == 3) { hm->tier = 1; hm->exec_count = 0; }
+    }
+    XEF_LOG(1, "tier2: evicted region %#lx (calls=%lu x %u moves, samples=%lu)", (unsigned long)(hm ? hm->start : 0),
+            (unsigned long)*ri->call_counter, ri->call_moves, (unsigned long)ri->samples);
+}
 
 static void* compiler_thread(void*) {
     sigset_t all;
@@ -448,7 +556,8 @@ static void* compiler_thread(void*) {
         ssize_t r = read(g_pipe[0], &pc, sizeof pc);
         if (r != sizeof pc) continue;
         std::lock_guard<std::mutex> lk(g_cache.lock);
-        if (pc & 1) demote_region((RegionInfo*)(pc & ~1ull));
+        if (pc & 1) demote_region((RegionInfo*)(pc & ~3ull));
+        else if (pc & 2) evict_calls_region((RegionInfo*)(pc & ~3ull));
         else compile_region(pc);
     }
     return nullptr;
@@ -470,13 +579,18 @@ static void sample_handler(int sig, siginfo_t* si, void* ctx) {
     BlockMeta* b = g_cache.find_by_host(rip);
     if (!b) return;
     u64 c = ++b->exec_count;
-    if (b->tier == 2 && b->region && !b->region->demoted) {
+    if (b->tier == 2 && b->region && !b->region->killed) {
         RegionInfo* ri = b->region;
         u64 n = ++ri->samples;
-        if ((n & 3) == 0 && *ri->exit_counter > n * (u64)g_tier2_max_exits_per_ms && g_pipe[1] >= 0) {
-            u64 msg = (u64)ri | 1;
-            ssize_t w = write(g_pipe[1], &msg, sizeof msg);
-            (void)w;
+        if ((n & 3) == 0 && g_pipe[1] >= 0) {
+            u64 msg = 0;
+            if (ri->call_moves && n >= 16 && *ri->call_counter * ri->call_moves > n * g_tier2_max_call_moves_per_ms)
+                msg = (u64)ri | 2;
+            else if (!ri->demoted && *ri->exit_counter > n * (u64)g_tier2_max_exits_per_ms) msg = (u64)ri | 1;
+            if (msg) {
+                ssize_t w = write(g_pipe[1], &msg, sizeof msg);
+                (void)w;
+            }
         }
         return;
     }
@@ -544,6 +658,7 @@ void tier2_after_fork(ThreadCtx* t) {
 
 void tier2_init(bool enable) {
     g_t2_enabled = enable;
+    if (const char* e = getenv("XEF_T2_CALL_MOVES")) g_tier2_max_call_moves_per_ms = strtoull(e, nullptr, 0);
     if (enable) start_compiler_thread();
     if (!enable && !g_opt.profile) return;
     struct sigaction sa {};

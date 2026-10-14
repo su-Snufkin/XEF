@@ -36,6 +36,8 @@ struct RegionInfo {
     Branch* branches;
     int nbranches;
     bool killed;          // invalidated: member blocks are patched to leave the region
+    u64* call_counter;    // calls made from inside the region (each pays two register transfers)
+    u32 call_moves;       // moves of one such call's transfers (cost model for evict_region)
 };
 
 // Guest code range a translation depends on (its own instructions or decode-ahead).
@@ -101,7 +103,7 @@ struct ExitInfo {
     u8 linked;
 };
 
-enum : u8 { BF_DEAD = 1, BF_DEMOTED_ONCE = 2 };   // BlockMeta::flags
+enum : u8 { BF_DEAD = 1, BF_DEMOTED_ONCE = 2, BF_NOCALLS = 4 };   // BlockMeta::flags (NOCALLS: region head, form regions without calls)
 
 struct BlockMeta {
     GuestAddr start;
@@ -198,6 +200,8 @@ public:
     // Kills every translation depending on [lo, hi). Returns true if any was found.
     bool invalidate_range(GuestAddr lo, GuestAddr hi);
     void invalidate_block(BlockMeta* b);
+    // Makes threads leave a live region (as when it is killed) and re-publishes its tier-1 head.
+    void evict_region(RegionInfo* ri);
     // Drops IBTC entries of the blocks killed since the last scrub (after invalidation).
     void scrub_ibtcs();
     // Drops IBTC entries for pc at the next scrub_ibtcs (its block was replaced: region entry).

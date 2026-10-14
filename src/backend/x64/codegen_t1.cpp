@@ -2115,6 +2115,23 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitCall: {
         ensure_flags();
+        if (ctx_ && ctx_->region) {
+            // the callee runs with the canonical mapping: transfer around the call, then go on
+            // inside the region at the return address (RET returns right after the call)
+            if (ctx_->call_counter) {  // flag-free; rax is free here
+                as_.mov(8, RAX, rip(ctx_->call_counter));
+                as_.lea(8, RAX, mem(RAX, 1));
+                as_.mov(8, rip(ctx_->call_counter), RAX);
+            }
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, false);
+            as_.mov_imm(RAX, in.imm2);
+            as_.push(RAX);
+            exit_call(in.imm);
+            as_.lea(8, RSP, mem(RSP, 8));
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, true);
+            if (!falls_to(in.imm2)) exit_jmp(in.imm2);
+            return;
+        }
         // native return-stack: push guest return address, call target
         as_.mov_imm(RAX, in.imm2);
         as_.push(RAX);
