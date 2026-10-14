@@ -469,6 +469,31 @@ void T1::emit_vec(Val v) {
     }
     case Op::GprToV: {
         int es = in.size;
+        if (in.aux != 1 && (es == 4 || es == 8)) {
+            // FMOV / DUP of a constant: from the pool; of a guest register in CpuState: movd/movq
+            // straight from memory (no GPR round trip)
+            if (is_c(in.a)) {
+                u64 c = es == 4 ? (u32)cv(in.a) : cv(in.a);
+                Xmm d = new_x(v);
+                if (in.aux == 0) {
+                    u64 lo = es == 4 ? c | (c << 32) : c;
+                    load_vconst(d, lo, lo);
+                } else {
+                    load_vconst(d, c, 0);
+                    vi_[v].clean_vec = es == 8 ? 8 : 4;
+                }
+                return;
+            }
+            Opnd o = opnd(in.a, true, false, es);
+            if (o.k == Opnd::M) {
+                Xmm d = new_x(v);
+                if (es == 8) as_.movq_load(d, o.m);
+                else as_.movd_load(d, o.m);
+                if (in.aux == 0) as_.xop1(PSHUFD, d, d, es == 4 ? 0 : 0x44);
+                else vi_[v].clean_vec = es == 8 ? 8 : 4;
+                return;
+            }
+        }
         Reg r = to_reg(in.a); pinned_ |= 1 << r;
         if (in.aux == 1) {  // INS into existing vector
             Xmm src = xreg(in.b);
