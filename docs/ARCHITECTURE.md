@@ -127,6 +127,19 @@ Skoki warunkowe nie niszczące flag: CBZ/CBNZ przez `mov rcx,x; jrcxz`, TBZ prze
   rezerwacji code cache: są w zasięgu RIP, ale nie dzielą stron z kodem, bo zapisy obok
   wykonywanego kodu wywołują kosztowne „SMC machine clears”.
 
+### Trwały cache translacji (`XEF_AOT=1`, runtime/aot.cpp)
+* Łańcuchy tier 1 zapisywane przy końcu procesu (exit_group, ostatni wątek, execve) do
+  `$XEF_AOT_DIR/<hash ścieżki programu>.xc`: kod hosta z niepołączonymi wyjściami, mapy PC,
+  zakresy gościa, od których zależą (ciała + lookahead NZCV) z hashem ich bajtów, oraz relokacje
+  zebrane przez asembler (`RelocSink`): adresy hosta względem obrazu xef (`mov_host`), rel32 do
+  stubów runtime, RIP-relative stałe wektorowe (internowane na nowo), `ExitInfo*` stubów linku.
+* Klucz pliku: hash binarki xef, mapowanie rejestrów, cechy CPU hosta, opcje translacji.
+  Kolejne uruchomienie: `translate()` najpierw `aot::try_load(pc)` — gdy hash bajtów się zgadza,
+  łańcuch jest kopiowany, relokowany i publikowany jak świeżo przetłumaczony (zależności, linki).
+* Adresy gościa są w kodzie absolutne, więc gdy cache działa, mapowania plików i rezerwacje
+  PROT_NONE (ld.so mapuje w nie biblioteki) oraz interpreter dostają deterministyczne adresy
+  (`aot::mmap_hint`, od 0x7d0000000000); zapisywany jest tylko kod poniżej tego zakresu.
+
 ### NEON / FP
 * Operacje wektorowe to jeden opcode IR (`VOp`) z podoperacją, rozmiarem elementu i flagami
   (skalarna / 64-bitowa).

@@ -156,6 +156,12 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - FRECPE/FRSQRTE .2S/.4S/skalar f32 natywnie (dokładnie: FZ/DN/RMode, denormale; 10× w pętli
   vrecpe+vrecps); vec_ref miał błąd: |x| ≥ 2^126 dawało 0 zamiast denormala bez FZ.
 - Zdegradowany region blokuje nie próbowane człony (coremark: ~65 regionów → ~25).
+- **Trwały cache translacji** (`XEF_AOT=1`, docs/ARCHITECTURE.md): import ~45 modułów Pythona
+  0.35 → 0.25 s CPU na ciepło (+~10% na zimno: capture + zapis ~14 MB), benchmark GLES (20 klatek,
+  głównie start) 0.86 → 0.55 s. Testy gościa przechodzą na zimno i ciepło, testy stdlib też.
+  Pod valgrindem klucz się zmienia (/proc/self/exe to narzędzie valgrinda). Do zrobienia:
+  włączyć domyślnie po sprawdzeniu aplikacji GUI; kompaktowanie pliku (duplikaty z równoległych
+  procesów; limit 256 MB → od nowa); add_deps to największy koszt ładowania.
 - Inlining BL w regionach + RET w regionie (porównanie X30 z adresami powrotu inlinowanych
   wywołań); pętla wołająca 5-instrukcyjny liść w każdej iteracji 1.15 → 0.74 s, calls −5%.
   BLR w regionie (transfer jak BL); koszt wywołania w modelu eksmisji = ruchy + 16.
@@ -192,7 +198,7 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
    potrzebny BR w regionie (lokalne IBTC celów-członków). DSE zapisów rejestrów gościa między
    blokami (wymaga rozluźnienia precyzji stanu przy SIGSEGV dla martwych rejestrów).
 3. Zwalnianie kodu (cache rośnie bez końca: inwalidacja tylko odpina bloki), epoki dla wątków.
-4. Trwały cache AOT, thunki bibliotek.
+4. Cache AOT: jest (opt-in, patrz wyżej); thunki bibliotek (libc ~1–2% w Pythonie/GLES: mało warte).
 
 ## Pułapki, na które już wpadliśmy
 - seccomp gościa (filtry BPF z numerami AArch64) nie może trafić na hosta — zabijałby syscalle XEF:
