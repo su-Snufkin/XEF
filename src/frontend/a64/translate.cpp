@@ -1069,20 +1069,71 @@ static QuickFlags slow_flags(GuestAddr pc, GuestAddr* t1, GuestAddr* t2) {
 // by a write. Path heads already queued are not explored again, so loops that never touch NZCV
 // terminate as "dead" (a revisited head adds no new paths). Unknown code, an exhausted budget and
 // indirect branches answer "live".
-static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast) {
-    constexpr int kMaxHeads = 32, kMaxInsts = 160;
+// The straight-line run from a lookahead head up to the instruction that decides it: q is that
+// instruction's class (Q_READ / Q_WRITE / Q_B / Q_BL / Q_RET / Q_CB), or Q_UNKNOWN for unreadable
+// code or a run longer than any budget (both: live). Heads recur (~3x per translated block in
+// CPython's startup), so runs are memoized per thread for the current code-cache epoch.
+namespace {
+constexpr int kMaxLookahead = 160;
+struct RunSum { GuestAddr pc; u64 epoch; GuestAddr t1, t2; u32 len; QuickFlags q; };   // epoch: cache epoch + 1 (0: empty)
+}
+
+static const RunSum& run_summary(GuestAddr pc) {
+    constexpr int kEntries = 8192;
+    static thread_local RunSum* tab;
+    if (!tab) tab = (RunSum*)calloc(kEntries, sizeof(RunSum));
+    u64 ep = g_cache.epoch.load(std::memory_order_acquire);
+    RunSum& s = tab[(pc >> 2) & (kEntries - 1)];
+    if (s.pc == pc && s.epoch == ep + 1) return s;
+    s.pc = pc;
+    s.epoch = ep + 1;
+    s.t1 = s.t2 = 0;
+    s.q = Q_UNKNOWN;
+    for (s.len = 0; s.len < (u32)kMaxLookahead;) {
+        GuestAddr p = pc + 4ull * s.len;
+        if (!guest_readable(p)) break;
+        s.len++;
+        GuestAddr t1 = 0, t2 = 0;
+        QuickFlags q = quick_flags(*(const u32*)p, p, &t1, &t2);
+        if (q == Q_UNKNOWN) q = slow_flags(p, &t1, &t2);
+        if (q != Q_NONE) { s.q = q; s.t1 = t1; s.t2 = t2; break; }
+    }
+    if (s.q == Q_UNKNOWN) s.len = kMaxLookahead + 1;
+    return s;
+}
+
+static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast, bool memo = true) {
+    constexpr int kMaxHeads = 32, kMaxInsts = kMaxLookahead;
     GuestAddr heads[kMaxHeads];
     int nheads = 0, next = 0, budget = kMaxInsts;
+    u8 seen[64];   // open-addressing set of the queued heads (index + 1; 0: empty)
+    memset(seen, 0, sizeof seen);
     auto push = [&](GuestAddr t) {
-        for (int i = 0; i < nheads; i++) if (heads[i] == t) return true;
+        u32 h = (u32)((t >> 2) * 0x9E3779B97F4A7C15ull >> 58);
+        for (; seen[h]; h = (h + 1) & 63) if (heads[seen[h] - 1] == t) return true;
         if (nheads >= kMaxHeads) return false;
         heads[nheads++] = t;
+        seen[h] = (u8)nheads;
         return true;
     };
     // only a "dead" answer depends on the code read (a "live" one is what the translator assumes
     // without looking): the straight-line run read from each head is logged at the end
     GuestAddr run_end[kMaxHeads];
     for (int i = 0; i < nstarts; i++) if (!push(starts[i])) return true;
+    while (fast && memo && next < nheads) {
+        const RunSum& s = run_summary(heads[next++]);
+        budget -= (int)s.len;
+        if (budget < 0) return true;
+        run_end[next - 1] = s.pc + 4ull * s.len;
+        switch (s.q) {
+        case Q_WRITE: break;
+        case Q_B: if (!push(s.t1)) return true; break;
+        case Q_BL: if (!abi_kills_flags(Op::ExitCall)) return true; break;
+        case Q_RET: if (!abi_kills_flags(Op::ExitRet)) return true; break;
+        case Q_CB: if (!push(s.t1) || !push(s.t2)) return true; break;
+        default: return true;   // Q_READ, Q_UNKNOWN
+        }
+    }
     while (next < nheads) {
         GuestAddr pc = heads[next++];
         for (;;) {
