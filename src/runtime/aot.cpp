@@ -19,6 +19,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -80,19 +81,6 @@ u64 hash_bytes(u64 h, const u8* p, size_t n) {
     return mix(mix(h, t), n);
 }
 
-struct Writer {
-    std::vector<u8>& v;
-    template <typename T> void put(const T& x) {
-        size_t o = v.size();
-        v.resize(o + sizeof(T));
-        memcpy(&v[o], &x, sizeof(T));
-    }
-    void bytes(const void* p, size_t n) {
-        size_t o = v.size();
-        v.resize(o + n);
-        memcpy(&v[o], p, n);
-    }
-};
 struct Reader {
     const u8* p;
     const u8* end;
@@ -247,7 +235,9 @@ void capture(int nc, const GuestAddr* pcs, const GuestAddr* ends, BlockMeta* con
     if (auto it = g_index.find(pcs[0]); it != g_index.end() && g_units[it->second].state != 2) return;   // in the file
     for (int k = 0; k < nc; k++) if (peeks[k].overflow) return;
     // relocations: classify, or give up on this chain
-    std::vector<RelocRec> rel;
+    static thread_local RelocRec* rel;
+    if (!rel) rel = new RelocRec[x64::RelocSink::kMax * 3];
+    int nrel = 0;
     const u8* xlo = (const u8*)&__executable_start;
     const u8* xhi = (const u8*)&_end;
     for (int i = 0; i < rs.n; i++) {
@@ -265,9 +255,8 @@ void capture(int nc, const GuestAddr* pcs, const GuestAddr* ends, BlockMeta* con
         case RK_RIP32: {
             u64 lo, hi;
             if (!vconst_pool_entry(t, &lo, &hi)) return;
-            rel.push_back(r);           // the constant follows as a second record
-            r = {0, 0, 0, lo};
-            rel.push_back(r);
+            rel[nrel++] = r;            // the constant follows in two more records
+            rel[nrel++] = {0, 0, 0, lo};
             r = {0, 0, 0, hi};
             break;
         }
@@ -283,35 +272,42 @@ void capture(int nc, const GuestAddr* pcs, const GuestAddr* ends, BlockMeta* con
         }
         default: return;
         }
-        rel.push_back(r);
+        rel[nrel++] = r;
     }
     // the guest bytes the chain was made from
     u64 h = 0x1234;
+    size_t len = sizeof(UnitHdr) + sizeof(RelocRec) * nrel + size;
     for (int k = 0; k < nc; k++) {
         h = hash_bytes(h, (const u8*)pcs[k], ends[k] - pcs[k]);
         for (int i = 0; i < peeks[k].n; i++)
             h = hash_bytes(h, (const u8*)peeks[k].r[i].lo, peeks[k].r[i].hi - peeks[k].r[i].lo);
+        len += sizeof(MemberHdr) + sizeof(ExitRec) * metas[k]->nexits + sizeof(PcMapEntry) * npcmaps[k] + 16 * peeks[k].n;
     }
-    std::vector<u8> rec;
-    Writer w{rec};
-    w.put(UnitHdr{(u32)nc, (u32)size, (u32)rel.size(), 0, h});
+    std::lock_guard<std::mutex> g(g_mu);
+    if (g_pending.capacity() < g_pending.size() + 4 + len)
+        g_pending.reserve(std::max(g_pending.capacity() * 2, g_pending.size() + 4 + len + (4u << 20)));
+    size_t o = g_pending.size();
+    g_pending.resize(o + 4 + len);
+    u8* p = &g_pending[o];
+    auto put = [&](const void* x, size_t n) { memcpy(p, x, n); p += n; };
+    u32 len32 = (u32)len;
+    put(&len32, 4);
+    UnitHdr uh{(u32)nc, (u32)size, (u32)nrel, 0, h};
+    put(&uh, sizeof uh);
     for (int k = 0; k < nc; k++) {
         const BlockMeta* m = metas[k];
-        w.put(MemberHdr{pcs[k], ends[k], (u32)(m->code - code), m->code_size, m->nexits, (u32)npcmaps[k],
-                        (u32)peeks[k].n, 0});
+        MemberHdr mh{pcs[k], ends[k], (u32)(m->code - code), m->code_size, m->nexits, (u32)npcmaps[k], (u32)peeks[k].n, 0};
+        put(&mh, sizeof mh);
         for (int i = 0; i < m->nexits; i++) {
             const ExitInfo& e = m->exits[i];
-            w.put(ExitRec{e.target, (u32)(e.site - code), (u32)(e.stub - code), e.kind, {}});
+            ExitRec x{e.target, (u32)(e.site - code), (u32)(e.stub - code), e.kind, {}};
+            put(&x, sizeof x);
         }
-        w.bytes(pcmaps[k], sizeof(PcMapEntry) * npcmaps[k]);
-        for (int i = 0; i < peeks[k].n; i++) { w.put(peeks[k].r[i].lo); w.put(peeks[k].r[i].hi); }
+        put(pcmaps[k], sizeof(PcMapEntry) * npcmaps[k]);
+        for (int i = 0; i < peeks[k].n; i++) { put(&peeks[k].r[i].lo, 8); put(&peeks[k].r[i].hi, 8); }
     }
-    for (const RelocRec& r : rel) w.put(r);
-    w.bytes(code, size);
-    std::lock_guard<std::mutex> g(g_mu);
-    Writer pw{g_pending};
-    pw.put((u32)rec.size());
-    pw.bytes(rec.data(), rec.size());
+    put(rel, sizeof(RelocRec) * nrel);
+    put(code, size);
 }
 
 u64 g_misses, g_stale;
