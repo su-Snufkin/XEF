@@ -448,6 +448,7 @@ public:
             db(o.op);
             modrm_rr(d, s2);
         } else {
+            XEF_ASSERT(d == s1 || d != s2);   // the copy below would clobber s2
             if (d != s1) movaps((Xmm)d, (Xmm)s1);
             legacy_rr(o, d, s2);
         }

@@ -5,6 +5,8 @@
 /usr/share/xef/chain.conf: inside
 readlink: /etc/xef-real.conf
 lstat is link: 1, stat is file: 1
+readlink fd: /etc/xef-real.conf
+readlink cwd: /usr/share
 unlink link: 0
 /usr/share/xef/chain.conf: missing
 /etc/xef-real.conf: inside

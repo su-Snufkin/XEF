@@ -5,6 +5,7 @@
 #include <unistd.h>
 int main(int argc, char** argv) {
     if (argc > 1 && !strcmp(argv[1], "child")) { printf("child got %s\n", argv[2]); return 7; }
+    if (argc > 1 && !strcmp(argv[1], "argv0")) { printf("argv[0] = %s\n", argv[0]); return 0; }
     fflush(stdout);
     pid_t p = fork();
     if (p == 0) { printf("in forked child\n"); fflush(stdout); _exit(5); }
@@ -20,6 +21,10 @@ int main(int argc, char** argv) {
     if (p == 0) { execl(argv[0], argv[0], "child", "hello", (char*)0); perror("execl"); _exit(99); }
     waitpid(p, &st, 0);
     printf("exec child exit=%d\n", WEXITSTATUS(st));
+    fflush(stdout);
+    p = fork();   // argv[0] other than the path (multi-call binaries, login shells)
+    if (p == 0) { execl(argv[0], "renamed", "argv0", (char*)0); perror("execl"); _exit(99); }
+    waitpid(p, &st, 0);
     int r = system("echo from shell");
     printf("system=%d\n", WEXITSTATUS(r));
     FILE* f = popen("echo popen works", "r");

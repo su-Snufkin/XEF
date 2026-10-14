@@ -2,7 +2,8 @@ in forked child
 fork child exit=5
 pipe: via pipe
 child got hello
-from shell
 exec child exit=7
+argv[0] = renamed
+from shell
 system=0
 popen works

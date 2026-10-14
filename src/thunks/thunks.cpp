@@ -19,6 +19,7 @@
 
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "os/signals.h"
 #include "os/thread.h"
@@ -63,8 +64,7 @@ void* (*g_XOpenDisplay)(const char*);
 char* (*g_XDisplayString)(void*);
 
 struct DpyMap { void* guest; void* host; };
-DpyMap g_dpy[16];
-int g_ndpy;
+std::vector<DpyMap> g_dpy;   // unbounded: an unknown guest Display opens a host connection
 
 // Errors on the host connection must not kill the process (Xlib's default handler exits): guest
 // code probes with requests expected to fail (e.g. context versions) and checks the results.
@@ -136,13 +136,13 @@ void* resolve(int id) {
 void* host_display(void* guest) {
     if (!guest) return nullptr;
     std::lock_guard<std::mutex> lk(g_lock);
-    for (int i = 0; i < g_ndpy; i++) if (g_dpy[i].guest == guest) return g_dpy[i].host;
+    for (const DpyMap& d : g_dpy) if (d.guest == guest) return d.host;
     const char* name = g_XDisplayString(guest);
     void* h = g_XOpenDisplay(name);
     if (!h) fatal("--host-gl: cannot open display %s on the host", name ? name : "(null)");
     static auto conn_number = (int (*)(void*))dlsym(g_libx11, "XConnectionNumber");
     if (conn_number) protect_host_fd(conn_number(h));
-    if (g_ndpy < 16) g_dpy[g_ndpy++] = {guest, h};
+    g_dpy.push_back({guest, h});
     return h;
 }
 

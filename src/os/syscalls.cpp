@@ -500,7 +500,22 @@ void do_syscall(CpuState* st) {
             r = (i64)n;
         } else {
             PathArg p(a1, false);
-            r = raw(SYS_readlinkat, a0, (u64)p.p, a2, a3);
+            size_t rn = g_rootfs.size();
+            if (!rn) { r = raw(SYS_readlinkat, a0, (u64)p.p, a2, a3); break; }
+            // links resolved by the host (/proc/self/fd/N, /proc/self/cwd) name host paths:
+            // drop the rootfs prefix like getcwd does
+            char buf[PATH_MAX + 256];
+            r = raw(SYS_readlinkat, a0, (u64)p.p, (u64)buf, sizeof buf);
+            if (r < 0) break;
+            const char* e = buf;
+            size_t n = (size_t)r;
+            if (n >= rn && !memcmp(buf, g_rootfs.c_str(), rn) && (n == rn || buf[rn] == '/')) {
+                e += rn; n -= rn;
+                if (!n) { e = "/"; n = 1; }
+            }
+            n = std::min<size_t>(n, a3);
+            memcpy((void*)a2, e, n);
+            r = (i64)n;
         }
         break;
     }
@@ -544,7 +559,11 @@ void do_syscall(CpuState* st) {
         break;
     case G_mremap:
         r = raw(SYS_mremap, a0, a1, a2, a3, a4);
-        if (r >= 0) code_invalidate_range(a0, a1);
+        if (r >= 0) {
+            code_invalidate_range(a0, a1);
+            // moved (MREMAP_FIXED replaces whatever was mapped at the new address)
+            if ((u64)r != a0) code_invalidate_range((GuestAddr)r, a2);
+        }
         break;
     case G_uname: {
         r = raw(SYS_uname, a0);
@@ -561,7 +580,7 @@ void do_syscall(CpuState* st) {
         break;
     case G_seccomp: r = -ENOSYS; break;   // see guest_seccomp_prctl
     case G_epoll_ctl: {
-        if (a3) {
+        if (a3 && a1 != 2) {   // EPOLL_CTL_DEL ignores the event (may be any pointer)
             GuestEpollEvent* ge = (GuestEpollEvent*)a3;
             HostEpollEvent he{ge->events, ge->data};
             r = raw(SYS_epoll_ctl, a0, a1, a2, (u64)&he);
@@ -570,9 +589,10 @@ void do_syscall(CpuState* st) {
     }
     case G_epoll_pwait: case G_epoll_pwait2: {
         int maxev = (int)a2;
-        if (maxev <= 0 || maxev > 4096) { r = -EINVAL; break; }
+        if (maxev <= 0) { r = -EINVAL; break; }
+        maxev = std::min(maxev, 4096);   // fewer events per call is valid (the rest stay ready)
         HostEpollEvent* he = (HostEpollEvent*)alloca(sizeof(HostEpollEvent) * maxev);
-        r = raw(nr == G_epoll_pwait ? SYS_epoll_pwait : 441, a0, (u64)he, a2, a3, a4, a5);
+        r = raw(nr == G_epoll_pwait ? SYS_epoll_pwait : 441, a0, (u64)he, (u64)maxev, a3, a4, a5);
         if (r > 0) {
             GuestEpollEvent* ge = (GuestEpollEvent*)a1;
             for (int i = 0; i < r; i++) { ge[i].events = he[i].events; ge[i].pad = 0; ge[i].data = he[i].data; }

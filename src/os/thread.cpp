@@ -8,8 +8,10 @@
 #include <unistd.h>
 
 #include <fcntl.h>
+#include <setjmp.h>
 #include <linux/futex.h>
 #include <pthread.h>
+#include <signal.h>
 #include <sys/time.h>
 
 #include <atomic>
@@ -30,7 +32,44 @@ char** g_xef_argv = nullptr;
 
 static_assert(sizeof(IbtcEntry) * kIbtcEntries == kIbtcBytes, "IBTC layout (cpu_state.h)");
 
+// Contexts of exited threads (CpuState + IBTC, JIT stack, IR scratch, sigaltstack) are reused:
+// freeing them under a thread that is still running is unsafe, and leaking them cost ~0.5 MB of
+// RSS per thread (programs creating threads in a loop ran out of memory or mappings).
+static std::mutex g_pool_lock;
+static std::vector<ThreadCtx*> g_pool;
+
+static ThreadCtx* thread_reuse(CpuState* parent) {
+    ThreadCtx* t;
+    {
+        std::lock_guard<std::mutex> lk(g_pool_lock);
+        if (g_pool.empty()) return nullptr;
+        t = g_pool.back();
+        g_pool.pop_back();
+    }
+    CpuState* st = t->st;
+    ir::Block* blk = t->blk;
+    u8* js = t->jit_stack;
+    size_t jss = t->jit_stack_size;
+    void* alt = t->host_altstack;
+    *t = ThreadCtx();
+    t->st = st; t->blk = blk; t->jit_stack = js; t->jit_stack_size = jss; t->host_altstack = alt;
+    void* ibtc = st->ibtc;   // still registered with the code cache (and scrubbed with the others)
+    if (parent) memcpy(st, parent, sizeof(CpuState));
+    else memset(st, 0, sizeof(CpuState));
+    st->thread = t;
+    st->ibtc = ibtc;
+    return t;
+}
+
 ThreadCtx* thread_create(CpuState* parent) {
+    if (ThreadCtx* t = thread_reuse(parent)) {
+        u8* top = t->jit_stack + 4096 + t->jit_stack_size - 64;
+        ((u64*)top)[0] = 0;
+        ((u64*)top)[1] = ~0ull;
+        t->st->jit_stack_top = (u64)top;
+        t->st->jit_sp = (u64)top;
+        return t;
+    }
     ThreadCtx* t = new ThreadCtx();
     void* sp = mmap(nullptr, kIbtcOffset + kIbtcBytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (sp == MAP_FAILED) fatal("cannot allocate CpuState");
@@ -55,6 +94,7 @@ ThreadCtx* thread_create(CpuState* parent) {
 }
 
 static std::atomic<int> g_live_threads{1};
+static thread_local jmp_buf* tls_exit_jmp;   // thread_trampoline's frame (thread_exit returns there)
 int guest_thread_count() { return g_live_threads.load(); }
 
 // TIDs of the guest's threads (not XEF's compiler thread or host library workers): /proc/self/task
@@ -91,10 +131,21 @@ void thread_exit(CpuState* st, int code) {
     }
     tier2_thread_stop(t);
     guest_tid_remove((int)syscall(SYS_gettid));
+    // no handler may touch the context once it is back in the pool
+    sigset_t all;
+    sigfillset(&all);
+    pthread_sigmask(SIG_BLOCK, &all, nullptr);
     if (t && t->clear_child_tid) {
         __atomic_store_n((u32*)t->clear_child_tid, 0, __ATOMIC_SEQ_CST);
         syscall(SYS_futex, t->clear_child_tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
     }
+    if (t) {
+        std::lock_guard<std::mutex> lk(g_pool_lock);
+        g_pool.push_back(t);
+    }
+    // threads started by thread_clone return from their pthread start routine, so that glibc
+    // frees the pthread stack (a raw SYS_exit leaked it)
+    if (tls_exit_jmp) longjmp(*tls_exit_jmp, 1);
     syscall(SYS_exit, code);
     __builtin_unreachable();
 }
@@ -125,6 +176,9 @@ static void* thread_trampoline(void* arg) {
     __atomic_store_n(&ts->tid, tid, __ATOMIC_RELEASE);
     syscall(SYS_futex, &ts->tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
     // ts is owned by the parent's stack from here on: don't touch it
+    jmp_buf exit_jmp;
+    if (setjmp(exit_jmp)) return nullptr;   // thread_exit: the context is already back in the pool
+    tls_exit_jmp = &exit_jmp;
     signals_thread_init(t);
     tier2_thread_start(t);
     cpu_loop(t);
@@ -162,7 +216,10 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
     i64 r;
     {
         std::lock_guard<std::mutex> lk(g_cache.lock);  // no translation in flight across fork
+        std::lock_guard<std::mutex> pl(g_pool_lock);   // nor a pool update
+        signals_fork_lock(true);                        // nor a sigaction
         r = syscall(SYS_clone, hflags, 0, ptid, ctid, 0);
+        signals_fork_lock(false);
     }
     if (r < 0) return -errno;
     if (r == 0) {
@@ -202,7 +259,8 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     if (g_host_gl) envp.push_back(hostgl);
     envp.push_back(nullptr);
     std::string guest_exe = path;
-    if (hdr[0] == '#' && hdr[1] == '!') {
+    bool script = hdr[0] == '#' && hdr[1] == '!';
+    if (script) {
         // script: interpreter [arg] script args...
         std::string line((char*)hdr + 2, strnlen((char*)hdr + 2, n - 2));
         line = line.substr(0, line.find('\n'));
@@ -258,10 +316,16 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     av.push_back((char*)mb.c_str());
     av.push_back(o_t2t);
     av.push_back((char*)t2t.c_str());
+    // argv[0] need not be the path (multi-call binaries, login shells' "-sh"); for scripts the
+    // kernel's argv[0] is the interpreter as named in "#!", which guest_exe already is
+    static char o_argv0[] = "--argv0";
+    if (!script && !args.empty() && args[0] != guest_exe) {
+        av.push_back(o_argv0);
+        av.push_back((char*)args[0].c_str());
+    }
     av.push_back((char*)"--");
     av.push_back((char*)guest_exe.c_str());
     for (size_t i = 1; i < args.size(); i++) av.push_back((char*)args[i].c_str());
-    // argv[0] of the guest is preserved by the loader using the path; pass original argv0 via env
     av.push_back(nullptr);
     signals_flush_output();
     syscall(SYS_execve, self, av.data(), envp.data());

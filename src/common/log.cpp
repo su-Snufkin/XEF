@@ -28,31 +28,42 @@ void log_msg(const char* fmt, ...) {
 }
 
 // "file+0xoff" for an address, from /proc/self/maps (raw syscalls only: usable in handlers).
+// Read line by line through a small stack buffer: reentrant, and any size of maps works.
 const char* describe_addr(u64 addr, char* out, size_t outsz) {
     snprintf(out, outsz, "%#lx", (unsigned long)addr);
     int fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
     if (fd < 0) return out;
-    static char buf[1 << 20];
+    char buf[8192];
     size_t n = 0;
-    ssize_t r;
-    while (n < sizeof buf - 1 && (r = read(fd, buf + n, sizeof buf - 1 - n)) > 0) n += (size_t)r;
-    close(fd);
-    buf[n] = 0;
-    for (char* line = buf; line && *line;) {
-        char* next = strchr(line, '\n');
-        if (next) *next++ = 0;
+    bool eof = false, found = false;
+    while (!found) {
+        if (!eof && n < sizeof buf - 1) {
+            ssize_t r = read(fd, buf + n, sizeof buf - 1 - n);
+            if (r <= 0) eof = true;
+            else n += (size_t)r;
+        }
+        buf[n] = 0;
+        char* nl = strchr(buf, '\n');
+        if (!nl) {
+            if (eof || n == sizeof buf - 1) { if (!n) break; nl = buf + n; }   // last or overlong line
+            else continue;
+        }
+        *nl = 0;
         unsigned long lo, hi, off;
         char perms[8];
         int pos = 0;
-        if (sscanf(line, "%lx-%lx %7s %lx %*s %*s%n", &lo, &hi, perms, &off, &pos) >= 4 && addr >= lo && addr < hi) {
-            const char* path = line + pos;
+        if (sscanf(buf, "%lx-%lx %7s %lx %*s %*s%n", &lo, &hi, perms, &off, &pos) >= 4 && addr >= lo && addr < hi) {
+            const char* path = buf + pos;
             while (*path == ' ') path++;
             snprintf(out, outsz, "%#lx (%s+%#lx)", (unsigned long)addr, *path ? path : "anon",
                      (unsigned long)(addr - lo + off));
-            break;
+            found = true;
         }
-        line = next;
+        size_t used = (size_t)(nl - buf) + (nl < buf + n ? 1 : 0);
+        memmove(buf, buf + used, n - used);
+        n -= used;
     }
+    close(fd);
     return out;
 }
 

@@ -25,5 +25,7 @@ i64 sig_rt_sigsuspend(CpuState* st, u64 set, u64 sigsetsize);
 i64 sig_sigaltstack(CpuState* st, u64 ss, u64 oss);
 // Deliver pending guest signals at a safe point (between blocks).
 void signals_deliver_pending(CpuState* st);
+bool g_actions_handler(int sig);   // the guest installed a handler (not SIG_DFL / SIG_IGN)
+void signals_fork_lock(bool lock);   // hold the sigaction table across fork (no torn copy in the child)
 
 }  // namespace xef

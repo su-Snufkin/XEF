@@ -930,9 +930,9 @@ void T1::emit_vop(Val v) {
             // unsigned: bias both by 0x80.. then pcmpgtq
             u64 sign = 0x8000000000000000ull;
             Mem s_mem = vconst_mem(sign, sign);
-            as_.xop_m(PXOR, t, a, s_mem);
-            as_.xop_m(PXOR, m, b, s_mem);
-            as_.xop(PCMPGT[8], m, t, m);                     // m = a > b ? ~0 : 0
+            as_.xop_m(PXOR, m, a, s_mem);
+            as_.xop_m(PXOR, t, b, s_mem);
+            as_.xop(PCMPGT[8], m, m, t);                     // m = a > b ? ~0 : 0
         }
         // max: m ? a : b; min: m ? b : a
         Xmm first = is_max ? a : b;
@@ -1013,8 +1013,8 @@ void T1::emit_vop(Val v) {
                 as_.vblendv(false, d, d, t, m);
             } else {
                 as_.xop(PAND, t, t, m);
-                as_.xop(PANDN, d, m, d);
-                as_.xop(POR, d, d, t);
+                as_.xop(PANDN, m, m, d);
+                as_.xop(POR, d, m, t);
             }
             finish(d);
             return;
@@ -1035,9 +1035,9 @@ void T1::emit_vop(Val v) {
             } else {
                 u64 sign = 0x8000000000000000ull;
                 Mem s_mem = vconst_mem(sign, sign);
-                as_.xop_m(PXOR, t, a, s_mem);
-                as_.xop_m(PXOR, m, b, s_mem);
-                as_.xop(PCMPGT[8], m, t, m);                     // m = a > b ? ~0 : 0
+                as_.xop_m(PXOR, m, a, s_mem);
+                as_.xop_m(PXOR, t, b, s_mem);
+                as_.xop(PCMPGT[8], m, m, t);                     // m = a > b ? ~0 : 0
             }
             // max = m ? a : b, min = m ? b : a
             Xmm mx = alloc_x(); xpinned_ |= 1 << mx;
@@ -1428,8 +1428,14 @@ void T1::emit_vop(Val v) {
                 x = t; y = u;
             }
             if (in.sub == V_UHSUB || in.sub == V_SHSUB) {   // a - ceil((a + b) / 2) = floor((a - b) / 2)
-                as_.xop(avg, d, x, y);
-                as_.xop(PSUB[es], d, x, d);
+                if (as_.avx) {
+                    as_.xop(avg, d, x, y);
+                    as_.xop(PSUB[es], d, x, d);
+                } else {                                     // SSE: d must not be the subtrahend
+                    Xmm w = alloc_x(); xpinned_ |= 1 << w;
+                    as_.xop(avg, w, x, y);
+                    as_.xop(PSUB[es], d, x, w);
+                }
             } else {
                 as_.xop(avg, d, x, y);                       // (a + b + 1) >> 1 (biased)
                 if (in.sub == V_SHADD) {                     // - ((a ^ b) & 1)
@@ -1591,9 +1597,9 @@ void T1::emit_vop(Val v) {
             } else {
                 u64 sign = 0x8000000000000000ull;
                 Mem s_mem = vconst_mem(sign, sign);
-                as_.xop_m(PXOR, t, a, s_mem);
-                as_.xop_m(PXOR, m, b, s_mem);
-                as_.xop(PCMPGT[8], m, t, m);                     // m = a > b ? ~0 : 0
+                as_.xop_m(PXOR, m, a, s_mem);
+                as_.xop_m(PXOR, t, b, s_mem);
+                as_.xop(PCMPGT[8], m, m, t);                     // m = a > b ? ~0 : 0
             }
             // max = m ? a : b, min = m ? b : a
             Xmm mx = alloc_x(); xpinned_ |= 1 << mx;
@@ -2031,8 +2037,15 @@ void T1::emit_vop(Val v) {
         if (zero_old && in.imm == 0) {
             Xmm d = new_x(v);
             // TBL single register: indices >= 16 must give 0 -> saturating add sets bit 7
-            as_.xop_m(PADDUSB, d, idx, vconst_mem(0x7070707070707070ull, 0x7070707070707070ull));
-            as_.xop(PSHUFB, d, tab, d);
+            Mem bias = vconst_mem(0x7070707070707070ull, 0x7070707070707070ull);
+            if (as_.avx) {
+                as_.xop_m(PADDUSB, d, idx, bias);
+                as_.xop(PSHUFB, d, tab, d);
+            } else {                                         // SSE pshufb shuffles its destination
+                Xmm t = alloc_x(); xpinned_ |= 1 << t;
+                as_.xop_m(PADDUSB, t, idx, bias);
+                as_.xop(PSHUFB, d, tab, t);
+            }
             return;
         }
         Xmm old = C();
@@ -2644,8 +2657,14 @@ void T1::emit_vop(Val v) {
         const u64 two31 = 0x4f0000004f000000ull, two32 = 0x4f8000004f800000ull;
         as_.xop_m(FPV(0xC2, 4), m, sv, vconst_mem(two31, two31), 5);       // x >= 2^31
         as_.xop_m(PAND, d, m, vconst_mem(two31, two31));
-        as_.xop(FPV(0x5C, 4), d, sv, d);                                    // x - (2^31 if big)
-        as_.xop1({0xF3, 1, 0x5B, 0}, d, d);                                 // cvttps2dq
+        if (as_.avx) {
+            as_.xop(FPV(0x5C, 4), d, sv, d);                                // x - (2^31 if big)
+            as_.xop1({0xF3, 1, 0x5B, 0}, d, d);                             // cvttps2dq
+        } else {                                                            // SSE: subps is destructive
+            Xmm w = alloc_x(); xpinned_ |= 1 << w;
+            as_.xop(FPV(0x5C, 4), w, sv, d);
+            as_.xop1({0xF3, 1, 0x5B, 0}, d, w);
+        }
         as_.xshift_imm(0x72, 6, m, m, 31);                                  // pslld m, 31
         as_.xop(PXOR, d, d, m);
         as_.xop_m(FPV(0xC2, 4), m, sv, vconst_mem(two32, two32), 5);       // x >= 2^32: saturate

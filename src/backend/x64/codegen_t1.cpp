@@ -1757,6 +1757,22 @@ void T1::emit_atomic(Val v) {
     case Op::AtomicRMW: {
         clobber_flags();
         u8 aop = in.aux;
+        if (vi_[v].uses == 0 && (aop == AT_CLR || aop == AT_EOR || aop == AT_SET)) {
+            // old value unused (STCLR/STEOR/STSET, Rt = XZR): one locked RMW, no CMPXCHG loop
+            pin(in.a); pin(in.b);
+            Reg ra = to_reg(in.a); pinned_ |= 1 << ra;
+            Reg src = to_reg(in.b); pinned_ |= 1 << src;
+            if (aop == AT_CLR) {
+                Reg t = alloc_temp(); pinned_ |= 1 << t;
+                as_.mov(8, t, src);
+                as_.not_(8, t);
+                src = t;
+            }
+            record_pc();
+            as_.lock();
+            as_.alu(aop == AT_CLR ? AND : aop == AT_EOR ? XOR : OR, msz, mem(ra, 0), src);
+            return;
+        }
         // the CMPXCHG loop needs RAX: claim it before the address can be placed there
         if (aop != AT_ADD && aop != AT_SWP) { take_reg(RAX); pinned_ |= 1 << RAX; }
         pin(in.a); pin(in.b);

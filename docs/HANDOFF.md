@@ -112,8 +112,23 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   GLES 5×). Teraz natywnie i dokładnie dla sygnalizującego NaN; poprawka sNaN jest omijana skokiem
   (`cmpunord` + `ptest`), gdy żadna linia nie jest NaN, a flagi gościa są martwe/tanie do odtworzenia.
   Sprawdzaj `--stats` („vector ops via C helper”) na benchmarkach po zmianach w codegen_t1_vec.
-- Znane (istniało wcześniej): `XEF_NO_AVX=1` — t_crypto, t_simd_conv, t_string, t_threads różnią
-  się od qemu (ścieżki SSE bez AVX nie są pokryte testami poza fuzzerem).
+- `XEF_NO_AVX=1` przechodzi wszystkie testy (patrz niżej: `xop` bez AVX z `d == s2`).
+
+## Wnioski z sesji 2026-10-14: weryfikacja audytów zewnętrznych (Gemini)
+- Ścieżka SSE bez AVX: `Assembler::xop` robi `movaps d, s1`, więc `d == s2 != s1` niszczył drugi
+  operand (TBL 1 rej., FCVTZU, UHSUB/SHSUB, SQADD/SQSUB .4S, PCMPGTQ w SMAX/UABD/UABA .2D). Teraz
+  asercja w `xop`; uruchamiaj `XEF_NO_AVX=1 tests/guest/run.sh` po zmianach w codegen_t1_vec.
+- Kontekst wątku (CpuState+IBTC, stos JIT, IR, sigaltstack) wraca do puli przy `thread_exit`, a wątek
+  wraca z `thread_trampoline` przez `longjmp` (glibc zwalnia stos pthread): 30k wątków to było 13 GB RSS.
+- Blok kończy się, gdy IR ma < 512 wolnych miejsc (LD3/ST3 element po elemencie: asercja w builderze);
+  mapa PC bez duplikatów; `--max-block` ≤ 256.
+- UDF/HLT → SIGILL, BRK → SIGTRAP do handlera gościa (bez handlera: fatal jak wcześniej);
+  `execve` zachowuje argv[0] (`--argv0`); readlinkat zdejmuje prefiks rootfs; mremap unieważnia nowy
+  adres; epoll_pwait przycina maxevents > 4096; STSET/STCLR/STEOR (Rt = XZR) to jeden `lock or/and/xor`.
+- Odrzucone tezy (sprawdzone): częściowy zapis V przy fault w LD1 wielorej. (ARM: rejestry UNKNOWN),
+  „rozdarty” LDXP bez STXP (ARM nie gwarantuje atomowości bez STXP; kompilatory robią pętlę),
+  dest hint w `new_x` nadpisujący umierający operand (operandy są w `xpinned_`), nadpisanie stosu
+  JIT w `guest_call` (wpisy RET są walidowane adresem gościa: tylko koszt predykcji).
 
 ## Następne kroki (priorytet)
 0. Przepuścić więcej programów przez `XEF_VERIFY=1` (testy stdlib Pythona, aplikacje GUI) i naprawić

@@ -299,9 +299,29 @@ static void run_guest(ThreadCtx* t, bool nested) {
             host = get_or_translate(t, st->pc);
             break;
         case EXIT_UNDEF:
-            fatal("unsupported instruction at %#lx: %08x", (unsigned long)st->pc, (u32)st->exit_info);
-        case EXIT_BRK:
+        case EXIT_BRK: {
+            // like the kernel: UDF/unknown encodings and HLT raise SIGILL, BRK raises SIGTRAP, with
+            // pc at the instruction. Only a guest handler gets them (feature probing with
+            // sigsetjmp, JITs' traps); otherwise stop with a diagnostic, as before.
+            bool brk = st->exit_reason == EXIT_BRK && !(st->exit_info & 0x10000);
+            int sig = brk ? SIGTRAP : SIGILL;
+            if (g_actions_handler(sig)) {
+                XEF_LOG(1, "%s at %#lx: delivered to the guest", brk ? "brk" : "undefined instruction",
+                        (unsigned long)st->pc);
+                siginfo_t si {};
+                si.si_signo = sig;
+                si.si_code = brk ? TRAP_BRKPT : ILL_ILLOPC;
+                si.si_addr = (void*)st->pc;
+                t->sync_sig = sig;
+                t->sync_info = si;
+                signals_deliver_pending(st);
+                host = get_or_translate(t, st->pc);
+                break;
+            }
+            if (st->exit_reason == EXIT_UNDEF)
+                fatal("unsupported instruction at %#lx: %08x", (unsigned long)st->pc, (u32)st->exit_info);
             fatal("guest trap (brk/hlt #%#lx) at %#lx", (unsigned long)(st->exit_info & 0xffff), (unsigned long)st->pc);
+        }
         default:
             fatal("unknown exit reason %lu", (unsigned long)st->exit_reason);
         }

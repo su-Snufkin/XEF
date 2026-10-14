@@ -16,6 +16,7 @@
 
 extern "C" char __executable_start;
 #include <cstddef>
+#include <mutex>
 
 #include "os/thread.h"
 #include "runtime/dispatch.h"
@@ -30,6 +31,10 @@ struct GuestSigaction {
 };
 
 static GuestSigaction g_actions[65];
+// guards whole-entry reads/writes of g_actions (32 bytes: a reader must not see a new handler
+// with the old flags/restorer); signal handlers only read the handler word (g_actions_handler)
+static std::mutex g_actions_lock;
+void signals_fork_lock(bool lock) { if (lock) g_actions_lock.lock(); else g_actions_lock.unlock(); }
 static u64 g_sigreturn_tramp;   // guest code: mov x8, #139 (rt_sigreturn); svc #0  (like the vDSO sigtramp)
 bool g_actions_handler(int sig);
 static void async_handler(int sig, siginfo_t* si, void* ctx);
@@ -277,11 +282,18 @@ static bool deliver_sync_fault(int sig, siginfo_t* si, ucontext_t* uc) {
 
 i64 sig_rt_sigaction(CpuState*, int sig, u64 act, u64 oact, u64 sigsetsize) {
     if (sig < 1 || sig > 64 || sigsetsize != 8) return -EINVAL;
-    if (oact) *(GuestSigaction*)oact = g_actions[sig];
+    GuestSigaction a, old;
     if (act) {
-        GuestSigaction a = *(GuestSigaction*)act;
+        a = *(GuestSigaction*)act;
         if (sig == SIGKILL || sig == SIGSTOP) return -EINVAL;
-        g_actions[sig] = a;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_actions_lock);
+        old = g_actions[sig];
+        if (act) g_actions[sig] = a;
+    }
+    if (oact) *(GuestSigaction*)oact = old;
+    if (act) {
         if (sigbit(sig) & kInternalSigs) return 0;  // XEF keeps its own handler (synchronous delivery: TODO)
         struct sigaction h {};
         if (a.handler == (u64)SIG_DFL || a.handler == (u64)SIG_IGN) {
@@ -350,7 +362,12 @@ constexpr u32 FPSIMD_MAGIC = 0x46508001;
 
 static void deliver_one(CpuState* st, int sig, const siginfo_t& si, u64 saved_mask) {
     ThreadCtx* t = st->thread;
-    GuestSigaction a = g_actions[sig];   // a copy: the guest may change it concurrently
+    GuestSigaction a;   // a copy: the guest may change it concurrently
+    {
+        std::lock_guard<std::mutex> lk(g_actions_lock);
+        a = g_actions[sig];
+        if (a.handler > 1 && (a.flags & G_SA_RESETHAND)) g_actions[sig].handler = 0;
+    }
     // the disposition may have changed since the signal was queued
     if (a.handler == (u64)SIG_IGN) return;
     if (a.handler == (u64)SIG_DFL) {
@@ -400,8 +417,7 @@ static void deliver_one(CpuState* st, int sig, const siginfo_t& si, u64 saved_ma
     u64 nm = saved_mask | a.mask;
     if (!(a.flags & G_SA_NODEFER)) nm |= sigbit(sig);
     host_setmask(nm);
-    if (a.flags & G_SA_RESETHAND) {
-        g_actions[sig].handler = 0;
+    if (a.flags & G_SA_RESETHAND) {   // (g_actions was reset above, with the copy)
         struct sigaction h {};
         h.sa_handler = SIG_DFL;
         sigaction(sig, &h, nullptr);
@@ -496,8 +512,12 @@ i64 sig_sigaltstack(CpuState* st, u64 ss, u64 oss) {
 void signals_thread_init(ThreadCtx* t) {
     tls_thread = t;
     const size_t sz = 64 << 10;
-    void* p = mmap(nullptr, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) return;
+    void* p = t ? t->host_altstack : nullptr;   // a recycled context keeps its stack
+    if (!p) {
+        p = mmap(nullptr, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (p == MAP_FAILED) return;
+        if (t) t->host_altstack = p;
+    }
     stack_t ss {};
     ss.ss_sp = p;
     ss.ss_size = sz;

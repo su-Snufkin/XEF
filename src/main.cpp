@@ -40,6 +40,7 @@ static void usage() {
 
 int main(int argc, char** argv, char** envp) {
     int i = 1;
+    const char* argv0 = nullptr;   // execve under XEF: the guest's argv[0] when it is not the path
     if (const char* r = getenv("XEF_ROOTFS")) g_rootfs = r;
     for (; i < argc && argv[i][0] == '-'; i++) {
         std::string a = argv[i];
@@ -55,6 +56,7 @@ int main(int argc, char** argv, char** envp) {
         else if (a == "--dump-ir") g_opt.dump_ir = true;
         else if (a == "--dump-code") g_opt.dump_code = true;
         else if (a == "--max-block" && i + 1 < argc) g_opt.max_block_insts = atoi(argv[++i]);
+        else if (a == "--argv0" && i + 1 < argc) argv0 = argv[++i];
         else if (a == "--") { i++; break; }
         else usage();
     }
@@ -63,6 +65,8 @@ int main(int argc, char** argv, char** envp) {
         if (sscanf(e, "%lx-%lx", &lo, &hi) == 2) { g_opt.dump_lo = lo; g_opt.dump_hi = hi; }
     }
     if (i >= argc) usage();
+    // per-block tables (exit stubs, pc offsets) are sized for this
+    g_opt.max_block_insts = std::max(1, std::min(g_opt.max_block_insts, ir::kMaxGuestInsts));
     if (getenv("XEF_STATS")) g_opt.stats = true;
     if (getenv("XEF_HOST_GL")) g_host_gl = true;
     while (!g_rootfs.empty() && g_rootfs.back() == '/') g_rootfs.pop_back();
@@ -115,6 +119,7 @@ int main(int argc, char** argv, char** envp) {
     LoadedImage img;
     if (!load_elf(argv[i], img)) fatal("cannot load %s", argv[i]);
     syscalls_init(img);
+    if (argv0) argv[i] = (char*)argv0;
     GuestAddr sp = setup_stack(img, argc - i, argv + i, envp);
 
     guest_tid_init();

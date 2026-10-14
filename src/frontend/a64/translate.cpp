@@ -1169,7 +1169,9 @@ void translate_block(GuestAddr pc, ir::Block& blk, const TranslateOpts& opts) {
     Translator tr(blk);
     GuestAddr cur = pc;
     for (int n = 0;; n++) {
-        if (n >= opts.max_insts) {
+        // also end the block while the IR still has room for any one guest instruction (an
+        // element-wise LD3/ST3 expands to ~150 IR instructions)
+        if (n >= opts.max_insts || blk.n > ir::kMaxBlockInsts - 512) {
             tr.ir().set_pc_off((u32)(cur - pc));
             tr.ir().emit(Op::ExitJump, Type::None, kNone, kNone, kNone, cur);
             break;

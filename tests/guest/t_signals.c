@@ -4,6 +4,15 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <setjmp.h>
+#include <ucontext.h>
+static sigjmp_buf probe_jb;
+static volatile int ill_code, trap_code;
+static void h_ill(int s, siginfo_t* si, void* uc) { ill_code = si->si_code; siglongjmp(probe_jb, 1); }
+static void h_trap(int s, siginfo_t* si, void* uc) {   // skip the brk, like a debugger would
+    trap_code = si->si_code;
+    ((ucontext_t*)uc)->uc_mcontext.pc += 4;
+}
 static volatile sig_atomic_t got_usr1, got_alarm, info_ok;
 static volatile long spin;
 static void h_usr1(int s) { got_usr1++; }
@@ -43,5 +52,17 @@ int main(void) {
     sigsuspend(&w);
     printf("sigsuspend got %d\n", got_usr1 - before);
     pthread_join(t, 0);
+    // SIGILL / SIGTRAP from the instruction stream reach the guest's handlers (feature probing)
+    sa.sa_sigaction = h_ill; sa.sa_flags = SA_SIGINFO;
+    sigaction(SIGILL, &sa, 0);
+    int probed = 0;
+    if (!sigsetjmp(probe_jb, 1)) { __asm__ volatile(".inst 0x00000000"); probed = 1; }   // udf #0
+    // the kernel reports ILL_ILLOPC, qemu ILL_ILLOPN
+    printf("udf: handler %s, si_code ok %d\n", probed ? "skipped" : "ran", ill_code == ILL_ILLOPC || ill_code == ILL_ILLOPN);
+    sa.sa_sigaction = h_trap;
+    sigaction(SIGTRAP, &sa, 0);
+    long v = 1;
+    __asm__ volatile("brk #0x7\n\tadd %0, %0, #2" : "+r"(v));
+    printf("brk: si_code %d, resumed v=%ld\n", trap_code, v);
     return 0;
 }

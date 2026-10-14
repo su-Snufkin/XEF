@@ -333,6 +333,7 @@ private:
         e->owner = meta_;
         e->linked = 0;
         e->next_in = nullptr;
+        XEF_ASSERT(nstubs_ < 512);
         stubs_[nstubs_++].e = e;
         return e;
     }
@@ -434,16 +435,20 @@ private:
         as_.patch_rel8_here(j);
         as_.jmp(mem(R15, R11, 2, kIbtcDisp + 8));
     }
-    void record_pc() {
-        if (npc_ < 1024) {  // host->guest pc map for faults
-            HostPcEntry& e = pcmap_[npc_++];
-            e = {};
-            e.host_off = (u32)(as_.cur() - body_start_);
-            e.guest_off = (u16)b_.pc_off[cur_];
-            e.borrowed = borrowed_;
-            Val f = fid(gflags_);
-            e.flags_loc = eflags_ == f ? PCF_EFLAGS : spilled_flags_ == f ? PCF_SPILL : PCF_UNKNOWN;
+    void record_pc() {   // host->guest pc map for faults
+        HostPcEntry e {};
+        e.host_off = (u32)(as_.cur() - body_start_);
+        e.guest_off = (u16)b_.pc_off[cur_];
+        e.borrowed = borrowed_;
+        Val f = fid(gflags_);
+        e.flags_loc = eflags_ == f ? PCF_EFLAGS : spilled_flags_ == f ? PCF_SPILL : PCF_UNKNOWN;
+        // the lookup takes the last entry at or before the fault: an entry equal to the previous
+        // one but for host_off adds nothing (the many accesses of one LD3/ST3, DC ZVA)
+        if (npc_) {
+            const HostPcEntry& p = pcmap_[npc_ - 1];
+            if (p.guest_off == e.guest_off && p.borrowed == e.borrowed && p.flags_loc == e.flags_loc) return;
         }
+        if (npc_ < 1024) pcmap_[npc_++] = e;
     }
 };
 
