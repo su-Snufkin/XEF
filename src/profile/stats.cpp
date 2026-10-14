@@ -88,6 +88,45 @@ void profile_report() {
                 (unsigned long)b->start, (unsigned long)b->end, (int)((b->end - b->start) / 4), b->code_size, b->code,
                 b->tier == 2 ? "t2" : b->tier == 3 ? "t1 (region failed)" : b->tier == 4 ? "t1 (demoted)" : "t1");
     }
+    // guest code by mapped file; every sampled block as "samples file offset" in
+    // /tmp/xef-prof-guest.txt (symbolize offline, e.g. tools/prof_syms.py)
+    {
+        struct Map { u64 lo, hi, off; std::string path; };
+        std::vector<Map> maps;
+        std::string all;
+        int fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
+        char buf[65536];
+        for (ssize_t r; fd >= 0 && (r = read(fd, buf, sizeof buf)) > 0;) all.append(buf, (size_t)r);
+        if (fd >= 0) close(fd);
+        for (size_t pos = 0; pos < all.size();) {
+            size_t e = all.find('\n', pos);
+            if (e == std::string::npos) e = all.size();
+            std::string line = all.substr(pos, e - pos);
+            pos = e + 1;
+            unsigned long lo, hi, off;
+            int at = 0;
+            if (sscanf(line.c_str(), "%lx-%lx %*s %lx %*s %*s%n", &lo, &hi, &off, &at) < 3) continue;
+            const char* path = line.c_str() + at;
+            while (*path == ' ') path++;
+            maps.push_back({lo, hi, off, *path ? path : "anon"});
+        }
+        std::map<std::string, int> by_file;
+        FILE* f = fopen("/tmp/xef-prof-guest.txt", "w");
+        for (auto& [b, c] : counts) {
+            const Map* m = nullptr;
+            for (const Map& x : maps) if (b->start >= x.lo && b->start < x.hi) { m = &x; break; }
+            std::string path = m ? m->path : "?";
+            by_file[path] += c;
+            if (f) fprintf(f, "%d %s %#lx\n", c, path.c_str(), (unsigned long)(m ? b->start - m->lo + m->off : b->start));
+        }
+        if (f) fclose(f);
+        std::vector<std::pair<int, std::string>> files;
+        for (auto& [p, c] : by_file) files.push_back({c, p});
+        std::sort(files.rbegin(), files.rend());
+        fprintf(stderr, "  translated code by guest file:\n");
+        for (size_t i = 0; i < files.size() && i < 8; i++)
+            fprintf(stderr, "  %5.1f%%  %s\n", 100.0 * files[i].first / n, files[i].second.c_str());
+    }
     // XEF_REGSTATS=1: guest register accesses (GetReg/SetReg) of the sampled blocks, weighted by
     // their samples: which registers the canonical mapping should keep in host registers
     if (getenv("XEF_REGSTATS")) {
