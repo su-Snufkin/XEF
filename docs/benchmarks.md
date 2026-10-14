@@ -2,6 +2,20 @@
 
 Each benchmark is built from the same source with the same flags (-O2) for x86-64 (native) and AArch64 (static). Times are best-of-N wall clock. "XEF vs native" is native time / XEF time (100% = native speed). Newest results first. Regenerate with `bench/build.sh && bench/run.py`.
 
+## 2026-10-14 — Intel(R) Xeon(R) Processor @ 2.80GHz (commit 3ad4e9f) — + inlined calls in regions, BLR in regions, FMAXNM fast path
+
+| benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
+|---|---:|---:|---:|---:|---:|
+| coremark — CoreMark (200k iterations) | 8.665 | 11.603 | — | 75% | — |
+| intloop — integer loops (sieve, hash, counting) | 0.842 | 0.794 | — | 106% | — |
+| fploop — FP loops (matmul, n-body, mandelbrot) | 0.349 | 0.386 | — | 91% | — |
+| calls — calls + indirect branches (fib, fn pointers, interpreter) | 0.597 | 0.818 | — | 73% | — |
+| simd — auto-vectorized NEON loops (saxpy, dot, u8 blend, s16 saturate, SAD, clamp, cvt) | 0.289 | 0.394 | — | 73% | — |
+| zstd-c — zstd -6 compress 48 MB text | 0.847 | 1.479 | — | 57% | — |
+| zstd-d — zstd decompress 48 MB text | 0.073 | 0.129 | — | 57% | — |
+
+Cloud VM (noisy, ±3–5%); compare with the baseline 27f8647 numbers in the entry below.
+
 ## 2026-10-14 — Intel(R) Xeon(R) Processor @ 2.80GHz (commit ae34202) — regions with calls, native FRECPE/FRSQRTE, region heads in chains, memoized NZCV lookahead
 
 | benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
