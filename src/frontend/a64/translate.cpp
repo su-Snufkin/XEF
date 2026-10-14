@@ -1031,6 +1031,13 @@ static QuickFlags quick_flags(u32 i, GuestAddr pc, GuestAddr* t1, GuestAddr* t2)
         if (sysreg_id(op0, op1, crn, crm, op2) >= 0 || (op0 == 3 && op1 == 0 && crn == 0)) return Q_NONE;
         return Q_UNKNOWN;
     }
+    if ((i & 0xFFFFF01F) == 0xD503301F) return Q_NONE;   // barriers: CLREX, DSB, DMB, ISB, SB (all accepted)
+    // scalar FP (translate_simd.cpp, fp_scalar): M = 0, bit 24 = 0, bit 21 = 1; ftype 2 is rejected
+    if ((i & 0xFF200000) == 0x1E200000 && ((i >> 22) & 3) != 2) {
+        if ((i & 0xFC00) == 0x2000) return Q_WRITE;                    // FCMP / FCMPE
+        if ((i & 0xC00) == 0x400) return Q_READ;                       // FCCMP / FCCMPE
+        if ((i & 0xC00) == 0xC00 && ((i >> 12) & 0xF) < 14) return Q_READ;   // FCSEL (AL/NV: as CSEL)
+    }
     return Q_UNKNOWN;
 }
 
