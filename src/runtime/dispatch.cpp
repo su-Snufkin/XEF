@@ -16,6 +16,7 @@
 #include "os/signals.h"
 #include "os/syscalls.h"
 #include "profile/stats.h"
+#include "runtime/aot.h"
 
 namespace xef {
 
@@ -109,6 +110,10 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         fatal("guest jumped to unmapped address %#lx (lr=%s, exit reason %lu)", (unsigned long)pc,
               describe_addr(st->x[30], lr, sizeof lr), (unsigned long)st->exit_reason);
     }
+    if (BlockMeta* b = aot::try_load(pc)) {
+        if (g_opt.stats) g_stats.translate_ns += stats_now() - t0;
+        return b;
+    }
     bool chain_ok = !g_opt.trace && !g_opt.dump_ir && !g_opt.dump_code;
     static thread_local PeekLog peeks[kChain];
     GuestAddr pcs[kChain];
@@ -147,6 +152,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     const size_t kMax = 256 * 1024;
     u8* code = g_cache.alloc_code(kMax * nc);
     x64::Assembler as(code, kMax * nc);
+    as.relocs = aot::sink();
     BlockMeta* metas[kChain];
     static thread_local backend::CodegenOut outs[kChain];
     backend::RegionBodyGen* gens[kChain];
@@ -156,6 +162,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         meta->start = pcs[k];
         meta->end = b.end;
         meta->tier = 1;
+        meta->chain_prev = k ? metas[k - 1] : nullptr;
         outs[k].reset();
         backend::CodegenCtx ctx;
         ctx.fall_pc = k + 1 < nc ? pcs[k + 1] : 0;
@@ -169,6 +176,20 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     for (int k = 0; k < nc; k++)
         if (!backend::finish_region_body(gens[k], true)) fatal("block at %#lx too large", (unsigned long)pcs[k]);
     g_cache.commit_code(code, as.size());
+    if (as.relocs) {   // persistent translation cache: before the exits are linked
+        GuestAddr ends[kChain];
+        const PcMapEntry* pms[kChain];
+        int npm[kChain];
+        bool ok = true;
+        for (int k = 0; k < nc; k++) {
+            ends[k] = chain_blk[k]->end;
+            pms[k] = g_cache.pcmap_of(metas[k]);
+            npm[k] = (int)metas[k]->host_pc_map_len;
+            ok &= npm[k] == outs[k].npcmap;
+            metas[k]->nexits = (u16)outs[k].nexits;
+        }
+        if (ok) aot::capture(nc, pcs, ends, metas, peeks, pms, npm, code, as.size(), *as.relocs);
+    }
     for (int k = 0; k < nc; k++) {
         BlockMeta* meta = metas[k];
         if (g_opt.dump_code && g_opt.dump_wants(pcs[k])) dump_code(meta->code, meta->code_size, pcs[k]);

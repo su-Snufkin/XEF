@@ -36,6 +36,8 @@ struct RegionInfo {
     Branch* branches;
     int nbranches;
     bool killed;          // invalidated: member blocks are patched to leave the region
+    u64* call_counter;    // calls made from inside the region (each pays two register transfers)
+    u32 call_moves;       // cost of one such call in moves: transfers + 16 (cost model for evict_region)
 };
 
 // Guest code range a translation depends on (its own instructions or decode-ahead).
@@ -101,7 +103,7 @@ struct ExitInfo {
     u8 linked;
 };
 
-enum : u8 { BF_DEAD = 1, BF_DEMOTED_ONCE = 2 };   // BlockMeta::flags
+enum : u8 { BF_DEAD = 1, BF_DEMOTED_ONCE = 2, BF_NOCALLS = 4 };   // BlockMeta::flags (NOCALLS: region head, form regions without calls)
 
 struct BlockMeta {
     GuestAddr start;
@@ -117,6 +119,7 @@ struct BlockMeta {
     struct RegionInfo* region;   // tier-2 blocks: owning region
     u32 host_pc_map_off;   // offset of host→guest pc map (for faults)
     u32 host_pc_map_len;
+    BlockMeta* chain_prev;   // tier-1 chain member whose code falls through into this one (no exit)
     ExitInfo exits[];
 };
 
@@ -174,6 +177,7 @@ public:
     // per-block host->guest pc maps
     void set_pcmap(BlockMeta* b, const PcMapEntry* e, int n);
     const PcMapEntry* find_pc(const BlockMeta* b, const u8* host) const;
+    const PcMapEntry* pcmap_of(const BlockMeta* b) const { return pcmap_ ? pcmap_ + b->host_pc_map_off : nullptr; }
 
     // ---- code page filter (lock-free) ----
     // One bit per 64 KiB of guest address space: set before a translation of code there can be
@@ -197,8 +201,12 @@ public:
     // Kills every translation depending on [lo, hi). Returns true if any was found.
     bool invalidate_range(GuestAddr lo, GuestAddr hi);
     void invalidate_block(BlockMeta* b);
+    // Makes threads leave a live region (as when it is killed) and re-publishes its tier-1 head.
+    void evict_region(RegionInfo* ri);
     // Drops IBTC entries of the blocks killed since the last scrub (after invalidation).
     void scrub_ibtcs();
+    // Drops IBTC entries for pc at the next scrub_ibtcs (its block was replaced: region entry).
+    void forget_ibtc(GuestAddr pc) { killed_.push_back(pc); }
     // Bumped by every invalidation: translations that started earlier must not be published.
     std::atomic<u64> epoch{0};
 

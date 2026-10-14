@@ -2,6 +2,7 @@
 // host is x86-64. Most calls pass through with a renumbering; a few need
 // structure / flag conversion or emulation.
 #include "os/syscalls.h"
+#include "runtime/aot.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -538,13 +539,23 @@ void do_syscall(CpuState* st) {
         thread_exit(st, (int)a0);
         return;  // not reached for the last thread
     case G_exit_group:
+        aot::save();
         signals_flush_output();
         raw(SYS_exit_group, a0);
         __builtin_unreachable();
     case G_brk: r = do_brk(a0); break;
     case G_mmap: {
         int flags = (int)a3;
-        r = raw(SYS_mmap, a0, a1, prot_g2h(a2), (u64)flags, a4, a5);
+        r = -1;
+        // file mappings and address-space reservations (ld.so maps libraries into one) at
+        // deterministic addresses while the translation cache is on
+        bool file = !(flags & MAP_ANONYMOUS) && (int)a4 >= 0, reserve = (flags & MAP_ANONYMOUS) && a2 == 0;
+        if (!a0 && !(flags & MAP_FIXED) && (file || reserve))
+            if (u64 hint = aot::mmap_hint(a1)) {
+                r = raw(SYS_mmap, hint, a1, prot_g2h(a2), (u64)(flags | MAP_FIXED_NOREPLACE), a4, a5);
+                if (r >= 0 && (u64)r != hint) { raw(SYS_munmap, (u64)r, a1); r = -1; }   // old kernels: a hint
+            }
+        if (r < 0) r = raw(SYS_mmap, a0, a1, prot_g2h(a2), (u64)flags, a4, a5);
         if (r >= 0 && (flags & MAP_FIXED)) code_invalidate_range((GuestAddr)r, a1);
         break;
     }

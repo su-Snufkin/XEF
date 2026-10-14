@@ -1,5 +1,6 @@
 // XEF — guest threads and processes.
 #include "os/thread.h"
+#include "runtime/aot.h"
 #include "thunks/thunks.h"
 
 #include <errno.h>
@@ -126,6 +127,7 @@ void thread_exit(CpuState* st, int code) {
     ThreadCtx* t = st->thread;
     if (g_live_threads.fetch_sub(1) == 1) {
         // last guest thread: the process ends (the tier-2 compiler thread must not keep it alive)
+        aot::save();
         signals_flush_output();
         syscall(SYS_exit_group, code);
     }
@@ -230,6 +232,7 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         guest_tid_init();
         if (st->thread) st->thread->tid = (int)syscall(SYS_gettid);
         tier2_after_fork(st->thread);
+        aot::after_fork();
         return 0;
     }
     return r;
@@ -291,6 +294,7 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
             std::vector<char*> av;
             for (auto& a : args) av.push_back((char*)a.c_str());
             av.push_back(nullptr);
+            aot::save();
             syscall(SYS_execve, host.c_str(), av.data(), envp.data());
             return -errno;
         }
@@ -328,6 +332,7 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
     for (size_t i = 1; i < args.size(); i++) av.push_back((char*)args[i].c_str());
     av.push_back(nullptr);
     signals_flush_output();
+    aot::save();
     syscall(SYS_execve, self, av.data(), envp.data());
     return -errno;
 }

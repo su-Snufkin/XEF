@@ -311,6 +311,14 @@ void CodeCache::kill_region(RegionInfo* ri) {
     }
 }
 
+void CodeCache::evict_region(RegionInfo* ri) {
+    if (ri->killed) return;
+    invalidate_block(ri->entry);   // unpublishes the entry, kills the region
+    BlockMeta* hm = ri->head_t1;
+    if (hm && !(hm->flags & BF_DEAD)) publish(hm);
+    scrub_ibtcs();
+}
+
 void CodeCache::scrub_ibtcs() {
     // an IBTC entry for pc can only sit in slot (pc >> 2) & mask, so only the killed blocks' slots
     // need a look (a full scan of every thread's table made code-writing JITs crawl)

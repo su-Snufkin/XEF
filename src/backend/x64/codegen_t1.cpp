@@ -667,6 +667,12 @@ bool T1::run_body() {
 
 // Cold code after the body (or, in a region, after all member bodies): exit stubs.
 bool T1::run_cold() {
+    for (int i = 0; i < ncold_mm_; i++) {
+        ColdMinMax& c = cold_mm_[i];
+        as_.bind(c.entry);
+        emit_fminmax_nan((Xmm)c.d, (Xmm)c.a, (Xmm)c.b, (Xmm)c.t, (Xmm)c.u, c.isMax, c.es, c.scalar);
+        as_.jmp(c.back);
+    }
     // region exits: transfer back to the canonical mapping, then a normal patchable exit
     for (int i = 0; i < nrstubs_; i++) {
         as_.bind(rstubs_[i].l);
@@ -682,7 +688,7 @@ bool T1::run_cold() {
     for (int i = 0; i < nstubs_; i++) {
         ExitInfo* e = stubs_[i].e;
         e->stub = as_.cur();
-        as_.mov_imm64_fixed(RAX, (u64)e);
+        as_.mov_exitinfo(RAX, e);
         as_.jmp_rel32(g_cache.stubs.link_stub);
         Assembler::patch_rel32(e->site, e->stub);
     }
@@ -2003,7 +2009,7 @@ void T1::emit_call_c(void* fn, Val v, Val a, Val b, u64 imm) {
     bool fl = eflags_ != 0 && flags_needed_after(cur_);
     if (fl) { as_.pushfq(); as_.pop(mem(R15, XEF_ST(flags_spill))); spilled_flags_ = eflags_; }
     eflags_ = 0;
-    as_.mov_imm(RAX, (u64)fn);
+    as_.mov_host(RAX, fn);
     as_.call(RAX);
     restore_caller_saved_guests();
     for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) owner_[r] = 0;
@@ -2115,6 +2121,27 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitCall: {
         ensure_flags();
+        if (ctx_ && ctx_->region && ctx_->inline_call) {   // the callee is in the region (X30 set)
+            if (!falls_to(in.imm)) exit_jmp(in.imm);
+            return;
+        }
+        if (ctx_ && ctx_->region) {
+            // the callee runs with the canonical mapping: transfer around the call, then go on
+            // inside the region at the return address (RET returns right after the call)
+            if (ctx_->call_counter) {  // flag-free; rax is free here
+                as_.mov(8, RAX, rip(ctx_->call_counter));
+                as_.lea(8, RAX, mem(RAX, 1));
+                as_.mov(8, rip(ctx_->call_counter), RAX);
+            }
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, false);
+            as_.mov_imm(RAX, in.imm2);
+            as_.push(RAX);
+            exit_call(in.imm);
+            as_.lea(8, RSP, mem(RSP, 8));
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, true);
+            if (!falls_to(in.imm2)) exit_jmp(in.imm2);
+            return;
+        }
         // native return-stack: push guest return address, call target
         as_.mov_imm(RAX, in.imm2);
         as_.push(RAX);
@@ -2129,6 +2156,26 @@ void T1::emit_terminator(Val v) {
         pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         load_into(RAX, in.a, 8);
         ensure_flags();
+        if (ctx_ && ctx_->region) {   // as ExitCall: the callee runs with the canonical mapping
+            if (ctx_->call_counter) {
+                as_.mov(8, RCX, rip(ctx_->call_counter));
+                as_.lea(8, RCX, mem(RCX, 1));
+                as_.mov(8, rip(ctx_->call_counter), RCX);
+            }
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, false);
+            as_.mov_imm(RCX, in.imm2);
+            as_.push(RCX);
+            Label probe, back;
+            as_.call(probe);
+            as_.lea(8, RSP, mem(RSP, 8));
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, true);
+            if (!falls_to(in.imm2)) exit_jmp(in.imm2);
+            else as_.jmp(back);
+            as_.bind(probe);
+            emit_ibtc_probe(!live_out_);
+            as_.bind(back);
+            return;
+        }
         as_.mov_imm(RCX, in.imm2);
         as_.push(RCX);
         Label probe;
@@ -2140,6 +2187,36 @@ void T1::emit_terminator(Val v) {
         return;
     }
     case Op::ExitRet: {
+        if (ctx_ && ctx_->region) {
+            // inlined calls return inside the region; any other target: transfer back to the
+            // canonical mapping and return as tier 1 does (NZCV is dead here: AAPCS64)
+            take_reg(RAX);
+            pinned_ |= 1 << RAX;
+            load_into(RAX, in.a, 8);
+            take_reg(RCX);
+            pinned_ |= 1 << RCX;
+            XEF_ASSERT(!live_out_);
+            for (int k = 0; k < ctx_->nret; k++) {
+                if (!internal(ctx_->ret_pc[k])) continue;
+                as_.mov_imm(RCX, ctx_->ret_pc[k]);
+                as_.alu(CMP, 8, RAX, RCX);
+                exit_jcc(CE, ctx_->ret_pc[k]);
+            }
+            if (ctx_->exit_counter) {
+                as_.mov(8, RCX, rip(ctx_->exit_counter));
+                as_.lea(8, RCX, mem(RCX, 1));
+                as_.mov(8, rip(ctx_->exit_counter), RCX);
+            }
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, false);
+            Label miss;
+            as_.alu(CMP, 8, RAX, mem(RSP, 8));
+            as_.jcc(CNE, miss);
+            as_.ret();
+            as_.bind(miss);
+            as_.mov(8, RSP, mem(R15, XEF_ST(jit_stack_top)));
+            emit_ibtc_probe(true);
+            return;
+        }
         take_reg(RAX);
         pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         if (!live_out_) {   // NZCV dead at the return: cmp + jne, the target register compared in place

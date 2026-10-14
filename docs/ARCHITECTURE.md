@@ -107,13 +107,38 @@ Skoki warunkowe nie niszczące flag: CBZ/CBNZ przez `mov rcx,x; jrcxz`, TBZ prze
   rejestry modyfikowane w regionie.
 * **Krawędzie**: wewnętrzne to bezpośrednie `jmp/jcc`; zewnętrzne idą przez stub
   przejścia do mapowania kanonicznego i zwykłe linkowane wyjście.
-* **Aktywacja**: linki prowadzące do bloku tier 1 są przepinane na wejście regionu.
+* **Wywołania (BL/BLR)** mogą być w regionie (tylko na cyklu przez głowę). BL do callee
+  przetłumaczonego blisko głowy jest **inlinowany**: skok wewnętrzny do callee (X30 ustawiane
+  jak zwykle), a RET w regionie porównuje X30 z adresami powrotu inlinowanych wywołań (≤ 2)
+  i skacze wewnątrz; inny cel → transfer do mapowania kanonicznego i RET jak w tier 1
+  (zakłada AAPCS64, jak NZCV; wyłączone z `XEF_STRICT_FLAGS=1`). Pozostałe BL/BLR: transfer
+  region→kanoniczne, `push`+`call` jak w tier 1, po powrocie (RET wraca tuż za `call`)
+  transfer z powrotem i dalej w regionie. Takie wywołania są liczone; region, którego
+  wywołania kosztują więcej niż `XEF_T2_CALL_MOVES` (28M) „ruchów” na ms (ruchy transferu
+  + 16 na wywołanie), jest eksmitowany (jak przy zabiciu: wewnętrzne skoki → wyjście)
+  i budowany ponownie bez tych wywołań.
+* **Aktywacja**: linki prowadzące do bloku tier 1 są przepinane na wejście regionu; wpisy
+  IBTC głowy są usuwane, a człony łańcucha tier 1 przed głową (wpadające w nią bez skoku)
+  zabijane, żeby ich ponowne tłumaczenie skakało do regionu.
 * **Sprzężenie zwrotne**: stuby wyjść liczą wyjścia (bez ruszania flag). Region, który
   wychodzi częściej niż 100 000 razy na ms czasu w nim spędzonego, jest degradowany (linki
-  wracają do tier 1).
+  wracają do tier 1); jego nie próbowane jeszcze człony nie zostają głowami regionów.
 * **Dane zmienne** (liczniki, pula stałych) leżą w osobnym obszarze danych na początku
   rezerwacji code cache: są w zasięgu RIP, ale nie dzielą stron z kodem, bo zapisy obok
   wykonywanego kodu wywołują kosztowne „SMC machine clears”.
+
+### Trwały cache translacji (`XEF_AOT=1`, runtime/aot.cpp)
+* Łańcuchy tier 1 zapisywane przy końcu procesu (exit_group, ostatni wątek, execve) do
+  `$XEF_AOT_DIR/<hash ścieżki programu>.xc`: kod hosta z niepołączonymi wyjściami, mapy PC,
+  zakresy gościa, od których zależą (ciała + lookahead NZCV) z hashem ich bajtów, oraz relokacje
+  zebrane przez asembler (`RelocSink`): adresy hosta względem obrazu xef (`mov_host`), rel32 do
+  stubów runtime, RIP-relative stałe wektorowe (internowane na nowo), `ExitInfo*` stubów linku.
+* Klucz pliku: hash binarki xef, mapowanie rejestrów, cechy CPU hosta, opcje translacji.
+  Kolejne uruchomienie: `translate()` najpierw `aot::try_load(pc)` — gdy hash bajtów się zgadza,
+  łańcuch jest kopiowany, relokowany i publikowany jak świeżo przetłumaczony (zależności, linki).
+* Adresy gościa są w kodzie absolutne, więc gdy cache działa, mapowania plików i rezerwacje
+  PROT_NONE (ld.so mapuje w nie biblioteki) oraz interpreter dostają deterministyczne adresy
+  (`aot::mmap_hint`, od 0x7d0000000000); zapisywany jest tylko kod poniżej tego zakresu.
 
 ### NEON / FP
 * Operacje wektorowe to jeden opcode IR (`VOp`) z podoperacją, rozmiarem elementu i flagami

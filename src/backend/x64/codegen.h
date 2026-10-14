@@ -39,7 +39,11 @@ struct CodegenCtx {
     const RegionVXfer* vxfer = nullptr;
     int nvxfer = 0;
     u64* exit_counter = nullptr;   // region exit counter (RIP-addressable)
+    u64* call_counter = nullptr;   // region call counter (RIP-addressable)
     GuestAddr fall_pc = 0;         // region member laid out right after this one (falls through)
+    bool inline_call = false;      // region: this member's BL jumps to the callee in the region
+    int nret = 0;                  // region: a RET compares X30 with these (inlined calls' returns)
+    GuestAddr ret_pc[2] = {};
 };
 
 struct InternalFix {

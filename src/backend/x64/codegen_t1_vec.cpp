@@ -253,7 +253,7 @@ void T1::emit_vec_helper(Val v) {
     u64 desc = (u64)in.sub | ((u64)in.size << 16) | ((u64)in.aux << 24);
     as_.mov_imm(RSI, desc);
     as_.mov_imm(RDX, in.imm);
-    as_.mov_imm(RAX, (u64)&xef_vec_helper);
+    as_.mov_host(RAX, (const void*)&xef_vec_helper);
     as_.call(RAX);
     restore_caller_saved_guests();
     xpinned_ = 0;
@@ -309,12 +309,58 @@ void T1::emit_crc32_clmul(Val v) {
 
 // FMAX/FMIN (NaN propagating) and FMAXNM/FMINNM (quiet NaN = missing) of a and b into d
 // (d may not be a or b); ARM's +0 > -0 ordering for equal values.
+// FMAXNM/FMINNM, exact with NaNs (quiet ones missing, signaling ones propagated): AVX only.
+void T1::emit_fminmax_nan(Xmm d, Xmm a, Xmm b, Xmm t, Xmm u, bool isMax, int es, bool scalar) {
+    u8 opc = isMax ? 0x5F : 0x5D;
+    SseOp op = scalar ? FPS(opc, es) : FPV(opc, es);
+    SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
+    // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
+    // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
+    as_.xop(cmp, u, b, b, 3);
+    as_.vblendv(es == 8, t, b, a, u);
+    as_.xop(op, d, a, t);
+    as_.xop(cmp, u, a, t, 0);
+    as_.xop(isMax ? PAND : POR, t, a, t);
+    as_.vblendv(es == 8, d, d, t, u);
+    // a signaling NaN is propagated, quieted, the first operand's first (FPProcessNaNs)
+    u64 abs = es == 8 ? 0x7FFFFFFFFFFFFFFFull : 0x7FFFFFFF7FFFFFFFull;
+    u64 inf = es == 8 ? 0x7FF0000000000000ull : 0x7F8000007F800000ull;
+    u64 qmin = es == 8 ? 0x7FF7FFFFFFFFFFFFull : 0x7FBFFFFF7FBFFFFFull;   // largest signaling NaN
+    u64 qbit = es == 8 ? 0x0008000000000000ull : 0x0040000000400000ull;
+    for (Xmm x : {b, a}) {
+        as_.xop_m(PAND, t, x, vconst_mem(abs, abs));
+        as_.xop_m(PCMPGT[es], u, t, vconst_mem(inf, inf));
+        as_.xop_m(PCMPGT[es], t, t, vconst_mem(qmin, qmin));
+        as_.xop(PANDN, t, t, u);
+        as_.xop_m(POR, u, x, vconst_mem(qbit, qbit));
+        as_.xop(PAND, u, u, t);
+        as_.xop(PANDN, t, t, d);
+        as_.xop(POR, d, t, u);
+    }
+}
+
 void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool scalar) {
     u8 opc = isMax ? 0x5F : 0x5D;
     SseOp op = scalar ? FPS(opc, es) : FPV(opc, es);
     SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
     Xmm t = alloc_x(); xpinned_ |= 1 << t;
     Xmm u = alloc_x(); xpinned_ |= 1 << u;
+    if (nm && as_.avx && ncold_mm_ < 16 && (!flags_needed_after(cur_) || remat_ok(eflags_))) {
+        // no NaN in any lane (the common case): max(a, b) & max(b, a) (min: |) is exact, signed
+        // zeros included; otherwise the exact sequence, out of line
+        as_.xop(FPV(0xC2, es), u, a, b, 3);   // unordered (all lanes: harmless for scalars)
+        as_.xop(op, d, a, b);
+        as_.xop(op, t, b, a);
+        as_.xop(isMax ? PAND : POR, d, d, t);
+        clobber_flags();
+        as_.xop1(PTEST, u, u);
+        ColdMinMax& c = *new (&cold_mm_[ncold_mm_++]) ColdMinMax{};
+        c.d = (u8)d; c.a = (u8)a; c.b = (u8)b; c.t = (u8)t; c.u = (u8)u; c.es = (u8)es;
+        c.isMax = isMax; c.scalar = scalar;
+        as_.jcc(CNE, c.entry);
+        as_.bind(c.back);
+        return;
+    }
     // FMAXNM/FMINNM treat only a quiet NaN as missing: a signaling NaN is propagated, quieted,
     // the first operand's first (FPProcessNaNs). Lanes where x is a signaling NaN: d = x | quiet bit.
     auto snan_wins = [&](Xmm x) {
@@ -349,16 +395,8 @@ void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool sca
         snan_wins(a);
         as_.bind(done);
     };
-    if (nm && as_.avx) {
-        // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
-        // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
-        as_.xop(cmp, u, b, b, 3);
-        as_.vblendv(es == 8, t, b, a, u);
-        as_.xop(op, d, a, t);
-        as_.xop(cmp, u, a, t, 0);
-        as_.xop(isMax ? PAND : POR, t, a, t);
-        as_.vblendv(es == 8, d, d, t, u);
-        snan_fixup();
+    if (nm && as_.avx) {   // EFLAGS hold guest flags that are expensive to recreate
+        emit_fminmax_nan(d, a, b, t, u, isMax, es, scalar);
         return;
     }
     as_.xop(op, d, a, b);
@@ -469,6 +507,31 @@ void T1::emit_vec(Val v) {
     }
     case Op::GprToV: {
         int es = in.size;
+        if (in.aux != 1 && (es == 4 || es == 8)) {
+            // FMOV / DUP of a constant: from the pool; of a guest register in CpuState: movd/movq
+            // straight from memory (no GPR round trip)
+            if (is_c(in.a)) {
+                u64 c = es == 4 ? (u32)cv(in.a) : cv(in.a);
+                Xmm d = new_x(v);
+                if (in.aux == 0) {
+                    u64 lo = es == 4 ? c | (c << 32) : c;
+                    load_vconst(d, lo, lo);
+                } else {
+                    load_vconst(d, c, 0);
+                    vi_[v].clean_vec = es == 8 ? 8 : 4;
+                }
+                return;
+            }
+            Opnd o = opnd(in.a, true, false, es);
+            if (o.k == Opnd::M) {
+                Xmm d = new_x(v);
+                if (es == 8) as_.movq_load(d, o.m);
+                else as_.movd_load(d, o.m);
+                if (in.aux == 0) as_.xop1(PSHUFD, d, d, es == 4 ? 0 : 0x44);
+                else vi_[v].clean_vec = es == 8 ? 8 : 4;
+                return;
+            }
+        }
         Reg r = to_reg(in.a); pinned_ |= 1 << r;
         if (in.aux == 1) {  // INS into existing vector
             Xmm src = xreg(in.b);
@@ -643,7 +706,7 @@ void T1::emit_ftoi(Val v) {
         as_.mov(8, RDI, t);
         as_.mov_imm(RSI, desc);
         as_.mov_imm(RDX, in.imm);
-        as_.mov_imm(RAX, (u64)&xef_ftoi_helper);
+        as_.mov_host(RAX, (const void*)&xef_ftoi_helper);
         as_.call(RAX);
         restore_caller_saved_guests();
         for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg r = temps_[ti_]; true) owner_[r] = 0;
@@ -728,7 +791,7 @@ void T1::emit_itof(Val v) {
         as_.mov(8, RDI, t);
         as_.mov_imm(RSI, desc);
         as_.mov_imm(RDX, in.imm);
-        as_.mov_imm(RAX, (u64)&xef_itof_helper);
+        as_.mov_host(RAX, (const void*)&xef_itof_helper);
         as_.call(RAX);
         restore_caller_saved_guests();
         for (int ti_ = 0; ti_ < ntemps_; ti_++) if (Reg rr = temps_[ti_]; true) owner_[rr] = 0;
@@ -2814,6 +2877,175 @@ void T1::emit_vop(Val v) {
             return;
         }
     }
+    case V_FRECPE: {
+        if (es != 4 || !as_.avx) return helper();
+        // ARM FPRecipEstimate for single precision, all lanes at once (FPCR.FZ/DN read at run
+        // time; |x| < 2^-128 rounds to nearest: infinity). For |x| in [2^-126, 2^126):
+        //   est = RecipEstimate(256 + frac<22:15>) in [256, 511] (as URECPE: divps + truncation)
+        //   result = sign | (252 - exp) << 23 + est << 15
+        // Denormals are normalized by an exact multiply by 2^64 (exp - 64); exp 253 / 254 give a
+        // denormal estimate: est << 15 >> 1 / >> 2.
+        auto K = [&](u32 c) { return vconst_mem(c | (u64)c << 32, c | (u64)c << 32); };
+        auto sel = [&](Xmm dst, Xmm mask, Xmm tv, Xmm fv) { as_.vblendv(false, dst, fv, tv, mask); };
+        Xmm a = A();
+        Xmm d = new_x(v);
+        Xmm t1 = alloc_x(); xpinned_ |= 1 << t1;
+        Xmm t2 = alloc_x(); xpinned_ |= 1 << t2;
+        Xmm t3 = alloc_x(); xpinned_ |= 1 << t3;
+        Xmm ab = alloc_x(); xpinned_ |= 1 << ab;
+        as_.xop_m(PAND, ab, a, K(0x7fffffff));                  // ab = |x|
+        as_.xop_m(PCMPGT[4], t1, ab, K(0x007fffff));            // t1 = normal or above
+        as_.xop_m(FPV(0x59, 4), t2, ab, K(0x5f800000));         // t2 = |x| * 2^64 (denormals: exact)
+        sel(t2, t1, ab, t2);                                    // t2 = normalized bits
+        as_.xop_m(PAND, t3, t1, K((u32)-(64 << 23)));
+        as_.xop_m(PADD[4], t3, t3, K(316u << 23));              // t3 = (252 + (denormal ? 64 : 0)) << 23
+        as_.xop_m(PAND, t1, t2, K(0x7f800000));
+        as_.xop(PSUB[4], t3, t3, t1);                           // t3 = (252 - exp) << 23
+        as_.xshift_imm(0x72, 2, t1, t2, 15);
+        as_.xop_m(PAND, t1, t1, K(0xff));                       // t1 = frac<22:15>
+        as_.xop(PADD[4], t1, t1, t1);
+        as_.xop_m(PADD[4], t1, t1, K(513));                     // t1 = a = 2 * (256 + frac) + 1
+        as_.xop_m(PADD[4], t2, t1, K(1u << 19));
+        as_.xop(PADD[4], t1, t1, t1);
+        as_.xop1({0, 1, 0x5B, 0}, t1, t1);                      // cvtdq2ps
+        as_.xop1({0, 1, 0x5B, 0}, t2, t2);
+        as_.xop(FPV(0x5E, 4), t2, t2, t1);
+        as_.xop1({0xF3, 1, 0x5B, 0}, t2, t2);                   // t2 = est = trunc((2^19 + a) / 2a)
+        as_.xshift_imm(0x72, 6, t2, t2, 15);                    // t2 = est << 15
+        as_.xop(PADD[4], d, t3, t2);                            // d = normal-range estimate
+        as_.xshift_imm(0x72, 2, t1, t2, 1);
+        as_.xshift_imm(0x72, 2, t2, t2, 2);
+        as_.xop_m(PCMPGT[4], t3, ab, K(0x7effffff));
+        sel(t1, t3, t2, t1);                                    // t1 = exp 254 ? est << 13 : est << 14
+        // FZ: the denormal estimates (|x| >= 2^126) are zero, denormal inputs are zero
+        as_.xop1_m({0x66, 2, 0x18, 0}, t2, mem(R15, XEF_ST(fpcr)));   // vbroadcastss
+        as_.xop_m(PAND, t2, t2, K(1u << 24));
+        as_.xop_m(PCMPEQ[4], t2, t2, K(1u << 24));              // t2 = FZ
+        as_.xop(PANDN, t1, t2, t1);
+        as_.xop_m(PCMPGT[4], t3, ab, K(0x7e7fffff));            // |x| >= 2^126
+        sel(d, t3, t1, d);
+        // |x| in (0, 2^-128), FZ off, rounding toward zero or away from the sign: the largest
+        // normal number (t4 = -1) instead of infinity
+        Xmm t4 = alloc_x(); xpinned_ |= 1 << t4;
+        as_.xop1_m({0x66, 2, 0x18, 0}, t1, mem(R15, XEF_ST(fpcr)));
+        as_.xshift_imm(0x72, 2, t1, t1, 22);
+        as_.xop_m(PAND, t1, t1, K(3));                          // t1 = FPCR.RMode
+        as_.xop(PXOR, t3, t3, t3);
+        as_.xop(PCMPGT[4], t3, t3, a);                          // t3 = negative
+        as_.xop_m(PADD[4], t4, t3, K(2));
+        as_.xop(PCMPEQ[4], t4, t4, t1);                         // RM and negative, RP and positive
+        as_.xop_m(PCMPEQ[4], t1, t1, K(3));                     // RZ
+        as_.xop(POR, t4, t4, t1);
+        as_.xop_m(PCMPGT[4], t1, ab, K(0));
+        as_.xop(PAND, t4, t4, t1);
+        as_.xop_m(PCMPGT[4], t1, ab, K(0x001fffff));
+        as_.xop(PANDN, t4, t1, t4);
+        as_.xop(PANDN, t4, t2, t4);
+        // |x| < 2^-128 (FZ: < 2^-126), zero included: infinity
+        as_.xop_m(PAND, t2, t2, K(0x00600000));
+        as_.xop_m(POR, t2, t2, K(0x001fffff));                  // threshold - 1
+        as_.xop(PCMPGT[4], t2, ab, t2);
+        as_.xop_m(PANDN, t3, t2, K(0x7f800000));
+        as_.xop(PAND, d, d, t2);
+        as_.xop(POR, d, d, t3);
+        as_.xop(PADD[4], d, d, t4);
+        // infinity: zero; NaN: quieted (FPCR.DN: the default NaN)
+        as_.xop_m(PCMPGT[4], t2, ab, K(0x7f7fffff));            // inf or NaN
+        as_.xop(PANDN, d, t2, d);
+        as_.xop_m(PCMPGT[4], t3, ab, K(0x7f800000));            // NaN
+        as_.xop_m(PAND, t1, a, K(0x80000000));
+        as_.xop(POR, d, d, t1);                                 // sign
+        as_.xop_m(POR, t1, a, K(0x00400000));                   // quieted NaN
+        as_.xop1_m({0x66, 2, 0x18, 0}, t2, mem(R15, XEF_ST(fpcr)));
+        as_.xop_m(PAND, t2, t2, K(1u << 25));
+        as_.xop_m(PCMPEQ[4], t2, t2, K(1u << 25));              // t2 = DN
+        as_.xop_m(PAND, ab, t2, K(0x7fc00000));
+        sel(t1, t2, ab, t1);
+        sel(d, t3, t1, d);
+        finish(d);
+        return;
+    }
+    case V_FRSQRTE: {
+        if (es != 4 || !as_.avx) return helper();
+        // ARM FPRSqrtEstimate for single precision. Normalized exponent e (denormals: exact
+        // multiply by 2^64, e - 64) and fraction f: scaled = e even ? 256 | f<22:15> : 128 | f<22:16>,
+        // RecipSqrtEstimate(scaled) = max(513, ceil(sqrt(2^28 / a'))) >> 1 with a' = 2 * scaled + 1
+        // (odd e) or 2 * (scaled & ~1) + 2 (even e). a' * n^2 is never 2^28, so the double
+        // division and square root (any rounding mode) leave ceil exact.
+        // result = ((380 - e) >> 1) << 23 | est<7:0> << 15.
+        auto K = [&](u32 c) { return vconst_mem(c | (u64)c << 32, c | (u64)c << 32); };
+        auto sel = [&](Xmm dst, Xmm mask, Xmm tv, Xmm fv) { as_.vblendv(false, dst, fv, tv, mask); };
+        Xmm a = A();
+        Xmm d = new_x(v);
+        Xmm t1 = alloc_x(); xpinned_ |= 1 << t1;
+        Xmm t2 = alloc_x(); xpinned_ |= 1 << t2;
+        Xmm t3 = alloc_x(); xpinned_ |= 1 << t3;
+        Xmm ab = alloc_x(); xpinned_ |= 1 << ab;
+        as_.xop_m(PAND, ab, a, K(0x7fffffff));
+        as_.xop_m(PCMPGT[4], t1, ab, K(0x007fffff));            // t1 = normal or above
+        as_.xop_m(FPV(0x59, 4), t2, ab, K(0x5f800000));         // |x| * 2^64
+        sel(t2, t1, ab, t2);                                    // t2 = normalized bits
+        as_.xop_m(PANDN, t1, t1, K(64));
+        as_.xop_m(PADD[4], t1, t1, K(380));                     // t1 = 380 (+ 64 for denormals)
+        as_.xshift_imm(0x72, 2, t3, t2, 23);                    // t3 = biased exponent
+        as_.xop(PSUB[4], t1, t1, t3);
+        as_.xshift_imm(0x72, 2, t1, t1, 1);
+        as_.xshift_imm(0x72, 6, t1, t1, 23);                    // t1 = result exponent << 23
+        as_.xshift_imm(0x72, 6, t3, t3, 31);                    // t3 = odd exponent (sign bit)
+        as_.xshift_imm(0x72, 2, d, t2, 14);
+        as_.xop_m(PAND, d, d, K(0x1fc));
+        as_.xop_m(PADD[4], d, d, K(0x202));                     // d = a' for even e
+        as_.xshift_imm(0x72, 2, t2, t2, 15);
+        as_.xop_m(PAND, t2, t2, K(0xfe));
+        as_.xop_m(PADD[4], t2, t2, K(0x101));                   // t2 = a' for odd e
+        sel(d, t3, t2, d);
+        // n = ceil(sqrt(2^28 / a')), two lanes at a time in double precision
+        u64 c28 = 0x41B0000000000000ull;                        // 2^28
+        as_.xop1(PSHUFD, t3, d, 0xEE);
+        as_.xop1({0xF3, 1, 0xE6, 0}, d, d);                     // cvtdq2pd
+        as_.xop1({0xF3, 1, 0xE6, 0}, t3, t3);
+        load_vconst(t2, c28, c28);
+        as_.xop(FPV(0x5E, 8), d, t2, d);                        // divpd
+        as_.xop(FPV(0x5E, 8), t3, t2, t3);
+        as_.xop1(FPV(0x51, 8), d, d);                           // sqrtpd
+        as_.xop1(FPV(0x51, 8), t3, t3);
+        as_.xop1(ROUNDV(8), d, d, 0x0A);                        // ceil
+        as_.xop1(ROUNDV(8), t3, t3, 0x0A);
+        as_.xop1({0x66, 1, 0xE6, 0}, d, d);                     // cvttpd2dq
+        as_.xop1({0x66, 1, 0xE6, 0}, t3, t3);
+        as_.xop(PUNPCKL[8], d, d, t3);
+        as_.xop_m(PMAXS[4], d, d, K(513));
+        as_.xshift_imm(0x72, 6, d, d, 14);                      // (n >> 1) << 15
+        as_.xop_m(PAND, d, d, K(0x7f8000));
+        as_.xop(POR, d, d, t1);                                 // d = estimate for x > 0
+        // +inf: +0; x < 0: the default NaN
+        as_.xop_m(PCMPGT[4], t1, ab, K(0x7f7fffff));
+        as_.xop(PANDN, d, t1, d);
+        as_.xop(PXOR, t3, t3, t3);
+        as_.xop(PCMPGT[4], t3, t3, a);                          // t3 = sign set
+        load_vconst(t2, 0x7fc000007fc00000ull, 0x7fc000007fc00000ull);
+        sel(d, t3, t2, d);
+        // +-0 (FZ: also denormals): +-infinity
+        as_.xop1_m({0x66, 2, 0x18, 0}, t2, mem(R15, XEF_ST(fpcr)));   // vbroadcastss
+        as_.xop_m(PAND, t2, t2, K(1u << 24));
+        as_.xop_m(PCMPEQ[4], t2, t2, K(1u << 24));              // t2 = FZ
+        as_.xop_m(PAND, t2, t2, K(0x007fffff));
+        as_.xop(PCMPGT[4], t2, ab, t2);                         // t2 = not (denormal) zero
+        as_.xop_m(PAND, t1, a, K(0x80000000));
+        as_.xop_m(POR, t1, t1, K(0x7f800000));
+        sel(d, t2, d, t1);
+        // NaN: quieted (FPCR.DN: the default NaN)
+        as_.xop_m(PCMPGT[4], t3, ab, K(0x7f800000));
+        as_.xop_m(POR, t1, a, K(0x00400000));
+        as_.xop1_m({0x66, 2, 0x18, 0}, t2, mem(R15, XEF_ST(fpcr)));
+        as_.xop_m(PAND, t2, t2, K(1u << 25));
+        as_.xop_m(PCMPEQ[4], t2, t2, K(1u << 25));              // t2 = DN
+        as_.xop_m(PAND, ab, t2, K(0x7fc00000));
+        sel(t1, t2, ab, t1);
+        sel(d, t3, t1, d);
+        finish(d);
+        return;
+    }
     case V_URECPE: {
         if (es != 4 || scalar) return helper();
         // AArch64 urecpe:
@@ -2890,7 +3122,7 @@ void T1::emit_vop(Val v) {
         Reg rtbl = alloc_temp(); pinned_ |= 1 << rtbl;
         Reg ridx = alloc_temp(); pinned_ |= 1 << ridx;
         Reg rval = alloc_temp(); pinned_ |= 1 << rval;
-        as_.mov_imm(rtbl, (u64)kRsqrtOffsetTable);
+        as_.mov_host(rtbl, kRsqrtOffsetTable);
         // idx = ((a >> 23) - 128) & 0x1ff
         as_.xshift_imm(0x72, 2, idx, a, 23);
         as_.xop_m(PSUB[4], idx, idx, vconst_mem(128ull | (128ull << 32), 128ull | (128ull << 32)));

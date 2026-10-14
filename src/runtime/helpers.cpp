@@ -20,6 +20,14 @@ void vconst_pool_init() {
     g_pool_end = g_pool + sz;
 }
 
+// the constant at a pool address (persistent translation cache: re-interned when loaded)
+bool vconst_pool_entry(const u8* p, u64* lo, u64* hi) {
+    if (p < g_pool || p + 16 > g_pool_ptr || (p - g_pool) % 16) return false;
+    memcpy(lo, p, 8);
+    memcpy(hi, p + 8, 8);
+    return true;
+}
+
 // open-addressing index of the pool (entry number + 1; 0 = empty), at most half full
 static u32 g_pool_index[1 << 17];
 
