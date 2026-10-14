@@ -2,6 +2,18 @@
 
 Each benchmark is built from the same source with the same flags (-O2) for x86-64 (native) and AArch64 (static). Times are best-of-N wall clock. "XEF vs native" is native time / XEF time (100% = native speed). Newest results first. Regenerate with `bench/build.sh && bench/run.py`.
 
+## 2026-10-14 — Intel(R) Xeon(R) Processor @ 2.80GHz (commit ae34202) — regions with calls, native FRECPE/FRSQRTE, region heads in chains, memoized NZCV lookahead
+
+| benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |
+|---|---:|---:|---:|---:|---:|
+| coremark — CoreMark (200k iterations) | 8.890 | 12.285 | — | 72% | — |
+| intloop — integer loops (sieve, hash, counting) | 0.730 | 0.728 | — | 100% | — |
+| fploop — FP loops (matmul, n-body, mandelbrot) | 0.349 | 0.376 | — | 93% | — |
+| calls — calls + indirect branches (fib, fn pointers, interpreter) | 0.615 | 0.800 | — | 77% | — |
+| simd — auto-vectorized NEON loops (saxpy, dot, u8 blend, s16 saturate, SAD, clamp, cvt) | 0.293 | 0.408 | — | 72% | — |
+| zstd-c — zstd -6 compress 48 MB text | 0.837 | 1.430 | — | 59% | — |
+| zstd-d — zstd decompress 48 MB text | 0.079 | 0.134 | — | 58% | — |
+
 ## 2026-10-13 — 13th Gen Intel(R) Core(TM) i7-13620H (commit e266648) — faster translation; native FMAXNM again (simd was 3.5 s at ebe4955)
 
 | benchmark | native x86-64 [s] | XEF [s] | qemu-aarch64 [s] | XEF vs native | XEF speedup vs qemu |

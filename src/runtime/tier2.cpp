@@ -520,6 +520,10 @@ static void demote_region(RegionInfo* ri) {
         hm->tier = 4;  // never promote again
     }
     if (!(hm->flags & BF_DEAD)) g_cache.publish(hm);
+    // a region headed by another member would cover the same code and exit as often: members not
+    // tried yet are not promoted (state machines like coremark's formed a region per block)
+    for (int i = 0; i < ri->nblocks; i++)
+        if (BlockMeta* m = g_cache.lookup(ri->blocks[i]->start); m && m != hm && m->tier == 1) m->tier = 4;
     if (g_opt.stats) g_stats.regions_demoted++;
     XEF_LOG(1, "tier2: demoted region %#lx (exits=%lu samples=%lu)", (unsigned long)hm->start,
             (unsigned long)*ri->exit_counter, (unsigned long)ri->samples);
