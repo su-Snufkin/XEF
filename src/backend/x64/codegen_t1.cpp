@@ -2121,6 +2121,10 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitCall: {
         ensure_flags();
+        if (ctx_ && ctx_->region && ctx_->inline_call) {   // the callee is in the region (X30 set)
+            if (!falls_to(in.imm)) exit_jmp(in.imm);
+            return;
+        }
         if (ctx_ && ctx_->region) {
             // the callee runs with the canonical mapping: transfer around the call, then go on
             // inside the region at the return address (RET returns right after the call)
@@ -2163,6 +2167,36 @@ void T1::emit_terminator(Val v) {
         return;
     }
     case Op::ExitRet: {
+        if (ctx_ && ctx_->region) {
+            // inlined calls return inside the region; any other target: transfer back to the
+            // canonical mapping and return as tier 1 does (NZCV is dead here: AAPCS64)
+            take_reg(RAX);
+            pinned_ |= 1 << RAX;
+            load_into(RAX, in.a, 8);
+            take_reg(RCX);
+            pinned_ |= 1 << RCX;
+            XEF_ASSERT(!live_out_);
+            for (int k = 0; k < ctx_->nret; k++) {
+                if (!internal(ctx_->ret_pc[k])) continue;
+                as_.mov_imm(RCX, ctx_->ret_pc[k]);
+                as_.alu(CMP, 8, RAX, RCX);
+                exit_jcc(CE, ctx_->ret_pc[k]);
+            }
+            if (ctx_->exit_counter) {
+                as_.mov(8, RCX, rip(ctx_->exit_counter));
+                as_.lea(8, RCX, mem(RCX, 1));
+                as_.mov(8, rip(ctx_->exit_counter), RCX);
+            }
+            emit_region_xfer(as_, ctx_->xfer, ctx_->nxfer, ctx_->vxfer, ctx_->nvxfer, false);
+            Label miss;
+            as_.alu(CMP, 8, RAX, mem(RSP, 8));
+            as_.jcc(CNE, miss);
+            as_.ret();
+            as_.bind(miss);
+            as_.mov(8, RSP, mem(R15, XEF_ST(jit_stack_top)));
+            emit_ibtc_probe(true);
+            return;
+        }
         take_reg(RAX);
         pinned_ |= 1 << RAX;   // flag rematerialization below must not use it as scratch
         if (!live_out_) {   // NZCV dead at the return: cmp + jne, the target register compared in place

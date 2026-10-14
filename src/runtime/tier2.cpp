@@ -69,10 +69,18 @@ bool direct_terminator(const ir::Block& b, GuestAddr out[2], int* nout) {
     return false;
 }
 
-bool is_call(const ir::Block& b) {
+const ir::Inst* terminator(const ir::Block& b) {
     for (int v = b.n - 1; v >= 1; v--)
-        if (ir::is_terminator(b.insts[v].op)) return b.insts[v].op == ir::Op::ExitCall;
-    return false;
+        if (ir::is_terminator(b.insts[v].op)) return &b.insts[v];
+    return nullptr;
+}
+bool is_call(const ir::Block& b) {
+    const ir::Inst* t = terminator(b);
+    return t && t->op == ir::Op::ExitCall;
+}
+bool is_ret(const ir::Block& b) {
+    const ir::Inst* t = terminator(b);
+    return t && t->op == ir::Op::ExitRet;
 }
 
 // a region with this block's call was evicted (calls too frequent)
@@ -119,13 +127,39 @@ static bool compile_region(GuestAddr head) {
     static u16 b_uses[kMaxRegionBlocks][32], b_writes[kMaxRegionBlocks][32], b_vuses[kMaxRegionBlocks][32],
         b_vwrites[kMaxRegionBlocks][32];   // per member, summed after pruning
     bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], helper_of[kMaxRegionBlocks], call_of[kMaxRegionBlocks];
+    // Inlined calls (AAPCS64 assumed, as for NZCV): BL jumps to the callee inside the region; a
+    // RET in the region compares X30 with the return addresses of the inlined calls (at most 2)
+    // and otherwise returns as tier 1 does.
+    bool inl[kMaxRegionBlocks], ret_of[kMaxRegionBlocks];
+    GuestAddr inl_ret[2], inl_callee[kMaxRegionBlocks], inl_retpc[kMaxRegionBlocks];
+    int ninl_ret = 0;
+    auto near_head = [&](GuestAddr pc) { i64 d = (i64)pc - (i64)head; return d >= -16384 && d <= 16384; };
+    auto translated = [&](GuestAddr pc) { BlockMeta* m = g_cache.lookup(pc); return m && m->tier != 2; };
     GuestAddr f_succ[kMaxRegionBlocks][2];
     int f_nsucc[kMaxRegionBlocks];
     for (int qi = 0; qi < R.n; qi++) {
         a64::translate_block(R.pcs[qi], blk, topt);
         GuestAddr* succ = f_succ[qi];
         int ns = 0;
-        if (has_unsupported(blk) || !direct_terminator(blk, succ, &ns) || (is_call(blk) && no_calls_at(R.pcs[qi]))) {
+        inl[qi] = ret_of[qi] = false;
+        const ir::Inst* term = terminator(blk);
+        bool inline_ok = a64::g_abi_flags && !has_unsupported(blk) && term;
+        bool known_ret = false;
+        for (int k = 0; term && k < ninl_ret; k++) known_ret |= inl_ret[k] == term->imm2;
+        if (inline_ok && term->op == ir::Op::ExitCall && !no_calls_at(R.pcs[qi]) && translated(term->imm) &&
+            near_head(term->imm) && (known_ret || ninl_ret < 2)) {
+            inl[qi] = true;
+            inl_callee[qi] = term->imm;
+            inl_retpc[qi] = term->imm2;
+            if (!known_ret) inl_ret[ninl_ret++] = term->imm2;
+            succ[0] = term->imm;
+            ns = 1;
+            // the return address joins the region as the RETs' successor (edges set below)
+            if (!R.contains(term->imm2) && R.n < kMaxRegionBlocks && translated(term->imm2) && near_head(term->imm2))
+                R.pcs[R.n++] = term->imm2;
+        } else if (inline_ok && term->op == ir::Op::ExitRet) {
+            ret_of[qi] = true;
+        } else if (has_unsupported(blk) || !direct_terminator(blk, succ, &ns) || (is_call(blk) && no_calls_at(R.pcs[qi]))) {
             if (qi == 0) {
                 XEF_LOG(1, "tier2: %#lx: head block not supported", (unsigned long)head);
                 return false;
@@ -137,7 +171,7 @@ static bool compile_region(GuestAddr head) {
         }
         f_nsucc[qi] = ns;
         f_reads[qi] = f_writes[qi] = helper_of[qi] = false;
-        call_of[qi] = is_call(blk);
+        call_of[qi] = is_call(blk) || ret_of[qi];   // (NZCV dead at both by the ABI)
         memset(b_uses[qi], 0, sizeof b_uses[qi]);
         memset(b_writes[qi], 0, sizeof b_writes[qi]);
         memset(b_vuses[qi], 0, sizeof b_vuses[qi]);
@@ -160,6 +194,24 @@ static bool compile_region(GuestAddr head) {
             i64 dist = (i64)succ[k] - (i64)head;
             if (dist < -16384 || dist > 16384) continue;
             R.pcs[R.n++] = succ[k];
+        }
+    }
+    // RETs go to the inlined calls' return addresses; an inlined call whose callee did not make it
+    // into the region (or with no RET in it) is a plain call
+    {
+        bool any_ret = false;
+        for (int i = 0; i < R.n; i++) any_ret |= ret_of[i];
+        for (int i = 0; i < R.n; i++) {
+            if (ret_of[i]) {
+                f_nsucc[i] = ninl_ret;
+                for (int k = 0; k < ninl_ret; k++) f_succ[i][k] = inl_ret[k];
+            }
+            if (inl[i] && (!any_ret || !R.contains(inl_callee[i]))) {
+                inl[i] = false;
+                // (the return address was added to the region already)
+                f_succ[i][0] = inl_retpc[i];
+                f_nsucc[i] = 1;
+            }
         }
     }
     // A call block is kept only on a cycle through the head: the code after other calls is mostly
@@ -206,6 +258,10 @@ static bool compile_region(GuestAddr head) {
                 f_writes[n] = f_writes[i];
                 helper_of[n] = helper_of[i];
                 call_of[n] = call_of[i];
+                inl[n] = inl[i];
+                ret_of[n] = ret_of[i];
+                inl_callee[n] = inl_callee[i];
+                inl_retpc[n] = inl_retpc[i];
                 memcpy(b_uses[n], b_uses[i], sizeof b_uses[n]);
                 memcpy(b_writes[n], b_writes[i], sizeof b_writes[n]);
                 memcpy(b_vuses[n], b_vuses[i], sizeof b_vuses[n]);
@@ -413,6 +469,9 @@ static bool compile_region(GuestAddr head) {
         outs[i].reset();
         backend::CodegenCtx c = ctx;
         c.fall_pc = k + 1 < nord && !helper_of[i] ? R.pcs[lay[k + 1]] : 0;
+        c.inline_call = inl[i];
+        c.nret = ret_of[i] ? ninl_ret : 0;
+        for (int q = 0; q < c.nret; q++) c.ret_pc[q] = inl_ret[q];
         u8* bcode = as.cur();
         gens[k] = backend::emit_region_body(blk, as, meta, outs[i], c, true);
         if (!gens[k]) {

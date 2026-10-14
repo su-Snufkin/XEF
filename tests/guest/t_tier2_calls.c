@@ -28,7 +28,41 @@ static float floop(long n) {
     return s + t + u + w;
 }
 
+// several call sites of one callee (more than two return addresses), recursion, and returns that
+// do not go back to the call site (longjmp out of a callee inlined into the region)
+#include <setjmp.h>
+__attribute__((noinline)) uint32_t leaf(uint32_t x) { return (x ^ (x >> 5)) * 0x9E3779B1u; }
+__attribute__((noinline)) uint32_t fib(uint32_t n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }
+static jmp_buf jb;
+__attribute__((noinline)) uint32_t maybe_jump(uint32_t x) {
+    if ((x & 0xffff) == 0x1234) longjmp(jb, 1);
+    return x + 1;
+}
+
+static uint32_t sites(long n) {
+    uint32_t a = 1, b = 2, c = 3;
+    for (long i = 0; i < n; i++) {
+        a = leaf(a + (uint32_t)i);
+        if (i & 1) b = leaf(b ^ a);
+        if (i & 2) c = leaf(c + b);
+    }
+    return a ^ b ^ c;
+}
+
+static volatile long ji;   // survives the longjmp: the loop goes on where it left
+static uint32_t jumps(long n) {
+    static volatile uint32_t s, k;
+    if (setjmp(jb)) { s = s + 1000; k = k + 1; ji = ji + 1; }
+    for (; ji < n; ji = ji + 1) s = maybe_jump(s * 2654435761u + (uint32_t)ji + k);
+    return s + k * 7;
+}
+
 int main(void) {
+    printf("%u\n", sites(10000000));
+    uint32_t f = 0;
+    for (int i = 0; i < 40; i++) f += fib(20 + (i & 3));
+    printf("%u\n", f);
+    printf("%u\n", jumps(3000000));
     printf("%u\n", loop(40000000, 8));   // occasional call: stays in the region
     printf("%u\n", loop(40000000, 1));   // call every iteration: evicted
     printf("%u\n", loop(20000000, 2));
