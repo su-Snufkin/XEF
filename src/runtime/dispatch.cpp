@@ -156,6 +156,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         meta->start = pcs[k];
         meta->end = b.end;
         meta->tier = 1;
+        meta->chain_prev = k ? metas[k - 1] : nullptr;
         outs[k].reset();
         backend::CodegenCtx ctx;
         ctx.fall_pc = k + 1 < nc ? pcs[k + 1] : 0;

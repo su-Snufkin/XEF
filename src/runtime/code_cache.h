@@ -117,6 +117,7 @@ struct BlockMeta {
     struct RegionInfo* region;   // tier-2 blocks: owning region
     u32 host_pc_map_off;   // offset of host→guest pc map (for faults)
     u32 host_pc_map_len;
+    BlockMeta* chain_prev;   // tier-1 chain member whose code falls through into this one (no exit)
     ExitInfo exits[];
 };
 

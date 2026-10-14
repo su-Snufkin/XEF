@@ -64,6 +64,9 @@ for p in order:
     tmp = deb + '.x'; os.makedirs(tmp, exist_ok=True)
     subprocess.check_call(['bsdtar', '-xf', deb, '-C', tmp])
     data = [x for x in os.listdir(tmp) if x.startswith('data.tar')][0]
-    subprocess.check_call(['bsdtar', '-xf', os.path.join(tmp, data), '-C', out])
+    # usr-merged base-files ships /bin -> usr/bin; when /bin is already a directory, keep it
+    # (mkrootfs.sh merges it later)
+    if subprocess.call(['bsdtar', '-xf', os.path.join(tmp, data), '-C', out]) != 0:
+        subprocess.check_call(['bsdtar', '-xkf', os.path.join(tmp, data), '-C', out])
     with open(stamp, 'a') as s: s.write(p + '\n')
     print('ok', p, db[p]['Version'])

@@ -397,6 +397,14 @@ static bool compile_region(GuestAddr head) {
     hm->incoming = nullptr;
     for (ExitInfo* e = entry->incoming; e; e = e->next_in) link_exit(e, entry->code);
     g_cache.publish(entry);
+    // A head inside a tier-1 chain is also reached by falling through from the members before it
+    // (no exit to re-point): typically a loop right after a function's entry blocks, whose first
+    // iteration would run in tier 1 on every call. Kill those members; their retranslation
+    // ends with a linked exit to the region entry.
+    if (hm->chain_prev && !(hm->chain_prev->flags & BF_DEAD)) {
+        for (BlockMeta* p = hm->chain_prev; p && !(p->flags & BF_DEAD); p = p->chain_prev) g_cache.invalidate_block(p);
+        g_cache.scrub_ibtcs();
+    }
     if (g_opt.stats) {
         g_stats.blocks_t2 += R.n;
         g_stats.regions++;
