@@ -667,6 +667,12 @@ bool T1::run_body() {
 
 // Cold code after the body (or, in a region, after all member bodies): exit stubs.
 bool T1::run_cold() {
+    for (int i = 0; i < ncold_mm_; i++) {
+        ColdMinMax& c = cold_mm_[i];
+        as_.bind(c.entry);
+        emit_fminmax_nan((Xmm)c.d, (Xmm)c.a, (Xmm)c.b, (Xmm)c.t, (Xmm)c.u, c.isMax, c.es, c.scalar);
+        as_.jmp(c.back);
+    }
     // region exits: transfer back to the canonical mapping, then a normal patchable exit
     for (int i = 0; i < nrstubs_; i++) {
         as_.bind(rstubs_[i].l);

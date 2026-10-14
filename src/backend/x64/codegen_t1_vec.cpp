@@ -309,12 +309,58 @@ void T1::emit_crc32_clmul(Val v) {
 
 // FMAX/FMIN (NaN propagating) and FMAXNM/FMINNM (quiet NaN = missing) of a and b into d
 // (d may not be a or b); ARM's +0 > -0 ordering for equal values.
+// FMAXNM/FMINNM, exact with NaNs (quiet ones missing, signaling ones propagated): AVX only.
+void T1::emit_fminmax_nan(Xmm d, Xmm a, Xmm b, Xmm t, Xmm u, bool isMax, int es, bool scalar) {
+    u8 opc = isMax ? 0x5F : 0x5D;
+    SseOp op = scalar ? FPS(opc, es) : FPV(opc, es);
+    SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
+    // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
+    // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
+    as_.xop(cmp, u, b, b, 3);
+    as_.vblendv(es == 8, t, b, a, u);
+    as_.xop(op, d, a, t);
+    as_.xop(cmp, u, a, t, 0);
+    as_.xop(isMax ? PAND : POR, t, a, t);
+    as_.vblendv(es == 8, d, d, t, u);
+    // a signaling NaN is propagated, quieted, the first operand's first (FPProcessNaNs)
+    u64 abs = es == 8 ? 0x7FFFFFFFFFFFFFFFull : 0x7FFFFFFF7FFFFFFFull;
+    u64 inf = es == 8 ? 0x7FF0000000000000ull : 0x7F8000007F800000ull;
+    u64 qmin = es == 8 ? 0x7FF7FFFFFFFFFFFFull : 0x7FBFFFFF7FBFFFFFull;   // largest signaling NaN
+    u64 qbit = es == 8 ? 0x0008000000000000ull : 0x0040000000400000ull;
+    for (Xmm x : {b, a}) {
+        as_.xop_m(PAND, t, x, vconst_mem(abs, abs));
+        as_.xop_m(PCMPGT[es], u, t, vconst_mem(inf, inf));
+        as_.xop_m(PCMPGT[es], t, t, vconst_mem(qmin, qmin));
+        as_.xop(PANDN, t, t, u);
+        as_.xop_m(POR, u, x, vconst_mem(qbit, qbit));
+        as_.xop(PAND, u, u, t);
+        as_.xop(PANDN, t, t, d);
+        as_.xop(POR, d, t, u);
+    }
+}
+
 void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool scalar) {
     u8 opc = isMax ? 0x5F : 0x5D;
     SseOp op = scalar ? FPS(opc, es) : FPV(opc, es);
     SseOp cmp = scalar ? FPS(0xC2, es) : FPV(0xC2, es);
     Xmm t = alloc_x(); xpinned_ |= 1 << t;
     Xmm u = alloc_x(); xpinned_ |= 1 << u;
+    if (nm && as_.avx && ncold_mm_ < 16 && (!flags_needed_after(cur_) || remat_ok(eflags_))) {
+        // no NaN in any lane (the common case): max(a, b) & max(b, a) (min: |) is exact, signed
+        // zeros included; otherwise the exact sequence, out of line
+        as_.xop(FPV(0xC2, es), u, a, b, 3);   // unordered (all lanes: harmless for scalars)
+        as_.xop(op, d, a, b);
+        as_.xop(op, t, b, a);
+        as_.xop(isMax ? PAND : POR, d, d, t);
+        clobber_flags();
+        as_.xop1(PTEST, u, u);
+        ColdMinMax& c = *new (&cold_mm_[ncold_mm_++]) ColdMinMax{};
+        c.d = (u8)d; c.a = (u8)a; c.b = (u8)b; c.t = (u8)t; c.u = (u8)u; c.es = (u8)es;
+        c.isMax = isMax; c.scalar = scalar;
+        as_.jcc(CNE, c.entry);
+        as_.bind(c.back);
+        return;
+    }
     // FMAXNM/FMINNM treat only a quiet NaN as missing: a signaling NaN is propagated, quieted,
     // the first operand's first (FPProcessNaNs). Lanes where x is a signaling NaN: d = x | quiet bit.
     auto snan_wins = [&](Xmm x) {
@@ -349,16 +395,8 @@ void T1::emit_fminmax(Xmm d, Xmm a, Xmm b, bool isMax, bool nm, int es, bool sca
         snan_wins(a);
         as_.bind(done);
     };
-    if (nm && as_.avx) {
-        // b' = b NaN ? a : b; d = max(a, b') (a NaN -> b'); equal values (signed zeros):
-        // a & b' for max (+0 wins), a | b' for min (-0 wins). Quiet NaN semantics.
-        as_.xop(cmp, u, b, b, 3);
-        as_.vblendv(es == 8, t, b, a, u);
-        as_.xop(op, d, a, t);
-        as_.xop(cmp, u, a, t, 0);
-        as_.xop(isMax ? PAND : POR, t, a, t);
-        as_.vblendv(es == 8, d, d, t, u);
-        snan_fixup();
+    if (nm && as_.avx) {   // EFLAGS hold guest flags that are expensive to recreate
+        emit_fminmax_nan(d, a, b, t, u, isMax, es, scalar);
         return;
     }
     as_.xop(op, d, a, b);

@@ -337,6 +337,12 @@ private:
         stubs_[nstubs_++].e = e;
         return e;
     }
+    // FMAXNM/FMINNM with a NaN in some lane: the exact sequence out of line (run_cold)
+    struct ColdMinMax { Label entry, back; u8 d, a, b, t, u, es; bool isMax, scalar; };
+    alignas(ColdMinMax) unsigned char cold_mm_raw_[sizeof(ColdMinMax) * 16];
+    ColdMinMax* const cold_mm_ = reinterpret_cast<ColdMinMax*>(cold_mm_raw_);
+    int ncold_mm_ = 0;
+    void emit_fminmax_nan(Xmm d, Xmm a, Xmm b, Xmm t, Xmm u, bool isMax, int es, bool scalar);
     struct RegionStub { Label l; GuestAddr target; };
     // raw storage: constructing 64 labels per block cost more than the (tier-2 only) stubs
     alignas(RegionStub) unsigned char rstubs_raw_[sizeof(RegionStub) * 64];
