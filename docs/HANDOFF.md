@@ -162,6 +162,8 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - FMAXNM/FMINNM: bez NaN 4 instrukcje (max(a,b) & max(b,a)), dokładna sekwencja NaN w zimnym
   kodzie za blokiem (`ColdMinMax`, run_cold): simd −7%, shader GLES −8%. Ten wzorzec (rzadki
   przypadek poza linią) nadaje się też do innych operacji z dużymi poprawkami.
+- DSE zapisów rejestrów gościa przez dostępy do pamięci (bariera „now++” dla Load/Store w
+  analyze) — eksperyment bez bariery: zstd/coremark/Python bez zysku (zstd nawet gorzej). Nie warto.
 - Spekulatywna translacja w tle (cele wyjść nowych bloków) była gorsza 2×: codegen trzyma
   `g_cache.lock`, więc wątek w tle blokuje główny, a ~40% tłumaczonych bloków nigdy nie rusza.
   Warunek wstępny: codegen bez globalnej blokady (bufory kodu per wątek).
