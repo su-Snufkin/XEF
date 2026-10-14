@@ -56,7 +56,7 @@ u64 g_key;
 std::string g_path;
 const u8* g_map;             // the cache file at startup (read only)
 size_t g_map_size;
-struct Unit { u32 off; u8 state; };   // state: 0 untried, 1 used, 2 stale / failed
+struct Unit { u32 off, len; u8 state; };   // state: 0 untried, 1 used, 2 stale / failed
 std::vector<Unit> g_units;
 // member start -> unit number + 1: open addressing, at most half full (0: empty)
 struct Index {
@@ -126,7 +126,7 @@ struct Reader {
 
 struct ExitRec { GuestAddr target; u32 site_off, stub_off; u8 kind; u8 pad[3]; };
 struct MemberHdr { GuestAddr start, end; u32 code_off, code_size, nexits, npc, npeek, pad; };
-struct UnitHdr { u32 nmem, code_size, nreloc, pad; u64 hash; };
+struct UnitHdr { u32 nmem, code_size, nreloc, check; u64 hash; };   // check: of the record after this header
 
 // records in the mapped file are not aligned
 template <typename T> T ld(const void* base, size_t i) {
@@ -189,7 +189,7 @@ void index_file() {
         Reader u{rec, rec + len};
         UnitHdr uh = u.get<UnitHdr>();
         u32 num = (u32)g_units.size();
-        g_units.push_back({(u32)(rec - g_map), 0});
+        g_units.push_back({(u32)(rec - g_map), len, 0});
         for (u32 m = 0; m < uh.nmem && u.ok; m++) {
             MemberHdr mh = u.get<MemberHdr>();
             u.skip(sizeof(ExitRec) * mh.nexits + sizeof(PcMapEntry) * mh.npc + 16ull * mh.npeek);
@@ -334,6 +334,10 @@ void capture(int nc, const GuestAddr* pcs, const GuestAddr* ends, BlockMeta* con
     }
     put(rel, sizeof(RelocRec) * nrel);
     put(code, size);
+    // a damaged file must not run: checksum of everything after the header
+    u8* rec = &g_pending[o + 4];
+    u32 check = (u32)hash_bytes(0x77, rec + sizeof(UnitHdr), len - sizeof(UnitHdr));
+    memcpy(rec + offsetof(UnitHdr, check), &check, 4);
 }
 
 u64 g_misses, g_stale;
@@ -344,8 +348,12 @@ BlockMeta* try_load(GuestAddr pc) {
     Unit& un = g_units[ui];
     if (un.state) return nullptr;
     const u8* base = g_map + un.off;
-    Reader rd{base, g_map + g_map_size};
+    Reader rd{base, base + un.len};
     UnitHdr uh = rd.get<UnitHdr>();
+    if (!rd.ok || (u32)hash_bytes(0x77, base + sizeof(UnitHdr), un.len - sizeof(UnitHdr)) != uh.check) {
+        un.state = 2;
+        return nullptr;
+    }
     constexpr int kMaxMem = 8;
     if (!rd.ok || uh.nmem == 0 || uh.nmem > kMaxMem) { un.state = 2; return nullptr; }
     MemberHdr mh[kMaxMem];
