@@ -200,6 +200,8 @@ public:
     void invalidate_block(BlockMeta* b);
     // Drops IBTC entries of the blocks killed since the last scrub (after invalidation).
     void scrub_ibtcs();
+    // Drops IBTC entries for pc at the next scrub_ibtcs (its block was replaced: region entry).
+    void forget_ibtc(GuestAddr pc) { killed_.push_back(pc); }
     // Bumped by every invalidation: translations that started earlier must not be published.
     std::atomic<u64> epoch{0};
 

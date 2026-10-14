@@ -401,10 +401,10 @@ static bool compile_region(GuestAddr head) {
     // (no exit to re-point): typically a loop right after a function's entry blocks, whose first
     // iteration would run in tier 1 on every call. Kill those members; their retranslation
     // ends with a linked exit to the region entry.
-    if (hm->chain_prev && !(hm->chain_prev->flags & BF_DEAD)) {
-        for (BlockMeta* p = hm->chain_prev; p && !(p->flags & BF_DEAD); p = p->chain_prev) g_cache.invalidate_block(p);
-        g_cache.scrub_ibtcs();
-    }
+    // IBTC entries of indirect branches to the head still point to its tier-1 code: dropped.
+    for (BlockMeta* p = hm->chain_prev; p && !(p->flags & BF_DEAD); p = p->chain_prev) g_cache.invalidate_block(p);
+    g_cache.forget_ibtc(head);
+    g_cache.scrub_ibtcs();
     if (g_opt.stats) {
         g_stats.blocks_t2 += R.n;
         g_stats.regions++;
