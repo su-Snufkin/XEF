@@ -50,6 +50,8 @@ struct FP {
     int es;
     u32 fpcr;
     bool dn() const { return fpcr & (1u << 25); }
+    bool fz() const { return fpcr & (1u << 24); }
+    bool is_denormal(u64 x) const { return es == 4 ? (x & 0x7f800000) == 0 && abs(x) : (x & 0x7ff0000000000000ull) == 0 && abs(x); }
     bool is_nan(u64 x) const { return es == 4 ? is_nan32((u32)x) : is_nan64(x); }
     bool is_snan(u64 x) const { return es == 4 ? is_snan32((u32)x) : is_snan64(x); }
     u64 quiet(u64 x) const { return es == 4 ? (x | 0x400000) : (x | 0x8000000000000ull); }
@@ -316,10 +318,15 @@ static u64 frecpe(u64 x, int es, u32 fpcr) {
     if (fp.is_nan(x)) return fp.nanres(x);
     u64 sgn = x & fp.sign();
     if (fp.is_inf(x)) return sgn;
-    if (fp.is_zero(x)) return sgn | (es == 4 ? 0x7f800000ull : 0x7ff0000000000000ull);
-    // |x| < 2^-128 (single) / 2^-1024 (double): estimate overflows to infinity
-    if (fp.abs(x) < (es == 4 ? 0x00200000ull : 0x0004000000000000ull))
-        return sgn | (es == 4 ? 0x7f800000ull : 0x7ff0000000000000ull);
+    if (fp.is_zero(x) || (fp.fz() && fp.is_denormal(x))) return sgn | (es == 4 ? 0x7f800000ull : 0x7ff0000000000000ull);
+    // |x| < 2^-128 (single) / 2^-1024 (double): the estimate overflows, to infinity unless
+    // rounding toward zero or away from the sign (then the largest normal number)
+    if (fp.abs(x) < (es == 4 ? 0x00200000ull : 0x0004000000000000ull)) {
+        u32 rm = (fpcr >> 22) & 3;
+        bool inf = rm == 0 || (rm == 1 && !sgn) || (rm == 2 && sgn);
+        u64 r = es == 4 ? 0x7f800000ull : 0x7ff0000000000000ull;
+        return sgn | (inf ? r : r - 1);
+    }
     if (es == 4) {
         u32 v = (u32)x;
         int exp = (v >> 23) & 0xff;
@@ -328,7 +335,7 @@ static u64 frecpe(u64 x, int es, u32 fpcr) {
             if (!(frac & (1ull << 51))) { exp = -1; frac = (frac << 2) & 0xfffffffffffffull; }
             else frac = (frac << 1) & 0xfffffffffffffull;
         }
-        if (exp >= 253) return sgn;  // underflow to zero (FZ semantics aside)
+        if (exp >= 253 && fp.fz()) return sgn;  // |x| >= 2^126: the estimate underflows (else denormal)
         u32 scaled = (u32)(0x100 | (frac >> 44));
         int res_exp = 253 - exp;
         u32 est = recip_estimate(scaled);
@@ -343,7 +350,7 @@ static u64 frecpe(u64 x, int es, u32 fpcr) {
         if (!(frac & (1ull << 51))) { exp = -1; frac = (frac << 2) & 0xfffffffffffffull; }
         else frac = (frac << 1) & 0xfffffffffffffull;
     }
-    if (exp >= 2045) return sgn;
+    if (exp >= 2045 && fp.fz()) return sgn;
     u32 scaled = (u32)(0x100 | (frac >> 44));
     int res_exp = 2045 - exp;
     u32 est = recip_estimate(scaled);
@@ -357,7 +364,7 @@ static u64 frsqrte(u64 x, int es, u32 fpcr) {
     FP fp{es, fpcr};
     if (fp.is_nan(x)) return fp.nanres(x);
     u64 sgn = x & fp.sign();
-    if (fp.is_zero(x)) return sgn | (es == 4 ? 0x7f800000ull : 0x7ff0000000000000ull);
+    if (fp.is_zero(x) || (fp.fz() && fp.is_denormal(x))) return sgn | (es == 4 ? 0x7f800000ull : 0x7ff0000000000000ull);
     if (sgn) return fp.defnan();
     if (fp.is_inf(x)) return 0;
     int exp;
