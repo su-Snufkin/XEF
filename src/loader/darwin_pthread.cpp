@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <linux/futex.h>
+#include <pthread.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <time.h>
@@ -196,6 +197,49 @@ static int rw_unlock(XRw* r) {
 static int rwattr_init(long* a) { a[0] = 0x2DA8B3B4; return 0; }
 static int rwattr_destroy(long* a) { a[0] = 0; return 0; }
 
+// ---- thread attributes -----------------------------------------------------------------------------------------------
+static int darwin_pthread_attr_init(pthread_attr_t* a) {
+    if (!a) return EINVAL;
+    memset(a, 0, 64);
+    return pthread_attr_init(a);
+}
+static int darwin_pthread_attr_destroy(pthread_attr_t* a) {
+    if (!a) return EINVAL;
+    return pthread_attr_destroy(a);
+}
+static int darwin_pthread_attr_setdetachstate(pthread_attr_t* a, int dstate) {
+    if (!a) return EINVAL;
+    int linux_state;
+    if (dstate == 1) linux_state = PTHREAD_CREATE_JOINABLE;        // Darwin 1 -> Linux 0
+    else if (dstate == 2) linux_state = PTHREAD_CREATE_DETACHED;    // Darwin 2 -> Linux 1
+    else return EINVAL;
+    return pthread_attr_setdetachstate(a, linux_state);
+}
+static int darwin_pthread_attr_getdetachstate(const pthread_attr_t* a, int* dstate) {
+    if (!a || !dstate) return EINVAL;
+    int linux_state = 0;
+    int r = pthread_attr_getdetachstate(a, &linux_state);
+    if (r != 0) return r;
+    *dstate = (linux_state == PTHREAD_CREATE_DETACHED) ? 2 : 1;
+    return 0;
+}
+static int darwin_pthread_attr_setstacksize(pthread_attr_t* a, size_t stacksize) {
+    if (!a) return EINVAL;
+    return pthread_attr_setstacksize(a, stacksize);
+}
+static int darwin_pthread_attr_getstacksize(const pthread_attr_t* a, size_t* stacksize) {
+    if (!a || !stacksize) return EINVAL;
+    return pthread_attr_getstacksize(a, stacksize);
+}
+static int darwin_pthread_attr_setguardsize(pthread_attr_t* a, size_t guardsize) {
+    if (!a) return EINVAL;
+    return pthread_attr_setguardsize(a, guardsize);
+}
+static int darwin_pthread_attr_getguardsize(const pthread_attr_t* a, size_t* guardsize) {
+    if (!a || !guardsize) return EINVAL;
+    return pthread_attr_getguardsize(a, guardsize);
+}
+
 struct PtShim { const char* name; void* fn; };
 static const PtShim kPt[] = {
     {"_pthread_mutex_init", (void*)&mutex_init}, {"_pthread_mutex_destroy", (void*)&mutex_destroy},
@@ -218,6 +262,14 @@ static const PtShim kPt[] = {
     {"_pthread_rwlock_unlock", (void*)&rw_unlock},
     {"_pthread_rwlockattr_init", (void*)&rwattr_init}, {"_pthread_rwlockattr_destroy", (void*)&rwattr_destroy},
     {"_pthread_rwlockattr_setpshared", (void*)&mattr_nop},
+    {"_pthread_attr_init", (void*)&darwin_pthread_attr_init},
+    {"_pthread_attr_destroy", (void*)&darwin_pthread_attr_destroy},
+    {"_pthread_attr_setdetachstate", (void*)&darwin_pthread_attr_setdetachstate},
+    {"_pthread_attr_getdetachstate", (void*)&darwin_pthread_attr_getdetachstate},
+    {"_pthread_attr_setstacksize", (void*)&darwin_pthread_attr_setstacksize},
+    {"_pthread_attr_getstacksize", (void*)&darwin_pthread_attr_getstacksize},
+    {"_pthread_attr_setguardsize", (void*)&darwin_pthread_attr_setguardsize},
+    {"_pthread_attr_getguardsize", (void*)&darwin_pthread_attr_getguardsize},
 };
 void* darwin_pthread_lookup(const char* name) {
     for (const PtShim& s : kPt) if (!strcmp(s.name, name)) return s.fn;

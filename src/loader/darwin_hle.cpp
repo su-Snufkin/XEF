@@ -542,10 +542,25 @@ static void* darwin_mmap(void* addr, size_t length, int prot, int dflags, int fd
     if (dflags & 0x0002) lflags |= MAP_PRIVATE;
     if (dflags & 0x0010) lflags |= MAP_FIXED;
     if (dflags & 0x1000) lflags |= MAP_ANONYMOUS;
+    if (dflags & 0x0040) lflags |= MAP_NORESERVE;
 
     if (lflags & MAP_ANONYMOUS) {
         fd = -1;
         offset = 0;
+    }
+
+    if ((lflags & MAP_ANONYMOUS) && !(lflags & MAP_FIXED) && !addr) {
+        size_t alloc_len = (length + 16383) & ~16383ull;
+        void* p = mmap(nullptr, alloc_len + 16384, prot, lflags, fd, offset);
+        if (p != MAP_FAILED) {
+            uintptr_t u = (uintptr_t)p;
+            uintptr_t aligned = (u + 16383) & ~16383ull;
+            size_t lead = aligned - u;
+            size_t trail = (alloc_len + 16384) - lead - alloc_len;
+            if (lead) munmap((void*)u, lead);
+            if (trail) munmap((void*)(aligned + alloc_len), trail);
+            return (void*)aligned;
+        }
     }
 
     void* r = mmap(addr, length, prot, lflags, fd, offset);
@@ -554,10 +569,34 @@ static void* darwin_mmap(void* addr, size_t length, int prot, int dflags, int fd
     return r;
 }
 
+static int darwin_getpagesize() {
+    return 16384;
+}
+
+static int darwin_munmap(void* addr, size_t length) {
+    int r = munmap(addr, length);
+    if (r != 0) {
+        fprintf(stderr, "xef: munmap(addr=%p, len=%#zx) = %d (errno=%d), caller: %s (lr=%#lx)\n",
+                addr, length, r, errno, dyld_describe(tl_hle_lr).c_str(), (unsigned long)tl_hle_lr);
+        ThreadCtx* t = tls_thread;
+        if (t && t->st) {
+            u64 fp = t->st->x[29];
+            for (int i = 0; i < 10 && fp && !(fp & 7); i++) {
+                u64 lr = ((u64*)fp)[1];
+                fprintf(stderr, "xef:    #%d %s (fp=%#lx, lr=%#lx)\n", i, dyld_describe(lr).c_str(), (unsigned long)fp, (unsigned long)lr);
+                u64 nfp = ((u64*)fp)[0];
+                if (nfp <= fp || nfp >= fp + 0x10000000) break;
+                fp = nfp;
+            }
+        }
+    }
+    return r;
+}
+
 static long darwin_sysconf(int name) {
     switch (name) {
     case 29: // Darwin _SC_PAGESIZE / _SC_PAGE_SIZE
-        return 4096;
+        return 16384;
     case 57: // Darwin _SC_NPROCESSORS_CONF
         return sysconf(_SC_NPROCESSORS_CONF);
     case 58: // Darwin _SC_NPROCESSORS_ONLN
@@ -1668,6 +1707,7 @@ static const ShimEntry kShims[] = {
     {"___udivti3", (void*)&darwin_udivti3, -2}, {"___divti3", (void*)&darwin_divti3, -2},
     {"__dyld_lookup_section_info", (void*)&darwin_dyld_lookup_section_info, -2},
     {"___umodti3", (void*)&darwin_umodti3, -2}, {"___modti3", (void*)&darwin_modti3, -2},
+    {"_getpagesize", (void*)&darwin_getpagesize, -1}, {"getpagesize", (void*)&darwin_getpagesize, -1},
 };
 // -2: returns a 128-bit value in x0:x1
 static const ShimEntry* find_shim_by_fn(void* fn) {
@@ -2014,6 +2054,41 @@ static uint64_t darwin_mach_absolute_time() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+static uint64_t darwin_mach_approximate_time() {
+    return darwin_mach_absolute_time();
+}
+
+static uint64_t darwin_mach_continuous_time() {
+    struct timespec ts;
+    clock_gettime(CLOCK_BOOTTIME, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+static uint64_t darwin_mach_continuous_approximate_time() {
+    return darwin_mach_continuous_time();
+}
+
+static uint64_t darwin_mach_boottime_usec() {
+    struct timespec rts, bts;
+    clock_gettime(CLOCK_REALTIME, &rts);
+    clock_gettime(CLOCK_BOOTTIME, &bts);
+    int64_t sec = (int64_t)rts.tv_sec - (int64_t)bts.tv_sec;
+    int64_t nsec = (int64_t)rts.tv_nsec - (int64_t)bts.tv_nsec;
+    if (nsec < 0) { sec--; nsec += 1000000000ll; }
+    return (uint64_t)sec * 1000000ull + (uint64_t)(nsec / 1000);
+}
+
+static int darwin_mach_wait_until(uint64_t deadline) {
+    uint64_t now = darwin_mach_absolute_time();
+    if (deadline > now) {
+        struct timespec ts;
+        ts.tv_sec = deadline / 1000000000ull;
+        ts.tv_nsec = deadline % 1000000000ull;
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, nullptr);
+    }
+    return 0; // KERN_SUCCESS
 }
 
 struct mach_timebase_info_t {
@@ -2512,6 +2587,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_strerror_r;
     } else if (strcmp(name, "_mmap") == 0 || strcmp(name, "mmap") == 0) {
         host_fn = (void*)&darwin_mmap;
+    } else if (strcmp(name, "_munmap") == 0 || strcmp(name, "munmap") == 0) {
+        host_fn = (void*)&darwin_munmap;
     } else if (strcmp(name, "_sysconf") == 0 || strcmp(name, "sysconf") == 0) {
         host_fn = (void*)&darwin_sysconf;
     } else if (strcmp(name, "_stat$INODE64") == 0 || strcmp(name, "stat$INODE64") == 0 ||
@@ -2636,6 +2713,16 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_issetugid;
     } else if (strcmp(name, "_mach_absolute_time") == 0 || strcmp(name, "mach_absolute_time") == 0) {
         host_fn = (void*)&darwin_mach_absolute_time;
+    } else if (strcmp(name, "_mach_approximate_time") == 0 || strcmp(name, "mach_approximate_time") == 0) {
+        host_fn = (void*)&darwin_mach_approximate_time;
+    } else if (strcmp(name, "_mach_continuous_time") == 0 || strcmp(name, "mach_continuous_time") == 0) {
+        host_fn = (void*)&darwin_mach_continuous_time;
+    } else if (strcmp(name, "_mach_continuous_approximate_time") == 0 || strcmp(name, "mach_continuous_approximate_time") == 0) {
+        host_fn = (void*)&darwin_mach_continuous_approximate_time;
+    } else if (strcmp(name, "_mach_boottime_usec") == 0 || strcmp(name, "mach_boottime_usec") == 0) {
+        host_fn = (void*)&darwin_mach_boottime_usec;
+    } else if (strcmp(name, "_mach_wait_until") == 0 || strcmp(name, "mach_wait_until") == 0) {
+        host_fn = (void*)&darwin_mach_wait_until;
     } else if (strcmp(name, "_mach_timebase_info") == 0 || strcmp(name, "mach_timebase_info") == 0) {
         host_fn = (void*)&darwin_mach_timebase_info;
     } else if (strcmp(name, "_CCRandomGenerateBytes") == 0 || strcmp(name, "CCRandomGenerateBytes") == 0) {
@@ -2944,7 +3031,9 @@ void darwin_hle_dispatch(CpuState* st) {
             a[sh->variadic_fixed] = st->x[kGuestSP];
             u64 fr[8] = {};
             u64 x0 = 0;
+            errno = 0;
             st->x[0] = xef_call_sysv(host_fn, a, fr, nullptr, 0, &x0);
+            if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
             return;
         }
         if (sh->variadic_fixed == -2) {
@@ -2954,7 +3043,9 @@ void darwin_hle_dispatch(CpuState* st) {
             // the SysV struct return of two words is rax:rdx; xef_call_sysv only gives rax, so call directly
             typedef U128Ret (*fn_t)(uint64_t, uint64_t, uint64_t, uint64_t);
             (void)fr; (void)x0; (void)a;
+            errno = 0;
             U128Ret r = ((fn_t)host_fn)(st->x[0], st->x[1], st->x[2], st->x[3]);
+            if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
             st->x[0] = r.lo;
             st->x[1] = r.hi;
             return;

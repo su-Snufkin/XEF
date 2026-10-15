@@ -518,7 +518,8 @@ void* darwin_stub_data_lookup(const char* name) {
     if (!strcmp(name, "___mb_cur_max")) { static int v = 1; return &v; }
     if (!strcmp(name, "___mb_sb_limit")) { static int v = 128; return &v; }
     if (!strcmp(name, "_sys_nerr")) { static int v = 107; return &v; }
-    if (!strcmp(name, "_vm_page_size")) { static uint64_t ps = 4096; return &ps; }
+    if (!strcmp(name, "_vm_page_size") || !strcmp(name, "vm_page_size")) { static uint64_t ps = 16384; return &ps; }
+    if (!strcmp(name, "_vm_page_shift") || !strcmp(name, "vm_page_shift")) { static uint32_t shift = 14; return &shift; }
     if (!strncmp(name, "__xpc_type_", 11)) {
         for (auto& p : made) if (p.first == name) return p.second;
         void* d = xpc_types[n++ % 16];

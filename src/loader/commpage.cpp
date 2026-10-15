@@ -42,10 +42,8 @@ static bool setup_page_at(uint64_t addr) {
     *(uint8_t*)(cp + COMM_PAGE_PHYSICAL_CPUS) = (uint8_t)ncpu;
     *(uint8_t*)(cp + COMM_PAGE_LOGICAL_CPUS) = (uint8_t)ncpu;
 
-    // Page shift (12 for 4096-byte page)
-    long ps = sysconf(_SC_PAGESIZE);
-    uint8_t shift = 12;
-    if (ps == 16384) shift = 14;
+    // Page shift (14 for 16384-byte page on Apple Silicon Darwin ARM64)
+    uint8_t shift = 14;
     *(uint8_t*)(cp + COMM_PAGE_USER_PAGE_SHIFT_64) = shift;
     *(uint8_t*)(cp + COMM_PAGE_KERNEL_PAGE_SHIFT)  = shift;
 

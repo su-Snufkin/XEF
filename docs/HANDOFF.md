@@ -5,8 +5,8 @@ Specyfikacja projektu (od użytkownika): szybki translator AArch64 → x86-64, u
 wydajność jest priorytetem zaraz po poprawności. Użytkownik akceptuje każdy plan, a celem
 jest „rozwijaj XEF dopóki nie skończą się tokeny”.
 
-**Zasady repo:** commity BEZ stopki „Co-Authored-By: Claude”; autor zawsze `su-Snufkin <341201482+su-Snufkin@users.noreply.github.com>` (ustawione w `git config` repo; nie podawaj `-c user.email`).
-Remote: `git@github.com:su-Snufkin/XEF.git`; od 2026-10-13 praca bezpośrednio na `main` (`git push origin main`), bez PR-ów bez prośby.
+**Zasady repo:** commity BEZ stopki „Co-Authored-By”; autor i committer zawsze: `JupiczeQ <74213715+JupiczeQ@users.noreply.github.com>` (bezwzględnie NIGDY `iw134987`!).
+Remote: `https://github.com/su-Snufkin/XEF.git`; gałąź robocza: `XEF-OSX` (`git push origin XEF-OSX`). Praca na `XEF-OSX`.
 
 ## Szybki start (nowa maszyna / cloud)
 ```sh
@@ -229,3 +229,68 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - Remat flag w terminatorach nie może używać RAX (cel skoku) — RAX jest przypinany w Exit*Indirect/Ret.
 - `CLONE_PARENT_SETTID` musi być zapisany zanim dziecko ruszy (glibc: ptid == ctid).
 - `alloc_code()` tylko rezerwuje; drugi alloc przed `commit_code` zwraca ten sam adres.
+
+---
+
+## XEF-OSX — stan na 2026-10-15 (Apple Silicon Mach-O / Darwin HLE)
+
+### 1. Ważne zasady środowiska i repozytorium
+- **Autor i Committer:** Zawsze wyłącznie `JupiczeQ <74213715+JupiczeQ@users.noreply.github.com>`.
+- **Nigdy** nie commitować ani nie pushować z konta `iw134987` ani adresu uczelnianego.
+- **Bez stopki** `Co-Authored-By` w commitach.
+- **Gałąź:** `XEF-OSX` (`git push origin XEF-OSX`).
+- **Zdalny Apple Silicon Mac M1 (macOS 27, 16K pages):**
+  - Dostęp przez `ssh mac` (`HostName 192.168.0.208`, user `kacperwrona`, klucz `~/.ssh/xef_mac`, hasło do sudo: `2137`).
+  - Narzędzie do synchronizacji pakietów z Maca do rootfs: `tools/pull_homebrew.sh <nazwa>`.
+
+### 2. Architektura i kluczowe wdrożenia (2026-10-15)
+- **Automatyczne wykrywanie Mach-O i darwin-rootfs:**
+  - `src/main.cpp`: binarki Mach-O ARM64 (`is_macho_binary`) automatycznie włączają tryb Darwina (`g_is_darwin = true`).
+  - Jeśli flaga `-L` nie została podana, a ścieżka do pliku wykonywalnego leży wewnątrz `darwin-rootfs`, rootfs jest wykrywany automatycznie.
+  - `tools/pull_homebrew.sh` tworzy wewnątrz rootfs symlinki relatywne (`ln -srfn`), zapobiegając błędnemu rozwiązywaniu ścieżek bezwzględnych `/opt/homebrew/...` na maszynie hosta Linuksa.
+- **Pełne dopasowanie struktur ABI & Locale (`_RuneLocale`):**
+  - Rozmiar `DarwinRuneLocale`: dokładnie 3208 bajtów (potwierdzone `static_assert`).
+  - Pola: magic `"RuneMagA"`, `runetype` pod offsetem 60 (0x3c), `maplower` pod 1084 (0x43c), `mapupper` pod 2108 (0x83c), rozszerzenia zakresów `runetype_ext`, `maplower_ext`, `mapupper_ext`.
+  - Eksport symboli: `_DefaultRuneLocale`, `__DefaultRuneLocale`, `_CurrentRuneLocale`, `___CurrentRuneLocale`.
+  - Przeliczanie kategorii w `darwin_setlocale`: Darwin `LC_CTYPE` (2) -> Linux `LC_CTYPE` (0), `LC_ALL` (0) -> Linux (6) itd.
+  - Zgodność ABI dla regexów BSD: 32-bajtowy `DarwinRegex` i 16-bajtowy `DarwinRegmatch` (64-bitowe `rm_so`/`rm_eo`).
+- **Obsługa specyfiki Apple Silicon — Strony Pamięci 16 KB:**
+  - Na Apple Silicon Darwin ARM64 natywny rozmiar strony jądra to **16384 (16 KB)**.
+  - `src/loader/commpage.cpp`: `COMM_PAGE_USER_PAGE_SHIFT_64` i `COMM_PAGE_KERNEL_PAGE_SHIFT` ustawione na 14 (`1 << 14 == 16384`).
+  - `darwin_sysconf(_SC_PAGESIZE)` oraz `darwin_getpagesize()` zwracają 16384.
+  - Zmienne systemowe Darwina: `_vm_page_size` = 16384, `_vm_page_shift` = 14.
+  - `darwin_mmap`: alokacje anonimowe (`MAP_ANONYMOUS`) bez `MAP_FIXED` są alokowane z buforem i docięciem tak, aby zwracany adres był zawsze wyrównany do 16 KB. Zapobiega to underflowom alokatora pamięci V8 przy odejmowaniu prefiksu/sufiksu (co wcześniej skutkowało błędem `0 == munmap(addr, size)` z ujemną długością `0xffffffffffffd000`).
+- **Czas Mach (Mach Time APIs):**
+  - `_mach_absolute_time` / `_mach_approximate_time`: monotoniczne nanosekundy (`CLOCK_MONOTONIC`).
+  - `_mach_continuous_time` / `_mach_continuous_approximate_time`: czas od startu systemu uwzględniający uśpienie (`CLOCK_BOOTTIME`).
+  - `_mach_boottime_usec`: czas rozruchu w mikrosekundach od epoki (`CLOCK_REALTIME - CLOCK_BOOTTIME`).
+  - `_mach_timebase_info`: `numer = 1`, `denom = 1`.
+  - `_mach_wait_until`: `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, nullptr)`.
+- **Wątki i Pthread ABI:**
+  - Shimy `darwin_pthread_attr_*` w `src/loader/darwin_pthread.cpp`.
+  - Mapowanie `setdetachstate` i `getdetachstate`:
+    - Darwin: `PTHREAD_CREATE_JOINABLE = 1`, `PTHREAD_CREATE_DETACHED = 2`.
+    - Linux: `PTHREAD_CREATE_JOINABLE = 0`, `PTHREAD_CREATE_DETACHED = 1`.
+  - Stuby ochrony JIT na Apple Silicon: `_pthread_jit_write_protect_np`, `_pthread_jit_write_protect_supported_np`, `_pthread_jit_write_with_callback_np`, `_pthread_jit_write_freeze_callbacks_np`.
+- **Propagacja `errno` w HLE Variadic Shims:**
+  - W `darwin_hle_dispatch`: variadic shimy (`_fcntl`, `_open`, `_ioctl`) przed wywołaniem zerują `errno` hosta, a po wywołaniu propagują błąd: `if (errno) g_darwin_errno = darwin_errno_from_linux(errno)`.
+  - Wyeliminowało to nieskończoną pętlę sprawdzania deskryptorów w libuv (`uv__cloexec`).
+
+### 3. Stan przetestowanych programów (Homebrew & Apple system)
+- **Przechodzące testy referencyjne:** `./tests/darwin/macref.sh` przechodzi 14/14 (Objective-C, CoreFoundation, threads, libc, stdio, zlib).
+- **Homebrew CLI (100% działające):**
+  - `tree`
+  - `xz`
+  - `zstd`
+  - `sqlite3`
+  - `ninja`
+  - `pcre2grep` (wraz z JIT PCRE2/SLJIT!)
+  - `python3` (3.14.4)
+  - `lua` (5.5.0)
+  - `wget`
+  - `openssl` (3.6.4)
+  - macOS arm64e `/bin/ls` i `/bin/date`
+- **Node.js (v24.1.0):**
+  - `node --version` wykonuje się i zwraca `v24.1.0`.
+  - Silnik V8 pomyślnie startuje, alokuje stertę i wykonuje kod JS bootstrapu (`pre_execution.js`).
+  - Aktualny punkt badania: weryfikacja callbacków V8 C++ API w `setupInspectorHooks` (`RegisterAsyncHookWrapper`).
