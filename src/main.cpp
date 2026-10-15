@@ -74,6 +74,15 @@ int main(int argc, char** argv, char** envp) {
     if (getenv("XEF_STATS")) g_opt.stats = true;
     if (getenv("XEF_HOST_GL")) g_host_gl = true;
     while (!g_rootfs.empty() && g_rootfs.back() == '/') g_rootfs.pop_back();
+    if (g_rootfs.empty() && i < argc) {
+        std::string prog_path = argv[i];
+        size_t pos = prog_path.find("darwin-rootfs");
+        if (pos != std::string::npos) {
+            std::string cand = prog_path.substr(0, pos + 13);
+            char abs[PATH_MAX];
+            if (realpath(cand.c_str(), abs)) g_rootfs = abs;
+        }
+    }
     if (!g_rootfs.empty()) {   // absolute: guest chdir() into the rootfs must not break later lookups
         char abs[PATH_MAX];
         if (realpath(g_rootfs.c_str(), abs)) g_rootfs = abs;

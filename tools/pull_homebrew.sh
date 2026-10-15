@@ -46,6 +46,6 @@ echo "$list" | while IFS=$'\t' read -r p real; do
   mkdir -p "darwin-rootfs$(dirname "$real")"
   rsync -aL "mac:$real" "darwin-rootfs$real"
   # keep the path used in load commands (symlinked names) as symlinks to the real file
-  if [ "$p" != "$real" ]; then mkdir -p "darwin-rootfs$(dirname "$p")"; ln -sfn "$real" "darwin-rootfs$p" 2>/dev/null || true; fi
+  if [ "$p" != "$real" ]; then mkdir -p "darwin-rootfs$(dirname "$p")"; ln -srfn "darwin-rootfs$real" "darwin-rootfs$p" 2>/dev/null || true; fi
 done
 echo "$list" | wc -l | xargs echo "files copied:"
