@@ -45,8 +45,8 @@ Statusy: [ ] następne, [~] w toku, [x] zrobione, [!] zablokowane.
 - [x] B4 cand3_cocoa: okno + 300 klatek + exit 0, porównanie z Makiem
 
 ### Etap C — GLFW (cand1)
-- [ ] C1 zebrać `unresolved symbol` na poziomie logowania 1; zasilić stubami CG/IOKit/Carbon/CoreVideo
-- [ ] C2 cand1_gl21 → cand2_gl32
+- [x] C1 zebrać `unresolved symbol` na poziomie logowania 1; CoreGraphics/IOKit/CoreServices/HIToolbox-lite (`rootfs-src/appkit/*.c`), AppKit-lite rozszerzony (NSImage, NSBitmapImageRep, NSPasteboard, NSTrackingArea, monitory zdarzeń, ...)
+- [x] C2 `tests/darwin/glfw_gl21` (GL 2.1) i `glfw_gl32` (3.2 core, `xef_host_gl_set_profile`): 300 klatek, rc 0, SSIM 1,0000 vs Mac, HIDDEN=1; w `gl_test.sh`
 
 ## Kryteria sukcesu (z promptu) — status
 1. start bez crasha: [x] (gltri)  2. zrzut 3D: [x] (SSIM 0,996 vs Mac)  3. ≥300 klatek, rc 0: [x]  4. powtarzalność + test: [x] (gl_test.sh)  5. commit + docs: [x]

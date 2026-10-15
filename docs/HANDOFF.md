@@ -322,7 +322,14 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - `tests/darwin/cocoa_gl` (z cand3_cocoa + zrzut PPM klatki 299): ta sama binarka działa na Macu i na XEF; referencja
   `tests/darwin/mac_gl/ref_cocoa.ppm` (SSIM ≥0,95 wymagane w gl_test.sh; wyszło ~1,0). Zdarzenia (klawisze/mysz/resize/close) są
   zaimplementowane, ale nietestowane w czasie działania (aplikacja ich nie dostaje).
-- Znane luki (etap C, GLFW): NSImage, NSBitmapImageRep, NSPasteboard, NSTextInputContext, NSTrackingArea, NSUserDefaults,
-  dane `NSCalibratedRGBColorSpace`, CoreGraphics/IOKit/Carbon/CoreVideo; `___sincosf_stret` (HFA 2×float) nieobsłużone
-  (stub w darwin_stubs.cpp tylko double); profil core z NSOpenGLPixelFormat ignorowany (zawsze kontekst legacy/compat).
+- GLFW 3.4 (etap C, 2026-10-15): `tests/darwin/glfw_gl21` i `glfw_gl32` (źródła `tests/darwin/mac_gl/glfw_gl{21,32}.c`, GLFW statycznie na Macu,
+  `tests/darwin/mac_gl/build.sh`) działają na Macu i XEF; referencje `ref_glfw21/32.ppm` (SSIM 1,0000, ±1 na 38 bajtach), `HIDDEN=1` działa,
+  wydruk faktów (monitors/joystick/nazwy klawiszy) identyczny z Makiem. Nowe dyliby (`tools/build_appkit.sh`): CoreGraphics (jeden ekran ID 1 z hosta,
+  jeden tryb 60 Hz, gamma tylko do odczytu, fade/Associate = `// HLE:` no-op), IOKit (pusty IORegistry, IOHIDManager bez urządzeń),
+  CoreServices (`UCKeyTranslate`, układ US ANSI), Carbon/HIToolbox (bundle `com.apple.HIToolbox`, TIS), Info.plist `com.apple.opengl` w OpenGL.framework.
+  `dlsym` na obrazie OpenGL.framework (CFBundleGetFunctionPointerForName w GLFW) idzie przez most host-GL. Kontrakt hosta rozszerzony o
+  `xef_host_gl_set_profile` (profil core 3.2/4.1 -> glXCreateContextAttribsARB), `screen_info`, `window_set_frame/hide`, `pointer/pointer_warp`; zdarzenia
+  enter/exit/focus, modyfikatory jako FlagsChanged. `___sincosf_stret`/`___sincos_stret` zwracają HFA w v0/v1 (`darwin_hle_dispatch`, tryby shim -3/-4;
+  test `tests/darwin/mac/sincos_stret.c`). Zdarzenia GLFW (klawisze/mysz/scroll/resize/focus) sprawdzone na Xvfb przez XTest.
+- Ograniczenia lite: schowek tylko w procesie, brak drag&drop, kursory (kształt/obraz) nie trafiają do X11, `miniaturize` tylko unmap, brak odświeżania z hosta (60 Hz zakładane).
 - Logowanie: poziom 1 = flaga `-v` (nie zmienna środowiskowa).

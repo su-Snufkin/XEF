@@ -24,3 +24,11 @@ ssh mac 'cd ~/xef-remote/src/cocoa_gl && clang -O1 -arch arm64 -mmacosx-version-
 rsync -az mac:xef-remote/src/cocoa_gl/cocoa_gl ../cocoa_gl
 ssh mac 'cd ~/xef-remote/src/cocoa_gl && ./cocoa_gl /tmp/cocoa_ref.ppm' && \
 rsync -az mac:/tmp/cocoa_ref.ppm ref_cocoa.ppm || echo "Mac cocoa oracle failed (no GUI session?)" >&2
+# GLFW 3.4 (static, Cocoa backend) apps, cand1/cand2 based: glfw_gl21 (GL 2.1) and glfw_gl32 (3.2 core). Same binary is
+# the oracle on the Mac and the XEF input; writes ref_glfw21.ppm / ref_glfw32.ppm (GLFW built in ~/xef-remote/src/cand1/build).
+ssh mac 'mkdir -p ~/xef-remote/src/glfw_gl'
+rsync -az glfw_gl21.c glfw_gl32.c mac:xef-remote/src/glfw_gl/
+for v in 21 32; do
+  ssh mac "cd ~/xef-remote/src/glfw_gl && G=\$HOME/xef-remote/src/cand1 && clang -O1 -arch arm64 -mmacosx-version-min=11.0 -I\$G/glfw-3.4/include glfw_gl$v.c \$G/build/glfw-3.4/src/libglfw3.a -framework OpenGL -framework Cocoa -framework IOKit -framework CoreFoundation -o glfw_gl$v" && rsync -az mac:xef-remote/src/glfw_gl/glfw_gl$v ../glfw_gl$v
+  ssh mac "cd ~/xef-remote/src/glfw_gl && ./glfw_gl$v /tmp/glfw$v.ppm" && rsync -az mac:/tmp/glfw$v.ppm ref_glfw$v.ppm || echo "Mac glfw$v oracle failed (no GUI session?)" >&2
+done
