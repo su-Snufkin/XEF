@@ -29,6 +29,7 @@
 #include <wchar.h>
 #include <pwd.h>
 #include <locale.h>
+#include <regex.h>
 #include <ctype.h>
 #include <chrono>
 #include <sys/syscall.h>
@@ -416,8 +417,92 @@ static void darwin_warn_impl(bool use_errno, const char* format, const uint64_t*
 
 static void darwin_err(int eval, const char* fmt, ...) { (void)eval; (void)fmt; }
 static void darwin_errx(int eval, const char* fmt, ...) { (void)eval; (void)fmt; }
+static void darwin_errc(int eval, int code, const char* fmt, ...) { (void)eval; (void)code; (void)fmt; }
 static void darwin_warn(const char* fmt, ...) { (void)fmt; }
 static void darwin_warnx(const char* fmt, ...) { (void)fmt; }
+static void darwin_warnc(int code, const char* fmt, ...) { (void)code; (void)fmt; }
+
+// Darwin regex ABI (32-byte struct with embedded pointer vs Linux 64-byte struct)
+struct DarwinRegex {
+    int re_magic;
+    int _pad;
+    size_t re_nsub;
+    const char* re_endp;
+    void* re_g;
+};
+static_assert(sizeof(DarwinRegex) == 32, "DarwinRegex size must be 32 bytes");
+
+struct DarwinRegmatch {
+    int64_t rm_so;
+    int64_t rm_eo;
+};
+static_assert(sizeof(DarwinRegmatch) == 16, "DarwinRegmatch size must be 16 bytes");
+
+static int darwin_regcomp(DarwinRegex* preg, const char* regex, int cflags) {
+    if (!preg || !regex) return 16; // REG_INVARG
+    regex_t* host_re = new (std::nothrow) regex_t();
+    if (!host_re) return REG_ESPACE;
+    int host_cflags = 0;
+    if (cflags & 0001) host_cflags |= REG_EXTENDED;
+    if (cflags & 0002) host_cflags |= REG_ICASE;
+    if (cflags & 0004) host_cflags |= REG_NOSUB;
+    if (cflags & 0010) host_cflags |= REG_NEWLINE;
+    int rc = regcomp(host_re, regex, host_cflags);
+    if (rc != 0) {
+        delete host_re;
+        return rc;
+    }
+    preg->re_magic = 0xfedb;
+    preg->re_nsub = host_re->re_nsub;
+    preg->re_endp = nullptr;
+    preg->re_g = host_re;
+    return 0;
+}
+
+static int darwin_regexec(const DarwinRegex* preg, const char* string, size_t nmatch, DarwinRegmatch* pmatch, int eflags) {
+    if (!preg || !preg->re_g || !string) return 16;
+    regex_t* host_re = (regex_t*)preg->re_g;
+    int host_eflags = 0;
+    if (eflags & 00001) host_eflags |= REG_NOTBOL;
+    if (eflags & 00002) host_eflags |= REG_NOTEOL;
+
+    std::vector<regmatch_t> host_match;
+    regmatch_t* hpmatch = nullptr;
+    if (pmatch && nmatch > 0) {
+        host_match.resize(nmatch);
+        hpmatch = host_match.data();
+#ifdef REG_STARTEND
+        if (eflags & 00004) {
+            host_eflags |= REG_STARTEND;
+            hpmatch[0].rm_so = (regoff_t)pmatch[0].rm_so;
+            hpmatch[0].rm_eo = (regoff_t)pmatch[0].rm_eo;
+        }
+#endif
+    }
+    int rc = regexec(host_re, string, nmatch, hpmatch, host_eflags);
+    if (rc == 0 && pmatch && nmatch > 0) {
+        for (size_t i = 0; i < nmatch; i++) {
+            pmatch[i].rm_so = (int64_t)hpmatch[i].rm_so;
+            pmatch[i].rm_eo = (int64_t)hpmatch[i].rm_eo;
+        }
+    }
+    return rc;
+}
+
+static void darwin_regfree(DarwinRegex* preg) {
+    if (!preg) return;
+    regex_t* host_re = (regex_t*)preg->re_g;
+    if (host_re) {
+        regfree(host_re);
+        delete host_re;
+        preg->re_g = nullptr;
+    }
+}
+
+static size_t darwin_regerror(int errcode, const DarwinRegex* preg, char* errbuf, size_t errbuf_size) {
+    regex_t* host_re = (preg && preg->re_g) ? (regex_t*)preg->re_g : nullptr;
+    return regerror(errcode, host_re, errbuf, errbuf_size);
+}
 
 
 static void* darwin_mmap(void* addr, size_t length, int prot, int dflags, int fd, off_t offset) {
@@ -1493,6 +1578,10 @@ static const ShimEntry kShims[] = {
     {"_getpwuid_r", (void*)&darwin_getpwuid_r, -1}, {"_getpwnam_r", (void*)&darwin_getpwnam_r, -1},
     {"_pthread_atfork", (void*)&darwin_pthread_atfork, -1},
     {"_pthread_mach_thread_np", (void*)&darwin_pthread_mach_thread_np, -1},
+    {"_regcomp", (void*)&darwin_regcomp, -1}, {"_regcomp$DARWIN_EXTSN", (void*)&darwin_regcomp, -1},
+    {"_regexec", (void*)&darwin_regexec, -1}, {"_regexec$DARWIN_EXTSN", (void*)&darwin_regexec, -1},
+    {"_regfree", (void*)&darwin_regfree, -1}, {"_regfree$DARWIN_EXTSN", (void*)&darwin_regfree, -1},
+    {"_regerror", (void*)&darwin_regerror, -1}, {"_regerror$DARWIN_EXTSN", (void*)&darwin_regerror, -1},
     {"___udivti3", (void*)&darwin_udivti3, -2}, {"___divti3", (void*)&darwin_divti3, -2},
     {"__dyld_lookup_section_info", (void*)&darwin_dyld_lookup_section_info, -2},
     {"___umodti3", (void*)&darwin_umodti3, -2}, {"___modti3", (void*)&darwin_modti3, -2},
@@ -2396,6 +2485,10 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_warn;
     } else if (strcmp(name, "_warnx") == 0 || strcmp(name, "warnx") == 0) {
         host_fn = (void*)&darwin_warnx;
+    } else if (strcmp(name, "_errc") == 0 || strcmp(name, "errc") == 0) {
+        host_fn = (void*)&darwin_errc;
+    } else if (strcmp(name, "_warnc") == 0 || strcmp(name, "warnc") == 0) {
+        host_fn = (void*)&darwin_warnc;
     } else if (strcmp(name, "_posix_spawn") == 0 || strcmp(name, "posix_spawn") == 0) {
         host_fn = (void*)&darwin_posix_spawn;
     } else if (strcmp(name, "_posix_spawnp") == 0 || strcmp(name, "posix_spawnp") == 0) {
@@ -2732,6 +2825,27 @@ void darwin_hle_dispatch(CpuState* st) {
         const char* fmt = (const char*)(uintptr_t)st->x[0];
         const uint64_t* sp = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
         darwin_warn_impl(false, fmt, sp);
+        return;
+    }
+    if (host_fn == (void*)&darwin_errc) {
+        int eval = (int)st->x[0];
+        int code = (int)st->x[1];
+        const char* fmt = (const char*)(uintptr_t)st->x[2];
+        const uint64_t* sp = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
+        int saved = g_darwin_errno;
+        g_darwin_errno = code;
+        darwin_warn_impl(true, fmt, sp);
+        g_darwin_errno = saved;
+        exit(eval);
+    }
+    if (host_fn == (void*)&darwin_warnc) {
+        int code = (int)st->x[0];
+        const char* fmt = (const char*)(uintptr_t)st->x[1];
+        const uint64_t* sp = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
+        int saved = g_darwin_errno;
+        g_darwin_errno = code;
+        darwin_warn_impl(true, fmt, sp);
+        g_darwin_errno = saved;
         return;
     }
 

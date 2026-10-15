@@ -282,7 +282,10 @@ static void st_malloc_type_free(void* p, uint64_t) { free(p); }
 static void* st_malloc_type_valloc(size_t sz, uint64_t) { return valloc(sz); }
 static int st_malloc_type_posix_memalign(void** p, size_t a, size_t sz, uint64_t) { return posix_memalign(p, a, sz); }
 
+static int st_compat_mode(const char*, const char*) { return 0; }
+
 static const StubEntry kStubs2[] = {
+    {"_compat_mode", (void*)&st_compat_mode},
     {"____mb_cur_max", (void*)&st_mb_cur_max}, {"_querylocale", (void*)&st_querylocale}, {"_duplocale", (void*)&st_duplocale},
     {"_clock_gettime", (void*)&st_clock_gettime}, {"_clock_getres", (void*)&st_clock_getres},
     {"_clock_gettime_nsec_np", (void*)&st_clock_gettime_nsec_np},
