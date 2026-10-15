@@ -360,7 +360,7 @@ static void apply_bind_opcodes(MachImage* img, const uint8_t* buf, size_t size) 
         if (seg_idx >= img->segs.size()) return;
         uint64_t addr = img->segs[seg_idx].addr + off;
         uint64_t v = resolve_import(img, ordinal, sym, weak_import);
-        if (v || !weak_import) *(uint64_t*)addr = v + addend;
+        *(uint64_t*)addr = v ? v + addend : 0;   // an absent weak import binds to NULL
     };
 
     while (p < end) {
@@ -620,6 +620,12 @@ static MachImage* map_image(const std::string& guest_path, const std::string& ho
             for (uint32_t s = 0; s < sg->nsects && (const uint8_t*)(sects + s + 1) <= (const uint8_t*)lc + lc->cmdsize; s++) {
                 const section_64& sc = sects[s];
                 uint64_t a = sc.addr + slide;
+                {
+                    MachSection ms2 = {};
+                    memcpy(ms2.seg, sc.segname, 16); memcpy(ms2.sect, sc.sectname, 16);
+                    ms2.addr = a; ms2.size = sc.size;
+                    im->sects.push_back(ms2);
+                }
                 uint32_t type = sc.flags & 0xFF;
                 if (!strncmp(sc.sectname, "__unwind_info", 16)) { im->unwind_info = a; im->unwind_info_size = sc.size; }
                 else if (!strncmp(sc.sectname, "__eh_frame", 16)) { im->eh_frame = a; im->eh_frame_size = sc.size; }
@@ -748,7 +754,8 @@ static void link_all() {
 
 // Dylibs that libSystem would provide but that live as separate files in our rootfs.
 static void load_implicit_images() {
-    static const char* const kImplicit[] = {"/usr/lib/libunwind.1.dylib"};
+    static const char* const kImplicit[] = {"/usr/lib/libunwind.1.dylib", "/usr/lib/system/libsystem_blocks.dylib",
+                                            "/usr/lib/libobjc.A.dylib"};
     for (const char* n : kImplicit) {
         if (find_loaded(n)) continue;
         std::string host = resolve_guest_path(n);
@@ -800,6 +807,59 @@ bool load_macho(const char* path, LoadedImage& img) {
 // ---------------------------------------------------------------------------------------------
 // Initializers, dlopen, TLV
 // ---------------------------------------------------------------------------------------------
+static u64 g_objc_map = 0, g_objc_init = 0, g_objc_unmap = 0;
+static bool g_objc_v4 = false;   // dyld_objc_register_callbacks(): load_images takes a mapped_info
+
+// struct _dyld_objc_notify_mapped_info
+struct ObjcMappedInfo { uint64_t mh; const char* path; uint64_t section_metadata; uint32_t flags; uint32_t pad; };
+
+static void objc_map_images(const std::vector<MachImage*>& imgs) {
+    if (imgs.empty()) return;
+    std::vector<const char*> paths;
+    std::vector<uint64_t> mhdrs;
+    for (MachImage* im : imgs) { paths.push_back(im->path.c_str()); mhdrs.push_back(im->header); }
+    u64 a[3] = {(u64)imgs.size(), (u64)(uintptr_t)paths.data(), (u64)(uintptr_t)mhdrs.data()};
+    // libobjc exports _objc_map_images(count, paths, mhdrs), which builds the infos and the block itself
+    if (g_objc_v4) {
+        if (uint64_t f = dyld_flat_lookup("__objc_map_images")) guest_call(f, 3, a);
+    } else if (g_objc_map) {
+        guest_call(g_objc_map, 3, a);
+    }
+}
+
+static void objc_notify_init(MachImage* im) {
+    if (!g_objc_init) return;
+    if (g_objc_v4) {
+        ObjcMappedInfo info = {im->header, im->path.c_str(), 0, 0, 0};
+        u64 a[1] = {(u64)(uintptr_t)&info};
+        guest_call(g_objc_init, 1, a);
+    } else {
+        u64 a[2] = {(u64)(uintptr_t)im->path.c_str(), im->header};
+        guest_call(g_objc_init, 2, a);
+    }
+}
+
+static void objc_registered() {
+    std::vector<MachImage*> all(g_images.begin(), g_images.end());
+    objc_map_images(all);
+    for (MachImage* im : all)
+        if (im->initialized && im->install_name != "/usr/lib/libobjc.A.dylib") objc_notify_init(im);
+}
+
+void dyld_objc_notify_register(uint64_t map, uint64_t init, uint64_t unmap) {
+    g_objc_map = map; g_objc_init = init; g_objc_unmap = unmap;
+    g_objc_v4 = false;
+    objc_registered();
+}
+
+// _dyld_objc_register_callbacks(const struct _dyld_objc_callbacks*): version 2..4 layout
+void dyld_objc_register_callbacks(uint64_t cbs) {
+    const uint64_t* c = (const uint64_t*)cbs;
+    g_objc_map = c[1]; g_objc_init = c[2]; g_objc_unmap = c[3];
+    g_objc_v4 = true;
+    objc_registered();
+}
+
 static void run_inits_of(MachImage* im, std::vector<MachImage*>& seen, const u64* args) {
     if (im->initialized) return;
     for (MachImage* s : seen) if (s == im) return;
@@ -807,9 +867,14 @@ static void run_inits_of(MachImage* im, std::vector<MachImage*>& seen, const u64
     for (MachDep& d : im->deps)
         if (d.image) run_inits_of(d.image, seen, args);
     im->initialized = true;
+    objc_notify_init(im);
     for (uint64_t f : im->inits) {
         XEF_LOG(2, "xef-osx: init %s: %#lx", im->path.c_str(), (unsigned long)f);
         guest_call(f, 4, args);
+    }
+    if (im->install_name == "/usr/lib/libobjc.A.dylib") {
+        // libSystem's initializer would call _objc_init(); it registers the dyld notifications
+        if (uint64_t f = dyld_image_lookup(im, "__objc_init")) guest_call(f, 0, nullptr);
     }
 }
 
@@ -833,6 +898,7 @@ MachImage* dyld_dlopen(const char* path) {
         link_all();
         u64 args[4] = {(u64)g_darwin_argc, (u64)(uintptr_t)g_darwin_argv, (u64)(uintptr_t)g_darwin_envp, 0};
         std::vector<MachImage*> seen;
+        objc_map_images(std::vector<MachImage*>(g_images.begin() + before, g_images.end()));
         for (size_t i = before; i < g_images.size(); i++) run_inits_of(g_images[i], seen, args);
         run_inits_of(im, seen, args);
     }

@@ -102,7 +102,9 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     if (!a64::guest_readable(pc)) {
         CpuState* st = t->st;
         if (g_is_darwin && (pc <= 0x1000 || pc == g_darwin_mach_header || pc == g_darwin_exit_trampoline || pc == g_darwin_thread_exit_trampoline)) {
-            XEF_LOG(1, "xef-osx: program or thread returned cleanly at %#lx with code %d", (unsigned long)pc, (int)st->x[0]);
+            XEF_LOG(1, "xef-osx: program or thread returned cleanly at %#lx with code %d (lr=%#lx x16=%#lx x17=%#lx sp=%#lx)", (unsigned long)pc, (int)st->x[0], (unsigned long)st->x[30], (unsigned long)st->x[16], (unsigned long)st->x[17], (unsigned long)st->x[kGuestSP]);
+            if (pc == 0 && st->x[30] != 0 && st->x[30] != g_darwin_exit_trampoline)
+                fprintf(stderr, "xef-osx: warning: jump to address 0 (lr=%#lx)\n", (unsigned long)st->x[30]);
             darwin_run_exit_handlers();
             exit((int)st->x[0]);
         }

@@ -15,6 +15,11 @@ struct MachSegment {
     uint32_t initprot;
 };
 
+struct MachSection {
+    char seg[17], sect[17];
+    uint64_t addr, size;
+};
+
 struct MachDep {
     std::string name;       // install name as written in the load command
     bool reexport = false;
@@ -30,6 +35,7 @@ struct MachImage {
     uint32_t filetype = 0;
     uint32_t index = 0;         // position in the registry
     std::vector<MachSegment> segs;
+    std::vector<MachSection> sects;
     std::vector<MachDep> deps;
     std::vector<std::string> rpaths;
     const uint8_t* exports = nullptr;
@@ -68,5 +74,9 @@ void dyld_run_initializers(uint64_t argc, uint64_t argv, uint64_t envp, uint64_t
 
 // Address of the calling thread's instance of the `__thread` variable described by `desc_addr`.
 void* dyld_tlv_address(uint64_t desc_addr);
+
+// _dyld_objc_notify_register(): libobjc's callbacks (map_images, load_images, unmap_image).
+void dyld_objc_notify_register(uint64_t map, uint64_t init, uint64_t unmap);
+void dyld_objc_register_callbacks(uint64_t callbacks);
 
 } // namespace xef

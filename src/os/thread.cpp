@@ -24,6 +24,7 @@
 #include "loader/darwin_hle.h"
 #include "os/signals.h"
 #include "os/syscalls.h"
+#include "os/darwin/darwin_syscalls.h"
 #include "runtime/dispatch.h"
 #include "runtime/tier2.h"
 
@@ -63,8 +64,20 @@ static ThreadCtx* thread_reuse(CpuState* parent) {
     return t;
 }
 
+// Darwin keeps the pthread TSD array behind TPIDRRO_EL0 (slot 0 = pthread_self); libobjc and libdispatch
+// read it directly with MRS. Each guest thread gets its own zeroed block.
+static void darwin_thread_tsd(ThreadCtx* t) {
+    if (!g_is_darwin) return;
+    if (!t->tsd) t->tsd = (u64*)calloc(512, 8);
+    else memset(t->tsd, 0, 512 * 8);
+    t->tsd[0] = (u64)t->tsd;
+    t->st->tpidrro_el0 = (u64)t->tsd;
+    t->st->tpidr_el0 = (u64)t->tsd;
+}
+
 ThreadCtx* thread_create(CpuState* parent) {
     if (ThreadCtx* t = thread_reuse(parent)) {
+        darwin_thread_tsd(t);
         u8* top = t->jit_stack + 4096 + t->jit_stack_size - 64;
         ((u64*)top)[0] = 0;
         ((u64*)top)[1] = ~0ull;
@@ -92,6 +105,7 @@ ThreadCtx* thread_create(CpuState* parent) {
     t->st->jit_stack_top = (u64)top;
     t->st->jit_sp = (u64)top;
     t->st->ibtc = g_cache.init_ibtc((u8*)t->st + kIbtcOffset);
+    darwin_thread_tsd(t);
     return t;
 }
 

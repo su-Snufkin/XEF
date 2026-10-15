@@ -52,6 +52,8 @@ struct ThunkEntry {
 };
 
 static std::vector<ThunkEntry> g_thunks;
+void* darwin_sys_shim_lookup(const char* name);
+void* darwin_sys_data_lookup(const char* name);
 static std::unordered_map<std::string, uint64_t> g_symbol_cache;
 static std::unordered_set<std::string> g_host_fallback_names;   // resolved only through the host's dlsym
 
@@ -818,6 +820,10 @@ static int darwin_fscanf(FILE* f, const char* format, const uint64_t* ap) {
                                 (void*)ap[4], (void*)ap[5], (void*)ap[6], (void*)ap[7]);
 }
 
+static int darwin_vasprintf(char** out, const char* format, const uint64_t* ap) { return darwin_asprintf(out, format, ap); }
+static int darwin_vsprintf(char* str, const char* format, const uint64_t* ap) { return darwin_sprintf(str, format, ap); }
+static int darwin_vprintf(const char* format, const uint64_t* ap) { return darwin_vfprintf(stdout, format, ap); }
+static int darwin_vdprintf(int fd, const char* format, const uint64_t* ap) { return darwin_dprintf(fd, format, ap); }
 static int darwin_tolower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
 static int darwin_toupper(int c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
 static int darwin_tolower_l(int c, void*) { return darwin_tolower(c); }
@@ -896,11 +902,29 @@ static void* darwin_newlocale(int, const char*, void*) { return (void*)1; }   //
 static void darwin_freelocale(void*) {}
 static void* darwin_uselocale(void*) { return (void*)1; }
 
+// _dyld_lookup_section_info(mh, metadata, kind) -> {buffer, size} in x0:x1
+static U128Ret darwin_dyld_lookup_section_info(uint64_t mh, uint64_t, uint64_t kind, uint64_t) {
+    static const char* const kNames[] = {
+        "__swift5_protos", "__swift5_proto", "__swift5_types", "__swift5_replace", "__swift5_replac2", "__swift5_acfuncs",
+        "__objc_imageinfo", "__objc_selrefs", "__objc_msgrefs", "__objc_classrefs", "__objc_superrefs", "__objc_protorefs",
+        "__objc_classlist", "__objc_nlclslist", "__objc_stublist", "__objc_catlist", "__objc_catlist2", "__objc_nlcatlist",
+        "__objc_protolist", "__objc_fork_ok", "__objc_rawisa"};
+    if (kind >= sizeof(kNames) / sizeof(kNames[0])) return {0, (uint64_t)-1};
+    for (MachImage* im : dyld_images()) {
+        if (im->header != mh) continue;
+        for (const MachSection& s : im->sects)
+            if (!strncmp(s.sect, kNames[kind], 16)) return {s.addr, s.size};
+        return {0, 0};
+    }
+    return {0, 0};
+}
+
 struct ShimEntry { const char* name; void* fn; int variadic_fixed; };   // variadic_fixed: >=0 -> args from stack
 static const ShimEntry kShims[] = {
     {"_snprintf_l", (void*)&darwin_snprintf_l, 4}, {"_sprintf", (void*)&darwin_sprintf, 2},
     {"_asprintf", (void*)&darwin_asprintf, 2}, {"_asprintf_l", (void*)&darwin_asprintf_l, 3},
-    {"_dprintf", (void*)&darwin_dprintf, 2}, {"_sscanf", (void*)&darwin_sscanf, 2},
+    {"_dprintf", (void*)&darwin_dprintf, 2}, {"_vasprintf", (void*)&darwin_vasprintf, -1},
+    {"_vsprintf", (void*)&darwin_vsprintf, -1}, {"_vprintf", (void*)&darwin_vprintf, -1}, {"_vdprintf", (void*)&darwin_vdprintf, -1}, {"_sscanf", (void*)&darwin_sscanf, 2},
     {"_sscanf_l", (void*)&darwin_sscanf_l, 3}, {"_fscanf", (void*)&darwin_fscanf, 2},
     {"___tolower", (void*)&darwin_tolower, -1}, {"___toupper", (void*)&darwin_toupper, -1},
     {"____tolower_l", (void*)&darwin_tolower_l, -1}, {"____toupper_l", (void*)&darwin_toupper_l, -1},
@@ -943,6 +967,7 @@ static const ShimEntry kShims[] = {
     {"_newlocale", (void*)&darwin_newlocale, -1}, {"_freelocale", (void*)&darwin_freelocale, -1}, {"_uselocale", (void*)&darwin_uselocale, -1},
     {"_pthread_mach_thread_np", (void*)&darwin_pthread_mach_thread_np, -1},
     {"___udivti3", (void*)&darwin_udivti3, -2}, {"___divti3", (void*)&darwin_divti3, -2},
+    {"__dyld_lookup_section_info", (void*)&darwin_dyld_lookup_section_info, -2},
     {"___umodti3", (void*)&darwin_umodti3, -2}, {"___modti3", (void*)&darwin_modti3, -2},
 };
 // -2: returns a 128-bit value in x0:x1
@@ -1520,6 +1545,10 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         return it->second;
     }
 
+    if (void* d = darwin_sys_data_lookup(name)) {
+        g_symbol_cache[name] = (uint64_t)(uintptr_t)d;
+        return (uint64_t)(uintptr_t)d;
+    }
     // 1. Check special Darwin data variables
     if (strcmp(name, "___stack_chk_guard") == 0) {
         uint64_t addr = (uint64_t)(uintptr_t)&g_stack_chk_guard;
@@ -1749,6 +1778,12 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
                    for (const ShimEntry& e : kShims) if (!strcmp(e.name, name)) return &e;
                    return nullptr; }()) {
         host_fn = sh->fn;
+    } else if (void* sf = darwin_sys_shim_lookup(name)) {
+        host_fn = sf;
+    } else if (strcmp(name, "__dyld_objc_register_callbacks") == 0) {
+        host_fn = (void*)&dyld_objc_register_callbacks;
+    } else if (strcmp(name, "__dyld_objc_notify_register") == 0) {
+        host_fn = (void*)&dyld_objc_notify_register;
     } else if (strcmp(name, "_exit") == 0) {
         host_fn = (void*)&darwin_exit_wrapper;
     } else if (strcmp(name, "___cxa_atexit") == 0) {
@@ -1877,6 +1912,7 @@ void darwin_hle_dispatch(CpuState* st) {
         // x0..x3 = argc, argv, envp, apple (dyld's initializer arguments)
         dyld_run_initializers(st->x[0], st->x[1], st->x[2], st->x[3]);
         st->x[16] = g_darwin_start_target;
+        XEF_LOG(1, "xef-osx: initializers done, entering %#lx (lr=%#lx sp=%#lx)", (unsigned long)st->x[16], (unsigned long)st->x[30], (unsigned long)st->x[kGuestSP]);
         return;
     }
 
@@ -1945,11 +1981,16 @@ void darwin_hle_dispatch(CpuState* st) {
     u64 fregs[8];
     for (int i = 0; i < 8; i++) memcpy(&fregs[i], st->v[i], 8);
 
-    // Pass guest stack in case function reads stack arguments (e.g. 7th, 8th arguments)
+    // Darwin passes the 7th and 8th integer arguments in x6/x7 and the rest on the guest stack; SysV
+    // has six integer registers, so x6/x7 go first on the host stack, followed by the guest stack words.
     const uint64_t* guest_stack = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
+    u64 hstack[18];
+    hstack[0] = st->x[6];
+    hstack[1] = st->x[7];
+    memcpy(&hstack[2], guest_stack, 16 * sizeof(u64));
     u64 xmm0_out = 0;
     errno = 0;
-    u64 ret = xef_call_sysv(host_fn, iregs, fregs, guest_stack, 16, &xmm0_out);
+    u64 ret = xef_call_sysv(host_fn, iregs, fregs, hstack, 18, &xmm0_out);
     if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
     if (errno_ret && (int64_t)ret > 34 && (int64_t)ret < 200) ret = (u64)darwin_errno_from_linux((int)ret);
     st->x[0] = ret;

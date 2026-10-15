@@ -26,6 +26,7 @@ struct ThreadCtx {
     timer_t prof_timer {};          // per-thread sampling timer (kSampleSig, tier2.cpp)
     bool prof_timer_ok = false;
     siginfo_t sync_info;
+    u64* tsd = nullptr;             // Darwin: thread-specific data block behind TPIDRRO_EL0
 };
 
 ThreadCtx* thread_create(CpuState* parent);
