@@ -804,7 +804,14 @@ bool Translator::dp_reg(u32 i) {
     }
     if (op2 == 6) {
         if (bit(i, 30)) {  // data-processing 1 source
-            if (rm != 0 || bit(i, 29)) return false;
+            if (rm != 0 || bit(i, 29)) {
+                if (sf && rm == 1 && bits(i, 15, 14) == 0) {
+                    // PAC/AUT/XPAC instructions (PACIA, AUTIA, PACIZA, XPACI, etc.)
+                    // All are no-ops because pointers are unauthenticated / raw.
+                    return true;
+                }
+                return false;
+            }
             u32 opc = bits(i, 15, 10);
             Val a = X(rn, t), r;
             switch (opc) {
@@ -975,6 +982,7 @@ static QuickFlags quick_flags(u32 i, GuestAddr pc, GuestAddr* t1, GuestAddr* t2)
         return Q_CB;
     }
     if ((i & 0xFFFFF01F) == 0xD503201F) return Q_NONE;                 // HINT: NOP, PACIASP, AUTIASP, BTI, ...
+    if ((i & 0xFFE0C000) == 0xDAC00000) return Q_NONE;                 // PACIA, AUTIA, PACIZA, XPACI, ...
     // load/store register: unscaled, post-/pre-index, unprivileged; register offset (option<1> set)
     if ((i & 0x3B200000) == 0x38000000 || ((i & 0x3B200C00) == 0x38200800 && (i & (1u << 14)))) {
         u32 size = i >> 30, opc = (i >> 22) & 3;

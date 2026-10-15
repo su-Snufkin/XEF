@@ -266,7 +266,7 @@ static void apply_chained_fixups(MachImage* img) {
         uint64_t segment_offset = *(const uint64_t*)(seg_info + 8);
         uint16_t page_count = *(const uint16_t*)(seg_info + 20);
         const uint16_t* page_starts = (const uint16_t*)(seg_info + 22);
-        if (ptr_format != 2 && ptr_format != 6) {
+        if (ptr_format != 1 && ptr_format != 2 && ptr_format != 6 && ptr_format != 9 && ptr_format != 12) {
             XEF_LOG(1, "xef-osx: %s: unsupported chained pointer format %u", img->path.c_str(), ptr_format);
             continue;
         }
@@ -276,22 +276,55 @@ static void apply_chained_fixups(MachImage* img) {
         auto walk = [&](uint64_t chain_addr) {
             for (;;) {
                 uint64_t raw = *(uint64_t*)chain_addr;
-                bool is_bind = (raw >> 63) & 1;
-                uint64_t next = (raw >> 51) & 0xFFF;
-                if (is_bind) {
-                    uint32_t ord = raw & 0xFFFFFF;
-                    uint64_t addend8 = (raw >> 24) & 0xFF;
+                uint64_t next = 0;
+                if (ptr_format == 2 || ptr_format == 6) {
+                    bool is_bind = (raw >> 63) & 1;
+                    next = (raw >> 51) & 0xFFF;
+                    if (is_bind) {
+                        uint32_t ord = raw & 0xFFFFFF;
+                        uint64_t addend8 = (raw >> 24) & 0xFF;
+                        uint64_t v = 0;
+                        if (ord < hdr->imports_count) v = imp_addr[ord] + imp_addend[ord] + addend8;
+                        *(uint64_t*)chain_addr = v;
+                    } else {
+                        uint64_t target = raw & 0xFFFFFFFFFULL;
+                        uint64_t high8 = (raw >> 36) & 0xFF;
+                        uint64_t v = (ptr_format == 6) ? img->header + target : target + img->slide;
+                        *(uint64_t*)chain_addr = v | (high8 << 56);
+                    }
+                    if (next == 0) break;
+                    chain_addr += next * 4;
+                } else if (ptr_format == 1 || ptr_format == 9 || ptr_format == 12) {
+                    // DYLD_CHAINED_PTR_ARM64E / ARM64E_USERLAND / ARM64E_USERLAND24
+                    bool auth = (raw >> 63) & 1;
+                    bool bind = (raw >> 62) & 1;
+                    next = (raw >> 51) & 0x7FF;
                     uint64_t v = 0;
-                    if (ord < hdr->imports_count) v = imp_addr[ord] + imp_addend[ord] + addend8;
+                    if (auth) {
+                        if (bind) {
+                            uint32_t ord = (ptr_format == 12) ? (raw & 0xFFFFFF) : (raw & 0xFFFF);
+                            if (ord < hdr->imports_count) v = imp_addr[ord] + imp_addend[ord];
+                        } else {
+                            uint64_t target = raw & 0xFFFFFFFFULL;
+                            v = (ptr_format == 1) ? target + img->slide : img->header + target;
+                        }
+                    } else {
+                        if (bind) {
+                            uint32_t ord = (ptr_format == 12) ? (raw & 0xFFFFFF) : (raw & 0xFFFF);
+                            uint64_t add19 = (raw >> 32) & 0x7FFFF;
+                            int64_t addend19 = (add19 & 0x40000) ? (int64_t)(add19 | ~0x7FFFFULL) : (int64_t)add19;
+                            if (ord < hdr->imports_count) v = imp_addr[ord] + imp_addend[ord] + addend19;
+                        } else {
+                            uint64_t target = raw & 0x7FFFFFFFFFFULL;
+                            uint64_t high8 = (raw >> 43) & 0xFF;
+                            v = (ptr_format == 1) ? target + img->slide : img->header + target;
+                            v |= (high8 << 56);
+                        }
+                    }
                     *(uint64_t*)chain_addr = v;
-                } else {
-                    uint64_t target = raw & 0xFFFFFFFFFULL;
-                    uint64_t high8 = (raw >> 36) & 0xFF;
-                    uint64_t v = (ptr_format == 6) ? img->header + target : target + img->slide;
-                    *(uint64_t*)chain_addr = v | (high8 << 56);
+                    if (next == 0) break;
+                    chain_addr += next * 8;
                 }
-                if (next == 0) break;
-                chain_addr += next * 4;
             }
         };
 

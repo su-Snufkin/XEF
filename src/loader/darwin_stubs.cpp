@@ -275,12 +275,22 @@ static int st_swbuf(int c, FILE* fp) { return fputc(c, fp); }
 static void* st_swift_retain(void* obj) { return obj; }
 static void st_swift_release(void*) {}
 
+static void* st_malloc_type_malloc(size_t sz, uint64_t) { return malloc(sz); }
+static void* st_malloc_type_calloc(size_t n, size_t sz, uint64_t) { return calloc(n, sz); }
+static void* st_malloc_type_realloc(void* p, size_t sz, uint64_t) { return realloc(p, sz); }
+static void st_malloc_type_free(void* p, uint64_t) { free(p); }
+static void* st_malloc_type_valloc(size_t sz, uint64_t) { return valloc(sz); }
+static int st_malloc_type_posix_memalign(void** p, size_t a, size_t sz, uint64_t) { return posix_memalign(p, a, sz); }
+
 static const StubEntry kStubs2[] = {
     {"____mb_cur_max", (void*)&st_mb_cur_max}, {"_querylocale", (void*)&st_querylocale}, {"_duplocale", (void*)&st_duplocale},
     {"_clock_gettime", (void*)&st_clock_gettime}, {"_clock_getres", (void*)&st_clock_getres},
     {"_clock_gettime_nsec_np", (void*)&st_clock_gettime_nsec_np},
     {"_getprogname", (void*)&st_getprogname}, {"_malloc_create_zone", (void*)&st_malloc_create_zone},
     {"_malloc_destroy_zone", (void*)&st_noop2}, {"_malloc_set_zone_name", (void*)&st_noop2}, {"_malloc_get_zone_name", (void*)&st_null2},
+    {"_malloc_type_malloc", (void*)&st_malloc_type_malloc}, {"_malloc_type_calloc", (void*)&st_malloc_type_calloc},
+    {"_malloc_type_realloc", (void*)&st_malloc_type_realloc}, {"_malloc_type_free", (void*)&st_malloc_type_free},
+    {"_malloc_type_valloc", (void*)&st_malloc_type_valloc}, {"_malloc_type_posix_memalign", (void*)&st_malloc_type_posix_memalign},
     {"_pthread_main_thread_np", (void*)&st_pthread_main_thread_np}, {"_getsectbynamefromheader_64", (void*)&st_getsectbynamefromheader_64},
     {"_getsegbyname", (void*)&st_getsegbyname}, {"_memset_pattern4", (void*)&st_memset_pattern4}, {"_vm_copy", (void*)&st_vm_copy},
     {"_task_info", (void*)&st_task_info},
