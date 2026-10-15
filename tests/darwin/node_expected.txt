@@ -1,0 +1,17 @@
+hi 2
+version v24.1.0 darwin arm64
+{"a":1,"b":[1,2,3],"c":{"d":"x","e":null},"f":1.5e+300,"g":0} true
+{"n":[0.30000000000000004,0.3333333333333333,9007199254740992,-1e-7,123456789012345680000]}
+loop 2999997
+200 abcdefghijklmnopqrstuvwxyzabcd IJKLMNOPQR 9 23 _bcd_fgh_jklmn_pqrst
+padStart ababx 5 a%20b%26c%2F%C3%A9
+1,2,3,4,5 14
+255 3.25 11111111 1.23e-6 1234.57 5.5 5
+2020-02-29T12:30:45.000Z 6
+2 2 symbol 100000000000000000000n
+3 12 true
+c /a/c
+1 st 5
+true Cannot read properties of null (reading 'x')
+tick | promise | async | immediate | timeout20 | readFile true | promises.readFile true | all
+exit 0
