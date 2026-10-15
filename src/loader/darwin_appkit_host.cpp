@@ -19,9 +19,11 @@ namespace {
 
 #define XEF_EV_CLOSE 1000
 #define XEF_EV_RESIZE 1001
+#define XEF_EV_FOCUS_IN 1002
+#define XEF_EV_FOCUS_OUT 1003
 struct HostEvent { int type, keycode, x, y, flags; };
 
-struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0; };
+struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0; unsigned long visid = 0; bool core = false; };
 std::mutex g_lock;
 Display* g_dpy = nullptr;
 Atom g_wm_delete = 0;
@@ -102,7 +104,7 @@ int xef_host_window_create(int x, int y, int w, int h, const char* title) {
     memset(&swa, 0, sizeof swa);
     swa.colormap = X<Colormap (*)(Display*, ::Window, Visual*, int)>("XCreateColormap")(g_dpy, root, vi->visual, AllocNone);
     swa.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask | KeyReleaseMask | ButtonPressMask |
-                     ButtonReleaseMask | PointerMotionMask;
+                     ButtonReleaseMask | PointerMotionMask | EnterWindowMask | LeaveWindowMask | FocusChangeMask;
     if (w < 1) w = 1;
     if (h < 1) h = 1;
     // AppKit-lite assumes a 1440x900 screen: keep the window on the real (possibly smaller) host screen
@@ -115,6 +117,7 @@ int xef_host_window_create(int x, int y, int w, int h, const char* title) {
                                   unsigned long, XSetWindowAttributes*)>("XCreateWindow")(
         g_dpy, root, x, y, (unsigned)w, (unsigned)h, 0, vi->depth, InputOutput, vi->visual, CWColormap | CWEventMask, &swa);
     void* ctx = win ? createContext(g_dpy, vi, nullptr, 1) : nullptr;
+    unsigned long visid = vi->visualid;
     X<int (*)(void*)>("XFree")(vi);
     if (!win || !ctx) { XEF_LOG(1, "xef_host: window/GLX context creation failed"); return 0; }
     X<int (*)(Display*, ::Window, const char*)>("XStoreName")(g_dpy, win, title && *title ? title : "xef");
@@ -126,7 +129,7 @@ int xef_host_window_create(int x, int y, int w, int h, const char* title) {
     X<void (*)(Display*, ::Window, XSizeHints*)>("XSetWMNormalHints")(g_dpy, win, &sh);
     X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
     int id = g_next++;
-    HWin hw; hw.win = win; hw.ctx = ctx; hw.w = w; hw.h = h;
+    HWin hw; hw.win = win; hw.ctx = ctx; hw.w = w; hw.h = h; hw.visid = visid;
     g_wins[id] = hw;
     return id;
 }
@@ -141,6 +144,14 @@ void xef_host_window_show(int h) {
         XEvent ev;
         do { X<int (*)(Display*, ::Window, long, XEvent*)>("XWindowEvent")(g_dpy, w->win, StructureNotifyMask, &ev); }
         while (ev.type != MapNotify);
+    }
+}
+
+void xef_host_window_hide(int h) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    if (HWin* w = find(h)) {
+        X<int (*)(Display*, ::Window)>("XUnmapWindow")(g_dpy, w->win);
+        X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
     }
 }
 
@@ -182,12 +193,31 @@ int xef_host_pump(void* out) {
                     o->type = XEF_EV_RESIZE; o->x = kv.second.w; o->y = kv.second.h; return 1;
                 }
             continue;
+        case EnterNotify: case LeaveNotify:
+            if (ev.xcrossing.mode != NotifyNormal) continue;
+            o->type = ev.type == EnterNotify ? 8 : 9; o->x = ev.xcrossing.x; o->y = ev.xcrossing.y;
+            o->flags = mac_flags(ev.xcrossing.state); return 1;
+        case FocusIn: case FocusOut:
+            if (ev.xfocus.mode != NotifyNormal && ev.xfocus.mode != NotifyWhileGrabbed) continue;
+            o->type = ev.type == FocusIn ? XEF_EV_FOCUS_IN : XEF_EV_FOCUS_OUT; return 1;
         case KeyPress: case KeyRelease: {
             KeySym ks = lookup ? lookup(g_dpy, ev.xkey.keycode, 0, 0) : 0;
             int mk = mac_key(ks);
             if (mk < 0) continue;
             o->type = ev.type == KeyPress ? 10 : 11; o->keycode = mk; o->flags = mac_flags(ev.xkey.state);
-            o->x = ev.xkey.x; o->y = ev.xkey.y; return 1;
+            o->x = ev.xkey.x; o->y = ev.xkey.y;
+            // modifier keys are NSEventTypeFlagsChanged on macOS, carrying the flags AFTER the change
+            // (X reports the state from before the event)
+            int bit = ks == XK_Shift_L || ks == XK_Shift_R ? 1 << 17 : ks == XK_Control_L || ks == XK_Control_R ? 1 << 18 :
+                      ks == XK_Alt_L || ks == XK_Alt_R ? 1 << 19 : ks == XK_Super_L || ks == XK_Super_R || ks == XK_Meta_L || ks == XK_Meta_R ? 1 << 20 :
+                      ks == XK_Caps_Lock ? 1 << 16 : 0;
+            if (bit) {
+                o->type = 12;
+                if (bit == 1 << 16) o->flags ^= bit;
+                else if (ev.type == KeyPress) o->flags |= bit;
+                else o->flags &= ~bit;
+            }
+            return 1;
         }
         case ButtonPress: case ButtonRelease: {
             unsigned b = ev.xbutton.button;
@@ -230,12 +260,115 @@ void xef_host_swap(int h) {
     swap(g_dpy, w->win);
 }
 
+// ---- profile / screen / frame / pointer ----------------------------------------------------------------
+void xef_host_gl_set_profile(int h, int profile) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    HWin* w = find(h);
+    if (!w || !g_dpy) return;
+    bool want_core = profile == 0x3200 || profile == 0x4100;
+    if (want_core == w->core) return;
+    void* newctx = nullptr;
+    if (want_core) {
+        auto chooseFB = G<void** (*)(Display*, int, const int*, int*)>("glXChooseFBConfig");
+        auto getAttrib = G<int (*)(Display*, void*, int, int*)>("glXGetFBConfigAttrib");
+        auto createAttribs = G<void* (*)(Display*, void*, void*, int, const int*)>("glXCreateContextAttribsARB");
+        if (!chooseFB || !getAttrib || !createAttribs) { XEF_LOG(1, "xef_host: no glXCreateContextAttribsARB, keeping the compatibility context"); return; }
+        int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+        int fba[] = { 0x8010 /*DRAWABLE_TYPE*/, 1 /*WINDOW_BIT*/, 0x8011 /*RENDER_TYPE*/, 1, 5 /*DOUBLEBUFFER*/, 1, 12 /*DEPTH*/, 24, 0 };
+        int n = 0;
+        void** fbs = chooseFB(g_dpy, scr, fba, &n);
+        void* fbc = nullptr;
+        for (int i = 0; i < n && !fbc; i++) {
+            int vid = 0;
+            if (getAttrib(g_dpy, fbs[i], 0x800B /*GLX_VISUAL_ID*/, &vid) == 0 && (unsigned long)vid == w->visid) fbc = fbs[i];
+        }
+        if (fbs) X<int (*)(void*)>("XFree")(fbs);
+        if (!fbc) { XEF_LOG(1, "xef_host: no FBConfig for the window visual"); return; }
+        int major = profile == 0x4100 ? 4 : 3, minor = profile == 0x4100 ? 1 : 2;
+        int ca[] = { 0x2091 /*MAJOR*/, major, 0x2092 /*MINOR*/, minor, 0x9126 /*PROFILE_MASK*/, 1 /*CORE*/,
+                     0x2094 /*FLAGS*/, 2 /*FORWARD_COMPAT*/, 0 };
+        newctx = createAttribs(g_dpy, fbc, nullptr, 1, ca);
+        if (!newctx) { XEF_LOG(1, "xef_host: %d.%d core context not available", major, minor); return; }
+    } else {
+        auto chooseVisual = G<XVisualInfo* (*)(Display*, int, int*)>("glXChooseVisual");
+        auto createContext = G<void* (*)(Display*, XVisualInfo*, void*, int)>("glXCreateContext");
+        int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+        int attr[] = { 4, 5, 12, 24, 0 };
+        XVisualInfo* vi = chooseVisual(g_dpy, scr, attr);
+        if (!vi) return;
+        newctx = createContext(g_dpy, vi, nullptr, 1);
+        X<int (*)(void*)>("XFree")(vi);
+        if (!newctx) return;
+    }
+    bool was_cur = g_cur == h;
+    if (was_cur) G<int (*)(Display*, unsigned long, void*)>("glXMakeCurrent")(g_dpy, 0, nullptr);
+    G<void (*)(Display*, void*)>("glXDestroyContext")(g_dpy, w->ctx);
+    w->ctx = newctx; w->core = want_core;
+    if (was_cur) G<int (*)(Display*, unsigned long, void*)>("glXMakeCurrent")(g_dpy, w->win, w->ctx);
+}
+
+void xef_host_screen_info(int* sw, int* sh, int* mmw, int* mmh) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    int w = 1440, h = 900, mw = 381, mh = 238;
+    if (open_display()) {
+        int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+        w = X<int (*)(Display*, int)>("XDisplayWidth")(g_dpy, scr);
+        h = X<int (*)(Display*, int)>("XDisplayHeight")(g_dpy, scr);
+        mw = X<int (*)(Display*, int)>("XDisplayWidthMM")(g_dpy, scr);
+        mh = X<int (*)(Display*, int)>("XDisplayHeightMM")(g_dpy, scr);
+    } else { mw = (int)(w * 25.4 / 96); mh = (int)(h * 25.4 / 96); }
+    if (sw) *sw = w;
+    if (sh) *sh = h;
+    if (mmw) *mmw = mw;
+    if (mmh) *mmh = mh;
+}
+
+void xef_host_window_set_frame(int h, int x, int y, int w, int ht) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    HWin* hw = find(h);
+    if (!hw) return;
+    if (w < 1) w = 1;
+    if (ht < 1) ht = 1;
+    X<int (*)(Display*, ::Window, int, int, unsigned, unsigned)>("XMoveResizeWindow")(g_dpy, hw->win, x, y, (unsigned)w, (unsigned)ht);
+    X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
+    hw->w = w; hw->h = ht;   // already reported to the guest by its own setFrame; no ConfigureNotify echo
+}
+
+int xef_host_pointer(int h, int* sx, int* sy, int* wx, int* wy) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    HWin* hw = find(h);
+    if (!g_dpy) return 0;
+    int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+    ::Window root = X<::Window (*)(Display*, int)>("XRootWindow")(g_dpy, scr), r, c;
+    int rx = 0, ry = 0, x = 0, y = 0;
+    unsigned mask = 0;
+    if (!X<int (*)(Display*, ::Window, ::Window*, ::Window*, int*, int*, int*, int*, unsigned*)>("XQueryPointer")(
+            g_dpy, hw ? hw->win : root, &r, &c, &rx, &ry, &x, &y, &mask)) return 0;
+    if (sx) *sx = rx;
+    if (sy) *sy = ry;
+    if (wx) *wx = x;
+    if (wy) *wy = y;
+    return 1;
+}
+
+void xef_host_pointer_warp(int x, int y) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    if (!open_display()) return;
+    int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+    ::Window root = X<::Window (*)(Display*, int)>("XRootWindow")(g_dpy, scr);
+    X<int (*)(Display*, ::Window, ::Window, int, int, unsigned, unsigned, int, int)>("XWarpPointer")(g_dpy, 0, root, 0, 0, 0, 0, x, y);
+    X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
+}
+
 struct Fn { const char* name; void* fn; };
 const Fn kFns[] = {
-    {"_xef_host_window_create", (void*)&xef_host_window_create}, {"_xef_host_window_show", (void*)&xef_host_window_show},
+    {"_xef_host_window_create", (void*)&xef_host_window_create}, {"_xef_host_window_show", (void*)&xef_host_window_show}, {"_xef_host_window_hide", (void*)&xef_host_window_hide},
     {"_xef_host_window_set_title", (void*)&xef_host_window_set_title}, {"_xef_host_window_close", (void*)&xef_host_window_close},
     {"_xef_host_pump", (void*)&xef_host_pump}, {"_xef_host_gl_make_current", (void*)&xef_host_gl_make_current},
     {"_xef_host_swap", (void*)&xef_host_swap},
+    {"_xef_host_gl_set_profile", (void*)&xef_host_gl_set_profile}, {"_xef_host_screen_info", (void*)&xef_host_screen_info},
+    {"_xef_host_window_set_frame", (void*)&xef_host_window_set_frame}, {"_xef_host_pointer", (void*)&xef_host_pointer},
+    {"_xef_host_pointer_warp", (void*)&xef_host_pointer_warp},
 };
 
 } // namespace

@@ -29,10 +29,21 @@ enum { NSOpenGLPFAAllRenderers = 1, NSOpenGLPFATripleBuffer = 3, NSOpenGLPFADoub
   NSOpenGLPFAAcceleratedCompute = 97, NSOpenGLPFAOpenGLProfile = 99, NSOpenGLPFAVirtualScreenCount = 128 };
 enum { NSOpenGLProfileVersionLegacy = 0x1000, NSOpenGLProfileVersion3_2Core = 0x3200, NSOpenGLProfileVersion4_1Core = 0x4100 };
 typedef int32_t NSOpenGLContextParameter;
+typedef NS_OPTIONS(NSUInteger, NSTrackingAreaOptions) {
+  NSTrackingMouseEnteredAndExited = 0x01, NSTrackingMouseMoved = 0x02, NSTrackingCursorUpdate = 0x04,
+  NSTrackingActiveWhenFirstResponder = 0x10, NSTrackingActiveInKeyWindow = 0x20, NSTrackingActiveInActiveApp = 0x40,
+  NSTrackingActiveAlways = 0x80, NSTrackingAssumeInside = 0x100, NSTrackingInVisibleRect = 0x200,
+  NSTrackingEnabledDuringMouseDrag = 0x400 };
+typedef NS_ENUM(NSUInteger, NSBitmapFormat) { NSBitmapFormatAlphaFirst = 1, NSBitmapFormatAlphaNonpremultiplied = 2, NSBitmapFormatFloatingPointSamples = 4 };
+typedef NS_OPTIONS(NSUInteger, NSWindowOcclusionState) { NSWindowOcclusionStateVisible = 1 << 1 };
+typedef NS_ENUM(NSUInteger, NSApplicationTerminateReply) { NSTerminateCancel = 0, NSTerminateNow = 1, NSTerminateLater = 2 };
+typedef NS_ENUM(NSUInteger, NSRequestUserAttentionType) { NSCriticalRequest = 0, NSInformationalRequest = 10 };
 enum { NSOpenGLCPSwapInterval = 222, NSOpenGLCPSurfaceOrder = 235, NSOpenGLCPSurfaceOpacity = 236, NSOpenGLCPSwapRectangle = 200 };
 
 extern id NSApp;
 extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFinishLaunchingNotification;
+extern NSString *const NSCalibratedRGBColorSpace, *const NSPasteboardTypeString, *const NSPasteboardTypeURL,
+    *const NSPasteboardURLReadingFileURLsOnlyKey, *const NSTextInputContextKeyboardSelectionDidChangeNotification;
 
 @interface NSResponder : NSObject
 - (BOOL)acceptsFirstResponder;
@@ -43,6 +54,8 @@ extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFin
 - (void)rightMouseDown:(id)e; - (void)rightMouseUp:(id)e; - (void)rightMouseDragged:(id)e;
 - (void)otherMouseDown:(id)e; - (void)otherMouseUp:(id)e; - (void)otherMouseDragged:(id)e;
 - (void)scrollWheel:(id)e;
+- (void)mouseEntered:(id)e; - (void)mouseExited:(id)e; - (void)cursorUpdate:(id)e;
+- (void)interpretKeyEvents:(NSArray *)events;
 @end
 
 @interface NSEvent : NSObject {
@@ -57,11 +70,42 @@ extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFin
 + (NSEvent *)otherEventWithType:(NSEventType)t location:(NSPoint)p modifierFlags:(NSUInteger)f timestamp:(NSTimeInterval)ts
     windowNumber:(NSInteger)w context:(id)c subtype:(short)s data1:(NSInteger)d1 data2:(NSInteger)d2;
 + (NSEventModifierFlags)modifierFlags; + (NSUInteger)pressedMouseButtons; + (NSPoint)mouseLocation;
++ (id)addLocalMonitorForEventsMatchingMask:(unsigned long long)mask handler:(NSEvent *(^)(NSEvent *))block;
++ (void)removeMonitor:(id)monitor;
+@end
+
+@interface NSTrackingArea : NSObject { @public NSRect _rect; NSTrackingAreaOptions _options; id _owner; NSDictionary *_userInfo; }
+- (id)initWithRect:(NSRect)r options:(NSTrackingAreaOptions)o owner:(id)owner userInfo:(NSDictionary *)u;
+- (NSRect)rect; - (NSTrackingAreaOptions)options; - (id)owner; - (NSDictionary *)userInfo;
+@end
+
+@interface NSBitmapImageRep : NSObject { @public unsigned char *_data; NSInteger _w, _h, _bps, _spp, _bpr, _bpp; BOOL _alpha, _planar; NSBitmapFormat _fmt; NSString *_cs; }
+- (id)initWithBitmapDataPlanes:(unsigned char **)planes pixelsWide:(NSInteger)w pixelsHigh:(NSInteger)h bitsPerSample:(NSInteger)bps
+    samplesPerPixel:(NSInteger)spp hasAlpha:(BOOL)a isPlanar:(BOOL)p colorSpaceName:(NSString *)cs bitmapFormat:(NSBitmapFormat)f
+    bytesPerRow:(NSInteger)bpr bitsPerPixel:(NSInteger)bpp;
+- (unsigned char *)bitmapData; - (NSInteger)pixelsWide; - (NSInteger)pixelsHigh; - (NSInteger)bytesPerRow; - (NSInteger)bitsPerPixel;
+@end
+
+@interface NSImage : NSObject { @public NSSize _size; NSMutableArray *_reps; }
+- (id)initWithSize:(NSSize)s; - (NSSize)size; - (void)addRepresentation:(id)rep; - (NSArray *)representations;
+@end
+
+@interface NSPasteboard : NSObject { @public NSMutableArray *_types; NSMutableDictionary *_data; NSInteger _change; }
++ (NSPasteboard *)generalPasteboard;
+- (NSInteger)declareTypes:(NSArray *)types owner:(id)owner; - (BOOL)setString:(NSString *)s forType:(NSString *)t;
+- (NSString *)stringForType:(NSString *)t; - (NSArray *)types;
+- (NSArray *)readObjectsForClasses:(NSArray *)classes options:(NSDictionary *)o;
+@end
+
+@interface NSRunningApplication : NSObject
++ (NSRunningApplication *)currentApplication;
+- (BOOL)isFinishedLaunching; - (BOOL)isActive; - (NSString *)localizedName;
 @end
 
 @interface NSScreen : NSObject
 + (NSScreen *)mainScreen; + (NSArray *)screens;
 - (NSRect)frame; - (NSRect)visibleFrame; - (CGFloat)backingScaleFactor;
+- (NSDictionary *)deviceDescription; - (NSRect)convertRectToBacking:(NSRect)r; - (NSString *)localizedName;
 @end
 
 @interface NSColor : NSObject { @public CGFloat r, g, b, a; }
@@ -71,9 +115,12 @@ extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFin
 - (CGFloat)redComponent; - (CGFloat)greenComponent; - (CGFloat)blueComponent; - (CGFloat)alphaComponent; - (void)set;
 @end
 
-@interface NSCursor : NSObject
+@class NSImage;
+@interface NSCursor : NSObject { @public NSImage *_image; NSPoint _hot; }
 + (NSCursor *)arrowCursor; + (NSCursor *)IBeamCursor; + (NSCursor *)crosshairCursor; + (NSCursor *)pointingHandCursor;
++ (NSCursor *)resizeLeftRightCursor; + (NSCursor *)resizeUpDownCursor; + (NSCursor *)closedHandCursor; + (NSCursor *)operationNotAllowedCursor;
 + (void)hide; + (void)unhide; - (void)set; - (void)push; - (void)pop;
+- (id)initWithImage:(NSImage *)i hotSpot:(NSPoint)p;
 @end
 
 @interface NSMenuItem : NSObject { @public NSString *_title; id _sub; SEL _action; NSString *_key; id _target; }
@@ -93,6 +140,7 @@ extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFin
 @interface NSView : NSResponder {
 @public
   NSRect _frame, _bounds; NSWindow *_window; NSView *_superview; NSMutableArray *_subviews; BOOL _needsDisplay, _bestRes;
+  NSMutableArray *_tracking; id _layer; BOOL _wantsLayer; NSArray *_dragTypes;
 }
 - (id)initWithFrame:(NSRect)f;
 - (NSRect)frame; - (NSRect)bounds; - (void)setFrame:(NSRect)f; - (void)setFrameSize:(NSSize)s; - (void)setBounds:(NSRect)b;
@@ -102,12 +150,17 @@ extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFin
 - (void)lockFocus; - (void)unlockFocus; - (void)setWantsBestResolutionOpenGLSurface:(BOOL)f;
 - (NSRect)convertRectToBacking:(NSRect)r; - (NSRect)convertRectFromBacking:(NSRect)r;
 - (NSPoint)convertPoint:(NSPoint)p fromView:(NSView *)v; - (void)setWantsLayer:(BOOL)f; - (void)updateTrackingAreas;
+- (void)addTrackingArea:(NSTrackingArea *)a; - (void)removeTrackingArea:(NSTrackingArea *)a; - (NSArray *)trackingAreas;
+- (void)registerForDraggedTypes:(NSArray *)t; - (BOOL)mouse:(NSPoint)p inRect:(NSRect)r; - (void)viewDidChangeBackingProperties;
+- (id)layer; - (void)setLayer:(id)l; - (BOOL)wantsLayer;
 @end
 
 @interface NSWindow : NSResponder {
 @public
   NSRect _frame; NSWindowStyleMask _style; NSView *_content; NSString *_title; int _handle; BOOL _visible, _released, _moved, _key, _closed;
   id _delegate; NSResponder *_first; id _bg;
+  NSInteger _level; NSUInteger _collection; NSString *_miniTitle; BOOL _mini, _zoomed, _opaque, _shadow, _ignoresMouse; CGFloat _alpha;
+  NSRect _unzoomed; NSSize _minSize, _maxSize, _aspect; BOOL _inside;
 }
 - (id)initWithContentRect:(NSRect)r styleMask:(NSWindowStyleMask)s backing:(NSBackingStoreType)b defer:(BOOL)d;
 - (void)makeKeyAndOrderFront:(id)s; - (void)orderFront:(id)s; - (void)orderOut:(id)s; - (void)makeKeyWindow; - (BOOL)isKeyWindow;
@@ -119,11 +172,22 @@ extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFin
 - (BOOL)makeFirstResponder:(NSResponder *)r; - (NSResponder *)firstResponder; - (void)setDelegate:(id)d; - (id)delegate;
 - (CGFloat)backingScaleFactor; - (void)setOpaque:(BOOL)f; - (void)setBackgroundColor:(NSColor *)c; - (void)display; - (NSInteger)windowNumber;
 - (void)sendEvent:(NSEvent *)e; - (int)xefHandle;
+- (BOOL)canBecomeKeyWindow; - (BOOL)canBecomeMainWindow; - (void)resignKeyWindow;
+- (void)setLevel:(NSInteger)l; - (NSInteger)level; - (void)setCollectionBehavior:(NSUInteger)b; - (NSUInteger)collectionBehavior;
+- (NSPoint)cascadeTopLeftFromPoint:(NSPoint)p; - (void)zoom:(id)s; - (BOOL)isZoomed; - (void)performZoom:(id)s;
+- (void)miniaturize:(id)s; - (void)deminiaturize:(id)s; - (BOOL)isMiniaturized; - (void)performMiniaturize:(id)s;
+- (void)setFrameAutosaveName:(NSString *)n; - (void)setContentMinSize:(NSSize)s; - (void)setContentMaxSize:(NSSize)s;
+- (void)setContentAspectRatio:(NSSize)s; - (void)setResizeIncrements:(NSSize)s; - (void)setStyleMask:(NSWindowStyleMask)m; - (NSWindowStyleMask)styleMask;
+- (void)setHasShadow:(BOOL)f; - (void)setRestorable:(BOOL)f; - (void)setTabbingMode:(NSInteger)m; - (void)setMiniwindowTitle:(NSString *)t; - (NSString *)miniwindowTitle;
+- (void)setIgnoresMouseEvents:(BOOL)f; - (CGFloat)alphaValue; - (void)setAlphaValue:(CGFloat)a; - (NSWindowOcclusionState)occlusionState; - (BOOL)isOpaque;
+- (NSRect)convertRectToScreen:(NSRect)r; - (NSPoint)mouseLocationOutsideOfEventStream; - (void)toggleFullScreen:(id)s;
++ (NSInteger)windowNumberAtPoint:(NSPoint)p belowWindowWithWindowNumber:(NSInteger)n;
 @end
 
 @interface NSApplication : NSResponder {
 @public
-  id _delegate; NSMutableArray *_queue, *_windows; BOOL _running, _launched, _active; NSApplicationActivationPolicy _policy; NSMenu *_menu;
+  id _delegate; NSMutableArray *_queue, *_windows; BOOL _running, _launched, _active, _stop; NSApplicationActivationPolicy _policy; NSMenu *_menu;
+  NSEvent *_current; NSMenu *_services, *_windowsMenu;
 }
 + (NSApplication *)sharedApplication;
 - (BOOL)setActivationPolicy:(NSApplicationActivationPolicy)p; - (void)activateIgnoringOtherApps:(BOOL)f; - (BOOL)isActive;
@@ -131,6 +195,9 @@ extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFin
 - (NSEvent *)nextEventMatchingMask:(NSUInteger)m untilDate:(NSDate *)d inMode:(NSString *)mode dequeue:(BOOL)dq;
 - (void)sendEvent:(NSEvent *)e; - (void)postEvent:(NSEvent *)e atStart:(BOOL)s;
 - (void)setDelegate:(id)d; - (id)delegate; - (NSArray *)windows; - (NSWindow *)keyWindow; - (NSWindow *)mainWindow;
+- (NSEvent *)currentEvent; - (void)setServicesMenu:(NSMenu *)m; - (void)setWindowsMenu:(NSMenu *)m; - (void)setAppleMenu:(NSMenu *)m;
+- (NSInteger)requestUserAttention:(NSRequestUserAttentionType)t; - (void)hide:(id)s; - (void)hideOtherApplications:(id)s; - (void)unhideAllApplications:(id)s;
+- (void)orderFrontStandardAboutPanel:(id)s; - (void)arrangeInFront:(id)s;
 - (void)setMainMenu:(NSMenu *)m; - (NSMenu *)mainMenu; - (void)updateWindows; - (void)_addWindow:(NSWindow *)w; - (void)_removeWindow:(NSWindow *)w;
 @end
 

@@ -665,6 +665,16 @@ static char*** darwin_NSGetArgv() {
     return &g_darwin_argv;
 }
 static char*** darwin_NSGetEnviron() { return &g_darwin_envp; }
+// _NSGetProgname: pointer to the program name (basename of argv[0], like libc's __progname)
+static char** darwin_NSGetProgname() {
+    static char* progname = nullptr;
+    if (!progname) {
+        const char* a = (g_darwin_argv && g_darwin_argv[0]) ? g_darwin_argv[0] : g_darwin_exe_path.c_str();
+        const char* b = strrchr(a, '/');
+        progname = strdup(b ? b + 1 : a);
+    }
+    return &progname;
+}
 static int darwin_NSGetExecutablePath(char* buf, uint32_t* bufsize) {
     if (!bufsize) return -1;
     uint32_t len = (uint32_t)g_darwin_exe_path.size();
@@ -1290,6 +1300,10 @@ static void* darwin_dlsym(void* handle, const char* symbol) {
     for (MachImage* im : imgs) is_image |= ((void*)im == handle);
     if (is_image) addr = dyld_image_lookup((MachImage*)handle, prefixed.c_str());
     else addr = dyld_flat_lookup(prefixed.c_str());
+    // The OpenGL.framework image is empty: its gl*/CGL* exports are supplied by the host-GL bridge (darwin_gl.cpp),
+    // so a dlsym / CFBundleGetFunctionPointerForName on that image (GLFW's NSGL getProcAddress) resolves through it.
+    if (!addr && is_image && ((MachImage*)handle)->path.find("/OpenGL.framework/") != std::string::npos)
+        addr = darwin_hle_resolve_symbol(prefixed.c_str(), true);
     if (!addr && !is_image) addr = darwin_hle_resolve_symbol(prefixed.c_str(), true);
     if (!addr && !is_image) addr = darwin_hle_resolve_symbol(symbol, true);
     XEF_LOG(2, "darwin_dlsym('%s') -> %p", symbol, (void*)addr);
@@ -1554,6 +1568,9 @@ static float darwin_strtof_l(const char* s, char** e, void*) { return strtof(s, 
 static double darwin_strtold_l(const char* s, char** e, void*) { return strtod(s, e); }   // long double == double
 static int darwin_strcoll_l(const char* a, const char* b, void*) { return strcoll(a, b); }
 static size_t darwin_strxfrm_l(char* d, const char* s, size_t n, void*) { return strxfrm(d, s, n); }
+// locale_t is a Darwin pointer (never a glibc locale): the C-locale comparison is what CF/GLFW expect
+static int darwin_strcasecmp_l(const char* a, const char* b, void*) { return strcasecmp(a, b); }
+static int darwin_strncasecmp_l(const char* a, const char* b, size_t n, void*) { return strncasecmp(a, b, n); }
 static size_t darwin_strftime(char* s, size_t n, const char* f, const struct tm* t) {
     std::string fmt = f ? f : "";
     size_t pos = 0;
@@ -1631,6 +1648,13 @@ static U128Ret darwin_dyld_lookup_section_info(uint64_t mh, uint64_t, uint64_t k
     return {0, 0};
 }
 
+// ___sincosf_stret / ___sincos_stret: arm64 returns the {sin,cos} pair as an HFA in s0,s1 / d0,d1; the SysV structs come
+// back packed in xmm0 (floats) / xmm0:xmm1 (doubles), so darwin_hle_dispatch calls these directly (shim modes -3 / -4).
+struct F2Ret { float s, c; };
+struct D2Ret { double s, c; };
+static F2Ret darwin_sincosf_stret(float x) { return {sinf(x), cosf(x)}; }
+static D2Ret darwin_sincos_stret(double x) { return {sin(x), cos(x)}; }
+
 struct ShimEntry { const char* name; void* fn; int variadic_fixed; };   // variadic_fixed: >=0 -> args from stack
 static int darwin_open_v(const char* path, int dflags, const uint64_t* ap);
 static int darwin_openat_v(int dfd, const char* path, int dflags, const uint64_t* ap);
@@ -1661,6 +1685,7 @@ static const ShimEntry kShims[] = {
     {"_strtold_l", (void*)&darwin_strtold_l, -1},
     {"_strcoll_l", (void*)&darwin_strcoll_l, -1},
     {"_strxfrm_l", (void*)&darwin_strxfrm_l, -1},
+    {"_strcasecmp_l", (void*)&darwin_strcasecmp_l, -1}, {"_strncasecmp_l", (void*)&darwin_strncasecmp_l, -1},
     {"_strftime", (void*)&darwin_strftime, -1},
     {"_strftime_l", (void*)&darwin_strftime_l, -1},
     {"_wcscoll_l", (void*)&darwin_wcscoll_l, -1},
@@ -1709,6 +1734,7 @@ static const ShimEntry kShims[] = {
     {"__dyld_lookup_section_info", (void*)&darwin_dyld_lookup_section_info, -2},
     {"___umodti3", (void*)&darwin_umodti3, -2}, {"___modti3", (void*)&darwin_modti3, -2},
     {"_getpagesize", (void*)&darwin_getpagesize, -1}, {"getpagesize", (void*)&darwin_getpagesize, -1},
+    {"___sincosf_stret", (void*)&darwin_sincosf_stret, -3}, {"___sincos_stret", (void*)&darwin_sincos_stret, -4},
 };
 // -2: returns a 128-bit value in x0:x1
 static const ShimEntry* find_shim_by_fn(void* fn) {
@@ -2564,6 +2590,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_NSGetEnviron;
     } else if (strcmp(name, "__NSGetExecutablePath") == 0) {
         host_fn = (void*)&darwin_NSGetExecutablePath;
+    } else if (strcmp(name, "__NSGetProgname") == 0) {
+        host_fn = (void*)&darwin_NSGetProgname;
     } else if (strcmp(name, "__tlv_bootstrap") == 0) {
         host_fn = (void*)&darwin_tlv_bootstrap;
     } else if (strcmp(name, "__tlv_atexit") == 0) {
@@ -3043,6 +3071,20 @@ void darwin_hle_dispatch(CpuState* st) {
         }
         if (sh->variadic_fixed == -2) {
             u64 a[6] = {st->x[0], st->x[1], st->x[2], st->x[3], 0, 0};
+        if (sh->variadic_fixed == -3 || sh->variadic_fixed == -4) {   // HFA of two floats / doubles in v0,v1
+            uint8_t o0[16] = {}, o1[16] = {};
+            if (sh->variadic_fixed == -3) {
+                float x; memcpy(&x, st->v[0], 4);
+                F2Ret r = ((F2Ret(*)(float))host_fn)(x);
+                memcpy(o0, &r.s, 4); memcpy(o1, &r.c, 4);
+            } else {
+                double x; memcpy(&x, st->v[0], 8);
+                D2Ret r = ((D2Ret(*)(double))host_fn)(x);
+                memcpy(o0, &r.s, 8); memcpy(o1, &r.c, 8);
+            }
+            memcpy(st->v[0], o0, 16); memcpy(st->v[1], o1, 16);
+            return;
+        }
             u64 fr[8] = {};
             u64 x0 = 0;
             // the SysV struct return of two words is rax:rdx; xef_call_sysv only gives rax, so call directly
@@ -3061,8 +3103,6 @@ void darwin_hle_dispatch(CpuState* st) {
     u64 fregs[8];
     for (int i = 0; i < 8; i++) memcpy(&fregs[i], st->v[i], 8);
 
-    // Darwin passes the 7th and 8th integer arguments in x6/x7 and the rest on the guest stack; SysV
-    // has six integer registers, so x6/x7 go first on the host stack, followed by the guest stack words.
     if (name[1] == 'g' && name[2] == 'l') {
         // GL calls with Darwin stack arguments (natural-size packing): re-pack into 8-byte SysV slots
         u64 gv[8], gst[32], gn = 0;
@@ -3080,6 +3120,8 @@ void darwin_hle_dispatch(CpuState* st) {
 
     const uint64_t* guest_stack = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
     u64 hstack[18];
+    // Darwin passes the 7th and 8th integer arguments in x6/x7 and the rest on the guest stack; SysV
+    // has six integer registers, so x6/x7 go first on the host stack, followed by the guest stack words.
     hstack[0] = st->x[6];
     hstack[1] = st->x[7];
     memcpy(&hstack[2], guest_stack, 16 * sizeof(u64));

@@ -14,22 +14,38 @@
  *   or XEF_EV_CLOSE (WM_DELETE_WINDOW) / XEF_EV_RESIZE (x=w, y=h).
  * keycode = macOS virtual key code (kVK_*) for key events.
  * flags = NSEventModifierFlags bits (caps 1<<16, shift 1<<17, ctrl 1<<18,
- *   alt 1<<19, cmd 1<<20). */
+ *   alt 1<<19, cmd 1<<20).
+ * Screen coordinates (screen_info, pointer, pointer_warp, window_set_frame): host screen pixels, origin top-left. */
 #ifndef XEF_HOST_H
 #define XEF_HOST_H
 #define XEF_EV_CLOSE  1000
 #define XEF_EV_RESIZE 1001
+#define XEF_EV_FOCUS_IN  1002
+#define XEF_EV_FOCUS_OUT 1003
+/* NSEventType 8 / 9 (MouseEntered / MouseExited) are also delivered; x,y = pointer inside the content area. */
 typedef struct { int type; int keycode; int x; int y; int flags; } xef_host_event_t;
 #ifdef __cplusplus
 extern "C" {
 #endif
 int  xef_host_window_create(int x, int y, int w, int h, const char *title);
 void xef_host_window_show(int handle);
+void xef_host_window_hide(int handle);     /* unmap; show maps again */
 void xef_host_window_set_title(int handle, const char *title);
 void xef_host_window_close(int handle);
 int  xef_host_pump(void *ev_out);          /* xef_host_event_t*; 0 = no event */
 void xef_host_gl_make_current(int handle); /* 0 releases */
 void xef_host_swap(int handle);
+/* Requests the OpenGL profile of the window's context (NSOpenGLPixelFormat NSOpenGLPFAOpenGLProfile value:
+ * 0x1000 legacy = compatibility context, 0x3200 = 3.2 core, 0x4100 = 4.1 core). Replaces the window's context when
+ * the profile differs; call before the context is made current. */
+void xef_host_gl_set_profile(int handle, int profile);
+/* Host screen size in pixels and physical size in mm (falls back to 1440x900 when no display is available). */
+void xef_host_screen_info(int *w, int *h, int *mm_w, int *mm_h);
+/* Moves/resizes the window so that its CONTENT area is x,y,w,h. */
+void xef_host_window_set_frame(int handle, int x, int y, int w, int h);
+/* Pointer position in screen pixels and relative to the window's content area; returns 0 if unavailable. */
+int  xef_host_pointer(int handle, int *screen_x, int *screen_y, int *win_x, int *win_y);
+void xef_host_pointer_warp(int screen_x, int screen_y);
 #ifdef __cplusplus
 }
 #endif
