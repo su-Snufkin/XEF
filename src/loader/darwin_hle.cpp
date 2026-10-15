@@ -23,7 +23,12 @@
 #include <errno.h>
 #include <ctype.h>
 #include <math.h>
+#include <wchar.h>
+#include <locale.h>
+#include <ctype.h>
 #include <chrono>
+#include <sys/syscall.h>
+#include <linux/futex.h>
 #include <condition_variable>
 #include <vector>
 #include <unordered_map>
@@ -133,13 +138,60 @@ static void* darwin_memcpy_chk_wrapper(void* dst, const void* src, size_t len, s
     return memcpy(dst, src, len);
 }
 
-static std::vector<u64> g_guest_atexit;
+struct GuestAtExit { u64 fn, arg; bool cxa; };
+static std::vector<GuestAtExit> g_guest_atexit;
+static std::mutex g_atexit_lock;
 static int darwin_atexit_wrapper(u64 fn) {
     if (fn) {
-        g_guest_atexit.push_back(fn);
+        std::lock_guard<std::mutex> lk(g_atexit_lock);
+        g_guest_atexit.push_back({fn, 0, false});
     }
     return 0;
 }
+static int darwin_cxa_atexit(u64 fn, u64 arg, u64 dso) {
+    (void)dso;
+    if (fn) {
+        std::lock_guard<std::mutex> lk(g_atexit_lock);
+        g_guest_atexit.push_back({fn, arg, true});
+    }
+    return 0;
+}
+static void darwin_cxa_finalize(u64) {}
+
+void darwin_run_exit_handlers() {
+    for (;;) {
+        GuestAtExit e;
+        {
+            std::lock_guard<std::mutex> lk(g_atexit_lock);
+            if (g_guest_atexit.empty()) return;
+            e = g_guest_atexit.back();
+            g_guest_atexit.pop_back();
+        }
+        if (e.cxa) { u64 a[1] = {e.arg}; guest_call(e.fn, 1, a); }
+        else guest_call(e.fn, 0, nullptr);
+    }
+}
+
+static void darwin_exit_wrapper(int code) {
+    darwin_run_exit_handlers();
+    exit(code);
+}
+
+static int darwin_ulock_wait(uint32_t op, void* addr, uint64_t value, uint32_t timeout_us) {
+    struct timespec ts, *tsp = nullptr;
+    if (timeout_us) { ts.tv_sec = timeout_us / 1000000; ts.tv_nsec = (timeout_us % 1000000) * 1000L; tsp = &ts; }
+    long r = syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, (uint32_t)value, tsp, nullptr, 0);
+    (void)op;
+    if (r < 0) return errno == ETIMEDOUT ? -ETIMEDOUT : (errno == EAGAIN ? 0 : -errno);
+    return 0;
+}
+static int darwin_ulock_wake(uint32_t op, void* addr, uint64_t) {
+    long r = syscall(SYS_futex, addr, FUTEX_WAKE_PRIVATE, (op & 0x100) ? 0x7fffffff : 1, nullptr, nullptr, 0);
+    return r < 0 ? -errno : 0;
+}
+static int darwin_enosys() { errno = ENOSYS; return -1; }
+static void* darwin_copyfile_state_alloc() { return calloc(1, 64); }
+static int darwin_copyfile_state_free(void* p) { free(p); return 0; }
 
 static void darwin_memset_pattern16_wrapper(void* b, const void* pat, size_t len) {
     uint8_t* dst = (uint8_t*)b;
@@ -286,10 +338,7 @@ static int darwin_printf(const char* format, const uint64_t* ap) {
 }
 
 static int darwin_snprintf(char* str, size_t size, const char* format, const uint64_t* ap) {
-    int len = darwin_vsnprintf(str, size, format, ap);
-    fprintf(stderr, "\n[DEBUG snprintf: fmt='%s', result='%s', ap=%p, ap[0]=%#lx]\n",
-            format, str ? str : "(null)", ap, ap ? ap[0] : 0);
-    return len;
+    return darwin_vsnprintf(str, size, format, ap);
 }
 
 static int darwin_strerror_r(int errnum, char* buf, size_t buflen) {
@@ -703,6 +752,112 @@ static int darwin_stable_sort(void* base, size_t n, size_t size, u64 cmp) {
     }
     tl_cmp_fn = sf;
     return 0;
+}
+
+
+// ---- libSystem functions with stack-passed variadics (Darwin arm64) and xlocale shims --------
+static int darwin_snprintf_l(char* str, size_t size, void* loc, const char* format, const uint64_t* ap) {
+    (void)loc;
+    return darwin_vsnprintf(str, size, format, ap);
+}
+static int darwin_sprintf(char* str, const char* format, const uint64_t* ap) {
+    return darwin_vsnprintf(str, (size_t)1 << 30, format, ap);
+}
+static int darwin_asprintf(char** out, const char* format, const uint64_t* ap) {
+    int n = darwin_vsnprintf(nullptr, 0, format, ap);
+    if (n < 0) return n;
+    *out = (char*)malloc((size_t)n + 1);
+    return darwin_vsnprintf(*out, (size_t)n + 1, format, ap);
+}
+static int darwin_asprintf_l(char** out, void* loc, const char* format, const uint64_t* ap) {
+    (void)loc;
+    return darwin_asprintf(out, format, ap);
+}
+static int darwin_dprintf(int fd, const char* format, const uint64_t* ap) {
+    int n = darwin_vsnprintf(nullptr, 0, format, ap);
+    if (n < 0) return n;
+    std::vector<char> buf((size_t)n + 1);
+    darwin_vsnprintf(buf.data(), buf.size(), format, ap);
+    return (int)write(fd, buf.data(), (size_t)n);
+}
+typedef int (*sscanf8_t)(const char*, const char*, void*, void*, void*, void*, void*, void*, void*, void*);
+static int darwin_sscanf(const char* str, const char* format, const uint64_t* ap) {
+    return ((sscanf8_t)&sscanf)(str, format, (void*)ap[0], (void*)ap[1], (void*)ap[2], (void*)ap[3],
+                                (void*)ap[4], (void*)ap[5], (void*)ap[6], (void*)ap[7]);
+}
+static int darwin_sscanf_l(const char* str, void* loc, const char* format, const uint64_t* ap) {
+    (void)loc;
+    return darwin_sscanf(str, format, ap);
+}
+typedef int (*fscanf8_t)(FILE*, const char*, void*, void*, void*, void*, void*, void*, void*, void*);
+static int darwin_fscanf(FILE* f, const char* format, const uint64_t* ap) {
+    return ((fscanf8_t)&fscanf)(f, format, (void*)ap[0], (void*)ap[1], (void*)ap[2], (void*)ap[3],
+                                (void*)ap[4], (void*)ap[5], (void*)ap[6], (void*)ap[7]);
+}
+
+static int darwin_tolower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
+static int darwin_toupper(int c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
+static int darwin_tolower_l(int c, void*) { return darwin_tolower(c); }
+static int darwin_toupper_l(int c, void*) { return darwin_toupper(c); }
+static uint32_t darwin_maskrune_l(int c, uint32_t mask, void*) { return darwin_maskrune_wrapper(c, mask); }
+static int darwin_mb_cur_max_l(void*) { return 1; }
+static int darwin_btowc_l(int c, void*) { return btowc(c); }
+static size_t darwin_mbrlen_l(const char* s, size_t n, mbstate_t* ps, void*) { return mbrlen(s, n, ps); }
+static size_t darwin_mbrtowc_l(wchar_t* pwc, const char* s, size_t n, mbstate_t* ps, void*) { return mbrtowc(pwc, s, n, ps); }
+static size_t darwin_mbsnrtowcs_l(wchar_t* d, const char** s, size_t nms, size_t len, mbstate_t* ps, void*) { return mbsnrtowcs(d, s, nms, len, ps); }
+static size_t darwin_mbsrtowcs_l(wchar_t* d, const char** s, size_t len, mbstate_t* ps, void*) { return mbsrtowcs(d, s, len, ps); }
+static int darwin_mbtowc_l(wchar_t* pwc, const char* s, size_t n, void*) { return mbtowc(pwc, s, n); }
+static size_t darwin_wcrtomb_l(char* s, wchar_t wc, mbstate_t* ps, void*) { return wcrtomb(s, wc, ps); }
+static size_t darwin_wcsnrtombs_l(char* d, const wchar_t** s, size_t nwc, size_t len, mbstate_t* ps, void*) { return wcsnrtombs(d, s, nwc, len, ps); }
+static int darwin_wctob_l(wint_t c, void*) { return wctob(c); }
+static struct lconv* darwin_localeconv_l(void*) { return localeconv(); }
+static uint32_t darwin_pthread_mach_thread_np(uint64_t th) { return (uint32_t)(th >> 4) & 0xFFFFF | 0x1003; }
+
+// compiler-rt 128-bit division (two registers in, two registers out)
+struct U128Ret { uint64_t lo, hi; };
+static U128Ret darwin_udivti3(uint64_t alo, uint64_t ahi, uint64_t blo, uint64_t bhi) {
+    unsigned __int128 a = ((unsigned __int128)ahi << 64) | alo, b = ((unsigned __int128)bhi << 64) | blo;
+    unsigned __int128 q = b ? a / b : 0;
+    return {(uint64_t)q, (uint64_t)(q >> 64)};
+}
+static U128Ret darwin_divti3(uint64_t alo, uint64_t ahi, uint64_t blo, uint64_t bhi) {
+    __int128 a = (__int128)(((unsigned __int128)ahi << 64) | alo), b = (__int128)(((unsigned __int128)bhi << 64) | blo);
+    __int128 q = b ? a / b : 0;
+    return {(uint64_t)q, (uint64_t)((unsigned __int128)q >> 64)};
+}
+static U128Ret darwin_umodti3(uint64_t alo, uint64_t ahi, uint64_t blo, uint64_t bhi) {
+    unsigned __int128 a = ((unsigned __int128)ahi << 64) | alo, b = ((unsigned __int128)bhi << 64) | blo;
+    unsigned __int128 q = b ? a % b : 0;
+    return {(uint64_t)q, (uint64_t)(q >> 64)};
+}
+static U128Ret darwin_modti3(uint64_t alo, uint64_t ahi, uint64_t blo, uint64_t bhi) {
+    __int128 a = (__int128)(((unsigned __int128)ahi << 64) | alo), b = (__int128)(((unsigned __int128)bhi << 64) | blo);
+    __int128 q = b ? a % b : 0;
+    return {(uint64_t)q, (uint64_t)((unsigned __int128)q >> 64)};
+}
+
+struct ShimEntry { const char* name; void* fn; int variadic_fixed; };   // variadic_fixed: >=0 -> args from stack
+static const ShimEntry kShims[] = {
+    {"_snprintf_l", (void*)&darwin_snprintf_l, 4}, {"_sprintf", (void*)&darwin_sprintf, 2},
+    {"_asprintf", (void*)&darwin_asprintf, 2}, {"_asprintf_l", (void*)&darwin_asprintf_l, 3},
+    {"_dprintf", (void*)&darwin_dprintf, 2}, {"_sscanf", (void*)&darwin_sscanf, 2},
+    {"_sscanf_l", (void*)&darwin_sscanf_l, 3}, {"_fscanf", (void*)&darwin_fscanf, 2},
+    {"___tolower", (void*)&darwin_tolower, -1}, {"___toupper", (void*)&darwin_toupper, -1},
+    {"____tolower_l", (void*)&darwin_tolower_l, -1}, {"____toupper_l", (void*)&darwin_toupper_l, -1},
+    {"___maskrune_l", (void*)&darwin_maskrune_l, -1}, {"____mb_cur_max_l", (void*)&darwin_mb_cur_max_l, -1},
+    {"_btowc_l", (void*)&darwin_btowc_l, -1}, {"_mbrlen_l", (void*)&darwin_mbrlen_l, -1},
+    {"_mbrtowc_l", (void*)&darwin_mbrtowc_l, -1}, {"_mbsnrtowcs_l", (void*)&darwin_mbsnrtowcs_l, -1},
+    {"_mbsrtowcs_l", (void*)&darwin_mbsrtowcs_l, -1}, {"_mbtowc_l", (void*)&darwin_mbtowc_l, -1},
+    {"_wcrtomb_l", (void*)&darwin_wcrtomb_l, -1}, {"_wcsnrtombs_l", (void*)&darwin_wcsnrtombs_l, -1},
+    {"_wctob_l", (void*)&darwin_wctob_l, -1}, {"_localeconv_l", (void*)&darwin_localeconv_l, -1},
+    {"_pthread_mach_thread_np", (void*)&darwin_pthread_mach_thread_np, -1},
+    {"___udivti3", (void*)&darwin_udivti3, -2}, {"___divti3", (void*)&darwin_divti3, -2},
+    {"___umodti3", (void*)&darwin_umodti3, -2}, {"___modti3", (void*)&darwin_modti3, -2},
+};
+// -2: returns a 128-bit value in x0:x1
+static const ShimEntry* find_shim_by_fn(void* fn) {
+    for (const ShimEntry& e : kShims) if (e.fn == fn) return &e;
+    return nullptr;
 }
 
 // Dyld runtime introspection
@@ -1499,6 +1654,26 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_kevent;
     } else if (strcmp(name, "_fcntl") == 0 || strcmp(name, "fcntl") == 0) {
         host_fn = (void*)&darwin_fcntl;
+    } else if (const ShimEntry* sh = [&]() -> const ShimEntry* {
+                   for (const ShimEntry& e : kShims) if (!strcmp(e.name, name)) return &e;
+                   return nullptr; }()) {
+        host_fn = sh->fn;
+    } else if (strcmp(name, "_exit") == 0) {
+        host_fn = (void*)&darwin_exit_wrapper;
+    } else if (strcmp(name, "___cxa_atexit") == 0) {
+        host_fn = (void*)&darwin_cxa_atexit;
+    } else if (strcmp(name, "___cxa_finalize") == 0) {
+        host_fn = (void*)&darwin_cxa_finalize;
+    } else if (strcmp(name, "___ulock_wait") == 0 || strcmp(name, "___ulock_wait2") == 0) {
+        host_fn = (void*)&darwin_ulock_wait;
+    } else if (strcmp(name, "___ulock_wake") == 0) {
+        host_fn = (void*)&darwin_ulock_wake;
+    } else if (strcmp(name, "_copyfile_state_alloc") == 0) {
+        host_fn = (void*)&darwin_copyfile_state_alloc;
+    } else if (strcmp(name, "_copyfile_state_free") == 0) {
+        host_fn = (void*)&darwin_copyfile_state_free;
+    } else if (strcmp(name, "_fcopyfile") == 0 || strcmp(name, "_copyfile") == 0) {
+        host_fn = (void*)&darwin_enosys;
     } else if (strcmp(name, "_qsort") == 0) {
         host_fn = (void*)&darwin_qsort;
     } else if (strcmp(name, "_qsort_r") == 0) {
@@ -1648,6 +1823,29 @@ void darwin_hle_dispatch(CpuState* st) {
         const uint64_t* va = (const uint64_t*)(uintptr_t)st->x[3];
         st->x[0] = (uint64_t)darwin_vsnprintf((char*)(uintptr_t)st->x[0], (size_t)st->x[1], (const char*)(uintptr_t)st->x[2], va);
         return;
+    }
+
+    if (const ShimEntry* sh = find_shim_by_fn(host_fn)) {
+        if (sh->variadic_fixed >= 0) {
+            u64 a[6] = {st->x[0], st->x[1], st->x[2], st->x[3], st->x[4], st->x[5]};
+            a[sh->variadic_fixed] = st->x[kGuestSP];
+            u64 fr[8] = {};
+            u64 x0 = 0;
+            st->x[0] = xef_call_sysv(host_fn, a, fr, nullptr, 0, &x0);
+            return;
+        }
+        if (sh->variadic_fixed == -2) {
+            u64 a[6] = {st->x[0], st->x[1], st->x[2], st->x[3], 0, 0};
+            u64 fr[8] = {};
+            u64 x0 = 0;
+            // the SysV struct return of two words is rax:rdx; xef_call_sysv only gives rax, so call directly
+            typedef U128Ret (*fn_t)(uint64_t, uint64_t, uint64_t, uint64_t);
+            (void)fr; (void)x0; (void)a;
+            U128Ret r = ((fn_t)host_fn)(st->x[0], st->x[1], st->x[2], st->x[3]);
+            st->x[0] = r.lo;
+            st->x[1] = r.hi;
+            return;
+        }
     }
 
     u64 iregs[6] = { st->x[0], st->x[1], st->x[2], st->x[3], st->x[4], st->x[5] };

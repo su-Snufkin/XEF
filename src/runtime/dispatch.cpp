@@ -103,6 +103,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
         CpuState* st = t->st;
         if (g_is_darwin && (pc <= 0x1000 || pc == g_darwin_mach_header || pc == g_darwin_exit_trampoline || pc == g_darwin_thread_exit_trampoline)) {
             XEF_LOG(1, "xef-osx: program or thread returned cleanly at %#lx with code %d", (unsigned long)pc, (int)st->x[0]);
+            darwin_run_exit_handlers();
             exit((int)st->x[0]);
         }
         char lr[512];
@@ -300,6 +301,7 @@ static void run_guest(ThreadCtx* t, bool nested) {
             if (g_opt.trace) tls_trace[tls_trace_n++ & 63] = st->pc;
             if (g_is_darwin && (st->pc == g_darwin_mach_header || st->pc == g_darwin_exit_trampoline)) {
                 XEF_LOG(1, "xef-osx: binary returned with exit code %d", (int)st->x[0]);
+                darwin_run_exit_handlers();
                 exit((int)st->x[0]);
             }
             host = get_or_translate(t, st->pc);

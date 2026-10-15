@@ -14,6 +14,9 @@ void darwin_hle_init();
 // If is_weak is true and symbol is unknown, returns 0 instead of creating a fallback stub.
 uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak = false, bool explicit_only = false);
 
+// Runs the atexit / __cxa_atexit handlers registered by the guest (reverse order).
+void darwin_run_exit_handlers();
+
 // Dispatches an HLE thunk call (st->x[17] = thunk ID)
 void darwin_hle_dispatch(CpuState* st);
 
