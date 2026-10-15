@@ -7,7 +7,7 @@
 
 static NSWindow *win; static NSOpenGLContext *ctx; static int W, H;
 
-int xef_win_create(int w, int h, const char *title) {
+static int win_create(int w, int h, const char *title, int core) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
@@ -16,7 +16,8 @@ int xef_win_create(int w, int h, const char *title) {
                   styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
         [win setTitle:[NSString stringWithUTF8String:title]];
         NSOpenGLPixelFormatAttribute a[] = {NSOpenGLPFAAccelerated, NSOpenGLPFADoubleBuffer,
-            NSOpenGLPFAColorSize, 24, NSOpenGLPFADepthSize, 24, 0};
+            NSOpenGLPFAColorSize, 24, NSOpenGLPFADepthSize, 24,
+            NSOpenGLPFAOpenGLProfile, core ? NSOpenGLProfileVersion3_2Core : NSOpenGLProfileVersionLegacy, 0};
         NSOpenGLPixelFormat *pf = [[NSOpenGLPixelFormat alloc] initWithAttributes:a];
         if (!pf) return -1;
         ctx = [[NSOpenGLContext alloc] initWithFormat:pf shareContext:nil];
@@ -26,6 +27,11 @@ int xef_win_create(int w, int h, const char *title) {
         [ctx update];
     }
     return 0;
+}
+int xef_win_create(int w, int h, const char *title) { return win_create(w, h, title, 0); }
+/* Apple only offers 3.2 core (or 4.1 on newer Macs); major/minor are advisory here */
+int xef_win_create_core(int w, int h, const char *title, int major, int minor) {
+    (void)major; (void)minor; return win_create(w, h, title, 1);
 }
 void xef_win_swap(void) { [ctx flushBuffer]; }
 int xef_win_poll(void) {

@@ -35,7 +35,7 @@ Statusy: [ ] następne, [~] w toku, [x] zrobione, [!] zablokowane.
 - [x] A3 shim okna: `_xef_win_create/_swap/_poll/_dump` (Xlib + GLX, zrzut PPM w procesie)
 - [x] A4 aplikacja testowa `tests/darwin/mac_gl/gltri.c` (budowa na Macu) — CHECKPOINT „widzę okno", „pierwszy trójkąt"
 - [x] A5 test regresji `tests/darwin/gl_test.sh` (Xvfb :99, rc==0, `frames=300`, imgcheck) + wpięcie w run_tests.sh
-- [ ] A6 (opcjonalne dla kostki; potrzebne dla cand2) scena (shadery, VBO, depth) + przepakowanie argumentów stosu dla >8 arg (wg sygnatur z gl_table.inc) — CHECKPOINT „scena"
+- [x] A6 (opcjonalne dla kostki; potrzebne dla cand2) scena (shadery, VBO, depth) + przepakowanie argumentów stosu dla >8 arg (wg sygnatur z gl_table.inc) — CHECKPOINT „scena"
 - [x] A7 docs (HANDOFF, GUI), commit
 
 ### Etap B — P2: Cocoa przez AppKit-lite (cand3)
