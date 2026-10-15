@@ -687,6 +687,37 @@ static int darwin_NSGetExecutablePath(char* buf, uint32_t* bufsize) {
     *bufsize = len;
     return 0;
 }
+// <math.h> classification: Darwin's FP_* values (NAN 1, INFINITE 2, ZERO 3, NORMAL 4, SUBNORMAL 5) differ from glibc's
+static int darwin_fp_class(int c) {
+    switch (c) {
+        case FP_NAN: return 1;
+        case FP_INFINITE: return 2;
+        case FP_ZERO: return 3;
+        case FP_SUBNORMAL: return 5;
+        default: return 4;
+    }
+}
+static int darwin_fpclassifyd(double x) { return darwin_fp_class(std::fpclassify(x)); }
+static int darwin_fpclassifyf(float x) { return darwin_fp_class(std::fpclassify(x)); }
+static float darwin_exp10f(float x) { return exp10f(x); }
+
+// libproc: path of a process' executable (only our own process is known; others via /proc).
+static int darwin_proc_pidpath(int pid, char* buf, uint32_t size) {
+    if (!buf || size == 0) { errno = EINVAL; return 0; }
+    std::string path;
+    if (pid == 0 || pid == getpid()) {
+        path = g_darwin_exe_path;
+    } else {
+        char tmp[PATH_MAX];
+        ssize_t n = readlink(("/proc/" + std::to_string(pid) + "/exe").c_str(), tmp, sizeof tmp - 1);
+        if (n < 0) return 0;
+        path.assign(tmp, (size_t)n);
+    }
+    size_t n = std::min<size_t>(path.size(), size - 1);
+    memcpy(buf, path.data(), n);
+    buf[n] = 0;
+    return (int)n;
+}
 
 // Darwin struct dirent layout (macOS $INODE64)
 struct darwin_dirent {
@@ -1299,6 +1330,9 @@ static void* darwin_dlsym(void* handle, const char* symbol) {
     auto& imgs = dyld_images();
     bool is_image = false;
     for (MachImage* im : imgs) is_image |= ((void*)im == handle);
+    // dlopen(NULL) hands out the main executable's image; dyld searches every global image for it (OSG looks
+    // gl* extension entry points up this way), so it behaves like RTLD_DEFAULT here
+    if (is_image && !imgs.empty() && handle == (void*)imgs[0]) is_image = false;
     if (is_image) addr = dyld_image_lookup((MachImage*)handle, prefixed.c_str());
     else addr = dyld_flat_lookup(prefixed.c_str());
     // The OpenGL.framework image is empty: its gl*/CGL* exports are supplied by the host-GL bridge (darwin_gl.cpp),
@@ -1604,6 +1638,12 @@ static int darwin_isprint_l(int c, void*) { return isprint(c); }
 static int darwin_iswctype_l(wint_t c, wctype_t t, void*) { return iswctype(c, t); }
 static wint_t darwin_towlower_l(wint_t c, void*) { return towlower(c); }
 static wint_t darwin_towupper_l(wint_t c, void*) { return towupper(c); }
+static int darwin_isxdigit_l(int c, void*) { return isxdigit(c); }
+static int darwin_iscntrl_l(int c, void*) { return iscntrl(c); }
+static int darwin_isgraph_l(int c, void*) { return isgraph(c); }
+static int darwin_isblank_l(int c, void*) { return isblank(c); }
+static int darwin_tolower_plain_l(int c, void*) { return tolower(c); }
+static int darwin_toupper_plain_l(int c, void*) { return toupper(c); }
 static int darwin_lc_to_linux(int cat) {
     switch (cat) {
         case 0: return LC_ALL;
@@ -1709,6 +1749,9 @@ static const ShimEntry kShims[] = {
     {"_iswctype_l", (void*)&darwin_iswctype_l, -1},
     {"_towlower_l", (void*)&darwin_towlower_l, -1},
     {"_towupper_l", (void*)&darwin_towupper_l, -1},
+    {"_isxdigit_l", (void*)&darwin_isxdigit_l, -1}, {"_iscntrl_l", (void*)&darwin_iscntrl_l, -1},
+    {"_isgraph_l", (void*)&darwin_isgraph_l, -1}, {"_isblank_l", (void*)&darwin_isblank_l, -1},
+    {"_tolower_l", (void*)&darwin_tolower_plain_l, -1}, {"_toupper_l", (void*)&darwin_toupper_plain_l, -1},
     {"_setlocale", (void*)&darwin_setlocale, -1},
     {"_newlocale", (void*)&darwin_newlocale, -1}, {"_freelocale", (void*)&darwin_freelocale, -1}, {"_uselocale", (void*)&darwin_uselocale, -1},
     {"___strlcpy_chk", (void*)&darwin_strlcpy_chk, -1}, {"___strlcat_chk", (void*)&darwin_strlcat_chk, -1},
@@ -2667,6 +2710,14 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_NSGetArgv;
     } else if (strcmp(name, "__NSGetEnviron") == 0) {
         host_fn = (void*)&darwin_NSGetEnviron;
+    } else if (strcmp(name, "_proc_pidpath") == 0) {
+        host_fn = (void*)&darwin_proc_pidpath;
+    } else if (strcmp(name, "___fpclassifyd") == 0 || strcmp(name, "___fpclassifyl") == 0) {   // long double == double
+        host_fn = (void*)&darwin_fpclassifyd;
+    } else if (strcmp(name, "___fpclassifyf") == 0) {
+        host_fn = (void*)&darwin_fpclassifyf;
+    } else if (strcmp(name, "___exp10f") == 0) {
+        host_fn = (void*)&darwin_exp10f;
     } else if (strcmp(name, "__NSGetProgname") == 0) {
         host_fn = (void*)&darwin_NSGetProgname;
     } else if (strcmp(name, "__NSGetExecutablePath") == 0) {
@@ -3008,6 +3059,31 @@ uint64_t darwin_hle_register_function(const char* name, void* host_fn) {
     return a;
 }
 
+// XEF_GUEST_BT=N[,count]: from N seconds after start, the next `count` (default 20) HLE calls of each thread print
+// the caller's guest frame-pointer backtrace (where is a busy/hung program spinning?)
+static void hle_debug_backtrace(CpuState* st, const char* name) {
+    static const char* env = getenv("XEF_GUEST_BT");
+    if (!env) return;
+    static const double start = [] { timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }();
+    static const double after = atof(env);
+    static const int count = strchr(env, ',') ? atoi(strchr(env, ',') + 1) : 20;
+    static thread_local int printed;
+    if (printed >= count) return;
+    timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    if (t.tv_sec + t.tv_nsec * 1e-9 - start < after) return;
+    printed++;
+    std::string out = "xef-bt: tid " + std::to_string(gettid()) + " " + name + " from " + dyld_describe(st->x[30]) + "\n";
+    u64 fp = st->x[29];
+    for (int i = 0; i < 24 && fp && !(fp & 7); i++) {
+        u64 lr = ((u64*)fp)[1];
+        out += "xef-bt:    #" + std::to_string(i) + " " + dyld_describe(lr) + "\n";
+        u64 nfp = ((u64*)fp)[0];
+        if (nfp <= fp || nfp >= fp + 0x10000000) break;
+        fp = nfp;
+    }
+    fputs(out.c_str(), stderr);
+}
+
 void darwin_hle_dispatch(CpuState* st) {
     u64 id = st->x[17];
     void* host_fn = nullptr;
@@ -3027,6 +3103,7 @@ void darwin_hle_dispatch(CpuState* st) {
     tl_hle_lr = st->x[30];
     XEF_LOG(2, "hle: %s(x0=%#lx, x1=%#lx, x2=%#lx, x3=%#lx)", name,
             (unsigned long)st->x[0], (unsigned long)st->x[1], (unsigned long)st->x[2], (unsigned long)st->x[3]);
+    hle_debug_backtrace(st, name);
 
     if (host_fn == (void*)&darwin_start_marker) {
         // x0..x3 = argc, argv, envp, apple (dyld's initializer arguments)

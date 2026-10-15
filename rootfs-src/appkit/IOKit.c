@@ -32,7 +32,9 @@ kern_return_t IOServiceGetMatchingServices(mach_port_t port, CFDictionaryRef mat
 io_object_t IOIteratorNext(io_iterator_t it) { return 0; }
 kern_return_t IOObjectRelease(io_object_t o) { return kIOReturnSuccess; }
 CFTypeRef IORegistryEntryCreateCFProperty(io_registry_entry_t e, CFStringRef key, CFAllocatorRef a, IOOptionBits o) { return NULL; }
-CFDictionaryRef IODisplayCreateInfoDictionary(io_service_t framebuffer, IOOptionBits options) { return NULL; }   /* no display service exists */
+/* no display service exists: an empty info dictionary (callers CFRelease it unconditionally, e.g. SDL2) */
+CFDictionaryRef IODisplayCreateInfoDictionary(io_service_t framebuffer, IOOptionBits options) {
+  return CFDictionaryCreate(kCFAllocatorDefault, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks); }
 
 /* ---- IOHID: a manager that never sees a device ------------------------------------------------------------------ */
 IOHIDManagerRef IOHIDManagerCreate(CFAllocatorRef a, IOOptionBits o) {
@@ -55,3 +57,48 @@ uint32_t IOHIDElementGetUsagePage(IOHIDElementRef e) { return 0; }
 CFIndex IOHIDElementGetLogicalMin(IOHIDElementRef e) { return 0; }
 CFIndex IOHIDElementGetLogicalMax(IOHIDElementRef e) { return 0; }
 CFIndex IOHIDValueGetIntegerValue(IOHIDValueRef v) { return 0; }
+
+/* ---- more of the empty IORegistry / HID manager (SDL2's joystick, haptic and power backends) --------------------- */
+const mach_port_t kIOMainPortDefault = 0;
+IONotificationPortRef IONotificationPortCreate(mach_port_t port) { return (IONotificationPortRef)calloc(1, 64); }
+void IONotificationPortDestroy(IONotificationPortRef p) { free(p); }
+mach_port_t IONotificationPortGetMachPort(IONotificationPortRef p) { return 0; }
+void IODispatchCalloutFromMessage(void *unused, mach_msg_header_t *msg, void *ref) {}
+kern_return_t IOServiceAddMatchingNotification(IONotificationPortRef p, const io_name_t type, CFDictionaryRef matching,
+                                               IOServiceMatchingCallback cb, void *ref, io_iterator_t *it) {
+  if (matching) CFRelease(matching);
+  if (it) *it = 1;
+  return kIOReturnSuccess; }
+boolean_t IOIteratorIsValid(io_iterator_t it) { return 1; }
+boolean_t IOObjectIsEqualTo(io_object_t a, io_object_t b) { return a == b; }
+kern_return_t IOObjectRetain(io_object_t o) { return kIOReturnSuccess; }
+kern_return_t IORegistryEntryCreateCFProperties(io_registry_entry_t e, CFMutableDictionaryRef *props, CFAllocatorRef a, IOOptionBits o) {
+  if (props) *props = NULL; return kIOReturnNotFound; }
+kern_return_t IORegistryEntryGetParentEntry(io_registry_entry_t e, const io_name_t plane, io_registry_entry_t *parent) {
+  if (parent) *parent = 0; return kIOReturnNotFound; }
+IOReturn IOHIDManagerClose(IOHIDManagerRef m, IOOptionBits o) { return kIOReturnSuccess; }
+CFSetRef IOHIDManagerCopyDevices(IOHIDManagerRef m) { return NULL; }
+void IOHIDManagerUnscheduleFromRunLoop(IOHIDManagerRef m, CFRunLoopRef rl, CFStringRef mode) {}
+IOReturn IOHIDDeviceOpen(IOHIDDeviceRef d, IOOptionBits o) { return kIOReturnNoDevice; }
+IOReturn IOHIDDeviceClose(IOHIDDeviceRef d, IOOptionBits o) { return kIOReturnNoDevice; }
+io_service_t IOHIDDeviceGetService(IOHIDDeviceRef d) { return 0; }
+IOReturn IOHIDDeviceGetReport(IOHIDDeviceRef d, IOHIDReportType t, CFIndex id, uint8_t *r, CFIndex *len) { return kIOReturnNoDevice; }
+IOReturn IOHIDDeviceSetReport(IOHIDDeviceRef d, IOHIDReportType t, CFIndex id, const uint8_t *r, CFIndex len) { return kIOReturnNoDevice; }
+void IOHIDDeviceRegisterInputReportCallback(IOHIDDeviceRef d, uint8_t *r, CFIndex len, IOHIDReportCallback cb, void *ctx) {}
+void IOHIDDeviceRegisterRemovalCallback(IOHIDDeviceRef d, IOHIDCallback cb, void *ctx) {}
+void IOHIDDeviceScheduleWithRunLoop(IOHIDDeviceRef d, CFRunLoopRef rl, CFStringRef mode) {}
+void IOHIDDeviceUnscheduleFromRunLoop(IOHIDDeviceRef d, CFRunLoopRef rl, CFStringRef mode) {}
+CFArrayRef IOHIDElementGetChildren(IOHIDElementRef e) { return NULL; }
+IOHIDElementCookie IOHIDElementGetCookie(IOHIDElementRef e) { return 0; }
+
+/* ---- power: no battery, sleep assertions accepted and ignored ---------------------------------------------------- */
+CFTypeRef IOPSCopyPowerSourcesInfo(void) { return NULL; }
+CFArrayRef IOPSCopyPowerSourcesList(CFTypeRef blob) { return NULL; }
+CFDictionaryRef IOPSGetPowerSourceDescription(CFTypeRef blob, CFTypeRef ps) { return NULL; }
+IOReturn IOPMAssertionCreateWithDescription(CFStringRef type, CFStringRef name, CFStringRef details, CFStringRef human,
+                                            CFStringRef loc, CFTimeInterval timeout, CFStringRef action, uint32_t *id) {
+  if (id) *id = 1; return kIOReturnSuccess; }
+IOReturn IOPMAssertionRelease(uint32_t id) { return kIOReturnSuccess; }
+
+/* ---- ForceFeedback (linked through IOKit by SDL's haptic backend): no devices ------------------------------------ */
+long FFIsForceFeedback(io_service_t s) { return 0x80040702; }   /* FFERR_NOINTERFACE */

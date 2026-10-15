@@ -345,3 +345,25 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   `XEF_DBG_PC=lo-hi` + `--trace --max-block 1`.
 - Do zrobienia: `child_process.execSync` abortuje w libuv (spawn); kqueue bez VNODE/PROC/SIGNAL/TIMER (fs.watch, uv_signal); skan flag widzi tylko
   bezpośrednie BL (nie `b`/`blr`); zmiana translatora nie przeszła `fuzz.py` ani `tests/guest` (brak qemu/ld.lld lokalnie) — uruchomić na maszynie z narzędziami.
+
+### 7. OpenMW 0.51 (SDL2 + OSG + MyGUI) przez AppKit-lite (2026-10-16)
+- `/Applications/OpenMW.app` z Maca (rsync do `darwin-rootfs/Applications/`) startuje, otwiera okno GL, ładuje Morrowind.esm/BSA,
+  odtwarza intro i menu działa. Dane: `openmw.cfg` w `~/Library/Preferences/openmw/` hosta (import przez `openmw-iniimporter` z paczki,
+  też pod xef-osx). Uruchamianie: `OPENMW_DISABLE_CRASH_CATCHER=1 build/xef-osx -L darwin-rootfs .../OpenMW.app/Contents/MacOS/openmw`
+  (crash catcher OpenMW robi fork+exec debuggera). OpenMW łapie SIGTERM: zabijać `kill -9` (`timeout -s KILL`).
+- Loader: dylib osiągnięty przez symlink (`libosgDB.162` -> `libosgDB.3.6.5`) to ten sam obraz (klucz: realpath hosta, jak inode w dyld)
+  — wcześniej dwie kopie libosg/libosgDB miały osobne `osgDB::Registry` i pluginy (dds/png) „nie istniały”. `dlsym` na uchwycie z
+  `dlopen(NULL)` szuka globalnie (OSG `glGetStringi`). `___fpclassify{d,f,l}` mapują FP_* glibc -> Darwin, `___exp10f`, `_proc_pidpath`,
+  `_*_l` ctype. Nierozwiązany symbol DANYCH jest wiązany do adresu thunka (odczyt daje bajty `hlt`/`movz`, np. `0xd44b08c0d2806951`).
+- AppKit-lite dla SDL2 (`SDL_cocoa*.m`): stałe notyfikacji, NSAlert (komunikat na stderr, pierwszy przycisk), NSButton,
+  NSGraphicsContext/NSBezierPath/NSColorSpace (no-op), metody NSWindow/NSView/NSApplication/NSEvent/NSPasteboard/NSCursor z SDL2,
+  `+resolveInstanceMethod:` na NSView/NSWindow/NSApplication: nieznany selektor = no-op zwracający 0, logowany `STUB -[klasa sel]`.
+  Nowe dyliby: CoreVideo (CVDisplayLink z wątkiem 60 Hz — SDL czeka na niego przy swap interval), AudioToolbox (+ nazwy CoreAudio/
+  AudioUnit; brak urządzeń, OpenAL wyłącza dźwięk), dodatki CoreGraphics/IOKit/HIToolbox/CoreServices,
+  `OpenGL.framework/Libraries/libGL.dylib` (SDL dlopen).
+- Diagnostyka: fatal `brk` drukuje backtrace gościa; `XEF_GUEST_BT=N[,count]` — od N s każde wywołanie HLE (do `count` na wątek) drukuje
+  backtrace gościa (gdzie kręci się zawieszony program); symbolizacja na Macu: `atos -o <obraz> -arch arm64 -l <base> <adresy>`.
+- Otwarte: „New Game” wisi na `Loading cell Imperial Prison Ship` — główny wątek w `MWGui::LocalMapBase::setActiveCell` tworzy
+  widgety mapy lokalnej bez końca (RSS +4 MB/s, MyGUI `removeChildItem` O(n) dominuje profil). Nie navmesh (Navigator wyłączony: to samo),
+  nie konwersje float->int (test fcvt* Mac == XEF), `XEF_VERIFY` na libMyGUIEngine bez różnic. Podejrzenie: rozmiar siatki z granic komórki.
+- `tests/darwin/macref.sh`: `sincos_stret` pada też bez tych zmian (a3be278).

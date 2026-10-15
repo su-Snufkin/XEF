@@ -26,3 +26,7 @@ OSStatus UCKeyTranslate(const UCKeyboardLayout *layout, UInt16 vk, UInt16 action
   if (c >= 'a' && c <= 'z') { if (shift != caps) c -= 32; }
   else if (shift && kShift[vk]) c = kShift[vk];
   out[0] = (UniChar)c; *actualLen = 1; return noErr; }
+
+/* LaunchServices: opening URLs/documents in other applications is not available (SDL_OpenURL reports failure) */
+OSStatus LSOpenCFURLRef(CFURLRef url, CFURLRef *launched) { if (launched) *launched = NULL; return -10814; }   /* kLSApplicationNotFoundErr */
+const CFStringRef kUTTypeFileURL = CFSTR("public.file-url");

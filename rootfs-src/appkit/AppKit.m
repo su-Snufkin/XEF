@@ -5,6 +5,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <Block.h>
+#include <stdio.h>
+#include <objc/message.h>
+#include <objc/runtime.h>
 
 id NSApp = nil;
 NSString *const NSWindowWillCloseNotification = @"NSWindowWillCloseNotification";
@@ -14,6 +17,29 @@ NSString *const NSPasteboardTypeString = @"public.utf8-plain-text";
 NSString *const NSPasteboardTypeURL = @"public.url";
 NSString *const NSPasteboardURLReadingFileURLsOnlyKey = @"NSPasteboardURLReadingFileURLsOnlyKey";
 NSString *const NSTextInputContextKeyboardSelectionDidChangeNotification = @"NSTextInputContextKeyboardSelectionDidChangeNotification";
+NSString *const NSApplicationDidBecomeActiveNotification = @"NSApplicationDidBecomeActiveNotification";
+NSString *const NSApplicationDidResignActiveNotification = @"NSApplicationDidResignActiveNotification";
+NSString *const NSApplicationWillTerminateNotification = @"NSApplicationWillTerminateNotification";
+NSString *const NSWindowDidBecomeKeyNotification = @"NSWindowDidBecomeKeyNotification";
+NSString *const NSWindowDidChangeBackingPropertiesNotification = @"NSWindowDidChangeBackingPropertiesNotification";
+NSString *const NSWindowDidChangeScreenNotification = @"NSWindowDidChangeScreenNotification";
+NSString *const NSWindowDidChangeScreenProfileNotification = @"NSWindowDidChangeScreenProfileNotification";
+NSString *const NSWindowDidDeminiaturizeNotification = @"NSWindowDidDeminiaturizeNotification";
+NSString *const NSWindowDidEndLiveResizeNotification = @"NSWindowDidEndLiveResizeNotification";
+NSString *const NSWindowDidEnterFullScreenNotification = @"NSWindowDidEnterFullScreenNotification";
+NSString *const NSWindowDidExitFullScreenNotification = @"NSWindowDidExitFullScreenNotification";
+NSString *const NSWindowDidExposeNotification = @"NSWindowDidExposeNotification";
+NSString *const NSWindowDidMiniaturizeNotification = @"NSWindowDidMiniaturizeNotification";
+NSString *const NSWindowDidMoveNotification = @"NSWindowDidMoveNotification";
+NSString *const NSWindowDidResignKeyNotification = @"NSWindowDidResignKeyNotification";
+NSString *const NSWindowDidResizeNotification = @"NSWindowDidResizeNotification";
+NSString *const NSWindowWillEnterFullScreenNotification = @"NSWindowWillEnterFullScreenNotification";
+NSString *const NSWindowWillExitFullScreenNotification = @"NSWindowWillExitFullScreenNotification";
+NSString *const NSWindowWillStartLiveResizeNotification = @"NSWindowWillStartLiveResizeNotification";
+NSString *const NSBackingPropertyOldScaleFactorKey = @"NSBackingPropertyOldScaleFactorKey";
+NSString *const NSDeviceRGBColorSpace = @"NSDeviceRGBColorSpace";
+NSString *const NSFilenamesPboardType = @"NSFilenamesPboardType";
+const double NSAppKitVersionNumber = 2685.0;   /* macOS 15-ish: SDL/GLFW only compare against old releases */
 static NSMutableArray *g_monitors;   /* local event monitors: @{@"mask", @"block"} */
 
 /* host screen (xef_host_screen_info; 1440x900 when the host has no display), scale factor 1.0 */
@@ -232,7 +258,7 @@ static unichar key_char(int kc, int shift) {
 - (NSWindow *)window { return _window; } - (NSView *)superview { return _superview; } - (NSArray *)subviews { return _subviews; }
 - (void)_setWindow:(NSWindow *)w { _window = w; for (NSView *s in _subviews) [s _setWindow:w]; [self viewDidMoveToWindow]; }
 - (void)addSubview:(NSView *)v { [_subviews addObject:v]; v->_superview = self; [v _setWindow:_window]; }
-- (void)removeFromSuperview { NSView *s = _superview; _superview = nil; [self _setWindow:nil]; [s->_subviews removeObject:self]; }
+- (void)removeFromSuperview { NSView *s = _superview; if (!s) return; _superview = nil; [self _setWindow:nil]; [s->_subviews removeObject:self]; }
 - (void)setNeedsDisplay:(BOOL)f { _needsDisplay = f; }
 - (BOOL)needsDisplay { return _needsDisplay; }
 - (void)display { _needsDisplay = NO; [self drawRect:_bounds]; for (NSView *s in _subviews) [s display]; }
@@ -587,4 +613,256 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)lockFocus { [_ctx makeCurrentContext]; }
 - (void)drawRect:(NSRect)r { [_ctx makeCurrentContext]; }
 - (void)dealloc { [_ctx release]; [_pf release]; [super dealloc]; }
+@end
+
+/* ---------------------------------------------------------------- alerts */
+/* There is no modal UI: an alert is written to stderr and answered with its first button (NSAlertFirstButtonReturn),
+ * which is what the default-button keyboard shortcut would do. Used by SDL_ShowMessageBox for fatal errors. */
+@interface NSButton : NSView { @public NSString *_title, *_keyEquivalent; NSInteger _tag; }
+@end
+@implementation NSButton
+- (NSString *)title { return _title; }
+- (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
+- (NSString *)keyEquivalent { return _keyEquivalent; }
+- (void)setKeyEquivalent:(NSString *)k { [k retain]; [_keyEquivalent release]; _keyEquivalent = k; }
+- (NSInteger)tag { return _tag; }
+- (void)setTag:(NSInteger)t { _tag = t; }
+- (void)dealloc { [_title release]; [_keyEquivalent release]; [super dealloc]; }
+@end
+
+@interface NSAlert : NSObject { NSString *_message, *_info; NSMutableArray *_buttons; NSUInteger _style; }
+@end
+@implementation NSAlert
+- (id)init { if ((self = [super init])) { _buttons = [[NSMutableArray alloc] init]; _message = @""; _info = @""; } return self; }
+- (void)setMessageText:(NSString *)s { [s retain]; [_message release]; _message = s ? s : @""; }
+- (NSString *)messageText { return _message; }
+- (void)setInformativeText:(NSString *)s { [s retain]; [_info release]; _info = s ? s : @""; }
+- (NSString *)informativeText { return _info; }
+- (void)setAlertStyle:(NSUInteger)s { _style = s; }
+- (NSUInteger)alertStyle { return _style; }
+- (NSArray *)buttons { return _buttons; }
+- (NSButton *)addButtonWithTitle:(NSString *)t {
+  NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 80, 24)]; [b setTitle:t]; [b setTag:1000 + [_buttons count]];
+  [_buttons addObject:b]; [b release]; return b; }
+- (id)window { return nil; }
+- (void)layout {}
+- (NSInteger)runModal {
+  fprintf(stderr, "[AppKit-lite NSAlert] %s%s%s\n", [_message UTF8String], [_info length] ? ": " : "", [_info UTF8String]);
+  return 1000; }   /* NSAlertFirstButtonReturn */
+- (void)beginSheetModalForWindow:(id)w completionHandler:(void (^)(NSInteger))h { NSInteger r = [self runModal]; if (h) h(r); }
+- (void)beginSheetModalForWindow:(id)w modalDelegate:(id)d didEndSelector:(SEL)s contextInfo:(void *)c {
+  NSInteger r = [self runModal];
+  if (d && s) ((void (*)(id, SEL, id, NSInteger, void *))objc_msgSend)(d, s, self, r, c); }
+- (void)dealloc { [_message release]; [_info release]; [_buttons release]; [super dealloc]; }
+@end
+
+/* ======================================================= SDL2 Cocoa backend */
+/* The rest of what SDL2's video backend (SDL_cocoa*.m) sends. Geometry is single-screen and scale 1.0 as above. */
+static char kNextResponderKey;
+@implementation NSResponder (XefSDL)
+- (NSResponder *)nextResponder { return objc_getAssociatedObject(self, &kNextResponderKey); }
+- (void)setNextResponder:(NSResponder *)r { objc_setAssociatedObject(self, &kNextResponderKey, r, OBJC_ASSOCIATION_ASSIGN); }
+@end
+
+@implementation NSView (XefSDL)
+- (NSRect)convertRect:(NSRect)r toView:(NSView *)v { return r; }      /* subviews fill their parent at the origin */
+- (NSRect)convertRect:(NSRect)r fromView:(NSView *)v { return r; }
+- (NSPoint)convertPoint:(NSPoint)p toView:(NSView *)v { return p; }
+- (NSSize)convertSizeToBacking:(NSSize)s { return s; }
+- (NSSize)convertSizeFromBacking:(NSSize)s { return s; }
+- (NSPoint)convertPointToBacking:(NSPoint)p { return p; }
+- (NSView *)hitTest:(NSPoint)p {
+  if (!NSPointInRect(p, _frame)) return nil;
+  NSPoint q = NSMakePoint(p.x - _frame.origin.x, p.y - _frame.origin.y);
+  for (NSView *s in [_subviews reverseObjectEnumerator]) { NSView *h = [s hitTest:q]; if (h) return h; }
+  return self; }
+- (void)setAutoresizingMask:(NSUInteger)m {} - (NSUInteger)autoresizingMask { return 0; }
+- (void)setAutoresizesSubviews:(BOOL)f {}
+- (void)addCursorRect:(NSRect)r cursor:(NSCursor *)c {} - (void)resetCursorRects {} - (void)discardCursorRects {}
+- (void)setAcceptsTouchEvents:(BOOL)f {} - (void)setAllowedTouchTypes:(NSUInteger)t {}
+- (NSView *)viewWithTag:(NSInteger)t { return nil; } - (NSInteger)tag { return -1; }
+- (void)unregisterDraggedTypes { [_dragTypes release]; _dragTypes = nil; }
+- (void)setHidden:(BOOL)f {} - (BOOL)isHidden { return NO; }
+- (void)setPostsFrameChangedNotifications:(BOOL)f {}
+- (void)setLayerContentsRedrawPolicy:(NSInteger)p {}
+- (NSRect)visibleRect { return _bounds; }
+- (BOOL)inLiveResize { return NO; }
+@end
+
+@implementation NSWindow (XefSDL)
+- (id)initWithContentRect:(NSRect)r styleMask:(NSWindowStyleMask)s backing:(NSBackingStoreType)b defer:(BOOL)d screen:(NSScreen *)sc {
+  return [self initWithContentRect:r styleMask:s backing:b defer:d]; }
+- (NSScreen *)screen { return [NSScreen mainScreen]; }
+- (NSScreen *)deepestScreen { return [NSScreen mainScreen]; }
+- (NSRect)contentLayoutRect { NSRect c = [self contentRectForFrameRect:_frame]; return NSMakeRect(0, 0, c.size.width, c.size.height); }
+- (id)standardWindowButton:(NSInteger)b { return nil; }   /* no title-bar widgets: the host window manager draws them */
+- (void)setMovableByWindowBackground:(BOOL)f {} - (BOOL)isMovableByWindowBackground { return NO; }
+- (void)invalidateCursorRectsForView:(NSView *)v {} - (void)disableCursorRects {} - (void)enableCursorRects {}
+- (BOOL)isOnActiveSpace { return YES; }
+- (void)performClose:(id)s { [self close]; }
+- (void)orderBack:(id)s { [self orderFront:s]; } - (void)orderFrontRegardless { [self orderFront:nil]; }
+- (void)orderWindow:(NSInteger)place relativeTo:(NSInteger)other { if (place) [self orderFront:nil]; else [self orderOut:nil]; }
+- (BOOL)isMainWindow { return _key; } - (void)makeMainWindow {}
+- (NSRect)convertRectFromScreen:(NSRect)r { r.origin.x -= _frame.origin.x; r.origin.y -= _frame.origin.y; return r; }
+- (NSPoint)convertPointFromScreen:(NSPoint)p { return NSMakePoint(p.x - _frame.origin.x, p.y - _frame.origin.y); }
+- (NSPoint)convertPointToScreen:(NSPoint)p { return NSMakePoint(p.x + _frame.origin.x, p.y + _frame.origin.y); }
+- (NSRect)convertRectToBacking:(NSRect)r { return r; }
+- (void)setFrame:(NSRect)f display:(BOOL)d animate:(BOOL)a { [self setFrame:f display:d]; }
+- (void)setFrameTopLeftPoint:(NSPoint)p { NSRect f = _frame; f.origin = NSMakePoint(p.x, p.y - f.size.height); [self _applyFrame:f sync:YES]; }
+- (void)setShowsResizeIndicator:(BOOL)f {} - (void)setPreservesContentDuringLiveResize:(BOOL)f {}
+- (void)setAllowsConcurrentViewDrawing:(BOOL)f {} - (void)setColorSpace:(id)c {} - (void)setAnimationBehavior:(NSInteger)b {}
+- (void)setTitleVisibility:(NSInteger)v {} - (void)setTitlebarAppearsTransparent:(BOOL)f {}
+- (void)setDisplaysWhenScreenProfileChanges:(BOOL)f {} - (void)setHidesOnDeactivate:(BOOL)f {}
+- (void)setAppearance:(id)a {} - (id)appearance { return nil; } - (id)effectiveAppearance { return nil; }
+- (void)setMinSize:(NSSize)s {} - (void)setMaxSize:(NSSize)s {}
+- (NSSize)contentMinSize { return _minSize; } - (NSSize)contentMaxSize { return _maxSize; }
+- (BOOL)inLiveResize { return NO; } - (BOOL)hasShadow { return _shadow; } - (BOOL)ignoresMouseEvents { return _ignoresMouse; }
+- (BOOL)isReleasedWhenClosed { return _released; }
+- (void)flushWindow {} - (void)update {} - (void)makeFirstResponderIfNeeded {}
+- (void)setDocumentEdited:(BOOL)f {} - (void)setRepresentedFilename:(NSString *)n {}
+- (NSInteger)orderedIndex { return 0; } - (void)setOrderedIndex:(NSInteger)i {}
+- (BOOL)canEnterFullScreenMode { return YES; }
++ (NSArray *)windowNumbersWithOptions:(NSUInteger)o {
+  NSMutableArray *a = [NSMutableArray array];
+  for (NSWindow *w in [(NSApplication *)NSApp windows]) if ([w isVisible]) [a insertObject:[NSNumber numberWithInteger:w->_handle] atIndex:0];
+  return a; }
+@end
+
+@implementation NSApplication (XefSDL)
+- (NSArray *)orderedWindows { return [[_windows reverseObjectEnumerator] allObjects]; }   /* front to back */
+- (NSWindow *)windowWithWindowNumber:(NSInteger)n { for (NSWindow *w in _windows) if (w->_handle == n) return w; return nil; }
+- (void)setApplicationIconImage:(NSImage *)i {} - (NSImage *)applicationIconImage { return nil; }   /* X11 icons are not set */
+- (NSInteger)runModalForWindow:(NSWindow *)w { return 1000; }   /* NSModalResponseOK-ish: nothing to wait for */
+- (void)stopModal {} - (void)stopModalWithCode:(NSInteger)c {} - (void)abortModal {}
+- (NSWindow *)modalWindow { return nil; }
+- (void)setPresentationOptions:(NSUInteger)o {} - (NSUInteger)presentationOptions { return 0; } - (NSUInteger)currentSystemPresentationOptions { return 0; }
+- (void)activate { _active = YES; }
+- (BOOL)isHidden { return NO; } - (void)unhide:(id)s {} - (void)unhideWithoutActivation {}
+- (void)cancelUserAttentionRequest:(NSInteger)r {}
+- (id)effectiveAppearance { return nil; } - (void)setAppearance:(id)a {}
+- (void)discardEventsMatchingMask:(NSUInteger)m beforeEvent:(NSEvent *)e {}
+- (id)servicesProvider { return nil; } - (void)setServicesProvider:(id)p {}
+- (void)registerUserInterfaceItemSearchHandler:(id)h {}
+- (BOOL)isFullKeyboardAccessEnabled { return NO; }
+- (void)setHelpMenu:(NSMenu *)m {}
+@end
+
+@implementation NSRunningApplication (XefSDL)
++ (NSArray *)runningApplicationsWithBundleIdentifier:(NSString *)b { return [NSArray array]; }   /* no Dock/Finder to activate first */
+- (BOOL)activateWithOptions:(NSUInteger)o { if (NSApp) [NSApp activateIgnoringOtherApps:YES]; return YES; }
+- (NSString *)bundleIdentifier { return [[NSBundle mainBundle] bundleIdentifier]; }
+- (BOOL)isHidden { return NO; } - (pid_t)processIdentifier { return getpid(); }
+@end
+
+@implementation NSEvent (XefSDL)
+- (NSUInteger)phase { return 0; } - (NSUInteger)momentumPhase { return 0; }   /* NSEventPhaseNone */
+- (short)subtype { return 0; }                                                 /* NSEventSubtypeMouseEvent */
+- (BOOL)isDirectionInvertedFromDevice { return NO; }
+- (NSSet *)touchesMatchingPhase:(NSUInteger)p inView:(NSView *)v { return [NSSet set]; }
+- (NSInteger)windowNumber { return _window ? [(NSWindow *)_window windowNumber] : 0; }
+- (float)pressure { return 1.0f; } - (CGFloat)deltaZ { return 0; }
+- (NSUInteger)deviceID { return 0; } - (void *)CGEvent { return NULL; }
+@end
+
+@implementation NSPasteboard (XefSDL)
+- (NSInteger)changeCount { return _change; }
+- (NSString *)availableTypeFromArray:(NSArray *)types { for (NSString *t in types) if ([_types containsObject:t]) return t; return nil; }
+- (NSData *)dataForType:(NSString *)t { id v = [_data objectForKey:t]; return [v isKindOfClass:[NSString class]] ? [v dataUsingEncoding:NSUTF8StringEncoding] : v; }
+- (id)propertyListForType:(NSString *)t { return [_data objectForKey:t]; }
+@end
+
+@implementation NSCursor (XefSDL)
++ (NSCursor *)currentCursor { return [self arrowCursor]; }
++ (NSCursor *)currentSystemCursor { return [self arrowCursor]; }
++ (NSCursor *)disappearingItemCursor { return [self arrowCursor]; } + (NSCursor *)dragCopyCursor { return [self arrowCursor]; }
++ (NSCursor *)openHandCursor { return [self arrowCursor]; } + (NSCursor *)resizeLeftCursor { return [self arrowCursor]; }
++ (NSCursor *)resizeRightCursor { return [self arrowCursor]; } + (NSCursor *)resizeUpCursor { return [self arrowCursor]; }
++ (NSCursor *)resizeDownCursor { return [self arrowCursor]; } + (NSCursor *)contextualMenuCursor { return [self arrowCursor]; }
++ (void)setHiddenUntilMouseMoves:(BOOL)f {}
+- (NSImage *)image { return _image; } - (NSPoint)hotSpot { return _hot; }
+@end
+
+@implementation NSMenu (XefSDL)
++ (void)setMenuBarVisible:(BOOL)f {} + (BOOL)menuBarVisible { return NO; }
+- (NSInteger)numberOfItems { return [_items count]; }
+- (NSMenuItem *)itemAtIndex:(NSInteger)i { return [_items objectAtIndex:i]; }
+- (void)removeAllItems { [_items removeAllObjects]; }
+- (void)setAutoenablesItems:(BOOL)f {}
+@end
+
+@implementation NSOpenGLPixelFormat (XefSDL)
+- (void *)CGLPixelFormatObj { return self; }
+@end
+
+@implementation NSImage (XefSDL)
+- (void)drawInRect:(NSRect)d fromRect:(NSRect)s operation:(NSUInteger)op fraction:(CGFloat)f {}   /* no 2D drawing on X11-lite */
+- (void)setSize:(NSSize)s { _size = s; } - (BOOL)isValid { return YES; }
+- (void)lockFocus {} - (void)unlockFocus {}
+@end
+
+/* minimal 2D drawing classes: SDL's software framebuffer path draws through them; nothing is drawn (OpenGL only) */
+@interface NSGraphicsContext : NSObject
+@end
+@implementation NSGraphicsContext
+static NSGraphicsContext *g_gc;
++ (NSGraphicsContext *)currentContext { return g_gc; }
++ (void)setCurrentContext:(NSGraphicsContext *)c { [c retain]; [g_gc release]; g_gc = c; }
++ (NSGraphicsContext *)graphicsContextWithWindow:(NSWindow *)w { return [[[NSGraphicsContext alloc] init] autorelease]; }
++ (NSGraphicsContext *)graphicsContextWithCGContext:(void *)c flipped:(BOOL)f { return [[[NSGraphicsContext alloc] init] autorelease]; }
++ (void)saveGraphicsState {} + (void)restoreGraphicsState {}
+- (void)saveGraphicsState {} - (void)restoreGraphicsState {} - (void)flushGraphics {}
+- (void *)CGContext { return NULL; } - (void *)graphicsPort { return NULL; }
+- (void)setCompositingOperation:(NSUInteger)o {} - (void)setShouldAntialias:(BOOL)f {}
+@end
+
+@interface NSBezierPath : NSObject
+@end
+@implementation NSBezierPath
++ (NSBezierPath *)bezierPath { return [[[NSBezierPath alloc] init] autorelease]; }
++ (NSBezierPath *)bezierPathWithRect:(NSRect)r { return [self bezierPath]; }
++ (void)fillRect:(NSRect)r {} + (void)strokeRect:(NSRect)r {} + (void)clipRect:(NSRect)r {}
+- (void)appendBezierPathWithRect:(NSRect)r {} - (void)addClip {} - (void)setClip {} - (void)fill {} - (void)stroke {}
+- (void)moveToPoint:(NSPoint)p {} - (void)lineToPoint:(NSPoint)p {} - (void)closePath {}
+@end
+
+@interface NSColorSpace : NSObject
+@end
+@implementation NSColorSpace
++ (NSColorSpace *)sRGBColorSpace { static NSColorSpace *s; if (!s) s = [[NSColorSpace alloc] init]; return s; }
++ (NSColorSpace *)deviceRGBColorSpace { return [self sRGBColorSpace]; } + (NSColorSpace *)genericRGBColorSpace { return [self sRGBColorSpace]; }
+- (NSData *)ICCProfileData { return nil; } - (void *)CGColorSpace { return NULL; } - (NSInteger)numberOfColorComponents { return 3; }
+@end
+
+void NSRectFill(NSRect r) {}
+void NSBeep(void) {}
+
+/* Anything else AppKit has and AppKit-lite does not: windows, views and the application answer unknown selectors with a
+ * logged no-op returning 0/nil (setters of cosmetic state such as setOneShot: dominate). Selectors that SDL/GLFW probe
+ * with respondsToSelector: are unaffected: resolveInstanceMethod: is only reached when a message is actually sent. */
+static id lite_stub(id self, SEL _cmd, ...) {
+  static NSMutableSet *seen; @synchronized ([NSResponder class]) {
+    if (!seen) seen = [[NSMutableSet alloc] init];
+    NSString *k = [NSString stringWithFormat:@"%s %s", class_getName(object_getClass(self)), sel_getName(_cmd)];
+    if (![seen containsObject:k]) { [seen addObject:k]; fprintf(stderr, "STUB -[%s %s]\n", class_getName(object_getClass(self)), sel_getName(_cmd)); } }
+  return nil; }
+@implementation NSResponder (XefStubs)
++ (BOOL)resolveInstanceMethod:(SEL)sel {
+  const char *n = sel_getName(sel);
+  if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
+  /* only real AppKit classes and their subclasses */
+  BOOL appkit = NO;
+  for (Class c = self; c; c = class_getSuperclass(c))
+    if (c == [NSView class] || c == [NSWindow class] || c == [NSApplication class]) { appkit = YES; break; }
+  if (!appkit) return NO;
+  class_addMethod(self, sel, (IMP)lite_stub, "@@:");
+  return YES; }
+@end
+
+@implementation NSBitmapImageRep (XefSDL)
+- (id)initWithBitmapDataPlanes:(unsigned char **)planes pixelsWide:(NSInteger)w pixelsHigh:(NSInteger)h bitsPerSample:(NSInteger)bps
+    samplesPerPixel:(NSInteger)spp hasAlpha:(BOOL)a isPlanar:(BOOL)p colorSpaceName:(NSString *)cs bytesPerRow:(NSInteger)bpr bitsPerPixel:(NSInteger)bpp {
+  return [self initWithBitmapDataPlanes:planes pixelsWide:w pixelsHigh:h bitsPerSample:bps samplesPerPixel:spp hasAlpha:a isPlanar:p
+                         colorSpaceName:cs bitmapFormat:0 bytesPerRow:bpr bitsPerPixel:bpp]; }
+- (NSInteger)samplesPerPixel { return _spp; } - (NSInteger)bitsPerSample { return _bps; } - (BOOL)hasAlpha { return _alpha; }
+- (NSSize)size { return NSMakeSize(_w, _h); } - (void)setSize:(NSSize)s {}
 @end

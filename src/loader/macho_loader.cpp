@@ -20,6 +20,7 @@
 #include <mutex>
 #include <memory>
 #include <unordered_map>
+#include <climits>
 
 namespace xef {
 
@@ -560,17 +561,29 @@ static MachImage* find_loaded(const std::string& key) {
     return it == g_by_name.end() ? nullptr : it->second;
 }
 
+// host realpath -> image: like dyld (which compares inodes), a dylib reached through a symlink
+// (libosgDB.162.dylib -> libosgDB.3.6.5.dylib) is the same image, not a second copy with its own globals
+static std::unordered_map<std::string, MachImage*> g_by_host_real;
+
 static MachImage* load_dependency(MachImage* from, const std::string& name, bool weak) {
     if (MachImage* im = find_loaded(name)) return im;
     for (const std::string& cand : expand_candidates(name, from)) {
         if (MachImage* im = find_loaded(cand)) return im;
         std::string host = resolve_guest_path(cand.c_str());
         if (access(host.c_str(), R_OK) != 0) continue;
+        char rp[PATH_MAX];
+        std::string real = realpath(host.c_str(), rp) ? std::string(rp) : host;
+        auto same = g_by_host_real.find(real);
+        if (same != g_by_host_real.end()) {
+            g_by_name[name] = same->second;
+            return same->second;
+        }
         bool fat, arm;
         if (!is_macho_binary(host.c_str(), fat, arm) || !arm) continue;
         MachImage* im = map_image(cand, host, false);
         if (im) {
             g_by_name[name] = im;
+            g_by_host_real[real] = im;
             return im;
         }
     }

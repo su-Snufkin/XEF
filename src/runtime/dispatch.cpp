@@ -377,6 +377,17 @@ static void run_guest(ThreadCtx* t, bool nested) {
                       (unsigned long)st->pc, (unsigned long)st->x[30], (unsigned long)st->x[kGuestSP], (u32)st->exit_info);
             {
                 std::string d = g_is_darwin ? dyld_describe(st->pc) : std::string();
+                if (g_is_darwin) {   // frame-pointer walk (Darwin code always keeps frame records)
+                    fprintf(stderr, "xef:    lr: %s\n", dyld_describe(st->x[30]).c_str());
+                    u64 fp = st->x[29];
+                    for (int i = 0; i < 16 && fp && !(fp & 7); i++) {
+                        u64 lr = ((u64*)fp)[1];
+                        fprintf(stderr, "xef:    #%d %s (fp=%#lx, lr=%#lx)\n", i, dyld_describe(lr).c_str(), (unsigned long)fp, (unsigned long)lr);
+                        u64 nfp = ((u64*)fp)[0];
+                        if (nfp <= fp || nfp >= fp + 0x10000000) break;
+                        fp = nfp;
+                    }
+                }
                 fatal("guest trap (brk/hlt #%#lx) at %#lx %s", (unsigned long)(st->exit_info & 0xffff), (unsigned long)st->pc, d.c_str());
             }
         }

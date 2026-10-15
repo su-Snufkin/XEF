@@ -90,3 +90,41 @@ CGEventSourceRef CGEventSourceCreate(CGEventSourceStateID state) {
   if (s) s->state = state;
   return (CGEventSourceRef)s; }
 void CGEventSourceSetLocalEventsSuppressionInterval(CGEventSourceRef s, CFTimeInterval i) { if (s) ((XEventSource *)s)->suppression = i; }
+
+/* ---- more display queries (SDL2's Cocoa video backend) ------------------------------------------------------------ */
+boolean_t CGDisplayIsMain(CGDirectDisplayID d) { return d == DISPLAY_ID; }
+CGError CGGetActiveDisplayList(uint32_t max, CGDirectDisplayID *ids, uint32_t *count) { return CGGetOnlineDisplayList(max, ids, count); }
+size_t CGDisplayPixelsWide(CGDirectDisplayID d) { int w, h; screen(&w, &h, 0, 0); return w; }
+size_t CGDisplayPixelsHigh(CGDirectDisplayID d) { int w, h; screen(&w, &h, 0, 0); return h; }
+CGDirectDisplayID CGDisplayMirrorsDisplay(CGDirectDisplayID d) { return 0; }   /* kCGNullDirectDisplay */
+uint32_t CGDisplayIDToOpenGLDisplayMask(CGDirectDisplayID d) { return d == DISPLAY_ID ? 1u : 0u; }
+uint32_t CGDisplayIOServicePort(CGDirectDisplayID d) { return 0; }   /* MACH_PORT_NULL: no IORegistry entry */
+size_t CGDisplayModeGetPixelWidth(CGDisplayModeRef m) { return ((XMode *)m)->w; }
+size_t CGDisplayModeGetPixelHeight(CGDisplayModeRef m) { return ((XMode *)m)->h; }
+bool CGDisplayModeIsUsableForDesktopGUI(CGDisplayModeRef m) { return true; }
+CFStringRef CGDisplayModeCopyPixelEncoding(CGDisplayModeRef m) { return CFStringCreateCopy(kCFAllocatorDefault, CFSTR("--------RRRRRRRRGGGGGGGGBBBBBBBB")); }
+const CFStringRef kCGDisplayShowDuplicateLowResolutionModes = CFSTR("kCGDisplayShowDuplicateLowResolutionModes");
+
+/* HLE: exclusive display capture does not exist on X11; fullscreen goes through the window frame instead */
+CGError CGDisplayCapture(CGDirectDisplayID d) { return kCGErrorSuccess; }
+CGError CGDisplayRelease(CGDirectDisplayID d) { return kCGErrorSuccess; }
+CGError CGCaptureAllDisplays(void) { return kCGErrorSuccess; }
+CGError CGReleaseAllDisplays(void) { return kCGErrorSuccess; }
+int32_t CGShieldingWindowLevel(void) { return 2147483630; }
+/* HLE: cursor visibility follows NSCursor hide/unhide in AppKit-lite */
+CGError CGDisplayHideCursor(CGDirectDisplayID d) { return kCGErrorSuccess; }
+CGError CGDisplayShowCursor(CGDirectDisplayID d) { return kCGErrorSuccess; }
+/* synthetic events: only used by SDL to nudge the pointer after a warp; posting is a no-op */
+CGEventRef CGEventCreateMouseEvent(CGEventSourceRef s, CGEventType t, CGPoint p, CGMouseButton b) {
+  return (CGEventRef)CFStringCreateCopy(kCFAllocatorDefault, CFSTR("CGEvent")); }
+void CGEventPost(CGEventTapLocation tap, CGEventRef e) {}
+bool CGRectIntersectsRect(CGRect a, CGRect b) {
+  if (a.size.width < 0) { a.origin.x += a.size.width; a.size.width = -a.size.width; }
+  if (a.size.height < 0) { a.origin.y += a.size.height; a.size.height = -a.size.height; }
+  if (b.size.width < 0) { b.origin.x += b.size.width; b.size.width = -b.size.width; }
+  if (b.size.height < 0) { b.origin.y += b.size.height; b.size.height = -b.size.height; }
+  if (a.size.width == 0 || a.size.height == 0 || b.size.width == 0 || b.size.height == 0) return false;
+  return a.origin.x < b.origin.x + b.size.width && b.origin.x < a.origin.x + a.size.width &&
+         a.origin.y < b.origin.y + b.size.height && b.origin.y < a.origin.y + a.size.height; }
+const CFStringRef kCGColorBlack = CFSTR("kCGColorBlack");
+CGColorRef CGColorGetConstantColor(CFStringRef name) { return (CGColorRef)name; }   /* opaque token: only passed back to AppKit-lite */

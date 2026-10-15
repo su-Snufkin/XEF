@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds AppKit-lite (AppKit/Cocoa/OpenGL.framework, arm64 Mach-O) from rootfs-src/appkit on the remote Mac,
-# plus CoreGraphics/IOKit/CoreServices-lite and HIToolbox (TIS) for GLFW (see the .c files there),
+# plus CoreGraphics/IOKit/CoreServices/CoreVideo/AudioToolbox-lite and HIToolbox (TIS) for GLFW (see the .c files there),
 # and installs it into ./darwin-rootfs. Links against the rootfs Foundation/CoreFoundation/libobjc (not the Mac's
 # frameworks); the SDK is used for Foundation headers only. Needs build_foundation.sh output on the Mac first.
 # AppKit install name is Versions/C (what cand3_cocoa/GLFW link against); Versions/A is a symlink to it.
@@ -30,10 +30,12 @@ sysfw() { # name versiondir install-name compat current extra-link
 sysfw CoreGraphics x /System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics 64 1957.0.0
 sysfw IOKit x /System/Library/Frameworks/IOKit.framework/Versions/A/IOKit 1 275.0.0
 sysfw CoreServices x /System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices 1 1226.0.0
+sysfw CoreVideo x /System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo 1.2 1.5
+sysfw AudioToolbox x /System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox 1 1000
 sysfw HIToolbox x /System/Library/Frameworks/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/HIToolbox 1 1
 mkdir -p $H/Versions/A/Resources; cp $S/HIToolbox-Info.plist $H/Versions/A/Resources/Info.plist
 ln -sfn A $H/Versions/Current; ln -sfn Versions/Current/HIToolbox $H/HIToolbox; ln -sfn Versions/Current/Resources $H/Resources
-for n in CoreGraphics IOKit CoreServices; do ln -sfn A $F/$n.framework/Versions/Current; ln -sfn Versions/Current/$n $F/$n.framework/$n; done
+for n in CoreGraphics IOKit CoreServices CoreVideo AudioToolbox; do ln -sfn A $F/$n.framework/Versions/Current; ln -sfn Versions/Current/$n $F/$n.framework/$n; done
 ln -sfn A $F/Carbon.framework/Versions/Current
 # AppKit
 mk AppKit C
@@ -50,6 +52,9 @@ clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/OpenGL.framew
 # bundle com.apple.opengl: GLFW's NSGL layer resolves gl* through CFBundleGetFunctionPointerForName on it
 mkdir -p $F/OpenGL.framework/Versions/A/Resources; cp $S/OpenGL-Info.plist $F/OpenGL.framework/Versions/A/Resources/Info.plist
 ln -sfn Versions/Current/Resources $F/OpenGL.framework/Resources
+# Libraries/libGL.dylib: SDL2 dlopens it and looks gl* up there; the same empty image (gl* resolve through the loader)
+mkdir -p $F/OpenGL.framework/Versions/A/Libraries; ln -sfn ../OpenGL $F/OpenGL.framework/Versions/A/Libraries/libGL.dylib
+ln -sfn Versions/Current/Libraries $F/OpenGL.framework/Libraries
 # Cocoa umbrella: re-exports AppKit + Foundation
 mk Cocoa A
 clang $COMMON -O2 -w -c $S/Cocoa.c -o $O/Cocoa.o
@@ -65,5 +70,5 @@ ln -sfn A $F/OpenGL.framework/Versions/Current; ln -sfn Versions/Current/OpenGL 
 ln -sfn A $F/Cocoa.framework/Versions/Current; ln -sfn Versions/Current/Cocoa $F/Cocoa.framework/Cocoa
 ls -la $F/AppKit.framework/Versions/C/AppKit $F/OpenGL.framework/Versions/A/OpenGL $F/Cocoa.framework/Versions/A/Cocoa
 REMOTE
-for f in AppKit Cocoa OpenGL CoreGraphics IOKit CoreServices Carbon; do rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/$f.framework darwin-rootfs/System/Library/Frameworks/; done
+for f in AppKit Cocoa OpenGL CoreGraphics IOKit CoreServices Carbon CoreVideo AudioToolbox; do rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/$f.framework darwin-rootfs/System/Library/Frameworks/; done
 echo "installed into darwin-rootfs/System/Library/Frameworks"
