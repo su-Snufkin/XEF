@@ -333,3 +333,15 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   test `tests/darwin/mac/sincos_stret.c`). Zdarzenia GLFW (klawisze/mysz/scroll/resize/focus) sprawdzone na Xvfb przez XTest.
 - Ograniczenia lite: schowek tylko w procesie, brak drag&drop, kursory (kształt/obraz) nie trafiają do X11, `miniaturize` tylko unmap, brak odświeżania z hosta (60 Hz zakładane).
 - Logowanie: poziom 1 = flaga `-v` (nie zmienna środowiskowa).
+
+### 6. Node.js 24.1 pod xef-osx (2026-10-16)
+- `console.log("hi", 1+1)` → `hi 2`, rc 0, ~0,4 s; `tests/darwin/node_test.sh` (wyjście identyczne z Makiem, `node_expected.txt`).
+- Przyczyny (trzy nałożone): (1) **NZCV przez RET**: Apple LLVM outline'uje funkcje zwracające wynik we flagach (V8 `_OUTLINED_FUNCTION_0`:
+  `...; cmp; ret`, wołający robi `b.ne`); założenie „flagi martwe przy RET” gubiło `cmp` w callee. Naprawa: `scan_flag_returning_calls()` /
+  `ret_keeps_flags()` (translate.cpp), skan `__TEXT,__text` w `link_image`, takie BL/RET nie są inlinowane w tier 2. Objaw: null oddball
+  traktowany jako ConsString → SIGSEGV w `Runtime_StringCharCodeAt`. `XEF_STRICT_FLAGS=1` to maskuje. (2) **FJCVTZS** (V8 przy każdej konwersji
+  double→int32) jako helper z NZCV=0b0Z00. (3) **kqueue** było stubem: teraz warstwa na epoll (ident, data/FIONREAD, EV_EOF, EVFILT_USER przez eventfd).
+- Testy: `tests/darwin/mac/fjcvtzs.c`, `flagret.c` (macref 18/18). Pomoc diagnostyczna: `XEF_DBG_SEGV*`, `XEF_DBG_SEGV_FRAMES` (łańcuch ramek V8),
+  `XEF_DBG_PC=lo-hi` + `--trace --max-block 1`.
+- Do zrobienia: `child_process.execSync` abortuje w libuv (spawn); kqueue bez VNODE/PROC/SIGNAL/TIMER (fs.watch, uv_signal); skan flag widzi tylko
+  bezpośrednie BL (nie `b`/`blr`); zmiana translatora nie przeszła `fuzz.py` ani `tests/guest` (brak qemu/ld.lld lokalnie) — uruchomić na maszynie z narzędziami.
