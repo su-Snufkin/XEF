@@ -670,11 +670,20 @@ static int darwin_fstat_fn(int fd, darwin_stat64* dst) {
     return 0;
 }
 
+static inline int darwin_dfd_to_linux(int dfd) { return (dfd == -2) ? AT_FDCWD : dfd; }
+
 static int darwin_fstatat_fn(int dfd, const char* path, darwin_stat64* dst, int flag) {
     if (!path || !dst) { errno = EFAULT; return -1; }
+    dfd = darwin_dfd_to_linux(dfd);
+    std::string hp;
+    if (path[0] == '/') {
+        hp = resolve_guest_path(path);
+        path = hp.c_str();
+    }
     struct stat host_st;
     int lflags = 0;
-    if (flag & 0x002) lflags |= AT_SYMLINK_NOFOLLOW;
+    if (flag & 0x0020) lflags |= AT_SYMLINK_NOFOLLOW;
+    if (flag & 0x0002) lflags |= AT_SYMLINK_NOFOLLOW;
     int r = fstatat(dfd, path, &host_st, lflags);
     if (r < 0) return -1;
     convert_stat_to_darwin(host_st, dst);
@@ -709,6 +718,12 @@ static int darwin_open(const char* path, int dflags, mode_t mode) {
 
 static int darwin_openat(int dfd, const char* path, int dflags, mode_t mode) {
     if (!path) { errno = EFAULT; return -1; }
+    dfd = darwin_dfd_to_linux(dfd);
+    std::string hp;
+    if (path[0] == '/') {
+        hp = resolve_guest_path(path);
+        path = hp.c_str();
+    }
     int lflags = darwin_open_flags_to_linux(dflags);
     return openat(dfd, path, lflags, mode);
 }
@@ -1468,7 +1483,18 @@ static float darwin_strtof_l(const char* s, char** e, void*) { return strtof(s, 
 static double darwin_strtold_l(const char* s, char** e, void*) { return strtod(s, e); }   // long double == double
 static int darwin_strcoll_l(const char* a, const char* b, void*) { return strcoll(a, b); }
 static size_t darwin_strxfrm_l(char* d, const char* s, size_t n, void*) { return strxfrm(d, s, n); }
-static size_t darwin_strftime_l(char* s, size_t n, const char* f, const struct tm* t, void*) { return strftime(s, n, f, t); }
+static size_t darwin_strftime(char* s, size_t n, const char* f, const struct tm* t) {
+    std::string fmt = f ? f : "";
+    size_t pos = 0;
+    while ((pos = fmt.find("%+", pos)) != std::string::npos) {
+        fmt.replace(pos, 2, "%a %b %e %H:%M:%S %Z %Y");
+        pos += 24;
+    }
+    return strftime(s, n, fmt.c_str(), t);
+}
+static size_t darwin_strftime_l(char* s, size_t n, const char* f, const struct tm* t, void*) {
+    return darwin_strftime(s, n, f, t);
+}
 static int darwin_wcscoll_l(const wchar_t* a, const wchar_t* b, void*) { return wcscoll(a, b); }
 static size_t darwin_wcsxfrm_l(wchar_t* d, const wchar_t* s, size_t n, void*) { return wcsxfrm(d, s, n); }
 static long long darwin_wcstoll_l(const wchar_t* s, wchar_t** e, int b, void*) { return wcstoll(s, e, b); }
@@ -1540,6 +1566,7 @@ static const ShimEntry kShims[] = {
     {"_strtold_l", (void*)&darwin_strtold_l, -1},
     {"_strcoll_l", (void*)&darwin_strcoll_l, -1},
     {"_strxfrm_l", (void*)&darwin_strxfrm_l, -1},
+    {"_strftime", (void*)&darwin_strftime, -1},
     {"_strftime_l", (void*)&darwin_strftime_l, -1},
     {"_wcscoll_l", (void*)&darwin_wcscoll_l, -1},
     {"_wcsxfrm_l", (void*)&darwin_wcsxfrm_l, -1},

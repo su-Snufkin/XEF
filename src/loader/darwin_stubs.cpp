@@ -13,6 +13,10 @@
 #include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
+#include <pwd.h>
+#include <grp.h>
+#include <sys/stat.h>
+#include <langinfo.h>
 #include <vector>
 #include <string>
 #include <pthread.h>
@@ -284,8 +288,155 @@ static int st_malloc_type_posix_memalign(void** p, size_t a, size_t sz, uint64_t
 
 static int st_compat_mode(const char*, const char*) { return 0; }
 
+static char* st_getbsize(int* headerlenp, long* blocksizep) {
+    static char header[64] = "512-blocks";
+    long bsize = 512;
+    const char* p = getenv("BLOCKSIZE");
+    if (p && *p) {
+        char* end;
+        long val = strtol(p, &end, 10);
+        if (val > 0) {
+            if (*end == 'k' || *end == 'K') val *= 1024;
+            else if (*end == 'm' || *end == 'M') val *= 1024 * 1024;
+            else if (*end == 'g' || *end == 'G') val *= 1024 * 1024 * 1024;
+            bsize = val;
+            snprintf(header, sizeof(header), "%ld-blocks", bsize);
+        }
+    }
+    if (blocksizep) *blocksizep = bsize;
+    if (headerlenp) *headerlenp = (int)strlen(header);
+    return header;
+}
+
+static void st_strmode(mode_t mode, char* p) {
+    switch (mode & S_IFMT) {
+        case S_IFDIR:  *p++ = 'd'; break;
+        case S_IFCHR:  *p++ = 'c'; break;
+        case S_IFBLK:  *p++ = 'b'; break;
+        case S_IFREG:  *p++ = '-'; break;
+        case S_IFLNK:  *p++ = 'l'; break;
+        case S_IFSOCK: *p++ = 's'; break;
+        case S_IFIFO:  *p++ = 'p'; break;
+        default:       *p++ = '?'; break;
+    }
+    *p++ = (mode & S_IRUSR) ? 'r' : '-';
+    *p++ = (mode & S_IWUSR) ? 'w' : '-';
+    if (mode & S_ISUID) *p++ = (mode & S_IXUSR) ? 's' : 'S';
+    else *p++ = (mode & S_IXUSR) ? 'x' : '-';
+    *p++ = (mode & S_IRGRP) ? 'r' : '-';
+    *p++ = (mode & S_IWGRP) ? 'w' : '-';
+    if (mode & S_ISGID) *p++ = (mode & S_IXGRP) ? 's' : 'S';
+    else *p++ = (mode & S_IXGRP) ? 'x' : '-';
+    *p++ = (mode & S_IROTH) ? 'r' : '-';
+    *p++ = (mode & S_IWOTH) ? 'w' : '-';
+    if (mode & S_ISVTX) *p++ = (mode & S_IXOTH) ? 't' : 'T';
+    else *p++ = (mode & S_IXOTH) ? 'x' : '-';
+    *p++ = ' ';
+    *p = '\0';
+}
+
+static const char* st_user_from_uid(uid_t uid, int nouser) {
+    static char buf[32];
+    struct passwd* pw = getpwuid(uid);
+    if (pw) return pw->pw_name;
+    if (nouser) return nullptr;
+    snprintf(buf, sizeof(buf), "%u", (unsigned)uid);
+    return buf;
+}
+
+static const char* st_group_from_gid(gid_t gid, int nogroup) {
+    static char buf[32];
+    struct group* gr = getgrgid(gid);
+    if (gr) return gr->gr_name;
+    if (nogroup) return nullptr;
+    snprintf(buf, sizeof(buf), "%u", (unsigned)gid);
+    return buf;
+}
+
+static const char* st_nl_langinfo(int item) {
+    static char empty[] = "";
+    static char d_md[] = "md";
+    switch (item) {
+        case 0: return nl_langinfo(CODESET);
+        case 1: return nl_langinfo(D_T_FMT);
+        case 2: return nl_langinfo(D_FMT);
+        case 3: return nl_langinfo(T_FMT);
+        case 4: return nl_langinfo(T_FMT_AMPM);
+        case 5: return nl_langinfo(AM_STR);
+        case 6: return nl_langinfo(PM_STR);
+        case 7: case 8: case 9: case 10: case 11: case 12: case 13:
+            return nl_langinfo(DAY_1 + (item - 7));
+        case 14: case 15: case 16: case 17: case 18: case 19: case 20:
+            return nl_langinfo(ABDAY_1 + (item - 14));
+        case 21: case 22: case 23: case 24: case 25: case 26:
+        case 27: case 28: case 29: case 30: case 31: case 32:
+            return nl_langinfo(MON_1 + (item - 21));
+        case 33: case 34: case 35: case 36: case 37: case 38:
+        case 39: case 40: case 41: case 42: case 43: case 44:
+            return nl_langinfo(ABMON_1 + (item - 33));
+        case 45: return nl_langinfo(ERA);
+        case 46: return nl_langinfo(ERA_D_FMT);
+        case 47: return nl_langinfo(ERA_D_T_FMT);
+        case 48: return nl_langinfo(ERA_T_FMT);
+        case 49: return nl_langinfo(ALT_DIGITS);
+        case 50: return nl_langinfo(RADIXCHAR);
+        case 51: return nl_langinfo(THOUSEP);
+        case 52: return nl_langinfo(YESEXPR);
+        case 53: return nl_langinfo(NOEXPR);
+        case 57: return d_md; // D_MD_ORDER -> "md"
+        default: return empty;
+    }
+}
+static const char* st_nl_langinfo_l(int item, void*) { return st_nl_langinfo(item); }
+
+static int st_humanize_number(char* buf, size_t len, int64_t bytes, const char* suffix, int scale, int flags) {
+    const char* units[] = {"", "B", "K", "M", "G", "T", "P"};
+    double b = (double)bytes;
+    int u = 0;
+    while (b >= 1024.0 && u < 6) { b /= 1024.0; u++; }
+    if (!suffix) suffix = "";
+    if (u == 0) return snprintf(buf, len, "%lld%s", (long long)bytes, suffix);
+    return snprintf(buf, len, "%.1f%s%s", b, units[u], suffix);
+}
+
+static void* st_acl_get_link_np(const char*, int) { errno = ENOENT; return nullptr; }
+static void* st_acl_get_file(const char*, int) { errno = ENOENT; return nullptr; }
+static void* st_acl_get_fd(int) { errno = ENOENT; return nullptr; }
+static int st_acl_free(void*) { return 0; }
+static int st_acl_get_entry(void*, int, void**) { return -1; }
+static int st_acl_get_flag_np(void*, unsigned int*) { return -1; }
+static int st_acl_get_flagset_np(void*, void**) { return -1; }
+static int st_acl_get_perm_np(void*, unsigned int) { return 0; }
+static int st_acl_get_permset(void*, void**) { return -1; }
+static void* st_acl_get_qualifier(void*) { return nullptr; }
+static int st_acl_get_tag_type(void*, int*) { return -1; }
+
+static char* st_fflagstostr(unsigned long) { static char empty[] = ""; return empty; }
+static int st_mbr_identifier_translate(int, void*, size_t, int, void*, size_t) { return 0; }
+
 static const StubEntry kStubs2[] = {
     {"_compat_mode", (void*)&st_compat_mode},
+    {"_getbsize", (void*)&st_getbsize},
+    {"_strmode", (void*)&st_strmode},
+    {"_user_from_uid", (void*)&st_user_from_uid},
+    {"_group_from_gid", (void*)&st_group_from_gid},
+    {"_nl_langinfo", (void*)&st_nl_langinfo},
+    {"_nl_langinfo_l", (void*)&st_nl_langinfo_l},
+    {"_humanize_number", (void*)&st_humanize_number},
+    {"_acl_get_link_np", (void*)&st_acl_get_link_np},
+    {"_acl_get_file", (void*)&st_acl_get_file},
+    {"_acl_get_fd", (void*)&st_acl_get_fd},
+    {"_acl_free", (void*)&st_acl_free},
+    {"_acl_get_entry", (void*)&st_acl_get_entry},
+    {"_acl_get_flag_np", (void*)&st_acl_get_flag_np},
+    {"_acl_get_flagset_np", (void*)&st_acl_get_flagset_np},
+    {"_acl_get_perm_np", (void*)&st_acl_get_perm_np},
+    {"_acl_get_permset", (void*)&st_acl_get_permset},
+    {"_acl_get_qualifier", (void*)&st_acl_get_qualifier},
+    {"_acl_get_tag_type", (void*)&st_acl_get_tag_type},
+    {"_fflagstostr", (void*)&st_fflagstostr},
+    {"_mbr_identifier_translate", (void*)&st_mbr_identifier_translate},
+    {"_uuid_unparse_upper", (void*)&st_uuid_unparse_upper},
     {"____mb_cur_max", (void*)&st_mb_cur_max}, {"_querylocale", (void*)&st_querylocale}, {"_duplocale", (void*)&st_duplocale},
     {"_clock_gettime", (void*)&st_clock_gettime}, {"_clock_getres", (void*)&st_clock_getres},
     {"_clock_gettime_nsec_np", (void*)&st_clock_gettime_nsec_np},

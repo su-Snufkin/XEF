@@ -832,7 +832,8 @@ static void link_all() {
 // Dylibs that libSystem would provide but that live as separate files in our rootfs.
 static void load_implicit_images() {
     static const char* const kImplicit[] = {"/usr/lib/libunwind.1.dylib", "/usr/lib/system/libsystem_blocks.dylib",
-                                            "/usr/lib/libobjc.A.dylib", "/usr/lib/system/libdispatch.dylib"};
+                                            "/usr/lib/libobjc.A.dylib", "/usr/lib/system/libdispatch.dylib",
+                                            "/usr/lib/system/libsystem_fts.dylib"};
     for (const char* n : kImplicit) {
         if (find_loaded(n)) continue;
         std::string host = resolve_guest_path(n);
