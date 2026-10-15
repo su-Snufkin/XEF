@@ -13,4 +13,10 @@ uint64_t darwin_gl_resolve(const char* name);
 // bits of rax undefined, so clamp the result to the function's declared return width.
 uint64_t darwin_gl_fix_ret(const char* name, uint64_t ret);
 
+// For `_gl*` thunks whose Darwin call has stack-passed arguments (>8 integer or >8 FP args): Apple packs the
+// stack at natural size/alignment, so re-pack them from the guest stack into 8-byte SysV slots. Returns false
+// (nothing written) when `host_fn` needs no repacking. hstack must hold 32 words.
+bool darwin_gl_repack(void* host_fn, const uint64_t* x, const uint64_t* v_lo, const uint64_t* guest_sp,
+                      uint64_t* iregs, uint64_t* fregs, uint64_t* hstack, uint64_t* nstack);
+
 } // namespace xef

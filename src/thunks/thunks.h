@@ -19,6 +19,8 @@ void thunk_dispatch(CpuState* st);
 // Calls guest function `fn` on the current guest thread with integer/pointer arguments (AAPCS64)
 // and returns x0. Returns 0 (and does nothing) on threads that are not guest threads.
 u64 guest_call(u64 fn, int nargs, const u64* args);
+// Signature string of a GL entry point from gl_table.inc (e.g. "v:ffff"), nullptr if unknown.
+const char* thunk_gl_sig(const char* name);
 // Host path of the thunk shim replacing the guest library `path` (nullptr: no redirection).
 const char* thunk_lib_redirect(const char* path);
 

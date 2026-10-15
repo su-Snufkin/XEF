@@ -3,6 +3,8 @@
 #include "loader/darwin_gl.h"
 #include "loader/darwin_hle.h"
 #include "common/common.h"
+#include "thunks/thunks.h"
+#include <unordered_map>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <dlfcn.h>
@@ -54,7 +56,7 @@ Win g_win;
 
 const int kGlxRgba = 4, kGlxDouble = 5, kGlxDepth = 12;
 
-int xef_win_create(int w, int h, const char* title) {
+int win_create(int w, int h, const char* title, int major, int minor) {   // major==0: legacy context
     std::lock_guard<std::mutex> lk(g_gl_lock);
     if (!load_libs() || g_win.dpy) return -1;
     auto XOpenDisplay_ = xs<Display* (*)(const char*)>("XOpenDisplay");
@@ -79,7 +81,20 @@ int xef_win_create(int w, int h, const char* title) {
     if (!dpy) { XEF_LOG(1, "xef_win_create: cannot open display %s", getenv("DISPLAY") ? getenv("DISPLAY") : "(null)"); return -1; }
     int scr = XDefaultScreen_(dpy);
     int attr[] = { kGlxRgba, kGlxDouble, kGlxDepth, 24, 0 };
-    XVisualInfo* vi = chooseVisual(dpy, scr, attr);
+    void* fbc = nullptr;
+    XVisualInfo* vi = nullptr;
+    if (major) {
+        auto chooseFB = gs<void** (*)(Display*, int, const int*, int*)>("glXChooseFBConfig");
+        auto visFromFB = gs<XVisualInfo* (*)(Display*, void*)>("glXGetVisualFromFBConfig");
+        int fba[] = { 0x8010 /*DRAWABLE_TYPE*/, 1 /*WINDOW_BIT*/, 0x8011 /*RENDER_TYPE*/, 1, 5 /*DOUBLEBUFFER*/, 1,
+                      8 /*RED*/, 8, 9, 8, 10, 8, 12 /*DEPTH*/, 24, 0 };
+        int n = 0;
+        void** fbs = chooseFB && visFromFB ? chooseFB(dpy, scr, fba, &n) : nullptr;
+        if (fbs && n > 0) { fbc = fbs[0]; vi = visFromFB(dpy, fbc); }
+        if (fbs && XFree_) XFree_(fbs);
+    } else {
+        vi = chooseVisual(dpy, scr, attr);
+    }
     if (!vi) { XEF_LOG(1, "xef_win_create: no double-buffered RGBA depth-24 visual"); return -1; }
 
     ::Window root = XRootWindow_(dpy, scr);
@@ -97,12 +112,30 @@ int xef_win_create(int w, int h, const char* title) {
     XEvent ev;
     do { XWindowEvent_(dpy, win, StructureNotifyMask, &ev); } while (ev.type != MapNotify);
 
-    void* ctx = createContext(dpy, vi, nullptr, 1);   // legacy (compat) context, direct rendering
+    void* ctx = nullptr;
+    if (major) {
+        auto createAttribs = gs<void* (*)(Display*, void*, void*, int, const int*)>("glXCreateContextAttribsARB");
+        if (!createAttribs) { XEF_LOG(1, "xef_win_create_core: no glXCreateContextAttribsARB"); return -1; }
+        int ca[] = { 0x2091 /*MAJOR*/, major, 0x2092 /*MINOR*/, minor,
+                     0x9126 /*PROFILE_MASK*/, 1 /*CORE*/, 0x2094 /*FLAGS*/, 2 /*FORWARD_COMPAT*/, 0 };
+        ctx = createAttribs(dpy, fbc, nullptr, 1, ca);
+        if (!ctx) XEF_LOG(1, "xef_win_create_core: %d.%d core context not available", major, minor);
+    } else {
+        ctx = createContext(dpy, vi, nullptr, 1);   // legacy (compat) context, direct rendering
+    }
     if (XFree_) XFree_(vi);
     if (!ctx || !makeCurrent(dpy, win, ctx)) { XEF_LOG(1, "xef_win_create: GLX context failed"); return -1; }
     XSync_(dpy, 0);
     g_win.dpy = dpy; g_win.win = win; g_win.ctx = ctx; g_win.wm_delete = del; g_win.w = w; g_win.h = h;
     return 0;
+}
+
+int xef_win_create(int w, int h, const char* title) { return win_create(w, h, title, 0, 0); }
+
+// Core-profile (forward-compatible) context; Mesa hands out the highest version it supports (llvmpipe: 4.5),
+// which satisfies a 3.2 request just like Apple's 3.2 core.
+int xef_win_create_core(int w, int h, const char* title, int major, int minor) {
+    return win_create(w, h, title, major > 0 ? major : 3, major > 0 ? minor : 2);
 }
 
 void xef_win_swap(void) {
@@ -142,9 +175,29 @@ int xef_win_dump(const char* path) {
     return 0;
 }
 
+// host fn -> signature, only for functions whose Darwin calls spill arguments to the stack
+std::unordered_map<void*, const char*> g_stack_sig;
+
+int arg_size(char c) {
+    switch (c) {
+    case 'b': case 'c': return 1;
+    case 's': case 'S': return 2;
+    case 'i': case 'f': return 4;
+    default: return 8;
+    }
+}
+
+void note_stack_sig(const char* gl_name, void* fn) {
+    const char* sig = thunk_gl_sig(gl_name);
+    if (!sig || !(sig = strchr(sig, ':'))) return;
+    int ni = 0, nf = 0;
+    for (const char* p = sig + 1; *p; p++) (*p == 'f' || *p == 'd') ? nf++ : ni++;
+    if (ni > 8 || nf > 8) g_stack_sig[fn] = sig + 1;
+}
+
 struct WinFn { const char* name; void* fn; };
 const WinFn kWinFns[] = {
-    {"_xef_win_create", (void*)&xef_win_create}, {"_xef_win_swap", (void*)&xef_win_swap},
+    {"_xef_win_create", (void*)&xef_win_create}, {"_xef_win_create_core", (void*)&xef_win_create_core}, {"_xef_win_swap", (void*)&xef_win_swap},
     {"_xef_win_poll", (void*)&xef_win_poll},     {"_xef_win_dump", (void*)&xef_win_dump},
 };
 
@@ -171,7 +224,53 @@ uint64_t darwin_gl_resolve(const char* name) {
         f = gl_sym(apple_alias(name + 1));
     }
     if (!f) { XEF_LOG(1, "xef-osx: host libGL has no %s", name + 1); return 0; }
+    {
+        std::lock_guard<std::mutex> lk(g_gl_lock);
+        note_stack_sig(name + 1, f);
+    }
     return darwin_hle_register_function(name, f);
+}
+
+bool darwin_gl_repack(void* host_fn, const uint64_t* x, const uint64_t* v_lo, const uint64_t* guest_sp,
+                      uint64_t* iregs, uint64_t* fregs, uint64_t* hstack, uint64_t* nstack) {
+    const char* sig;
+    {
+        std::lock_guard<std::mutex> lk(g_gl_lock);
+        auto it = g_stack_sig.find(host_fn);
+        if (it == g_stack_sig.end()) return false;
+        sig = it->second;
+    }
+    const unsigned char* gsp = (const unsigned char*)guest_sp;
+    size_t off = 0;
+    int gi = 0, gf = 0, ni = 0, nf = 0, ns = 0;
+    for (const char* p = sig; *p; p++) {
+        char c = *p;
+        bool fp = c == 'f' || c == 'd';
+        int sz = arg_size(c);
+        uint64_t v = 0;
+        if (fp ? gf < 8 : gi < 8) v = fp ? v_lo[gf++] : x[gi++];
+        else {
+            off = (off + sz - 1) & ~(size_t)(sz - 1);
+            memcpy(&v, gsp + off, sz);   // zero-extended; sign handled below
+            off += sz;
+            if (c == 'c') v = (uint64_t)(int64_t)(int8_t)v;
+            if (c == 's') v = (uint64_t)(int64_t)(int16_t)v;
+        }
+        if (fp) { if (c == 'f') v &= 0xffffffffull; }
+        else switch (c) {
+            case 'b': v = (uint8_t)v; break;
+            case 'c': v = (uint64_t)(int64_t)(int8_t)v; break;
+            case 's': v = (uint64_t)(int64_t)(int16_t)v; break;
+            case 'S': v = (uint16_t)v; break;
+            case 'i': v = (uint32_t)v; break;
+            default: break;
+        }
+        if (fp ? nf < 8 : ni < 6) (fp ? fregs[nf++] : iregs[ni++]) = v;
+        else if (ns < 32) hstack[ns++] = v;
+        else return false;
+    }
+    *nstack = ns;
+    return true;
 }
 
 uint64_t darwin_gl_fix_ret(const char* name, uint64_t ret) {

@@ -3063,6 +3063,21 @@ void darwin_hle_dispatch(CpuState* st) {
 
     // Darwin passes the 7th and 8th integer arguments in x6/x7 and the rest on the guest stack; SysV
     // has six integer registers, so x6/x7 go first on the host stack, followed by the guest stack words.
+    if (name[1] == 'g' && name[2] == 'l') {
+        // GL calls with Darwin stack arguments (natural-size packing): re-pack into 8-byte SysV slots
+        u64 gv[8], gst[32], gn = 0;
+        for (int i = 0; i < 8; i++) memcpy(&gv[i], st->v[i], 8);
+        if (darwin_gl_repack(host_fn, st->x, gv, (const uint64_t*)(uintptr_t)st->x[kGuestSP], iregs, fregs, gst, &gn)) {
+            u64 xo = 0;
+            errno = 0;
+            u64 r = xef_call_sysv(host_fn, iregs, fregs, gst, gn, &xo);
+            if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
+            st->x[0] = darwin_gl_fix_ret(name, r);
+            memcpy(st->v[0], &xo, 8);
+            return;
+        }
+    }
+
     const uint64_t* guest_stack = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
     u64 hstack[18];
     hstack[0] = st->x[6];

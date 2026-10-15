@@ -250,6 +250,13 @@ const char* thunk_lib_redirect(const char* path) {
     return vk ? vkshim.c_str() : shim.c_str();
 }
 
+// Signature string ("v:iiii") of a GL entry point from the shared table, or nullptr (used by the Darwin GL bridge).
+const char* thunk_gl_sig(const char* name) {
+    for (const Entry& e : kTable)
+        if (!strcmp(e.name, name)) return e.sig;
+    return nullptr;
+}
+
 void thunk_dispatch(CpuState* st) {
     if (g_is_darwin) {
         darwin_hle_dispatch(st);
