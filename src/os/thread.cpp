@@ -96,7 +96,9 @@ ThreadCtx* thread_create(CpuState* parent) {
 }
 
 static std::atomic<int> g_live_threads{1};
-static thread_local jmp_buf* tls_exit_jmp;   // thread_trampoline's frame (thread_exit returns there)
+static thread_local jmp_buf* tls_exit_jmp;
+thread_local u64 tls_thread_retval = 0;   // value the guest start routine returned (Darwin pthread_join)
+
 int guest_thread_count() { return g_live_threads.load(); }
 
 // TIDs of the guest's threads (not XEF's compiler thread or host library workers): /proc/self/task
@@ -123,6 +125,9 @@ void guest_tid_init() {   // process start and fork child: just the calling thre
     for (auto& e : g_tids) e.store(0, std::memory_order_relaxed);
     guest_tid_add((int)syscall(SYS_gettid));
 }
+
+extern thread_local u64 tls_thread_retval;
+void thread_set_retval(u64 v) { tls_thread_retval = v; }
 
 void thread_exit(CpuState* st, int code) {
     ThreadCtx* t = st->thread;
@@ -180,7 +185,7 @@ static void* thread_trampoline(void* arg) {
     syscall(SYS_futex, &ts->tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
     // ts is owned by the parent's stack from here on: don't touch it
     jmp_buf exit_jmp;
-    if (setjmp(exit_jmp)) return nullptr;   // thread_exit: the context is already back in the pool
+    if (setjmp(exit_jmp)) return (void*)tls_thread_retval;   // thread_exit: the context is already back in the pool
     tls_exit_jmp = &exit_jmp;
     signals_thread_init(t);
     tier2_thread_start(t);

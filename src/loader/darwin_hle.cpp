@@ -48,6 +48,7 @@ static std::mutex g_hle_lock;
 struct ThunkEntry {
     std::string name;
     void* host_fn;
+    bool errno_ret = false;   // returns an errno value (pthread_* style)
 };
 
 static std::vector<ThunkEntry> g_thunks;
@@ -96,14 +97,20 @@ static void init_rune_locale() {
 
     for (int i = 0; i < 256; i++) {
         uint32_t flags = 0;
-        if (isalpha(i)) flags |= 0x00000100; // _CTYPE_A
-        if (isupper(i)) flags |= 0x00000200; // _CTYPE_U
-        if (islower(i)) flags |= 0x00000400; // _CTYPE_L
-        if (isdigit(i)) flags |= 0x00000800; // _CTYPE_D
-        if (isspace(i)) flags |= 0x00004000; // _CTYPE_S
-        if (isprint(i)) flags |= 0x00040000; // _CTYPE_R
-        if (isxdigit(i)) flags |= 0x00010000; // _CTYPE_X
-        if (ispunct(i)) flags |= 0x00002000; // _CTYPE_P
+        // Darwin <runetype.h>: A=0x100 C=0x200 D=0x400 G=0x800 L=0x1000 P=0x2000 S=0x4000 U=0x8000
+        //                      X=0x10000 B=0x20000 R=0x40000
+        if (isalpha(i)) flags |= 0x00000100;
+        if (iscntrl(i)) flags |= 0x00000200;
+        if (isdigit(i)) flags |= 0x00000400 | (uint32_t)(i - '0');
+        if (isgraph(i)) flags |= 0x00000800;
+        if (islower(i)) flags |= 0x00001000;
+        if (ispunct(i)) flags |= 0x00002000;
+        if (isspace(i)) flags |= 0x00004000;
+        if (isupper(i)) flags |= 0x00008000;
+        if (isxdigit(i)) flags |= 0x00010000;
+        if (i == ' ' || i == '\t') flags |= 0x00020000;
+        if (isprint(i)) flags |= 0x00040000;
+        if (isxdigit(i) && !isdigit(i)) flags |= (uint32_t)(tolower(i) - 'a' + 10);
         g_darwin_rune_locale.runetype[i] = flags;
         g_darwin_rune_locale.maplower[i] = tolower(i);
         g_darwin_rune_locale.mapupper[i] = toupper(i);
@@ -111,8 +118,28 @@ static void init_rune_locale() {
 }
 
 // Special wrapper functions
+// Darwin errno numbering differs from Linux above 34 (EAGAIN 35 vs 11, ETIMEDOUT 60 vs 110, ...).
+static const struct { int linux_e, darwin_e; } kErrnoMap[] = {
+    {11, 35}, {115, 36}, {114, 37}, {88, 38}, {89, 39}, {90, 40}, {91, 41}, {92, 42}, {93, 43}, {94, 44},
+    {95, 45}, {96, 46}, {97, 47}, {98, 48}, {99, 49}, {100, 50}, {101, 51}, {102, 52}, {103, 53}, {104, 54},
+    {105, 55}, {106, 56}, {107, 57}, {108, 58}, {109, 59}, {110, 60}, {111, 61}, {40, 62}, {36, 63}, {112, 64},
+    {113, 65}, {39, 66}, {87, 68}, {122, 69}, {116, 70}, {66, 71}, {37, 77}, {38, 78}, {125, 89}, {43, 90},
+    {42, 91}, {84, 92}, {61, 96}, {74, 94}, {72, 95}, {67, 97}, {63, 98}, {60, 99},
+    {71, 100}, {62, 101}, {131, 104}, {130, 105}, {35, 11},
+};
+int darwin_errno_from_linux(int e) {
+    if (e <= 34) return e;
+    for (auto& m : kErrnoMap) if (m.linux_e == e) return m.darwin_e;
+    return e;
+}
+int darwin_errno_to_linux(int e) {
+    if (e <= 34) return e;
+    for (auto& m : kErrnoMap) if (m.darwin_e == e) return m.linux_e;
+    return e;
+}
+static thread_local int g_darwin_errno = 0;
 static int* darwin_error_wrapper() {
-    return &errno;
+    return &g_darwin_errno;
 }
 
 static void darwin_stack_chk_fail_wrapper() {
@@ -217,116 +244,112 @@ static void darwin_missing_symbol_fallback() {
     // Handled in dispatch
 }
 
-static int darwin_vsnprintf(char* str, size_t size, const char* format, const uint64_t* ap) {
-    if (!str || size == 0) return 0;
-    if (!format) { str[0] = '\0'; return 0; }
-
-    char* out = str;
-    size_t rem = size;
+// Formats `format` with Darwin arm64 variadic arguments: every argument occupies one 8-byte stack
+// slot (also for va_list, which is a plain pointer to those slots). Returns the full length.
+static std::string darwin_format(const char* format, const uint64_t* ap) {
+    std::string out;
     const char* p = format;
-
-    auto append_char = [&](char c) {
-        if (rem > 1) {
-            *out++ = c;
-            rem--;
-        }
-    };
-
+    auto next = [&]() -> uint64_t { return ap ? *ap++ : 0; };
     while (*p) {
-        if (*p != '%') {
-            append_char(*p++);
-            continue;
+        if (*p != '%') { out.push_back(*p++); continue; }
+        const char* start = p++;
+        if (*p == '%') { out.push_back('%'); p++; continue; }
+        std::string flags, width, prec;
+        bool has_prec = false;
+        while (*p && strchr("-+ #0'", *p)) flags.push_back(*p++);
+        if (*p == '*') { int w = (int)next(); if (w < 0) { flags.push_back('-'); w = -w; } width = std::to_string(w); p++; }
+        else while (isdigit((unsigned char)*p)) width.push_back(*p++);
+        if (*p == '.') {
+            has_prec = true; p++;
+            if (*p == '*') { int pr = (int)next(); if (pr < 0) has_prec = false; else prec = std::to_string(pr); p++; }
+            else while (isdigit((unsigned char)*p)) prec.push_back(*p++);
+            if (has_prec && prec.empty()) prec = "0";
         }
-
-        p++; // skip '%'
-        if (*p == '%') {
-            append_char('%');
-            p++;
-            continue;
+        int lng = 0;   // 0 int, -1 short, -2 char, 1 long, 2 long long/intmax/size_t/ptrdiff
+        bool big_l = false;
+        for (;; p++) {
+            if (*p == 'h') lng = lng == -1 ? -2 : -1;
+            else if (*p == 'l') lng = lng == 1 ? 2 : 1;
+            else if (strchr("jztq", *p)) lng = 2;
+            else if (*p == 'L') big_l = true;
+            else break;
         }
-
-        // Parse format specifier
-        const char* spec_start = p - 1;
-        while (*p && !strchr("diouxXeEfFgGaAcspn", *p)) {
-            p++;
-        }
-        if (!*p) break;
-
-        char conv = *p++;
-        std::string raw_spec(spec_start, p - spec_start);
-
-        // Handle '*' in width/precision
-        std::string spec;
-        size_t star_pos = raw_spec.find('*');
-        if (star_pos != std::string::npos) {
-            int star_val = (int)(*ap++);
-            spec = raw_spec.substr(0, star_pos) + std::to_string(star_val) + raw_spec.substr(star_pos + 1);
-            star_pos = spec.find('*');
-            if (star_pos != std::string::npos) {
-                int star_val2 = (int)(*ap++);
-                spec = spec.substr(0, star_pos) + std::to_string(star_val2) + spec.substr(star_pos + 1);
+        char conv = *p ? *p++ : 0;
+        if (!conv) { out.append(start); break; }
+        std::string spec = "%" + flags + width + (has_prec ? "." + prec : "");
+        char tmp[64];
+        auto emit = [&](const std::string& sp, auto val) {
+            int n = snprintf(nullptr, 0, sp.c_str(), val);
+            if (n <= 0) return;
+            size_t at = out.size();
+            out.resize(at + n + 1);
+            snprintf(&out[at], n + 1, sp.c_str(), val);
+            out.resize(at + n);
+        };
+        switch (conv) {
+            case 'd': case 'i': {
+                int64_t v = (int64_t)next();
+                if (lng == 0) v = (int32_t)v; else if (lng == -1) v = (int16_t)v; else if (lng == -2) v = (int8_t)v;
+                emit(spec + "ll" + conv, (long long)v);
+                break;
             }
-        } else {
-            spec = raw_spec;
-        }
-
-        char buf[512];
-        int n = 0;
-
-        if (strchr("eEfFgGaA", conv)) {
-            double val;
-            memcpy(&val, ap++, sizeof(double));
-            n = snprintf(buf, sizeof(buf), spec.c_str(), val);
-        } else if (conv == 's') {
-            const char* s = (const char*)(uintptr_t)(*ap++);
-            if (!s) s = "(null)";
-            n = snprintf(buf, sizeof(buf), spec.c_str(), s);
-        } else if (conv == 'p') {
-            void* ptr = (void*)(uintptr_t)(*ap++);
-            n = snprintf(buf, sizeof(buf), spec.c_str(), ptr);
-        } else if (conv == 'c') {
-            int c = (int)(*ap++);
-            n = snprintf(buf, sizeof(buf), spec.c_str(), c);
-        } else if (conv == 'n') {
-            int* ptr = (int*)(uintptr_t)(*ap++);
-            if (ptr) *ptr = (int)(out - str);
-            n = 0;
-        } else {
-            uint64_t val = *ap++;
-            std::string llspec = "%";
-            size_t idx = 1;
-            while (idx < spec.size() - 1 && (isdigit(spec[idx]) || strchr("-+ #0.", spec[idx]))) {
-                llspec += spec[idx++];
+            case 'D': emit(spec + "lld", (long long)next()); break;
+            case 'u': case 'o': case 'x': case 'X': {
+                uint64_t v = next();
+                if (lng == 0) v = (uint32_t)v; else if (lng == -1) v = (uint16_t)v; else if (lng == -2) v = (uint8_t)v;
+                emit(spec + "ll" + conv, (unsigned long long)v);
+                break;
             }
-            llspec += "ll";
-            llspec += conv;
-            n = snprintf(buf, sizeof(buf), llspec.c_str(), (unsigned long long)val);
-        }
-
-        if (n > 0) {
-            for (int k = 0; k < n; k++) {
-                append_char(buf[k]);
+            case 'U': case 'O': emit(spec + "ll" + (char)(conv == 'U' ? 'u' : 'o'), (unsigned long long)next()); break;
+            case 'e': case 'E': case 'f': case 'F': case 'g': case 'G': case 'a': case 'A': {
+                uint64_t raw = next();   // Darwin long double == double
+                double d; memcpy(&d, &raw, 8);
+                (void)big_l;
+                emit(spec + conv, d);
+                break;
             }
+            case 'c': {
+                if (lng == 1) emit(spec + "lc", (wint_t)next());
+                else emit(spec + "c", (int)next());
+                break;
+            }
+            case 'C': emit(spec + "lc", (wint_t)next()); break;
+            case 's': {
+                const void* sp = (const void*)(uintptr_t)next();
+                if (!sp) sp = "(null)", lng = 0;
+                if (lng == 1) emit(spec + "ls", (const wchar_t*)sp); else emit(spec + "s", (const char*)sp);
+                break;
+            }
+            case 'S': emit(spec + "ls", (const wchar_t*)(uintptr_t)next()); break;
+            case 'p': emit(spec + "p", (void*)(uintptr_t)next()); break;
+            case 'n': {
+                void* ptr = (void*)(uintptr_t)next();
+                if (ptr) { if (lng == 0) *(int*)ptr = (int)out.size(); else *(long long*)ptr = (long long)out.size(); }
+                break;
+            }
+            default: out.append(start, p - start); break;
         }
+        (void)tmp;
     }
+    return out;
+}
 
-    if (rem > 0) {
-        *out = '\0';
-    } else {
-        str[size - 1] = '\0';
+static int darwin_vsnprintf(char* str, size_t size, const char* format, const uint64_t* ap) {
+    if (!format) { if (str && size) str[0] = 0; return 0; }
+    std::string r = darwin_format(format, ap);
+    if (str && size) {
+        size_t n = std::min(r.size(), size - 1);
+        memcpy(str, r.data(), n);
+        str[n] = 0;
     }
-
-    return (int)(out - str);
+    return (int)r.size();
 }
 
 static int darwin_vfprintf(FILE* stream, const char* format, const uint64_t* ap) {
-    if (!stream || !format) return 0;
-    char buf[16384];
-    int len = darwin_vsnprintf(buf, sizeof(buf), format, ap);
-    if (len > 0) {
-        fwrite(buf, 1, len, stream);
-    }
-    return len;
+    if (!stream || !format) return -1;
+    std::string r = darwin_format(format, ap);
+    if (!r.empty()) fwrite(r.data(), 1, r.size(), stream);
+    return (int)r.size();
 }
 
 static int darwin_fprintf(FILE* stream, const char* format, const uint64_t* ap) {
@@ -836,6 +859,43 @@ static U128Ret darwin_modti3(uint64_t alo, uint64_t ahi, uint64_t blo, uint64_t 
     return {(uint64_t)q, (uint64_t)((unsigned __int128)q >> 64)};
 }
 
+
+// xlocale variants: Darwin passes a null locale_t for "the C locale"; glibc's *_l crash on it, so the
+// locale argument is ignored.
+static long long darwin_strtoll_l(const char* s, char** e, int b, void*) { return strtoll(s, e, b); }
+static unsigned long long darwin_strtoull_l(const char* s, char** e, int b, void*) { return strtoull(s, e, b); }
+static long darwin_strtol_l(const char* s, char** e, int b, void*) { return strtol(s, e, b); }
+static unsigned long darwin_strtoul_l(const char* s, char** e, int b, void*) { return strtoul(s, e, b); }
+static double darwin_strtod_l(const char* s, char** e, void*) { return strtod(s, e); }
+static float darwin_strtof_l(const char* s, char** e, void*) { return strtof(s, e); }
+static double darwin_strtold_l(const char* s, char** e, void*) { return strtod(s, e); }   // long double == double
+static int darwin_strcoll_l(const char* a, const char* b, void*) { return strcoll(a, b); }
+static size_t darwin_strxfrm_l(char* d, const char* s, size_t n, void*) { return strxfrm(d, s, n); }
+static size_t darwin_strftime_l(char* s, size_t n, const char* f, const struct tm* t, void*) { return strftime(s, n, f, t); }
+static int darwin_wcscoll_l(const wchar_t* a, const wchar_t* b, void*) { return wcscoll(a, b); }
+static size_t darwin_wcsxfrm_l(wchar_t* d, const wchar_t* s, size_t n, void*) { return wcsxfrm(d, s, n); }
+static long long darwin_wcstoll_l(const wchar_t* s, wchar_t** e, int b, void*) { return wcstoll(s, e, b); }
+static unsigned long long darwin_wcstoull_l(const wchar_t* s, wchar_t** e, int b, void*) { return wcstoull(s, e, b); }
+static long darwin_wcstol_l(const wchar_t* s, wchar_t** e, int b, void*) { return wcstol(s, e, b); }
+static unsigned long darwin_wcstoul_l(const wchar_t* s, wchar_t** e, int b, void*) { return wcstoul(s, e, b); }
+static double darwin_wcstod_l(const wchar_t* s, wchar_t** e, void*) { return wcstod(s, e); }
+static float darwin_wcstof_l(const wchar_t* s, wchar_t** e, void*) { return wcstof(s, e); }
+static double darwin_wcstold_l(const wchar_t* s, wchar_t** e, void*) { return wcstod(s, e); }
+static int darwin_isalpha_l(int c, void*) { return isalpha(c); }
+static int darwin_isdigit_l(int c, void*) { return isdigit(c); }
+static int darwin_isspace_l(int c, void*) { return isspace(c); }
+static int darwin_isupper_l(int c, void*) { return isupper(c); }
+static int darwin_islower_l(int c, void*) { return islower(c); }
+static int darwin_isalnum_l(int c, void*) { return isalnum(c); }
+static int darwin_ispunct_l(int c, void*) { return ispunct(c); }
+static int darwin_isprint_l(int c, void*) { return isprint(c); }
+static int darwin_iswctype_l(wint_t c, wctype_t t, void*) { return iswctype(c, t); }
+static wint_t darwin_towlower_l(wint_t c, void*) { return towlower(c); }
+static wint_t darwin_towupper_l(wint_t c, void*) { return towupper(c); }
+static void* darwin_newlocale(int, const char*, void*) { return (void*)1; }   // opaque non-null token
+static void darwin_freelocale(void*) {}
+static void* darwin_uselocale(void*) { return (void*)1; }
+
 struct ShimEntry { const char* name; void* fn; int variadic_fixed; };   // variadic_fixed: >=0 -> args from stack
 static const ShimEntry kShims[] = {
     {"_snprintf_l", (void*)&darwin_snprintf_l, 4}, {"_sprintf", (void*)&darwin_sprintf, 2},
@@ -850,6 +910,37 @@ static const ShimEntry kShims[] = {
     {"_mbsrtowcs_l", (void*)&darwin_mbsrtowcs_l, -1}, {"_mbtowc_l", (void*)&darwin_mbtowc_l, -1},
     {"_wcrtomb_l", (void*)&darwin_wcrtomb_l, -1}, {"_wcsnrtombs_l", (void*)&darwin_wcsnrtombs_l, -1},
     {"_wctob_l", (void*)&darwin_wctob_l, -1}, {"_localeconv_l", (void*)&darwin_localeconv_l, -1},
+    {"_strtoll_l", (void*)&darwin_strtoll_l, -1},
+    {"_strtoull_l", (void*)&darwin_strtoull_l, -1},
+    {"_strtol_l", (void*)&darwin_strtol_l, -1},
+    {"_strtoul_l", (void*)&darwin_strtoul_l, -1},
+    {"_strtod_l", (void*)&darwin_strtod_l, -1},
+    {"_strtof_l", (void*)&darwin_strtof_l, -1},
+    {"_strtold_l", (void*)&darwin_strtold_l, -1},
+    {"_strcoll_l", (void*)&darwin_strcoll_l, -1},
+    {"_strxfrm_l", (void*)&darwin_strxfrm_l, -1},
+    {"_strftime_l", (void*)&darwin_strftime_l, -1},
+    {"_wcscoll_l", (void*)&darwin_wcscoll_l, -1},
+    {"_wcsxfrm_l", (void*)&darwin_wcsxfrm_l, -1},
+    {"_wcstoll_l", (void*)&darwin_wcstoll_l, -1},
+    {"_wcstoull_l", (void*)&darwin_wcstoull_l, -1},
+    {"_wcstol_l", (void*)&darwin_wcstol_l, -1},
+    {"_wcstoul_l", (void*)&darwin_wcstoul_l, -1},
+    {"_wcstod_l", (void*)&darwin_wcstod_l, -1},
+    {"_wcstof_l", (void*)&darwin_wcstof_l, -1},
+    {"_wcstold_l", (void*)&darwin_wcstold_l, -1},
+    {"_isalpha_l", (void*)&darwin_isalpha_l, -1},
+    {"_isdigit_l", (void*)&darwin_isdigit_l, -1},
+    {"_isspace_l", (void*)&darwin_isspace_l, -1},
+    {"_isupper_l", (void*)&darwin_isupper_l, -1},
+    {"_islower_l", (void*)&darwin_islower_l, -1},
+    {"_isalnum_l", (void*)&darwin_isalnum_l, -1},
+    {"_ispunct_l", (void*)&darwin_ispunct_l, -1},
+    {"_isprint_l", (void*)&darwin_isprint_l, -1},
+    {"_iswctype_l", (void*)&darwin_iswctype_l, -1},
+    {"_towlower_l", (void*)&darwin_towlower_l, -1},
+    {"_towupper_l", (void*)&darwin_towupper_l, -1},
+    {"_newlocale", (void*)&darwin_newlocale, -1}, {"_freelocale", (void*)&darwin_freelocale, -1}, {"_uselocale", (void*)&darwin_uselocale, -1},
     {"_pthread_mach_thread_np", (void*)&darwin_pthread_mach_thread_np, -1},
     {"___udivti3", (void*)&darwin_udivti3, -2}, {"___divti3", (void*)&darwin_divti3, -2},
     {"___umodti3", (void*)&darwin_umodti3, -2}, {"___modti3", (void*)&darwin_modti3, -2},
@@ -1746,7 +1837,7 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
 
     uint32_t thunk_id = (uint32_t)g_thunks.size();
     XEF_LOG(2, "darwin_hle: registered thunk id %u for symbol '%s'", thunk_id, name);
-    g_thunks.push_back({name, host_fn});
+    g_thunks.push_back({name, host_fn, strncmp(name, "_pthread_", 9) == 0 || strncmp(name, "_sem_", 5) == 0});
 
     uint8_t* stub_ptr = g_thunk_code + g_thunk_code_used;
     g_thunk_code_used += 16; // 16-byte aligned
@@ -1769,6 +1860,7 @@ void darwin_hle_dispatch(CpuState* st) {
     u64 id = st->x[17];
     void* host_fn = nullptr;
     const char* name = nullptr;
+    bool errno_ret = false;
     {
         std::lock_guard<std::mutex> lk(g_hle_lock);
         if (id >= g_thunks.size()) {
@@ -1776,6 +1868,7 @@ void darwin_hle_dispatch(CpuState* st) {
         }
         host_fn = g_thunks[id].host_fn;
         name = g_thunks[id].name.c_str();
+        errno_ret = g_thunks[id].errno_ret;
     }
     XEF_LOG(2, "hle: %s(x0=%#lx, x1=%#lx, x2=%#lx, x3=%#lx)", name,
             (unsigned long)st->x[0], (unsigned long)st->x[1], (unsigned long)st->x[2], (unsigned long)st->x[3]);
@@ -1855,7 +1948,10 @@ void darwin_hle_dispatch(CpuState* st) {
     // Pass guest stack in case function reads stack arguments (e.g. 7th, 8th arguments)
     const uint64_t* guest_stack = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
     u64 xmm0_out = 0;
+    errno = 0;
     u64 ret = xef_call_sysv(host_fn, iregs, fregs, guest_stack, 16, &xmm0_out);
+    if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
+    if (errno_ret && (int64_t)ret > 34 && (int64_t)ret < 200) ret = (u64)darwin_errno_from_linux((int)ret);
     st->x[0] = ret;
     memcpy(st->v[0], &xmm0_out, 8);
     XEF_LOG(2, "hle: %s -> %#lx", name, (unsigned long)ret);

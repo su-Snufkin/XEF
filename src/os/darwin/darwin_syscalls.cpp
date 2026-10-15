@@ -457,6 +457,7 @@ void do_darwin_syscall(CpuState* st) {
     }
 
     case DARWIN_SYS_bsdthread_terminate: {
+        thread_set_retval(a0);
         thread_exit(st, (int)a0);
         break;
     }

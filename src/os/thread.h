@@ -32,6 +32,7 @@ ThreadCtx* thread_create(CpuState* parent);
 void guest_tid_init();
 bool is_guest_tid(int tid);
 void thread_exit(CpuState* st, int code);
+void thread_set_retval(u64 v);   // return value of the exiting thread's start routine
 i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid);
 i64 process_execve(CpuState* st, u64 path, u64 argv, u64 envp);
 int darwin_spawn_thread(uint64_t* th_out, void* attr, uint64_t start_routine, uint64_t arg);
