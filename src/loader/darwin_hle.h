@@ -37,6 +37,9 @@ extern uint64_t g_darwin_thread_exit_trampoline;
 extern const uint8_t* g_darwin_tlv_template;
 extern size_t g_darwin_tlv_template_size;
 
+// Creates a guest-callable stub for a host function and returns its guest address.
+uint64_t darwin_hle_register_function(const char* name, void* host_fn);
+
 void darwin_register_thread_stack(pthread_t th, void* stack_top, size_t stack_size);
 
 } // namespace xef

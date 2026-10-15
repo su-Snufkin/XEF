@@ -2180,6 +2180,26 @@ bool darwin_hle_current(const char** name, u64* lr) {
     return true;
 }
 
+uint64_t darwin_hle_register_function(const char* name, void* host_fn) {
+    darwin_hle_init();
+    std::lock_guard<std::mutex> lk(g_hle_lock);
+    auto it = g_symbol_cache.find(name);
+    if (it != g_symbol_cache.end()) return it->second;
+    uint32_t thunk_id = (uint32_t)g_thunks.size();
+    g_thunks.push_back({name, host_fn});
+    uint8_t* stub_ptr = g_thunk_code + g_thunk_code_used;
+    g_thunk_code_used += 16;
+    uint32_t* insns = (uint32_t*)stub_ptr;
+    insns[0] = 0xd2800000u | ((thunk_id & 0xffffu) << 5) | 17u;
+    insns[1] = 0xd4400000u | (kThunkHlt << 5);
+    insns[2] = 0xd65f03c0u;
+    insns[3] = 0xd503201fu;
+    uint64_t a = (uint64_t)(uintptr_t)stub_ptr;
+    g_symbol_cache[name] = a;
+    g_host_fallback_names.insert(name);
+    return a;
+}
+
 void darwin_hle_dispatch(CpuState* st) {
     u64 id = st->x[17];
     void* host_fn = nullptr;

@@ -11,7 +11,7 @@ pass=0; fail=0
 for n in "${names[@]}"; do
   src=$(cd tests/darwin/mac; ls $n.c $n.cpp $n.m 2>/dev/null | head -1)
   case $src in
-    *.c)   if grep -q CoreFoundation tests/darwin/mac/$src; then cc="clang -O1 -framework CoreFoundation"; else cc="clang -O1"; fi;;
+    *.c)   extra=""; grep -q sqlite3.h tests/darwin/mac/$src && extra="-lsqlite3 -lz -liconv -lxml2 -lcurses -I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/libxml2"; if grep -q CoreFoundation tests/darwin/mac/$src; then cc="clang -O1 -framework CoreFoundation"; else cc="clang -O1"; fi; cc="$cc $extra";;
     *.cpp) cc="clang++ -O1 -std=c++20";;
     *.m)   if grep -q Foundation.h tests/darwin/mac/$src; then cc="clang -framework Foundation"; else cc="clang -lobjc"; fi;;
   esac

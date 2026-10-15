@@ -105,7 +105,44 @@ static int sh_task_threads(uint32_t, void** list, uint32_t* count) { *list = nul
 static int sh_thread_get_state(uint32_t, int, void*, uint32_t*) { return 5; }   // KERN_INVALID_ARGUMENT
 
 // ---- malloc / pthread -----------------------------------------------------------------------------
-static void* sh_malloc_default_zone() { return (void*)1; }
+// malloc_zone_t: reserved1, reserved2, size, malloc, calloc, valloc, free, realloc, destroy, zone_name, batch_malloc,
+// batch_free, introspect, version, memalign, free_definite_size, pressure_relief, claimed_address
+static size_t zn_size(void*, const void* p) { return p ? malloc_usable_size((void*)p) : 0; }
+static void* zn_malloc(void*, size_t n) { return malloc(n); }
+static void* zn_calloc(void*, size_t n, size_t m) { return calloc(n, m); }
+static void* zn_valloc(void*, size_t n) { return aligned_alloc(4096, (n + 4095) & ~4095ull); }
+static void zn_free(void*, void* p) { free(p); }
+static void* zn_realloc(void*, void* p, size_t n) { return realloc(p, n); }
+static void zn_destroy(void*) {}
+static void* zn_memalign(void*, size_t a, size_t n) { return aligned_alloc(a, (n + a - 1) & ~(a - 1)); }
+static void zn_free_definite_size(void*, void* p, size_t) { free(p); }
+static size_t zn_pressure_relief(void*, size_t) { return 0; }
+static int zn_claimed_address(void*, void* p) { return p != nullptr; }
+static unsigned zn_batch_malloc(void*, size_t n, void** r, unsigned c) { unsigned i = 0; for (; i < c; i++) if (!(r[i] = malloc(n))) break; return i; }
+static void zn_batch_free(void*, void** to_be_freed, unsigned c) { for (unsigned i = 0; i < c; i++) free(to_be_freed[i]); }
+static void* sh_malloc_default_zone() {
+    static uint64_t* zone;
+    if (!zone) {
+        zone = (uint64_t*)calloc(24, sizeof(uint64_t));
+        auto stub = [](const char* name, void* fn) { return (uint64_t)darwin_hle_register_function(name, fn); };
+        zone[2] = stub("_xef_zone_size", (void*)&zn_size);
+        zone[3] = stub("_xef_zone_malloc", (void*)&zn_malloc);
+        zone[4] = stub("_xef_zone_calloc", (void*)&zn_calloc);
+        zone[5] = stub("_xef_zone_valloc", (void*)&zn_valloc);
+        zone[6] = stub("_xef_zone_free", (void*)&zn_free);
+        zone[7] = stub("_xef_zone_realloc", (void*)&zn_realloc);
+        zone[8] = stub("_xef_zone_destroy", (void*)&zn_destroy);
+        zone[9] = (uint64_t)"DefaultMallocZone";
+        zone[10] = stub("_xef_zone_batch_malloc", (void*)&zn_batch_malloc);
+        zone[11] = stub("_xef_zone_batch_free", (void*)&zn_batch_free);
+        *(uint32_t*)&zone[13] = 13;                        // version
+        zone[14] = stub("_xef_zone_memalign", (void*)&zn_memalign);
+        zone[15] = stub("_xef_zone_free_definite_size", (void*)&zn_free_definite_size);
+        zone[16] = stub("_xef_zone_pressure_relief", (void*)&zn_pressure_relief);
+        zone[17] = stub("_xef_zone_claimed_address", (void*)&zn_claimed_address);
+    }
+    return zone;
+}
 static size_t sh_malloc_size(const void* p) { return p ? malloc_usable_size((void*)p) : 0; }
 static void* sh_reallocf(void* p, size_t n) {
     void* r = realloc(p, n);

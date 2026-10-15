@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 src=$1; shift
 n=$(basename "$src" | sed 's/\.[^.]*$//')
 ext=${src##*.}
-case $ext in c) cc="clang -O1";; cpp) cc="clang++ -O1 -std=c++20";; m|mm) cc="clang -framework Foundation";; esac
+case $ext in c) cc="clang -O1"; grep -q sqlite3.h $src && cc="clang -O1 -lsqlite3 -lz -liconv -lxml2 -lcurses -I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/libxml2";; cpp) cc="clang++ -O1 -std=c++20";; m|mm) cc="clang -framework Foundation";; esac
 grep -q CoreFoundation $src && ! grep -q Foundation.h $src && cc="$cc -framework CoreFoundation"
 ssh mac "mkdir -p ~/xef-remote/src/try" && scp -q $src mac:xef-remote/src/try/ && ssh mac "cd ~/xef-remote/src/try && $cc $(basename $src) -o $n 2>&1 | grep -E 'error' ; ./$n $* 2>&1" > /tmp/xef-try-mac.txt
 scp -q mac:xef-remote/src/try/$n /tmp/xef-try-$n
