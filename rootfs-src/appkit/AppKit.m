@@ -256,7 +256,11 @@ static unichar key_char(int kc, int shift) {
 - (void)setFrameSize:(NSSize)s { NSRect f = _frame; f.size = s; [self setFrame:f]; }
 - (void)setBounds:(NSRect)b { _bounds = b; }
 - (NSWindow *)window { return _window; } - (NSView *)superview { return _superview; } - (NSArray *)subviews { return _subviews; }
-- (void)_setWindow:(NSWindow *)w { _window = w; for (NSView *s in _subviews) [s _setWindow:w]; [self viewDidMoveToWindow]; }
+/* a view leaving its window stops being the window's first responder (the window does not retain it: SDL2 removes and
+ * releases its text-input view while it is first responder, and the next keyDown: went to freed memory) */
+- (void)_setWindow:(NSWindow *)w {
+  if (_window && _window != w && _window->_first == (NSResponder *)self) _window->_first = nil;
+  _window = w; for (NSView *s in _subviews) [s _setWindow:w]; [self viewDidMoveToWindow]; }
 - (void)addSubview:(NSView *)v { [_subviews addObject:v]; v->_superview = self; [v _setWindow:_window]; }
 - (void)removeFromSuperview { NSView *s = _superview; if (!s) return; _superview = nil; [self _setWindow:nil]; [s->_subviews removeObject:self]; }
 - (void)setNeedsDisplay:(BOOL)f { _needsDisplay = f; }
@@ -280,7 +284,8 @@ static unichar key_char(int kc, int shift) {
 - (BOOL)mouse:(NSPoint)p inRect:(NSRect)r { return NSPointInRect(p, r); }
 - (void)viewDidChangeBackingProperties {}
 - (BOOL)acceptsFirstResponder { return YES; }
-- (void)dealloc { [_subviews release]; [_tracking release]; [_layer release]; [_dragTypes release]; [super dealloc]; }
+- (void)dealloc { if (_window && _window->_first == (NSResponder *)self) _window->_first = nil;
+  [_subviews release]; [_tracking release]; [_layer release]; [_dragTypes release]; [super dealloc]; }
 @end
 
 /* ------------------------------------------------------------------- window */

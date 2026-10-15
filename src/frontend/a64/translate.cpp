@@ -1221,6 +1221,7 @@ bool nzcv_read_first(GuestAddr pc) {
 static std::mutex g_flagret_mu;
 static std::unordered_set<GuestAddr> g_flagret;
 static std::atomic<bool> g_flagret_any{false};
+static std::vector<std::pair<GuestAddr, GuestAddr>> g_flagret_text;   // scanned [lo, hi) ranges (__TEXT,__text)
 
 void scan_flag_returning_calls(GuestAddr lo, GuestAddr hi) {
     if (!g_abi_flags) return;
@@ -1234,6 +1235,7 @@ void scan_flag_returning_calls(GuestAddr lo, GuestAddr hi) {
     }
     if (found.empty()) return;
     std::lock_guard<std::mutex> lk(g_flagret_mu);
+    g_flagret_text.emplace_back(lo, hi);
     g_flagret.insert(found.begin(), found.end());
     g_flagret_any.store(true, std::memory_order_release);
 }
@@ -1241,10 +1243,16 @@ void scan_flag_returning_calls(GuestAddr lo, GuestAddr hi) {
 bool ret_keeps_flags(GuestAddr ret_pc) {
     if (!g_abi_flags || !g_flagret_any.load(std::memory_order_acquire)) return false;
     std::lock_guard<std::mutex> lk(g_flagret_mu);
+    // the walk back stays inside the scanned text range: the page before an image's __TEXT can be mapped but
+    // PROT_NONE (guard/alignment gap), which guest_readable (mincore) does not tell apart (OpenMW faulted here)
+    GuestAddr lo = 0;
+    for (const auto& r : g_flagret_text)
+        if (ret_pc >= r.first && ret_pc < r.second) { lo = r.first; break; }
+    if (!lo) return false;   // not in a scanned image: none of its functions were recorded
     GuestAddr a = ret_pc;
     for (int k = 0; k < 256; k++, a -= 4) {
         if (g_flagret.count(a)) return true;
-        if (!guest_readable(a - 4) || *(const u32*)(a - 4) == 0xD65F03C0) break;   // previous function's RET
+        if (a - 4 < lo || *(const u32*)(a - 4) == 0xD65F03C0) break;   // start of the text / previous function's RET
     }
     return false;
 }

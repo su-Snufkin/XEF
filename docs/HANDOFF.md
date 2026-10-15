@@ -363,7 +363,10 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   `OpenGL.framework/Libraries/libGL.dylib` (SDL dlopen).
 - Diagnostyka: fatal `brk` drukuje backtrace gościa; `XEF_GUEST_BT=N[,count]` — od N s każde wywołanie HLE (do `count` na wątek) drukuje
   backtrace gościa (gdzie kręci się zawieszony program); symbolizacja na Macu: `atos -o <obraz> -arch arm64 -l <base> <adresy>`.
-- Otwarte: „New Game” wisi na `Loading cell Imperial Prison Ship` — główny wątek w `MWGui::LocalMapBase::setActiveCell` tworzy
-  widgety mapy lokalnej bez końca (RSS +4 MB/s, MyGUI `removeChildItem` O(n) dominuje profil). Nie navmesh (Navigator wyłączony: to samo),
-  nie konwersje float->int (test fcvt* Mac == XEF), `XEF_VERIFY` na libMyGUIEngine bez różnic. Podejrzenie: rozmiar siatki z granic komórki.
-- `tests/darwin/macref.sh`: `sincos_stret` pada też bez tych zmian (a3be278).
+- „New Game” (2026-10-16): wisiało na `Loading cell Imperial Prison Ship` — `MWGui::LocalMapBase::setActiveCell` tworzył widgety mapy
+  bez końca (RSS +4 MB/s). Po scaleniu poprawki NZCV-przez-RET (sekcja 6) przechodzi: ~70 s ładowania statku, potem gra (AiTravel), RSS stały
+  ~760 MB — najpewniej pętla zależała od funkcji zwracającej wynik we flagach. `ret_keeps_flags` skanuje wstecz tylko w zeskanowanym
+  `__text` (strona przed `__TEXT` bywa PROT_NONE, a `guest_readable`/mincore tego nie widzi — OpenMW padał w XEF).
+- AppKit-lite: widok opuszczający okno (lub zwalniany) przestaje być jego first responderem — SDL2 usuwa i zwalnia `fieldEdit` będąc
+  first responderem, a następny `keyDown:` (Enter w intro) / `resignFirstResponder` szedł do zwolnionej pamięci (vtable obiektu OSG jako „klasa”).
+- `tests/darwin/macref.sh`: 18/18 po scaleniu z 6b51080; `foundation_file` sporadycznie SIGSEGV (~1/20 przebiegów, także na samym 6b51080) — do zbadania.
