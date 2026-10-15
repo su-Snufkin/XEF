@@ -1,6 +1,7 @@
 // XEF-OSX — host OpenGL bridge (see darwin_gl.h). libGL/libX11 are dlopen'ed lazily so xef-osx keeps no
 // link-time dependency on them (same approach as src/thunks/thunks.cpp).
 #include "loader/darwin_gl.h"
+#include "loader/darwin_appkit_host.h"
 #include "loader/darwin_hle.h"
 #include "common/common.h"
 #include "thunks/thunks.h"
@@ -212,8 +213,13 @@ const char* apple_alias(const char* n) {
 
 } // namespace
 
+bool darwin_gl_host_libs() { std::lock_guard<std::mutex> lk(g_gl_lock); return load_libs(); }
+void* darwin_gl_host_x(const char* n) { return g_libx11 ? dlsym(g_libx11, n) : nullptr; }
+void* darwin_gl_host_gl(const char* n) { return gl_sym(n); }
+
 uint64_t darwin_gl_resolve(const char* name) {
     if (!name) return 0;
+    if (!strncmp(name, "_xef_host_", 10)) return darwin_appkit_host_resolve(name);
     for (const WinFn& w : kWinFns)
         if (!strcmp(name, w.name)) return darwin_hle_register_function(name, w.fn);
     if (!(name[0] == '_' && name[1] == 'g' && name[2] == 'l' && name[3] >= 'A' && name[3] <= 'Z')) return 0;

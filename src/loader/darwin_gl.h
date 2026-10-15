@@ -9,6 +9,12 @@ namespace xef {
 // returns 0 when the name is not ours or the host lacks it. Must be called WITHOUT g_hle_lock held.
 uint64_t darwin_gl_resolve(const char* name);
 
+// Shared host access for darwin_appkit_host.cpp: lazily dlopen libGL/libX11 (true on success), and look up
+// an Xlib / GL(X) function (GL via glXGetProcAddressARB, falling back to dlsym).
+bool darwin_gl_host_libs();
+void* darwin_gl_host_x(const char* name);
+void* darwin_gl_host_gl(const char* name);
+
 // Darwin callers read w0 / the low byte for 32-bit / GLboolean results; the SysV host leaves the upper
 // bits of rax undefined, so clamp the result to the function's declared return width.
 uint64_t darwin_gl_fix_ret(const char* name, uint64_t ret);
