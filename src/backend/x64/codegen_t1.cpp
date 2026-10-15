@@ -1942,6 +1942,7 @@ void T1::emit_sys(Val v) {
         Reg r = to_reg(in.a); pinned_ |= 1 << r;
         switch (in.aux) {
         case SYS_TPIDR_EL0: as_.mov(8, mem(R15, XEF_ST(tpidr_el0)), r); return;
+        case SYS_TPIDRRO_EL0: as_.mov(8, mem(R15, XEF_ST(tpidrro_el0)), r); return;
         case SYS_FPCR: {
             // the host MXCSR follows FPCR: RMode -> RC (RN 0, RP 2, RM 1, RZ 3), FZ -> FTZ|DAZ
             as_.mov(4, mem(R15, XEF_ST(fpcr)), r);
@@ -2257,9 +2258,9 @@ void T1::emit_terminator(Val v) {
     }
     case Op::ExitSyscall:
         ensure_flags();
-        // SVC #0 stays inside enter()'s frame (stubs.cpp); XEF_TRACE / XEF_VERIFY want every
+        // SVC #0 and SVC #0x80 (Darwin) stay inside enter()'s frame (stubs.cpp); XEF_TRACE / XEF_VERIFY want every
         // block entry to go through run_guest
-        if (in.imm2 == 0 && !g_opt.trace) {
+        if ((in.imm2 == 0 || in.imm2 == 0x80) && !g_opt.trace) {
             as_.mov_imm(RAX, in.imm);
             as_.jmp_rel32(g_cache.stubs.syscall_exit);
             return;

@@ -25,6 +25,8 @@
 #include "os/thread.h"
 #include "runtime/cpu_state.h"
 #include "runtime/dispatch.h"
+#include "loader/darwin_hle.h"
+#include "os/darwin/darwin_syscalls.h"
 
 extern "C" xef::u64 xef_call_sysv(void* fn, const xef::u64* iregs, const xef::u64* fregs, const xef::u64* stack,
                                   xef::u64 nstack, xef::u64* xmm0_out);
@@ -249,6 +251,10 @@ const char* thunk_lib_redirect(const char* path) {
 }
 
 void thunk_dispatch(CpuState* st) {
+    if (g_is_darwin) {
+        darwin_hle_dispatch(st);
+        return;
+    }
     u64 id = st->x[17];
     if (id >= (u64)kCount) fatal("bad host thunk id %lu at %#lx", (unsigned long)id, (unsigned long)st->pc);
     const Entry& e = kTable[id];

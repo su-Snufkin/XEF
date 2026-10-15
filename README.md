@@ -1,75 +1,62 @@
-# XEF
+# XEF-OSX (XEF-0SX)
 
-XEF runs Linux AArch64 (arm64) programs on x86-64 Linux: a user-mode binary translator with a
-two-tier JIT (per-block tier 1, hot-loop regions in tier 2). It runs command-line tools, X11 /
-GTK / Qt applications, web browsers and OpenGL / Vulkan games, and can hand the guest's GL,
-GLES, EGL and Vulkan calls to the host's native drivers.
+**XEF-OSX** to emulator i warstwa translacji binarki pozwalająca na uruchamianie programów **macOS ARM64 (Apple Silicon / Darwin AArch64)** na systemach **x86-64 Linux**.
 
-![SuperTuxKart on host GL](docs/screenshots/supertuxkart-hostgl.png)
+Projekt łączy:
+1. **Silnik translacji dwupoziomowego JIT (AArch64 → x86-64)** z projektu **XEF** (dekoder instrukcji ARM64, optymalizacje IR, Tier-1 per-block JIT oraz Tier-2 region compiler).
+2. **Warstwę zgodności z macOS (Darwin)** inspirowaną i zaadaptowaną z projektu **Darling**:
+   - Loader formatu **Mach-O 64-bit ARM64** (`MH_MAGIC_64`) oraz binarek uniwersalnych **FAT / Universal Mach-O** (`FAT_MAGIC` / `FAT_CIGAM`), automatycznie wybierający wycinek ARM64.
+   - Prawidłowe odwzorowanie segmentów `__PAGEZERO` (ochrona pamięci 4GB), `__TEXT`, `__DATA`, `__LINKEDIT`, BSS.
+   - Odczyt i inicjalizacja punktów wejścia `LC_MAIN` (`entryoff`) oraz `LC_UNIXTHREAD`.
+   - Inicjalizacja obszaru **macOS Commpage** (`0x00007fffffe00000` oraz `0x0000000fffffc000`) z informacjami o CPU, wersjach i parametrach systemu.
+   - Układ stosu zgodny z **Darwin / Apple Silicon ABI** (struktura `argc`, `argv`, `envp`, `apple` ze zmienną `executable_path=...`, wyrównanie 16-bajtowe).
+   - Obsługa wywołań systemowych Darwin:
+     - BSD System Calls (`x16`, `svc #0x80` oraz `svc #0`, mapowanie flag i struktur m.in. `stat64`, `open`, `mmap`, `ulock_wait`/`ulock_wake` na Linuksowy futex, `sysctl`, `getentropy`, `pipe`, `ioctl`).
+     - Obsługa konwencji flag błędów Darwin (ustawianie flagi Carry `C=1` przy błędzie i `C=0` przy sukcesie).
+     - Trapy jądra Mach (m.in. `mach_reply_port`, `thread_self_trap`, `task_self_trap`, `host_self_trap`, `mach_timebase_info_trap`, `mach_msg_trap`).
 
-## Build
+---
 
-```sh
-tools/setup.sh                                   # cmake/ninja, arm64 sysroot, qemu (test oracle), sources
+## Budowanie
+
+```bash
+# Ustawienie narzędzi cmake i ninja:
 export PATH=$PWD/.tools/venv/bin:$PATH
-cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ && ninja -C build
-tools/build_thunks.sh                            # guest shims for --host-gl (libGL / libvulkan)
+
+# Konfiguracja i kompilacja za pomocą Clanga:
+cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++
+ninja -C build
 ```
 
-## Run
+Po zbudowaniu powstaną binarki:
+- `build/xef-osx` (oraz `build/xef`).
 
-```sh
-build/xef program args...                        # static arm64 binaries
-tools/mkrootfs.sh [packages...]                  # arm64 root filesystem (Ubuntu noble + dependencies)
-XEF_REPOS=http://ppa.launchpad.net/mozillateam/ppa/ubuntu tools/mkrootfs.sh firefox   # + extra repositories (PPAs)
-build/xef -L .tools/rootfs-arm64 .tools/rootfs-arm64/usr/bin/python3 -c 'print(42)'
+---
+
+## Uruchamianie programów macOS ARM64
+
+```bash
+# Uruchomienie binarki Mach-O ARM64:
+build/xef-osx ścieżka/do/programu_macho_arm64 [argumenty...]
+
+# Uruchomienie uniwersalnej binarki FAT (x86_64 + arm64):
+build/xef-osx ścieżka/do/programu_universal [argumenty...]
+
+# Opcjonalnie z rootfs macOS / Darling prefixem:
+build/xef-osx -L /sciezka/do/macos_rootfs /sciezka/do/programu
 ```
 
-Graphical programs use the host X server (`$DISPLAY`). With `--host-gl` OpenGL/GLES/EGL/Vulkan
-run on the host's native libraries (llvmpipe or the real GPU driver) instead of the guest's
-emulated Mesa — usually several times faster:
+---
 
-```sh
-tools/mkrootfs.sh supertuxkart
-build/xef --host-gl -L .tools/rootfs-arm64 .tools/rootfs-arm64/usr/games/supertuxkart
-```
+## Uruchomienie testów Darwin ARM64
 
-`docs/GUI.md` lists what has been verified (Neverball, Extreme Tux Racer, OpenArena, Minetest,
-SuperTuxKart, Warzone 2100, GIMP, WebKitGTK with WebGL, vkcube, ...) with screenshots.
+W katalogu `tests/darwin` znajduje się zautomatyzowany zestaw testów sprawdzający:
+1. `hello_darwin` — kompilowany przez Clang dla macOS ARM64 z wywołaniami Darwin `SYS_write` i `SYS_exit`.
+2. `complex_darwin` — test trapów Mach (`mach_timebase_info`), `getpid`, `mmap` i `munmap`, oraz arytmetyki wektorowej NEON / FP.
+3. `hello_universal` — prawdziwa uniwersalna binarka Mach-O FAT (x86_64 + arm64) utworzona przez `llvm-lipo`.
+4. `test_c` — program w C dla środowiska Darwin ARM64 testujący przekazywanie argumentów linii poleceń (`argc`, `argv`).
 
-## Options
-
-| | |
-|---|---|
-| `-L DIR` / `XEF_ROOTFS` | guest root filesystem (absolute guest paths resolve there first) |
-| `--host-gl` / `XEF_HOST_GL=1` | native host OpenGL/GLX/EGL/GLES/Vulkan |
-| `--stats` | translation and runtime statistics at exit |
-| `XEF_AOT=1` | persistent translation cache in `XEF_AOT_DIR` (default `~/.cache/xef`): later runs of a program reuse its translations (Python startup −25–30%); guest libraries get deterministic addresses while it is on |
-| `XEF_T2_CALL_MOVES=N` | tier 2: evict regions whose calls cost more than N transfer moves per ms (default 28M) |
-| `--profile` | hottest translated blocks and time outside translated code (`XEF_PROFILE_AT=N`: report after N seconds) |
-| `--no-tier2`, `--tier2-threshold N` | tier-2 region compiler control |
-| `--trace` | debugging: no block linking, show the last blocks on a jump to unmapped code |
-| `--dump-ir`, `--dump-code` | IR / host code of every block |
-| `XEF_VERIFY=lo-hi` | debugging: check every scalar block starting in the range against a reference IR interpreter |
-| `XEF_SPLIT=lo-hi[,lo-hi]` | debugging: translate blocks starting there one instruction at a time (bisecting translation bugs) |
-| `XEF_DUMP=lo-hi` | limit `--dump-ir` / `--dump-code` to blocks starting in the range |
-| `XEF_CHECK_NZCV=1` | debugging: check the fast NZCV-liveness lookahead against the translator on every block |
-| `XEF_REGMAP=gcc\|clang` | canonical guest register mapping (default: from the executable's `.comment`) |
-| `XEF_STRICT_FLAGS=1` | do not assume NZCV is dead at calls, returns and indirect branches (hand-written asm passing flags; XEF warns when an indirect branch target reads NZCV first) |
-
-## Documentation
-
-- `docs/ARCHITECTURE.md` — design of the translator
-- `docs/memory-model.md` — AArch64 ordering on x86-TSO
-- `docs/GUI.md` — GUI applications, games, host GL/Vulkan
-- `docs/benchmarks.md` — performance
-- `docs/HANDOFF.md` — current state and next steps (Polish)
-
-## Tests
-
-```sh
-tests/guest/run.sh                                         # C/C++ programs: XEF vs qemu-aarch64
-tests/rootfs/run.sh                                        # -L path handling (symlinks inside the rootfs)
-tests/gui/run.sh                                           # --host-gl shims
-(cd tests/diff && python3 fuzz.py -n 3000 --class all)     # random instructions vs qemu
+Aby uruchomić testy:
+```bash
+tests/darwin/run_tests.sh
 ```

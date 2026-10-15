@@ -577,6 +577,26 @@ void vec_ref(u32 op, int es, u32 flags, u64 imm, const V128& a, const V128& b, c
         }
         break;
     }
+    case V_UDOT: case V_SDOT: {
+        int lanes = (flags & F_HALF) ? 2 : 4;
+        bool sg = op == V_SDOT;
+        for (int i = 0; i < lanes; i++) {
+            u32 acc = (u32)get(c, i, 4);
+            i64 sum = 0;
+            for (int j = 0; j < 4; j++) {
+                int b_idx = i * 4 + j;
+                i64 va = sg ? (int8_t)get(a, b_idx, 1) : (uint8_t)get(a, b_idx, 1);
+                i64 vb = sg ? (int8_t)get(b, b_idx, 1) : (uint8_t)get(b, b_idx, 1);
+                sum += va * vb;
+            }
+            put(r, i, 4, (acc + (u32)sum) & 0xffffffff);
+        }
+        if (flags & F_HALF) {
+            put(r, 2, 4, 0);
+            put(r, 3, 4, 0);
+        }
+        break;
+    }
     case V_ADDHN: case V_SUBHN: case V_RADDHN: case V_RSUBHN: {
         int ws = es * 2;
         int ln = 8 / es;

@@ -21,6 +21,8 @@
 #include "os/signals.h"
 #include "os/thread.h"
 #include "runtime/dispatch.h"
+#include "os/darwin/darwin_syscalls.h"
+#include "os/darwin/darwin_types.h"
 
 namespace xef {
 
@@ -425,6 +427,10 @@ static i64 do_brk(u64 newbrk) {
 static inline int prot_g2h(u64 p) { return (int)(p & 7); }  // drop PROT_BTI (0x10), PROT_MTE (0x20)
 
 void do_syscall(CpuState* st) {
+    if (g_is_darwin || ((st->x[16] != 0 || (int32_t)st->x[16] < 0) && (st->x[8] == 0 || (st->x[16] & SYSCALL_CLASS_MASK)))) {
+        do_darwin_syscall(st);
+        return;
+    }
     u64 nr = st->x[8];
     u64 a0 = st->x[0], a1 = st->x[1], a2 = st->x[2], a3 = st->x[3], a4 = st->x[4], a5 = st->x[5];
     i64 r;

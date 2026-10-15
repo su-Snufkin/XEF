@@ -428,7 +428,7 @@ bool Translator::system(u32 i) {
             Val v = ir_.emit(Op::GetSys, Type::I64, kNone, kNone, kNone, 0, (u8)id);
             setX(rt, v);
         } else {
-            if (id != SYS_TPIDR_EL0 && id != SYS_FPCR && id != SYS_FPSR) return false;
+            if (id != SYS_TPIDR_EL0 && id != SYS_TPIDRRO_EL0 && id != SYS_FPCR && id != SYS_FPSR) return false;
             ir_.emit(Op::SetSys, Type::None, X(rt, Type::I64), kNone, kNone, 0, (u8)id);
         }
         return true;

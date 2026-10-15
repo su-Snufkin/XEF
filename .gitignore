@@ -2,3 +2,5 @@ build*/
 .tools/
 *.o
 *.core
+CLAUDE.local.md
+mac-out/

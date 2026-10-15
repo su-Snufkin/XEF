@@ -21,4 +21,6 @@ endif()
 file(GLOB_RECURSE XEF_SRC CONFIGURE_DEPENDS src/*.cpp src/*.S)
 add_executable(xef ${XEF_SRC})
 target_include_directories(xef PRIVATE src)
-target_link_libraries(xef PRIVATE pthread ${CMAKE_DL_LIBS})
+target_link_libraries(xef PRIVATE pthread m ${CMAKE_DL_LIBS})
+add_custom_target(xef-osx ALL ${CMAKE_COMMAND} -E create_symlink xef xef-osx DEPENDS xef)
+

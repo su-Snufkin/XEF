@@ -4,6 +4,7 @@
 
 #include "common/common.h"
 #include "runtime/cpu_state.h"
+#include "os/darwin/darwin_syscalls.h"
 
 namespace xef {
 

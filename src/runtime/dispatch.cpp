@@ -15,6 +15,7 @@
 #include "frontend/a64/translate.h"
 #include "os/signals.h"
 #include "os/syscalls.h"
+#include "loader/darwin_hle.h"
 #include "profile/stats.h"
 #include "runtime/aot.h"
 
@@ -99,8 +100,12 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
     topt.max_insts = g_opt.max_block_insts;
     if (split_here(pc)) topt.max_insts = 1;
     if (!a64::guest_readable(pc)) {
-        char lr[512];
         CpuState* st = t->st;
+        if (g_is_darwin && (pc <= 0x1000 || pc == g_darwin_mach_header || pc == g_darwin_exit_trampoline || pc == g_darwin_thread_exit_trampoline)) {
+            XEF_LOG(1, "xef-osx: program or thread returned cleanly at %#lx with code %d", (unsigned long)pc, (int)st->x[0]);
+            exit((int)st->x[0]);
+        }
+        char lr[512];
         if (g_opt.trace) trace_dump();
         if (st->exit_reason == EXIT_LINK) {
             ExitInfo* e = (ExitInfo*)st->exit_info;
@@ -253,6 +258,9 @@ void code_invalidate_range(GuestAddr start, u64 len) {
 // guest returns to the callback trampoline (HLT #0x5847); the outermost run never returns.
 static void run_guest(ThreadCtx* t, bool nested) {
     CpuState* st = t->st;
+    if (!nested) {
+        XEF_LOG(1, "=== START GUEST: pc=%#lx, lr=%#lx, sp=%#lx ===", (unsigned long)st->pc, (unsigned long)st->x[30], (unsigned long)st->x[kGuestSP]);
+    }
     EnterFn enter = (EnterFn)g_cache.stubs.enter;
     IbtcEntry* ibtc = (IbtcEntry*)st->ibtc;
     u8* host = get_or_translate(t, st->pc);
@@ -289,6 +297,11 @@ static void run_guest(ThreadCtx* t, bool nested) {
         }
         case EXIT_LOOKUP: {
             if (g_opt.stats) g_stats.exits_lookup++;
+            if (g_opt.trace) tls_trace[tls_trace_n++ & 63] = st->pc;
+            if (g_is_darwin && (st->pc == g_darwin_mach_header || st->pc == g_darwin_exit_trampoline)) {
+                XEF_LOG(1, "xef-osx: binary returned with exit code %d", (int)st->x[0]);
+                exit((int)st->x[0]);
+            }
             host = get_or_translate(t, st->pc);
             {   // indirect branches / returns assume NZCV dead at their target (a64::g_abi_flags)
                 static bool warned;
@@ -339,8 +352,10 @@ static void run_guest(ThreadCtx* t, bool nested) {
                 host = get_or_translate(t, st->pc);
                 break;
             }
+            if (g_opt.trace) trace_dump();
             if (st->exit_reason == EXIT_UNDEF)
-                fatal("unsupported instruction at %#lx: %08x", (unsigned long)st->pc, (u32)st->exit_info);
+                fatal("unsupported instruction at %#lx (lr=%#lx, sp=%#lx): %08x",
+                      (unsigned long)st->pc, (unsigned long)st->x[30], (unsigned long)st->x[kGuestSP], (u32)st->exit_info);
             fatal("guest trap (brk/hlt #%#lx) at %#lx", (unsigned long)(st->exit_info & 0xffff), (unsigned long)st->pc);
         }
         default:
@@ -444,6 +459,7 @@ static std::string elf_comment(const char* path) {
 void select(const char* host_exe_path) {
     bool clang = false;
     if (const char* e = getenv("XEF_REGMAP")) clang = !strcmp(e, "clang");
+    else if (g_is_darwin) clang = true;
     else if (host_exe_path) {
         std::string c = elf_comment(host_exe_path);
         for (char& ch : c) if (!ch) ch = '\n';

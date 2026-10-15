@@ -1005,8 +1005,23 @@ static bool simd_indexed(Translator& t, u32 i, bool scalar) {
     }
     case 0x0c: s.setV(rd, s.vop(V_SQDMULH, esize, fl, a, be)); return true;
     case 0x0d: s.setV(rd, s.vop(V_SQRDMULH, esize, fl, a, be)); return true;
+    case 0x0e: if (scalar || esize != 4) return false; s.setV(rd, s.vop(V_SDOT, 4, fl, a, be, s.V(rd))); return true;
+    case 0x1e: if (scalar || esize != 4) return false; s.setV(rd, s.vop(V_UDOT, 4, fl, a, be, s.V(rd))); return true;
     default: return false;
     }
+}
+
+static bool simd_dot(Translator& t, u32 i) {
+    S s(t);
+    bool q = bit(i, 30), u = bit(i, 29);
+    int size = bits(i, 23, 22);
+    if (size != 2) return false;
+    int rd = bits(i, 4, 0), rn = bits(i, 9, 5), rm = bits(i, 20, 16);
+    u8 fl = q ? 0 : F_HALF;
+    Val a = s.V(rn), b = s.V(rm), c = s.V(rd);
+    u16 op = u ? V_UDOT : V_SDOT;
+    s.setV(rd, s.vop(op, 4, fl, a, b, c));
+    return true;
 }
 
 static bool simd_permute(Translator& t, u32 i) {
@@ -1151,6 +1166,7 @@ bool Translator::simd_fp(u32 i) {
         if (bits(i, 23, 21) == 0 && bit(i, 10) && !bit(i, 15)) {
             if (bits(i, 28, 24) == 0x0E || bits(i, 28, 24) == 0x1E) return simd_copy(*this, i, scalar);
         }
+        if (!scalar && bits(i, 28, 24) == 0x0E && bits(i, 11, 10) == 1 && bits(i, 15, 12) == 0x9) return simd_dot(*this, i);
         return false;
     }
     if ((b2824s & 0xF) == 0xF) {  // x1111: shift by immediate / modified immediate / indexed element

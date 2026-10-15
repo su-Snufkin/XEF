@@ -11,8 +11,10 @@
 
 #include "common/cpu_features.h"
 #include "loader/elf_loader.h"
+#include "loader/macho_loader.h"
 #include "os/signals.h"
 #include "os/syscalls.h"
+#include "os/darwin/darwin_syscalls.h"
 #include "os/thread.h"
 #include "profile/stats.h"
 #include "runtime/aot.h"
@@ -50,6 +52,7 @@ int main(int argc, char** argv, char** envp) {
         else if (a == "-vv") g_verbose += 2;
         else if (a == "--stats") g_opt.stats = true;
         else if (a == "--profile") g_opt.profile = true;
+        else if (a == "--darwin" || a == "--osx") g_is_darwin = true;
         else if (a == "--no-tier2") g_opt.tier2 = false;
         else if (a == "--host-gl") g_host_gl = true;
         else if (a == "--trace") { g_opt.trace = true; g_opt.tier2 = false; }
@@ -112,25 +115,43 @@ int main(int argc, char** argv, char** envp) {
         i = 0;
     }
 
+    // Check if the binary is Mach-O / FAT containing ARM64
+    std::string exe_resolved = resolve_guest_path(argv[i]);
+    bool is_fat = false, is_arm64 = false;
+    if (is_macho_binary(exe_resolved.c_str(), is_fat, is_arm64)) {
+        if (!is_arm64) fatal("%s: Mach-O/FAT binary does not contain an ARM64 slice", argv[i]);
+        g_is_darwin = true;
+    }
+
     // the register mapping follows the executable's compiler; code generation starts after this
-    regmap::select(resolve_guest_path(argv[i]).c_str());
+    regmap::select(exe_resolved.c_str());
     runtime_init();
-    aot::init(resolve_guest_path(argv[i]).c_str());   // before the loader: library placement
+    aot::init(exe_resolved.c_str());   // before the loader: library placement
     signals_init();
 
     LoadedImage img;
-    if (!load_elf(argv[i], img)) fatal("cannot load %s", argv[i]);
+    if (g_is_darwin) {
+        if (!load_macho(argv[i], img)) fatal("cannot load Mach-O binary %s", argv[i]);
+    } else {
+        if (!load_elf(argv[i], img)) fatal("cannot load %s", argv[i]);
+    }
     syscalls_init(img);
     if (argv0) argv[i] = (char*)argv0;
-    GuestAddr sp = setup_stack(img, argc - i, argv + i, envp);
 
     guest_tid_init();
     ThreadCtx* t = thread_create(nullptr);
     CpuState* st = t->st;
+
+    GuestAddr sp = 0;
+    if (g_is_darwin) {
+        sp = setup_darwin_stack(img, argc - i, argv + i, envp, st);
+    } else {
+        sp = setup_stack(img, argc - i, argv + i, envp);
+        st->x[kGuestSP] = sp;
+        st->pc = img.entry;
+        st->eflags = 0x203;   // canonical NZCV=0000 -> CF=1
+    }
     signals_thread_init(t);
-    st->x[kGuestSP] = sp;
-    st->pc = img.entry;
-    st->eflags = 0x203;   // canonical NZCV=0000 -> CF=1
     if (g_opt.profile) profile_start();
     // XEF_PROFILE_AT=N: print the statistics / profile after N seconds (for programs that do not
     // exit cleanly, e.g. GUI applications handling SIGINT themselves)

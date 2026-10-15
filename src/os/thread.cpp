@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "loader/elf_loader.h"
+#include "loader/darwin_hle.h"
 #include "os/signals.h"
 #include "os/syscalls.h"
 #include "runtime/dispatch.h"
@@ -236,6 +237,53 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         return 0;
     }
     return r;
+}
+
+int darwin_spawn_thread(uint64_t* th_out, void* attr, uint64_t start_routine, uint64_t arg) {
+    (void)attr;
+    const size_t stack_size = 2ull * 1024 * 1024; // 2MB guest stack
+    const size_t guard = 64 * 1024;
+    void* r = mmap(nullptr, stack_size + guard, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (r == MAP_FAILED) return EAGAIN;
+    mprotect(r, guard, PROT_NONE);
+
+    uint64_t sp = (uint64_t)(uintptr_t)r + guard + stack_size;
+    sp = (sp - 128) & ~15ull;
+
+    ThreadCtx* parent_t = tls_thread;
+    CpuState* parent_st = parent_t ? parent_t->st : nullptr;
+    ThreadCtx* t = thread_create(parent_st);
+    t->ss_sp = t->ss_size = 0;
+    CpuState* cs = t->st;
+    cs->x[0] = arg;
+    cs->x[30] = g_darwin_thread_exit_trampoline;
+    cs->x[kGuestSP] = sp;
+    cs->pc = start_routine;
+    cs->eflags = 0x203;
+
+    ThreadStart ts{t, 0, 0, 0, 0};
+    pthread_t th;
+    pthread_attr_t pattr;
+    pthread_attr_init(&pattr);
+    pthread_attr_setstacksize(&pattr, 1 << 20); // 1MB host stack
+    g_live_threads.fetch_add(1);
+    if (pthread_create(&th, &pattr, thread_trampoline, &ts) != 0) {
+        g_live_threads.fetch_sub(1);
+        munmap(r, stack_size + guard);
+        pthread_attr_destroy(&pattr);
+        return EAGAIN;
+    }
+    pthread_attr_destroy(&pattr);
+
+    while (__atomic_load_n(&ts.tid, __ATOMIC_ACQUIRE) == 0)
+        syscall(SYS_futex, &ts.tid, FUTEX_WAIT, 0, nullptr, nullptr, 0);
+
+    void* stack_top = (void*)((uintptr_t)r + guard + stack_size);
+    darwin_register_thread_stack(th, stack_top, stack_size);
+
+    if (th_out) *th_out = (uint64_t)th;
+    return 0;
 }
 
 // ---- execve: run the new image under XEF (or natively if it is an x86-64 binary) ----
