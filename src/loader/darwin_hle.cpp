@@ -1357,6 +1357,7 @@ static int darwin_pthread_cond_timedwait(void* cond, void* mutex, const struct t
     XEF_LOG(2, "pthread_cond_timedwait: now=(%ld, %ld), abstime=(%ld, %ld)",
             (long)now.tv_sec, (long)now.tv_nsec, (long)abstime->tv_sec, (long)abstime->tv_nsec);
     int64_t sec_diff = (int64_t)abstime->tv_sec - (int64_t)now.tv_sec;
+    if (sec_diff > 100000000ll) { cv->wait(*mtx); return 0; }    // "forever" (distantFuture etc.): avoid int64 ns overflow
     int64_t nsec_diff = (int64_t)abstime->tv_nsec - (int64_t)now.tv_nsec;
     int64_t total_ns = sec_diff * 1000000000ll + nsec_diff;
     if (total_ns <= 0) return ETIMEDOUT;
@@ -1375,6 +1376,7 @@ static int darwin_pthread_cond_timedwait_relative_np(void* cond, void* mutex, co
         cv->wait(*mtx);
         return 0;
     }
+    if (reltime->tv_sec > 100000000ll) { cv->wait(*mtx); return 0; }
     int64_t total_ns = (int64_t)reltime->tv_sec * 1000000000ll + reltime->tv_nsec;
     if (total_ns <= 0) return ETIMEDOUT;
 
@@ -1450,24 +1452,27 @@ struct os_unfair_lock_s {
     std::atomic<uint32_t> _os_unfair_lock_opaque;
 };
 
+static inline uint32_t unfair_self() { static thread_local uint32_t t = (uint32_t)syscall(SYS_gettid); return t; }
 static void darwin_os_unfair_lock_lock(os_unfair_lock_s* lock) {
     if (!lock) return;
-    uint32_t expected = 0;
-    while (!lock->_os_unfair_lock_opaque.compare_exchange_weak(expected, 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+    uint32_t me = unfair_self(), expected = 0;
+    while (!lock->_os_unfair_lock_opaque.compare_exchange_weak(expected, me, std::memory_order_acquire, std::memory_order_relaxed)) {
+        if (expected != 0 && expected != me)
+            syscall(SYS_futex, &lock->_os_unfair_lock_opaque, FUTEX_WAIT_PRIVATE, expected, nullptr, nullptr, 0);
         expected = 0;
-        sched_yield();
     }
 }
 
 static bool darwin_os_unfair_lock_trylock(os_unfair_lock_s* lock) {
     if (!lock) return false;
     uint32_t expected = 0;
-    return lock->_os_unfair_lock_opaque.compare_exchange_strong(expected, 1, std::memory_order_acquire, std::memory_order_relaxed);
+    return lock->_os_unfair_lock_opaque.compare_exchange_strong(expected, unfair_self(), std::memory_order_acquire, std::memory_order_relaxed);
 }
 
 static void darwin_os_unfair_lock_unlock(os_unfair_lock_s* lock) {
     if (!lock) return;
     lock->_os_unfair_lock_opaque.store(0, std::memory_order_release);
+    syscall(SYS_futex, &lock->_os_unfair_lock_opaque, FUTEX_WAKE_PRIVATE, 1, nullptr, nullptr, 0);
 }
 
 static int darwin_issetugid() {
@@ -1738,6 +1743,7 @@ void darwin_hle_init() {
     g_guest_stderr = stderr;
 
     init_rune_locale();
+    if (getenv("XEF_LINEBUF")) setvbuf(stdout, nullptr, _IOLBF, 0);   // debugging aid: see output while hung
 
     dlopen("libgcc_s.so.1", RTLD_GLOBAL | RTLD_LAZY);
     dlopen("libpcre2-8.so.0", RTLD_GLOBAL | RTLD_LAZY);

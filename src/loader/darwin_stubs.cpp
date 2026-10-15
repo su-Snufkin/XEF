@@ -194,6 +194,31 @@ static const StubEntry kStubs[] = {
 
 static void st_noop2() {}
 static int st_zero2() { return 0; }
+static clockid_t darwin_clock_id(int id) {
+    switch (id) {
+        case 0: return CLOCK_REALTIME;
+        case 4: case 5: case 8: case 9: return CLOCK_MONOTONIC_RAW;
+        case 6: return CLOCK_MONOTONIC;
+        case 12: return CLOCK_PROCESS_CPUTIME_ID;
+        case 16: return CLOCK_THREAD_CPUTIME_ID;
+        default: return (clockid_t)-1;
+    }
+}
+static int st_clock_gettime(int id, struct timespec* ts) {
+    clockid_t c = darwin_clock_id(id);
+    if (c == (clockid_t)-1) { errno = EINVAL; return -1; }
+    return clock_gettime(c, ts);
+}
+static int st_clock_getres(int id, struct timespec* ts) {
+    clockid_t c = darwin_clock_id(id);
+    if (c == (clockid_t)-1) { errno = EINVAL; return -1; }
+    return clock_getres(c, ts);
+}
+static uint64_t st_clock_gettime_nsec_np(int id) {
+    struct timespec ts;
+    if (st_clock_gettime(id, &ts)) return 0;
+    return (uint64_t)ts.tv_sec * 1000000000ull + ts.tv_nsec;
+}
 static void* st_null2() { return nullptr; }
 static void st_memset_pattern4(void* b, const void* p, size_t n) {
     uint8_t* d = (uint8_t*)b; const uint8_t* s = (const uint8_t*)p;
@@ -202,6 +227,8 @@ static void st_memset_pattern4(void* b, const void* p, size_t n) {
 static int st_vm_copy(uint32_t, uint64_t src, uint64_t n, uint64_t dst) { memmove((void*)(uintptr_t)dst, (void*)(uintptr_t)src, n); return 0; }
 static int st_task_info(uint32_t, int, void* info, uint32_t* cnt) { if (info && cnt) memset(info, 0, *cnt * 4); return 0; }
 static const StubEntry kStubs2[] = {
+    {"_clock_gettime", (void*)&st_clock_gettime}, {"_clock_getres", (void*)&st_clock_getres},
+    {"_clock_gettime_nsec_np", (void*)&st_clock_gettime_nsec_np},
     {"_getprogname", (void*)&st_getprogname}, {"_malloc_create_zone", (void*)&st_malloc_create_zone},
     {"_malloc_destroy_zone", (void*)&st_noop2}, {"_malloc_set_zone_name", (void*)&st_noop2}, {"_malloc_get_zone_name", (void*)&st_null2},
     {"_pthread_main_thread_np", (void*)&st_pthread_main_thread_np}, {"_getsectbynamefromheader_64", (void*)&st_getsectbynamefromheader_64},

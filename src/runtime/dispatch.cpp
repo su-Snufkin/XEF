@@ -16,6 +16,7 @@
 #include "os/signals.h"
 #include "os/syscalls.h"
 #include "loader/darwin_hle.h"
+#include "loader/macho_image.h"
 #include "os/thread.h"
 #include "profile/stats.h"
 #include "runtime/aot.h"
@@ -361,7 +362,10 @@ static void run_guest(ThreadCtx* t, bool nested) {
             if (st->exit_reason == EXIT_UNDEF)
                 fatal("unsupported instruction at %#lx (lr=%#lx, sp=%#lx): %08x",
                       (unsigned long)st->pc, (unsigned long)st->x[30], (unsigned long)st->x[kGuestSP], (u32)st->exit_info);
-            fatal("guest trap (brk/hlt #%#lx) at %#lx", (unsigned long)(st->exit_info & 0xffff), (unsigned long)st->pc);
+            {
+                std::string d = g_is_darwin ? dyld_describe(st->pc) : std::string();
+                fatal("guest trap (brk/hlt #%#lx) at %#lx %s", (unsigned long)(st->exit_info & 0xffff), (unsigned long)st->pc, d.c_str());
+            }
         }
         default:
             fatal("unknown exit reason %lu", (unsigned long)st->exit_reason);

@@ -21,6 +21,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <Block.h>
+#include <mach/mach.h>
+#include <mach/message.h>
 
 #define EXPORT __attribute__((visibility("default")))
 
@@ -111,6 +113,7 @@ typedef struct item {
     int barrier_run;    // a barrier item is executing
     struct spec { struct spec *next; const void *key; void *val; dispatch_function_t dtor; } *specifics;
     struct OS_dispatch_queue_ *unused;
+    mach_port_t port;       // wake-up port (main / run loop queues)
 }
 @end
 @interface OS_dispatch_queue_main : OS_dispatch_queue @end
@@ -260,10 +263,12 @@ static void drain_queue(OS_dispatch_queue *q) {
         if (!serial) {
             q->running++;
             if (it->barrier) q->barrier_run = 1;
-            else if (q->head) {         // let another worker take the next independent item
+            if (q->head && !it->barrier) {   // let another worker take the next independent item
                 pthread_mutex_unlock(&q->lock);
                 ready_push(q);
                 pthread_mutex_lock(&q->lock);
+            } else if (!q->head || it->barrier) {
+                q->scheduled = 0;            // nothing left to hand out: later enqueues must schedule the queue again
             }
         }
         pthread_mutex_unlock(&q->lock);
@@ -419,7 +424,14 @@ static void enqueue(OS_dispatch_queue *q, item_t *it) {
     pthread_mutex_unlock(&q->lock);
     if (sched) ready_push(q);
     if (q->kind == Q_MAIN || q->kind == Q_RUNLOOP) {
-        _xef_dispatch_wake_main();
+        if (q->kind == Q_MAIN) _xef_dispatch_wake_main();
+        if (q->port) {
+            mach_msg_header_t h = {0};
+            h.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, 0);
+            h.msgh_size = sizeof h;
+            h.msgh_remote_port = q->port;
+            mach_msg(&h, MACH_SEND_MSG | MACH_SEND_TIMEOUT, sizeof h, 0, MACH_PORT_NULL, 0, MACH_PORT_NULL);
+        }
     }
 }
 
@@ -512,26 +524,25 @@ EXPORT void dispatch_async_and_wait_f(dispatch_object_t q, void *ctx, dispatch_f
 EXPORT void dispatch_apply(size_t n, dispatch_object_t q, void (^b)(size_t)) {
     (void)q;
     if (n == 0) return;
-    __block size_t next = 0;
-    __block size_t done = 0;
-    pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
-    pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
+    // the synchronisation objects must be shared by pointer: a block copies captured C structs by value
+    struct apply_state { size_t next, done; pthread_mutex_t lk; pthread_cond_t cv; } st = { 0, 0, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER };
+    struct apply_state *sp = &st;
     size_t workers = g_max_workers < (int)n ? (size_t)g_max_workers : n;
     void (^body)(void) = ^{
         for (;;) {
-            size_t i = __atomic_fetch_add(&next, 1, __ATOMIC_SEQ_CST);
+            size_t i = __atomic_fetch_add(&sp->next, 1, __ATOMIC_SEQ_CST);
             if (i >= n) break;
             b(i);
-            pthread_mutex_lock(&lk);
-            if (++done == n) pthread_cond_broadcast(&cv);
-            pthread_mutex_unlock(&lk);
+            pthread_mutex_lock(&sp->lk);
+            if (++sp->done == n) pthread_cond_broadcast(&sp->cv);
+            pthread_mutex_unlock(&sp->lk);
         }
     };
     for (size_t w = 1; w < workers; w++) dispatch_async(global_queue(2), body);
     body();
-    pthread_mutex_lock(&lk);
-    while (done < n) pthread_cond_wait(&cv, &lk);
-    pthread_mutex_unlock(&lk);
+    pthread_mutex_lock(&st.lk);
+    while (st.done < n) pthread_cond_wait(&st.cv, &st.lk);
+    pthread_mutex_unlock(&st.lk);
 }
 struct apply_ctx { size_t n; void *ctx; void (*f)(void *, size_t); size_t next, done; pthread_mutex_t lk; pthread_cond_t cv; };
 static void apply_worker(void *p) {
@@ -1006,7 +1017,20 @@ EXPORT void dispatch_main(void) {
         pthread_mutex_unlock(&g_main_lock);
     }
 }
-EXPORT unsigned int _dispatch_get_main_queue_port_4CF(void) { return 0x1c03; }
+static mach_port_t queue_port(OS_dispatch_queue *q) {
+    pthread_mutex_lock(&q->lock);
+    if (!q->port) {
+        mach_port_t p = MACH_PORT_NULL;
+        if (mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &p) == KERN_SUCCESS) {
+            mach_port_insert_right(mach_task_self(), p, p, MACH_MSG_TYPE_MAKE_SEND);
+            q->port = p;
+        }
+    }
+    mach_port_t r = q->port;
+    pthread_mutex_unlock(&q->lock);
+    return r;
+}
+EXPORT unsigned int _dispatch_get_main_queue_port_4CF(void) { return queue_port(g_main); }
 EXPORT void _dispatch_main_queue_callback_4CF(void *msg) { (void)msg; drain_main(g_main); }
 EXPORT dispatch_object_t _dispatch_runloop_root_queue_create_4CF(const char *label, unsigned long flags) {
     (void)flags;
@@ -1014,7 +1038,7 @@ EXPORT dispatch_object_t _dispatch_runloop_root_queue_create_4CF(const char *lab
     queue_init_fields(q, label, Q_RUNLOOP);
     return q;
 }
-EXPORT unsigned int _dispatch_runloop_root_queue_get_port_4CF(dispatch_object_t q) { (void)q; return 0x1d03; }
+EXPORT unsigned int _dispatch_runloop_root_queue_get_port_4CF(dispatch_object_t q) { return queue_port(q); }
 EXPORT int _dispatch_runloop_root_queue_perform_4CF(dispatch_object_t q) { return drain_main(q); }
 EXPORT void _dispatch_source_set_runloop_timer_4CF(dispatch_object_t s, dispatch_time_t start, uint64_t interval, uint64_t leeway) {
     dispatch_source_set_timer(s, start, interval, leeway);

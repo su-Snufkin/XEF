@@ -110,3 +110,28 @@ XEF_NUM_METHODS(_value, 0)
 - (id)retain { return self; } - (oneway void)release {} - (NSUInteger)retainCount { return ~(NSUInteger)0; }
 - (id)copyWithZone:(NSZone *)z { return self; } - (id)copy { return self; }
 @end
+
+// ---- newer API missing from Darling's Foundation ------------------------------------------------------------
+@interface XEFBlockRunner : NSObject { void (^_block)(void); }
+- (instancetype)initWithBlock:(void (^)(void))b;
+- (void)run;
+@end
+@implementation XEFBlockRunner
+- (instancetype)initWithBlock:(void (^)(void))b { if ((self = [super init])) _block = Block_copy(b); return self; }
+- (void)run { _block(); }
+- (void)dealloc { Block_release(_block); [super dealloc]; }
+@end
+
+@implementation NSThread (XEFBlocks)
+- (instancetype)initWithBlock:(void (^)(void))block {
+    XEFBlockRunner *r = [[XEFBlockRunner alloc] initWithBlock:block];
+    self = [self initWithTarget:r selector:@selector(run) object:nil];
+    [r release];     // the thread retains its target
+    return self;
+}
++ (void)detachNewThreadWithBlock:(void (^)(void))block {
+    XEFBlockRunner *r = [[XEFBlockRunner alloc] initWithBlock:block];
+    [NSThread detachNewThreadSelector:@selector(run) toTarget:r withObject:nil];
+    [r release];
+}
+@end
