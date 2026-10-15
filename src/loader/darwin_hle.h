@@ -12,7 +12,7 @@ void darwin_hle_init();
 // Resolve a Darwin Mach-O imported symbol name (e.g. "_printf", "___error", "___stdoutp")
 // Returns guest ARM64 virtual address of a callable stub or data variable.
 // If is_weak is true and symbol is unknown, returns 0 instead of creating a fallback stub.
-uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak = false);
+uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak = false, bool explicit_only = false);
 
 // Dispatches an HLE thunk call (st->x[17] = thunk ID)
 void darwin_hle_dispatch(CpuState* st);
@@ -25,6 +25,8 @@ extern char** g_darwin_argv;
 extern char** g_darwin_envp;
 extern std::string g_darwin_exe_path;
 extern uint64_t g_darwin_exit_trampoline;
+extern uint64_t g_darwin_start_stub;     // runs the initializers, then branches to g_darwin_start_target
+extern uint64_t g_darwin_start_target;
 extern uint64_t g_darwin_thread_exit_trampoline;
 extern const uint8_t* g_darwin_tlv_template;
 extern size_t g_darwin_tlv_template_size;

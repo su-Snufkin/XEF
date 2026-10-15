@@ -1,5 +1,6 @@
 // XEF-OSX — Darwin High-Level Emulation (HLE) Runtime implementation.
 #include "loader/darwin_hle.h"
+#include "loader/macho_image.h"
 #include "loader/elf_loader.h"
 #include "os/darwin/darwin_types.h"
 #include "os/thread.h"
@@ -26,6 +27,7 @@
 #include <condition_variable>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 
 extern "C" xef::u64 xef_call_sysv(void* fn, const xef::u64* iregs, const xef::u64* fregs,
@@ -45,6 +47,7 @@ struct ThunkEntry {
 
 static std::vector<ThunkEntry> g_thunks;
 static std::unordered_map<std::string, uint64_t> g_symbol_cache;
+static std::unordered_set<std::string> g_host_fallback_names;   // resolved only through the host's dlsym
 
 // Special Darwin globals
 static uint64_t g_stack_chk_guard = 0x595e9fbd94fda766ull;
@@ -60,6 +63,9 @@ char** g_darwin_argv = nullptr;
 char** g_darwin_envp = nullptr;
 std::string g_darwin_exe_path;
 uint64_t g_darwin_exit_trampoline = 0;
+uint64_t g_darwin_start_stub = 0;
+uint64_t g_darwin_start_target = 0;
+static void darwin_start_marker() {}
 uint64_t g_darwin_thread_exit_trampoline = 0;
 const uint8_t* g_darwin_tlv_template = nullptr;
 size_t g_darwin_tlv_template_size = 0;
@@ -605,37 +611,151 @@ static void darwin_dispatch_release(void* obj) {
 }
 
 static void* darwin_dlsym(void* handle, const char* symbol) {
-    (void)handle;
     if (!symbol || !symbol[0]) return nullptr;
+    std::string prefixed = std::string("_") + symbol;
     XEF_LOG(2, "darwin_dlsym(handle=%p, symbol='%s')", handle, symbol);
-    // Try resolving as Darwin symbol
-    uint64_t addr = darwin_hle_resolve_symbol(symbol, true);
-    if (!addr && symbol[0] != '_') {
-        std::string prefixed = "_" + std::string(symbol);
-        addr = darwin_hle_resolve_symbol(prefixed.c_str(), true);
-    }
+    uint64_t addr = 0;
+    auto& imgs = dyld_images();
+    bool is_image = false;
+    for (MachImage* im : imgs) is_image |= ((void*)im == handle);
+    if (is_image) addr = dyld_image_lookup((MachImage*)handle, prefixed.c_str());
+    else addr = dyld_flat_lookup(prefixed.c_str());
+    if (!addr && !is_image) addr = darwin_hle_resolve_symbol(prefixed.c_str(), true);
+    if (!addr && !is_image) addr = darwin_hle_resolve_symbol(symbol, true);
     XEF_LOG(2, "darwin_dlsym('%s') -> %p", symbol, (void*)addr);
     return (void*)(uintptr_t)addr;
 }
 
+static std::string g_dlerror;
+static void* darwin_dlopen(const char* path, int mode) {
+    (void)mode;
+    MachImage* im = dyld_dlopen(path);
+    if (!im && path) {
+        g_dlerror = std::string("dlopen(") + path + "): image not found";
+        return nullptr;
+    }
+    return im;
+}
+static int darwin_dlclose(void*) { return 0; }
+static const char* darwin_dlerror() {
+    if (g_dlerror.empty()) return nullptr;
+    static thread_local std::string cur;
+    cur = g_dlerror;
+    g_dlerror.clear();
+    return cur.c_str();
+}
 
-// Dyld runtime introspection
-static uint32_t darwin_dyld_image_count() {
+struct DarwinDlInfo { const char* fname; void* fbase; const char* sname; void* saddr; };
+static int darwin_dladdr(const void* addr, DarwinDlInfo* info) {
+    MachImage* im = dyld_image_containing((uint64_t)(uintptr_t)addr);
+    if (!im || !info) return 0;
+    info->fname = im->path.c_str();
+    info->fbase = (void*)(uintptr_t)im->header;
+    info->sname = nullptr;
+    info->saddr = nullptr;
     return 1;
 }
 
-static const char* darwin_dyld_get_image_name(uint32_t index) {
-    if (index == 0) return g_darwin_exe_path.c_str();
-    return nullptr;
-}
 
-static intptr_t darwin_dyld_get_image_vmaddr_slide(uint32_t index) {
-    (void)index;
+// ---- sorting / searching with guest comparators ---------------------------------------------
+static thread_local u64 tl_cmp_fn = 0, tl_cmp_thunk = 0;
+static int cmp_guest2(const void* a, const void* b) {
+    u64 args[2] = {(u64)(uintptr_t)a, (u64)(uintptr_t)b};
+    return (int)guest_call(tl_cmp_fn, 2, args);
+}
+static int cmp_guest3(const void* a, const void* b) {
+    u64 args[3] = {tl_cmp_thunk, (u64)(uintptr_t)a, (u64)(uintptr_t)b};
+    return (int)guest_call(tl_cmp_fn, 3, args);
+}
+static void darwin_qsort(void* base, size_t n, size_t size, u64 cmp) {
+    u64 sf = tl_cmp_fn; tl_cmp_fn = cmp;
+    qsort(base, n, size, cmp_guest2);
+    tl_cmp_fn = sf;
+}
+// Darwin: qsort_r(base, n, size, thunk, cmp(thunk, a, b))
+static void darwin_qsort_r(void* base, size_t n, size_t size, u64 thunk, u64 cmp) {
+    u64 sf = tl_cmp_fn, st = tl_cmp_thunk; tl_cmp_fn = cmp; tl_cmp_thunk = thunk;
+    qsort(base, n, size, cmp_guest3);
+    tl_cmp_fn = sf; tl_cmp_thunk = st;
+}
+static void* darwin_bsearch(const void* key, const void* base, size_t n, size_t size, u64 cmp) {
+    u64 sf = tl_cmp_fn; tl_cmp_fn = cmp;
+    void* r = bsearch(key, base, n, size, cmp_guest2);
+    tl_cmp_fn = sf;
+    return r;
+}
+// mergesort/heapsort/radixsort do not exist in glibc: a stable insertion-merge on a copy
+static int darwin_stable_sort(void* base, size_t n, size_t size, u64 cmp) {
+    if (n < 2) return 0;
+    u64 sf = tl_cmp_fn; tl_cmp_fn = cmp;
+    std::vector<uint8_t> tmp(n * size);
+    uint8_t* a = (uint8_t*)base;
+    for (size_t width = 1; width < n; width *= 2) {
+        for (size_t lo = 0; lo < n; lo += 2 * width) {
+            size_t mid = std::min(lo + width, n), hi = std::min(lo + 2 * width, n);
+            size_t i = lo, j = mid, k = lo;
+            while (i < mid && j < hi)
+                memcpy(&tmp[(k++) * size], cmp_guest2(a + j * size, a + i * size) < 0 ? a + (j++) * size : a + (i++) * size, size);
+            while (i < mid) memcpy(&tmp[(k++) * size], a + (i++) * size, size);
+            while (j < hi) memcpy(&tmp[(k++) * size], a + (j++) * size, size);
+        }
+        memcpy(a, tmp.data(), n * size);
+    }
+    tl_cmp_fn = sf;
     return 0;
 }
 
+// Dyld runtime introspection
+static uint32_t darwin_dyld_image_count() {
+    return (uint32_t)dyld_images().size();
+}
+
+static const char* darwin_dyld_get_image_name(uint32_t index) {
+    auto& v = dyld_images();
+    return index < v.size() ? v[index]->path.c_str() : nullptr;
+}
+
+static intptr_t darwin_dyld_get_image_vmaddr_slide(uint32_t index) {
+    auto& v = dyld_images();
+    return index < v.size() ? (intptr_t)v[index]->slide : 0;
+}
+
 static void* darwin_dyld_get_image_header(uint32_t index) {
-    if (index == 0) return (void*)(uintptr_t)g_darwin_mach_header;
+    auto& v = dyld_images();
+    return index < v.size() ? (void*)(uintptr_t)v[index]->header : nullptr;
+}
+
+struct DyldUnwindSections {
+    const void* mh;
+    const void* dwarf_section;
+    uintptr_t dwarf_section_length;
+    const void* compact_unwind_section;
+    uintptr_t compact_unwind_section_length;
+};
+static bool darwin_dyld_find_unwind_sections(void* addr, DyldUnwindSections* info) {
+    MachImage* im = dyld_image_containing((uint64_t)(uintptr_t)addr);
+    if (!im || !info) return false;
+    info->mh = (const void*)(uintptr_t)im->header;
+    info->dwarf_section = (const void*)(uintptr_t)im->eh_frame;
+    info->dwarf_section_length = (uintptr_t)im->eh_frame_size;
+    info->compact_unwind_section = (const void*)(uintptr_t)im->unwind_info;
+    info->compact_unwind_section_length = (uintptr_t)im->unwind_info_size;
+    return true;
+}
+
+static void darwin_dyld_register_func_for_add_image(u64 fn) {
+    if (!fn) return;
+    auto imgs = dyld_images();   // copy: the callback may load more
+    for (MachImage* im : imgs) {
+        u64 a[2] = {im->header, im->slide};
+        guest_call(fn, 2, a);
+    }
+}
+static void darwin_dyld_register_func_for_remove_image(u64) {}
+
+static const char* darwin_dyld_get_image_install_name(const void* mh) {
+    for (MachImage* im : dyld_images())
+        if (im->header == (uint64_t)(uintptr_t)mh) return im->install_name.c_str();
     return nullptr;
 }
 
@@ -650,19 +770,7 @@ static thread_local void* g_thread_tlv_block = nullptr;
 static constexpr size_t kDefaultTlvSize = 128 * 1024;
 
 static void* darwin_tlv_bootstrap(TLVDescriptor* desc) {
-    if (!g_thread_tlv_block) {
-        g_thread_tlv_block = calloc(1, kDefaultTlvSize);
-        if (g_darwin_tlv_template && g_darwin_tlv_template_size > 0) {
-            size_t copy_sz = std::min(g_darwin_tlv_template_size, kDefaultTlvSize);
-            memcpy(g_thread_tlv_block, g_darwin_tlv_template, copy_sz);
-        }
-        XEF_LOG(2, "darwin_tlv_bootstrap: allocated and initialized new tlv block %p for pthread %lu",
-                g_thread_tlv_block, (unsigned long)pthread_self());
-    }
-    void* res = (uint8_t*)g_thread_tlv_block + desc->offset;
-    XEF_LOG(2, "darwin_tlv_bootstrap(desc=%p, offset=%#lx) on pthread %lu -> %p (val=%#lx)",
-            desc, desc->offset, (unsigned long)pthread_self(), res, *(unsigned long*)res);
-    return res;
+    return dyld_tlv_address((uint64_t)(uintptr_t)desc);
 }
 
 static int darwin_tlv_atexit(void (*term)(void*), void* obj, void* dso) {
@@ -1141,15 +1249,30 @@ void darwin_hle_init() {
     thread_exit_insns[2] = 0xd4400000u; // hlt #0
     thread_exit_insns[3] = 0xd65f03c0u; // ret
     g_darwin_thread_exit_trampoline = (uint64_t)(uintptr_t)thread_exit_stub;
+
+    // start stub: mov x17,#id ; hlt ; br x16 ; nop  (the host runs the initializers in between)
+    uint8_t* start_stub = g_thunk_code + g_thunk_code_used;
+    g_thunk_code_used += 16;
+    uint32_t start_id = (uint32_t)g_thunks.size();
+    g_thunks.push_back({"__xef_start", (void*)&darwin_start_marker});
+    uint32_t* start_insns = (uint32_t*)start_stub;
+    start_insns[0] = 0xd2800000u | ((start_id & 0xffffu) << 5) | 17u;
+    start_insns[1] = 0xd4400000u | (kThunkHlt << 5);
+    start_insns[2] = 0xd61f0200u;   // br x16
+    start_insns[3] = 0xd503201fu;
+    g_darwin_start_stub = (uint64_t)(uintptr_t)start_stub;
 }
 
-uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak) {
+uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit_only) {
     if (!name || !name[0]) return 0;
     darwin_hle_init();
 
     std::lock_guard<std::mutex> lk(g_hle_lock);
     auto it = g_symbol_cache.find(name);
-    if (it != g_symbol_cache.end()) return it->second;
+    if (it != g_symbol_cache.end()) {
+        if (explicit_only && g_host_fallback_names.count(name)) return 0;
+        return it->second;
+    }
 
     // 1. Check special Darwin data variables
     if (strcmp(name, "___stack_chk_guard") == 0) {
@@ -1376,8 +1499,32 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak) {
         host_fn = (void*)&darwin_kevent;
     } else if (strcmp(name, "_fcntl") == 0 || strcmp(name, "fcntl") == 0) {
         host_fn = (void*)&darwin_fcntl;
+    } else if (strcmp(name, "_qsort") == 0) {
+        host_fn = (void*)&darwin_qsort;
+    } else if (strcmp(name, "_qsort_r") == 0) {
+        host_fn = (void*)&darwin_qsort_r;
+    } else if (strcmp(name, "_bsearch") == 0) {
+        host_fn = (void*)&darwin_bsearch;
+    } else if (strcmp(name, "_mergesort") == 0 || strcmp(name, "_heapsort") == 0) {
+        host_fn = (void*)&darwin_stable_sort;
     } else if (strcmp(name, "_dlsym") == 0 || strcmp(name, "dlsym") == 0) {
         host_fn = (void*)&darwin_dlsym;
+    } else if (strcmp(name, "_dlopen") == 0 || strcmp(name, "dlopen") == 0) {
+        host_fn = (void*)&darwin_dlopen;
+    } else if (strcmp(name, "_dlclose") == 0 || strcmp(name, "dlclose") == 0) {
+        host_fn = (void*)&darwin_dlclose;
+    } else if (strcmp(name, "_dlerror") == 0 || strcmp(name, "dlerror") == 0) {
+        host_fn = (void*)&darwin_dlerror;
+    } else if (strcmp(name, "_dladdr") == 0 || strcmp(name, "dladdr") == 0) {
+        host_fn = (void*)&darwin_dladdr;
+    } else if (strcmp(name, "__dyld_find_unwind_sections") == 0) {
+        host_fn = (void*)&darwin_dyld_find_unwind_sections;
+    } else if (strcmp(name, "__dyld_register_func_for_add_image") == 0) {
+        host_fn = (void*)&darwin_dyld_register_func_for_add_image;
+    } else if (strcmp(name, "__dyld_register_func_for_remove_image") == 0) {
+        host_fn = (void*)&darwin_dyld_register_func_for_remove_image;
+    } else if (strcmp(name, "_dyld_image_path_containing_address") == 0) {
+        host_fn = (void*)&darwin_dyld_get_image_install_name;
     } else if (strcmp(name, "_printf") == 0 || strcmp(name, "printf") == 0) {
         host_fn = (void*)&darwin_printf;
     } else if (strcmp(name, "_fprintf") == 0 || strcmp(name, "fprintf") == 0) {
@@ -1397,7 +1544,9 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak) {
         }
         // Strip leading '_' (macOS C symbol prefix)
         const char* clean_name = (sname[0] == '_') ? sname.c_str() + 1 : sname.c_str();
+        if (explicit_only) return 0;
         host_fn = dlsym(RTLD_DEFAULT, clean_name);
+        if (host_fn) g_host_fallback_names.insert(name);
         if (!host_fn) host_fn = dlsym(RTLD_DEFAULT, sname.c_str());
         if (!host_fn) host_fn = dlsym(RTLD_DEFAULT, name);
     }
@@ -1409,6 +1558,7 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak) {
         }
         XEF_LOG(1, "xef-osx: unresolved symbol %s", name);
         host_fn = (void*)&darwin_missing_symbol_fallback;
+        g_host_fallback_names.insert(name);
     }
 
     // Allocate thunk stub in ARM64 executable code page:
@@ -1454,6 +1604,13 @@ void darwin_hle_dispatch(CpuState* st) {
     }
     XEF_LOG(2, "hle: %s(x0=%#lx, x1=%#lx, x2=%#lx, x3=%#lx)", name,
             (unsigned long)st->x[0], (unsigned long)st->x[1], (unsigned long)st->x[2], (unsigned long)st->x[3]);
+
+    if (host_fn == (void*)&darwin_start_marker) {
+        // x0..x3 = argc, argv, envp, apple (dyld's initializer arguments)
+        dyld_run_initializers(st->x[0], st->x[1], st->x[2], st->x[3]);
+        st->x[16] = g_darwin_start_target;
+        return;
+    }
 
     if (host_fn == (void*)&darwin_missing_symbol_fallback) {
         fatal("xef-osx: called unresolved Darwin symbol '%s'", name);

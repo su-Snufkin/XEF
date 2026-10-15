@@ -1,8 +1,12 @@
-// XEF-OSX — Mach-O ARM64 loader implementation.
+// XEF-OSX — Mach-O ARM64 loader and the dyld part of the Darwin layer:
+// image loading (executable + dylibs from the rootfs), rebases, chained fixups / bind opcodes with
+// two-level-namespace ordinals, exports tries, re-exports, initializers, TLV and dlopen.
 #include "loader/macho_loader.h"
+#include "loader/macho_image.h"
 #include "loader/macho_types.h"
 #include "loader/commpage.h"
 #include "loader/darwin_hle.h"
+#include "thunks/thunks.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -12,6 +16,9 @@
 #include <stdio.h>
 #include <vector>
 #include <algorithm>
+#include <mutex>
+#include <memory>
+#include <unordered_map>
 
 namespace xef {
 
@@ -22,97 +29,12 @@ static inline u64 page_align_up(u64 x) { return (x + kPageSize - 1) & ~(kPageSiz
 static inline uint32_t bswap32(uint32_t x) { return __builtin_bswap32(x); }
 static inline uint64_t bswap64(uint64_t x) { return __builtin_bswap64(x); }
 
-struct ChainedFixupsHeader {
-    uint32_t fixups_version;
-    uint32_t starts_offset;
-    uint32_t imports_offset;
-    uint32_t symbols_offset;
-    uint32_t imports_count;
-    uint32_t imports_format;
-    uint32_t symbols_format;
-};
-
-static void resolve_chained_fixups(int fd, uint64_t slice_offset, uint64_t fixup_off, uint64_t fixup_size, uint64_t exe_base) {
-    if (fixup_size < sizeof(ChainedFixupsHeader)) return;
-    std::vector<uint8_t> buf(fixup_size);
-    lseek(fd, slice_offset + fixup_off, SEEK_SET);
-    if (read(fd, buf.data(), fixup_size) != (ssize_t)fixup_size) return;
-
-    const ChainedFixupsHeader* hdr = (const ChainedFixupsHeader*)buf.data();
-    if (hdr->imports_offset >= fixup_size || hdr->symbols_offset >= fixup_size) return;
-
-    const uint8_t* symbols_buf = buf.data() + hdr->symbols_offset;
-    std::vector<uint64_t> imported_addrs(hdr->imports_count, 0);
-
-    for (uint32_t i = 0; i < hdr->imports_count; i++) {
-        uint32_t name_off = 0;
-        if (hdr->imports_format == 1) { // DYLD_CHAINED_IMPORT
-            const uint32_t* imp = (const uint32_t*)(buf.data() + hdr->imports_offset);
-            uint32_t val = imp[i];
-            name_off = val >> 9;
-        } else if (hdr->imports_format == 2) { // DYLD_CHAINED_IMPORT_ADDEND
-            const uint64_t* imp = (const uint64_t*)(buf.data() + hdr->imports_offset);
-            uint64_t val = imp[i];
-            name_off = (val >> 9) & 0x7FFFFF;
-        }
-        if (hdr->symbols_offset + name_off < fixup_size) {
-            const char* name = (const char*)(symbols_buf + name_off);
-            imported_addrs[i] = darwin_hle_resolve_symbol(name);
-        }
-    }
-
-    if (hdr->starts_offset >= fixup_size) return;
-    const uint32_t* starts_img = (const uint32_t*)(buf.data() + hdr->starts_offset);
-    uint32_t seg_count = starts_img[0];
-    const uint32_t* seg_offsets = starts_img + 1;
-
-    for (uint32_t s = 0; s < seg_count; s++) {
-        uint32_t soff = seg_offsets[s];
-        if (soff == 0 || hdr->starts_offset + soff >= fixup_size) continue;
-
-        const uint8_t* seg_info = buf.data() + hdr->starts_offset + soff;
-        uint16_t page_size = *(const uint16_t*)(seg_info + 4);
-        uint64_t segment_offset = *(const uint64_t*)(seg_info + 8);
-        uint16_t page_count = *(const uint16_t*)(seg_info + 20);
-        const uint16_t* page_starts = (const uint16_t*)(seg_info + 22);
-
-        uint64_t seg_mem_base = exe_base + segment_offset;
-        size_t seg_protect_len = (size_t)page_size * page_count;
-        mprotect((void*)page_align_down(seg_mem_base), page_align_up(seg_protect_len + 4096), PROT_READ | PROT_WRITE);
-
-        for (uint16_t p = 0; p < page_count; p++) {
-            uint16_t pstart = page_starts[p];
-            if (pstart == 0xFFFF) continue; // no fixups on this page
-
-            uint64_t chain_addr = seg_mem_base + (uint64_t)p * page_size + pstart;
-            for (;;) {
-                uint64_t raw_val = *(uint64_t*)chain_addr;
-                bool is_bind = (raw_val >> 63) & 1;
-                uint64_t next = (raw_val >> 51) & 0xFFF;
-
-                if (is_bind) {
-                    uint32_t ordinal = raw_val & 0xFFFFFF;
-                    if (ordinal < hdr->imports_count && imported_addrs[ordinal] != 0) {
-                        *(uint64_t*)chain_addr = imported_addrs[ordinal];
-                    }
-                } else {
-                    uint64_t target = raw_val & 0xFFFFFFFFFLL;
-                    *(uint64_t*)chain_addr = exe_base + target;
-                }
-
-                if (next == 0) break;
-                chain_addr += next * 4;
-            }
-        }
-    }
-}
-
 static inline uint64_t read_uleb128(const uint8_t*& p, const uint8_t* end) {
     uint64_t res = 0;
     int shift = 0;
     while (p < end) {
         uint8_t b = *p++;
-        res |= (uint64_t)(b & 0x7F) << shift;
+        if (shift < 64) res |= (uint64_t)(b & 0x7F) << shift;
         if ((b & 0x80) == 0) break;
         shift += 7;
     }
@@ -124,187 +46,815 @@ static inline int64_t read_sleb128(const uint8_t*& p, const uint8_t* end) {
     int shift = 0;
     while (p < end) {
         uint8_t b = *p++;
-        res |= (int64_t)(b & 0x7F) << shift;
+        if (shift < 64) res |= (int64_t)(b & 0x7F) << shift;
         shift += 7;
         if ((b & 0x80) == 0) {
-            if (b & 0x40) res |= -(1LL << shift);
+            if ((b & 0x40) && shift < 64) res |= -(1LL << shift);
             break;
         }
     }
     return res;
 }
 
-static void execute_dyld_rebase(const uint8_t* buf, size_t size,
-                                const std::vector<uint64_t>& seg_vmaddrs, uint64_t slide) {
-    if (!buf || size == 0 || slide == 0) return;
-    const uint8_t* p = buf;
-    const uint8_t* end = buf + size;
+// ---------------------------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------------------------
+static std::recursive_mutex g_dyld_lock;
+static std::vector<MachImage*> g_images;
+static std::unordered_map<std::string, MachImage*> g_by_name;   // install name / path -> image
+static std::string g_exe_dir;
 
-    uint32_t seg_idx = 0;
-    uint64_t seg_off = 0;
+const std::vector<MachImage*>& dyld_images() { return g_images; }
 
-    while (p < end) {
-        uint8_t b = *p++;
-        uint8_t op = b & REBASE_OPCODE_MASK;
-        uint8_t imm = b & REBASE_IMMEDIATE_MASK;
+MachImage* dyld_image_containing(uint64_t addr) {
+    for (MachImage* im : g_images)
+        for (const MachSegment& s : im->segs)
+            if (addr >= s.addr && addr < s.addr + s.size) return im;
+    return nullptr;
+}
 
-        switch (op) {
-            case REBASE_OPCODE_DONE:
-                return;
-            case REBASE_OPCODE_SET_TYPE_IMM:
-                break;
-            case REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
-                seg_idx = imm;
-                seg_off = read_uleb128(p, end);
-                break;
-            case REBASE_OPCODE_ADD_ADDR_ULEB:
-                seg_off += read_uleb128(p, end);
-                break;
-            case REBASE_OPCODE_ADD_ADDR_IMM_SCALED:
-                seg_off += (uint64_t)imm * sizeof(uint64_t);
-                break;
-            case REBASE_OPCODE_DO_REBASE_IMM_TIMES: {
-                for (uint32_t i = 0; i < imm; i++) {
-                    if (seg_idx < seg_vmaddrs.size()) {
-                        uint64_t target_addr = seg_vmaddrs[seg_idx] + seg_off;
-                        mprotect((void*)page_align_down(target_addr), 4096, PROT_READ | PROT_WRITE);
-                        *(uint64_t*)target_addr += slide;
-                    }
-                    seg_off += sizeof(uint64_t);
-                }
+// ---------------------------------------------------------------------------------------------
+// Exports trie
+// ---------------------------------------------------------------------------------------------
+enum { EXPORT_REEXPORT = 0x08, EXPORT_STUB_AND_RESOLVER = 0x10, EXPORT_KIND_MASK = 0x03,
+       EXPORT_KIND_ABSOLUTE = 0x02 };
+
+static bool trie_lookup(const uint8_t* start, size_t size, const char* name, uint64_t& flags,
+                        uint64_t& value, uint64_t& reexport_ord, const char*& reexport_name) {
+    if (!start || !size) return false;
+    const uint8_t* end = start + size;
+    const uint8_t* node = start;
+    const char* s = name;
+    for (;;) {
+        if (node >= end) return false;
+        const uint8_t* p = node;
+        uint64_t term_size = read_uleb128(p, end);
+        if (*s == 0) {
+            if (!term_size) return false;
+            flags = read_uleb128(p, end);
+            reexport_name = nullptr;
+            reexport_ord = 0;
+            if (flags & EXPORT_REEXPORT) {
+                reexport_ord = read_uleb128(p, end);
+                reexport_name = (const char*)p;
+                value = 0;
+            } else {
+                value = read_uleb128(p, end);
+            }
+            return true;
+        }
+        p += term_size;
+        if (p >= end) return false;
+        unsigned nchild = *p++;
+        const uint8_t* next = nullptr;
+        for (unsigned i = 0; i < nchild; i++) {
+            const char* edge = (const char*)p;
+            size_t elen = strnlen(edge, end - p);
+            p += elen + 1;
+            uint64_t off = read_uleb128(p, end);
+            if (!next && strncmp(s, edge, elen) == 0) {
+                next = start + off;
+                s += elen;
                 break;
             }
-            case REBASE_OPCODE_DO_REBASE_ULEB_TIMES: {
-                uint64_t count = read_uleb128(p, end);
-                for (uint64_t i = 0; i < count; i++) {
-                    if (seg_idx < seg_vmaddrs.size()) {
-                        uint64_t target_addr = seg_vmaddrs[seg_idx] + seg_off;
-                        mprotect((void*)page_align_down(target_addr), 4096, PROT_READ | PROT_WRITE);
-                        *(uint64_t*)target_addr += slide;
-                    }
-                    seg_off += sizeof(uint64_t);
+        }
+        if (!next) return false;
+        node = next;
+    }
+}
+
+static uint64_t dyld_lookup_rec(MachImage* img, const char* name, int depth) {
+    if (!img || depth > 16) return 0;
+    uint64_t flags, value, ord;
+    const char* rname;
+    if (trie_lookup(img->exports, img->exports_size, name, flags, value, ord, rname)) {
+        if (flags & EXPORT_REEXPORT) {
+            if (ord == 0 || ord > img->deps.size()) return 0;
+            MachImage* d = img->deps[ord - 1].image;
+            return dyld_lookup_rec(d, (rname && *rname) ? rname : name, depth + 1);
+        }
+        if ((flags & EXPORT_KIND_MASK) == EXPORT_KIND_ABSOLUTE) return value;
+        return img->header + value;
+    }
+    // names exported through a re-exported dependency (umbrella libraries)
+    for (MachDep& d : img->deps) {
+        if (!d.reexport || !d.image) continue;
+        if (uint64_t r = dyld_lookup_rec(d.image, name, depth + 1)) return r;
+    }
+    return 0;
+}
+
+uint64_t dyld_image_lookup(MachImage* img, const char* name) {
+    return dyld_lookup_rec(img, name, 0);
+}
+
+uint64_t dyld_flat_lookup(const char* name) {
+    std::lock_guard<std::recursive_mutex> lk(g_dyld_lock);
+    for (MachImage* im : g_images)
+        if (uint64_t r = dyld_lookup_rec(im, name, 0)) return r;
+    return 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Imports
+// ---------------------------------------------------------------------------------------------
+// ordinal: >0 dependency, 0 self, -1 main executable, -2 flat lookup, -3 weak lookup
+static uint64_t resolve_import(MachImage* img, int ordinal, const char* name, bool weak_import) {
+    uint64_t r = 0;
+    bool hle_dep = false;
+    if (ordinal > 0) {
+        if ((size_t)ordinal <= img->deps.size()) {
+            MachImage* d = img->deps[ordinal - 1].image;
+            if (d) r = dyld_image_lookup(d, name);
+            else hle_dep = true;
+        }
+    } else if (ordinal == 0) {
+        r = dyld_image_lookup(img, name);
+    } else if (ordinal == -1) {
+        r = dyld_image_lookup(g_images.empty() ? nullptr : g_images[0], name);
+    }
+    if (r) return r;
+    if (hle_dep) {
+        // explicit HLE implementations win over other images for libSystem-provided names
+        r = darwin_hle_resolve_symbol(name, true, true);
+        if (r) return r;
+    }
+    r = dyld_flat_lookup(name);
+    if (r) return r;
+    return darwin_hle_resolve_symbol(name, weak_import);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fixups
+// ---------------------------------------------------------------------------------------------
+struct ChainedFixupsHeader {
+    uint32_t fixups_version;
+    uint32_t starts_offset;
+    uint32_t imports_offset;
+    uint32_t symbols_offset;
+    uint32_t imports_count;
+    uint32_t imports_format;
+    uint32_t symbols_format;
+};
+
+static void apply_chained_fixups(MachImage* img) {
+    const uint8_t* buf = img->chained;
+    size_t fixup_size = img->chained_size;
+    if (!buf || fixup_size < sizeof(ChainedFixupsHeader)) return;
+    const ChainedFixupsHeader* hdr = (const ChainedFixupsHeader*)buf;
+    if (hdr->imports_offset >= fixup_size || hdr->symbols_offset >= fixup_size) return;
+
+    const uint8_t* symbols_buf = buf + hdr->symbols_offset;
+    std::vector<uint64_t> imp_addr(hdr->imports_count, 0);
+    std::vector<int64_t> imp_addend(hdr->imports_count, 0);
+
+    for (uint32_t i = 0; i < hdr->imports_count; i++) {
+        uint32_t name_off = 0;
+        int ordinal = 0;
+        bool weak = false;
+        int64_t addend = 0;
+        if (hdr->imports_format == 1) {            // DYLD_CHAINED_IMPORT
+            uint32_t v = ((const uint32_t*)(buf + hdr->imports_offset))[i];
+            ordinal = (int8_t)(v & 0xFF);
+            weak = (v >> 8) & 1;
+            name_off = v >> 9;
+        } else if (hdr->imports_format == 2) {     // DYLD_CHAINED_IMPORT_ADDEND
+            const uint32_t* v = (const uint32_t*)(buf + hdr->imports_offset) + i * 2;
+            ordinal = (int8_t)(v[0] & 0xFF);
+            weak = (v[0] >> 8) & 1;
+            name_off = v[0] >> 9;
+            addend = (int32_t)v[1];
+        } else if (hdr->imports_format == 3) {     // DYLD_CHAINED_IMPORT_ADDEND64
+            const uint64_t* v = (const uint64_t*)(buf + hdr->imports_offset) + i * 2;
+            ordinal = (int16_t)(v[0] & 0xFFFF);
+            weak = (v[0] >> 16) & 1;
+            name_off = (uint32_t)(v[0] >> 32);
+            addend = (int64_t)v[1];
+        } else {
+            continue;
+        }
+        if (hdr->symbols_offset + name_off >= fixup_size) continue;
+        const char* name = (const char*)(symbols_buf + name_off);
+        imp_addr[i] = resolve_import(img, ordinal, name, weak);
+        imp_addend[i] = addend;
+    }
+
+    if (hdr->starts_offset >= fixup_size) return;
+    const uint8_t* starts_img = buf + hdr->starts_offset;
+    uint32_t seg_count = *(const uint32_t*)starts_img;
+    const uint32_t* seg_offsets = (const uint32_t*)starts_img + 1;
+
+    for (uint32_t s = 0; s < seg_count; s++) {
+        uint32_t soff = seg_offsets[s];
+        if (soff == 0 || hdr->starts_offset + soff >= fixup_size) continue;
+        const uint8_t* seg_info = starts_img + soff;
+        uint16_t page_size = *(const uint16_t*)(seg_info + 4);
+        uint16_t ptr_format = *(const uint16_t*)(seg_info + 6);
+        uint64_t segment_offset = *(const uint64_t*)(seg_info + 8);
+        uint16_t page_count = *(const uint16_t*)(seg_info + 20);
+        const uint16_t* page_starts = (const uint16_t*)(seg_info + 22);
+        if (ptr_format != 2 && ptr_format != 6) {
+            XEF_LOG(1, "xef-osx: %s: unsupported chained pointer format %u", img->path.c_str(), ptr_format);
+            continue;
+        }
+
+        uint64_t seg_mem_base = img->header + segment_offset;
+
+        auto walk = [&](uint64_t chain_addr) {
+            for (;;) {
+                uint64_t raw = *(uint64_t*)chain_addr;
+                bool is_bind = (raw >> 63) & 1;
+                uint64_t next = (raw >> 51) & 0xFFF;
+                if (is_bind) {
+                    uint32_t ord = raw & 0xFFFFFF;
+                    uint64_t addend8 = (raw >> 24) & 0xFF;
+                    uint64_t v = 0;
+                    if (ord < hdr->imports_count) v = imp_addr[ord] + imp_addend[ord] + addend8;
+                    *(uint64_t*)chain_addr = v;
+                } else {
+                    uint64_t target = raw & 0xFFFFFFFFFULL;
+                    uint64_t high8 = (raw >> 36) & 0xFF;
+                    uint64_t v = (ptr_format == 6) ? img->header + target : target + img->slide;
+                    *(uint64_t*)chain_addr = v | (high8 << 56);
                 }
-                break;
+                if (next == 0) break;
+                chain_addr += next * 4;
             }
-            case REBASE_OPCODE_DO_REBASE_ADD_ADDR_ULEB: {
-                uint64_t extra = read_uleb128(p, end);
-                if (seg_idx < seg_vmaddrs.size()) {
-                    uint64_t target_addr = seg_vmaddrs[seg_idx] + seg_off;
-                    mprotect((void*)page_align_down(target_addr), 4096, PROT_READ | PROT_WRITE);
-                    *(uint64_t*)target_addr += slide;
+        };
+
+        for (uint16_t p = 0; p < page_count; p++) {
+            uint16_t pstart = page_starts[p];
+            if (pstart == 0xFFFF) continue;
+            uint64_t page_addr = seg_mem_base + (uint64_t)p * page_size;
+            if (pstart & 0x8000) {   // DYLD_CHAINED_PTR_START_MULTI: overflow list
+                uint32_t idx = pstart & 0x7FFF;
+                for (;;) {
+                    uint16_t v = page_starts[idx++];
+                    walk(page_addr + (v & 0x7FFF));
+                    if (v & 0x8000) break;
                 }
-                seg_off += sizeof(uint64_t) + extra;
-                break;
+            } else {
+                walk(page_addr + pstart);
             }
-            case REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB: {
-                uint64_t count = read_uleb128(p, end);
-                uint64_t skip = read_uleb128(p, end);
-                for (uint64_t i = 0; i < count; i++) {
-                    if (seg_idx < seg_vmaddrs.size()) {
-                        uint64_t target_addr = seg_vmaddrs[seg_idx] + seg_off;
-                        mprotect((void*)page_align_down(target_addr), 4096, PROT_READ | PROT_WRITE);
-                        *(uint64_t*)target_addr += slide;
-                    }
-                    seg_off += sizeof(uint64_t) + skip;
-                }
-                break;
-            }
-            default:
-                break;
         }
     }
 }
 
-static void execute_dyld_bind(const uint8_t* buf, size_t size,
-                              const std::vector<uint64_t>& seg_vmaddrs, bool is_weak = false) {
-    if (!buf || size == 0) return;
-    const uint8_t* p = buf;
-    const uint8_t* end = buf + size;
-
+static void apply_rebase_opcodes(MachImage* img) {
+    if (!img->rebase || !img->rebase_size || img->slide == 0) return;
+    const uint8_t* p = img->rebase;
+    const uint8_t* end = p + img->rebase_size;
     uint32_t seg_idx = 0;
     uint64_t seg_off = 0;
-    const char* sym_name = "";
-    int64_t addend = 0;
-
-    auto do_bind_at = [&](uint64_t addr) {
-        uint64_t sym_val = darwin_hle_resolve_symbol(sym_name, is_weak);
-        if (sym_val != 0) {
-            mprotect((void*)page_align_down(addr), 4096, PROT_READ | PROT_WRITE);
-            *(uint64_t*)addr = sym_val + addend;
+    auto do_rebase = [&]() {
+        if (seg_idx < img->segs.size()) *(uint64_t*)(img->segs[seg_idx].addr + seg_off) += img->slide;
+        seg_off += sizeof(uint64_t);
+    };
+    while (p < end) {
+        uint8_t b = *p++;
+        uint8_t op = b & REBASE_OPCODE_MASK, imm = b & REBASE_IMMEDIATE_MASK;
+        switch (op) {
+            case REBASE_OPCODE_DONE: return;
+            case REBASE_OPCODE_SET_TYPE_IMM: break;
+            case REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
+                seg_idx = imm;
+                seg_off = read_uleb128(p, end);
+                break;
+            case REBASE_OPCODE_ADD_ADDR_ULEB: seg_off += read_uleb128(p, end); break;
+            case REBASE_OPCODE_ADD_ADDR_IMM_SCALED: seg_off += (uint64_t)imm * 8; break;
+            case REBASE_OPCODE_DO_REBASE_IMM_TIMES:
+                for (uint32_t i = 0; i < imm; i++) do_rebase();
+                break;
+            case REBASE_OPCODE_DO_REBASE_ULEB_TIMES: {
+                uint64_t n = read_uleb128(p, end);
+                for (uint64_t i = 0; i < n; i++) do_rebase();
+                break;
+            }
+            case REBASE_OPCODE_DO_REBASE_ADD_ADDR_ULEB:
+                do_rebase();
+                seg_off += read_uleb128(p, end);
+                break;
+            case REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB: {
+                uint64_t n = read_uleb128(p, end);
+                uint64_t skip = read_uleb128(p, end);
+                for (uint64_t i = 0; i < n; i++) { do_rebase(); seg_off += skip; }
+                break;
+            }
+            default: break;
         }
+    }
+}
+
+static void apply_bind_opcodes(MachImage* img, const uint8_t* buf, size_t size) {
+    if (!buf || !size) return;
+    const uint8_t* p = buf;
+    const uint8_t* end = buf + size;
+    uint32_t seg_idx = 0;
+    uint64_t seg_off = 0;
+    const char* sym = "";
+    int64_t addend = 0;
+    int ordinal = 0;
+    bool weak_import = false;
+
+    auto bind_at = [&](uint64_t off) {
+        if (seg_idx >= img->segs.size()) return;
+        uint64_t addr = img->segs[seg_idx].addr + off;
+        uint64_t v = resolve_import(img, ordinal, sym, weak_import);
+        if (v || !weak_import) *(uint64_t*)addr = v + addend;
     };
 
     while (p < end) {
         uint8_t b = *p++;
-        uint8_t op = b & BIND_OPCODE_MASK;
-        uint8_t imm = b & BIND_IMMEDIATE_MASK;
-
+        uint8_t op = b & BIND_OPCODE_MASK, imm = b & BIND_IMMEDIATE_MASK;
         switch (op) {
-            case BIND_OPCODE_DONE:
-                // Note: in lazy binding opcodes, DONE ends one symbol's instructions, but we continue till end of buffer
+            case BIND_OPCODE_DONE: break;
+            case BIND_OPCODE_SET_DYLIB_ORDINAL_IMM: ordinal = imm; break;
+            case BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB: ordinal = (int)read_uleb128(p, end); break;
+            case BIND_OPCODE_SET_DYLIB_SPECIAL_IMM: ordinal = imm ? (int8_t)(0xF0 | imm) : 0; break;
+            case BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM:
+                sym = (const char*)p;
+                weak_import = imm & 1;
+                while (p < end && *p) p++;
+                if (p < end) p++;
                 break;
-            case BIND_OPCODE_SET_DYLIB_ORDINAL_IMM:
-                break;
-            case BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB:
-                read_uleb128(p, end);
-                break;
-            case BIND_OPCODE_SET_DYLIB_SPECIAL_IMM:
-                break;
-            case BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM: {
-                sym_name = (const char*)p;
-                while (p < end && *p != 0) p++;
-                if (p < end) p++; // skip null
-                break;
-            }
-            case BIND_OPCODE_SET_TYPE_IMM:
-                break;
-            case BIND_OPCODE_SET_ADDEND_SLEB:
-                addend = read_sleb128(p, end);
-                break;
+            case BIND_OPCODE_SET_TYPE_IMM: break;
+            case BIND_OPCODE_SET_ADDEND_SLEB: addend = read_sleb128(p, end); break;
             case BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
                 seg_idx = imm;
                 seg_off = read_uleb128(p, end);
                 break;
-            case BIND_OPCODE_ADD_ADDR_ULEB:
-                seg_off += read_uleb128(p, end);
+            case BIND_OPCODE_ADD_ADDR_ULEB: seg_off += read_uleb128(p, end); break;
+            case BIND_OPCODE_DO_BIND:
+                bind_at(seg_off);
+                seg_off += 8;
                 break;
-            case BIND_OPCODE_DO_BIND: {
-                if (seg_idx < seg_vmaddrs.size()) {
-                    do_bind_at(seg_vmaddrs[seg_idx] + seg_off);
-                }
-                seg_off += sizeof(uint64_t);
-                break;
-            }
             case BIND_OPCODE_DO_BIND_ADD_ADDR_ULEB: {
-                uint64_t extra = read_uleb128(p, end);
-                if (seg_idx < seg_vmaddrs.size()) {
-                    do_bind_at(seg_vmaddrs[seg_idx] + seg_off);
-                }
-                seg_off += sizeof(uint64_t) + extra;
+                bind_at(seg_off);
+                seg_off += 8 + read_uleb128(p, end);
                 break;
             }
-            case BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED: {
-                if (seg_idx < seg_vmaddrs.size()) {
-                    do_bind_at(seg_vmaddrs[seg_idx] + seg_off);
-                }
-                seg_off += sizeof(uint64_t) + (uint64_t)imm * sizeof(uint64_t);
+            case BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED:
+                bind_at(seg_off);
+                seg_off += 8 + (uint64_t)imm * 8;
                 break;
-            }
             case BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB: {
-                uint64_t count = read_uleb128(p, end);
+                uint64_t n = read_uleb128(p, end);
                 uint64_t skip = read_uleb128(p, end);
-                for (uint64_t i = 0; i < count; i++) {
-                    if (seg_idx < seg_vmaddrs.size()) {
-                        do_bind_at(seg_vmaddrs[seg_idx] + seg_off);
-                    }
-                    seg_off += sizeof(uint64_t) + skip;
-                }
+                for (uint64_t i = 0; i < n; i++) { bind_at(seg_off); seg_off += 8 + skip; }
                 break;
             }
-            default:
-                break;
+            default: break;
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Image loading
+// ---------------------------------------------------------------------------------------------
+static int prot_from_macho(uint32_t p) {
+    int r = 0;
+    if (p & 1) r |= PROT_READ;
+    if (p & 2) r |= PROT_WRITE;
+    if (p & 4) r |= PROT_EXEC;
+    return r;
+}
+
+static std::string dir_of(const std::string& p) {
+    size_t s = p.rfind('/');
+    return s == std::string::npos ? "." : (s == 0 ? "/" : p.substr(0, s));
+}
+
+// Opens a Mach-O file and finds its ARM64 slice. Returns the fd (or -1).
+static int open_arm64_slice(const std::string& host_path, uint64_t& slice_offset) {
+    int fd = open(host_path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    uint32_t magic = 0;
+    slice_offset = 0;
+    if (pread(fd, &magic, 4, 0) != 4) { close(fd); return -1; }
+    if (magic == FAT_MAGIC || magic == FAT_CIGAM || magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64) {
+        bool swap = (magic == FAT_CIGAM || magic == FAT_CIGAM_64);
+        bool is64 = (magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64);
+        fat_header fh;
+        if (pread(fd, &fh, sizeof(fh), 0) != sizeof(fh)) { close(fd); return -1; }
+        uint32_t narch = swap ? bswap32(fh.nfat_arch) : fh.nfat_arch;
+        bool found = false;
+        off_t pos = sizeof(fh);
+        for (uint32_t i = 0; i < narch && !found; i++) {
+            if (is64) {
+                fat_arch_64 fa;
+                if (pread(fd, &fa, sizeof(fa), pos) != sizeof(fa)) break;
+                pos += sizeof(fa);
+                if ((swap ? bswap32(fa.cputype) : fa.cputype) == CPU_TYPE_ARM64) {
+                    slice_offset = swap ? bswap64(fa.offset) : fa.offset;
+                    found = true;
+                }
+            } else {
+                fat_arch fa;
+                if (pread(fd, &fa, sizeof(fa), pos) != sizeof(fa)) break;
+                pos += sizeof(fa);
+                if ((swap ? bswap32(fa.cputype) : fa.cputype) == CPU_TYPE_ARM64) {
+                    slice_offset = swap ? bswap32(fa.offset) : fa.offset;
+                    found = true;
+                }
+            }
+        }
+        if (!found) { close(fd); return -1; }
+    }
+    return fd;
+}
+
+static MachImage* load_dependency(MachImage* from, const std::string& name, bool weak);
+
+static std::vector<std::string> expand_candidates(const std::string& name, MachImage* from) {
+    std::vector<std::string> out;
+    auto subst = [&](const std::string& s, MachImage* ctx) -> std::string {
+        if (s.rfind("@executable_path/", 0) == 0) return g_exe_dir + "/" + s.substr(17);
+        if (s.rfind("@loader_path/", 0) == 0) return dir_of(ctx ? ctx->path : g_exe_dir) + "/" + s.substr(13);
+        return s;
+    };
+    if (name.rfind("@rpath/", 0) == 0) {
+        std::string tail = name.substr(7);
+        std::vector<MachImage*> ctxs;
+        if (from) ctxs.push_back(from);
+        if (!g_images.empty() && (g_images.empty() || from != g_images[0])) ctxs.push_back(g_images[0]);
+        for (MachImage* c : ctxs)
+            for (const std::string& rp : c->rpaths) out.push_back(subst(rp, c) + "/" + tail);
+    } else {
+        out.push_back(subst(name, from));
+    }
+    return out;
+}
+
+static MachImage* map_image(const std::string& guest_path, const std::string& host_path, bool is_main);
+
+static MachImage* find_loaded(const std::string& key) {
+    auto it = g_by_name.find(key);
+    return it == g_by_name.end() ? nullptr : it->second;
+}
+
+static MachImage* load_dependency(MachImage* from, const std::string& name, bool weak) {
+    if (MachImage* im = find_loaded(name)) return im;
+    for (const std::string& cand : expand_candidates(name, from)) {
+        if (MachImage* im = find_loaded(cand)) return im;
+        std::string host = resolve_guest_path(cand.c_str());
+        if (access(host.c_str(), R_OK) != 0) continue;
+        bool fat, arm;
+        if (!is_macho_binary(host.c_str(), fat, arm) || !arm) continue;
+        MachImage* im = map_image(cand, host, false);
+        if (im) {
+            g_by_name[name] = im;
+            return im;
+        }
+    }
+    XEF_LOG(weak ? 2 : 1, "xef-osx: dependency %s not found in the rootfs (HLE)", name.c_str());
+    return nullptr;
+}
+
+static MachImage* map_image(const std::string& guest_path, const std::string& host_path, bool is_main) {
+    uint64_t slice_offset = 0;
+    int fd = open_arm64_slice(host_path, slice_offset);
+    if (fd < 0) return nullptr;
+
+    mach_header_64 mh;
+    if (pread(fd, &mh, sizeof(mh), slice_offset) != sizeof(mh) || mh.magic != MH_MAGIC_64 ||
+        mh.cputype != CPU_TYPE_ARM64) {
+        close(fd);
+        return nullptr;
+    }
+    std::vector<uint8_t> cmds(mh.sizeofcmds);
+    if (pread(fd, cmds.data(), mh.sizeofcmds, slice_offset + sizeof(mh)) != (ssize_t)mh.sizeofcmds) {
+        close(fd);
+        return nullptr;
+    }
+
+    std::unique_ptr<MachImage> im(new MachImage());
+    im->path = guest_path;
+    im->install_name = guest_path;
+    im->filetype = mh.filetype;
+
+    // pass 1: segments -> address range
+    uint64_t lo = ~0ull, hi = 0;
+    uint64_t text_vmaddr = 0;
+    uint32_t off = 0;
+    for (uint32_t i = 0; i < mh.ncmds && off + sizeof(load_command) <= mh.sizeofcmds; i++) {
+        const load_command* lc = (const load_command*)&cmds[off];
+        if (lc->cmdsize < 8 || off + lc->cmdsize > mh.sizeofcmds) break;
+        if (lc->cmd == LC_SEGMENT_64 && lc->cmdsize >= sizeof(segment_command_64)) {
+            const segment_command_64* sg = (const segment_command_64*)lc;
+            if (strncmp(sg->segname, "__PAGEZERO", 16) != 0 && sg->vmsize) {
+                lo = std::min<uint64_t>(lo, sg->vmaddr);
+                hi = std::max<uint64_t>(hi, sg->vmaddr + sg->vmsize);
+            }
+            if (strncmp(sg->segname, "__TEXT", 16) == 0) text_vmaddr = sg->vmaddr;
+        }
+        off += lc->cmdsize;
+    }
+    if (lo == ~0ull) { close(fd); return nullptr; }
+
+    // placement: the executable at its preferred address, dylibs wherever the host has room
+    uint64_t slide = 0;
+    if (!is_main) {
+        const uint64_t align = 0x4000;
+        uint64_t span = page_align_up(hi - lo) + align;
+        void* r = mmap(nullptr, span, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (r == MAP_FAILED) { close(fd); return nullptr; }
+        uint64_t base = ((uint64_t)r + align - 1) & ~(align - 1);
+        slide = base - lo;
+    }
+    im->slide = slide;
+    im->header = text_vmaddr + slide;
+
+    // pass 2: map
+    off = 0;
+    for (uint32_t i = 0; i < mh.ncmds && off + sizeof(load_command) <= mh.sizeofcmds; i++) {
+        const load_command* lc = (const load_command*)&cmds[off];
+        if (lc->cmdsize < 8 || off + lc->cmdsize > mh.sizeofcmds) break;
+        uint32_t cmd = lc->cmd;
+
+        if (cmd == LC_SEGMENT_64 && lc->cmdsize >= sizeof(segment_command_64)) {
+            const segment_command_64* sg = (const segment_command_64*)lc;
+            MachSegment ms = {};
+            memcpy(ms.name, sg->segname, 16);
+            ms.addr = sg->vmaddr + slide;
+            ms.size = sg->vmsize;
+            ms.fileoff = sg->fileoff;
+            ms.filesize = sg->filesize;
+            ms.initprot = sg->initprot;
+            im->segs.push_back(ms);
+
+            if (strncmp(sg->segname, "__PAGEZERO", 16) == 0) {
+                if (sg->vmsize)
+                    mmap((void*)sg->vmaddr, sg->vmsize, PROT_NONE,
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+            } else if (sg->vmsize) {
+                uint64_t target = sg->vmaddr + slide;
+                int prot = prot_from_macho(sg->initprot) | PROT_WRITE;   // writable while fixups run
+                if (sg->filesize) {
+                    uint64_t start = page_align_down(target);
+                    uint64_t file_start = page_align_down(slice_offset + sg->fileoff);
+                    uint64_t len = page_align_up(sg->filesize + (target - start));
+                    void* r = mmap((void*)start, len, prot, MAP_PRIVATE | MAP_FIXED, fd, file_start);
+                    if (r == MAP_FAILED) {
+                        fprintf(stderr, "xef-osx: cannot map segment %.16s of %s: %m\n", sg->segname,
+                                host_path.c_str());
+                        close(fd);
+                        return nullptr;
+                    }
+                    if (sg->vmsize > sg->filesize) {
+                        uint64_t bss = target + sg->filesize;
+                        uint64_t bss_page = page_align_up(bss);
+                        if (bss_page > bss) memset((void*)bss, 0, bss_page - bss);
+                        uint64_t bss_end = page_align_up(target + sg->vmsize);
+                        if (bss_end > bss_page)
+                            mmap((void*)bss_page, bss_end - bss_page, prot,
+                                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+                    }
+                } else {
+                    mmap((void*)page_align_down(target), page_align_up(sg->vmsize), prot,
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+                }
+            }
+
+            // sections of interest
+            const section_64* sects = (const section_64*)(sg + 1);
+            for (uint32_t s = 0; s < sg->nsects && (const uint8_t*)(sects + s + 1) <= (const uint8_t*)lc + lc->cmdsize; s++) {
+                const section_64& sc = sects[s];
+                uint64_t a = sc.addr + slide;
+                uint32_t type = sc.flags & 0xFF;
+                if (!strncmp(sc.sectname, "__unwind_info", 16)) { im->unwind_info = a; im->unwind_info_size = sc.size; }
+                else if (!strncmp(sc.sectname, "__eh_frame", 16)) { im->eh_frame = a; im->eh_frame_size = sc.size; }
+                else if (type == 0x13) { im->tlv_vars = a; im->tlv_vars_size = sc.size; }   // S_THREAD_LOCAL_VARIABLES
+                else if (type == 0x11) {                                                     // S_THREAD_LOCAL_REGULAR
+                    im->tlv_init = a; im->tlv_init_size = sc.size;
+                    im->tlv_total = std::max<uint64_t>(im->tlv_total, sc.size);
+                } else if (type == 0x12) {                                                   // S_THREAD_LOCAL_ZEROFILL
+                    if (!im->tlv_init) im->tlv_init = a;
+                    im->tlv_total = std::max<uint64_t>(im->tlv_total, a + sc.size - im->tlv_init);
+                } else if (type == 0x09 || type == 0x16) {   // S_MOD_INIT_FUNC_POINTERS / S_INIT_FUNC_OFFSETS
+                    im->init_sections.push_back({a, sc.size, type});
+                }
+            }
+        } else if (cmd == LC_LOAD_DYLIB || cmd == LC_LOAD_WEAK_DYLIB || cmd == LC_REEXPORT_DYLIB ||
+                   cmd == LC_LOAD_UPWARD_DYLIB) {
+            const dylib_command* dc = (const dylib_command*)lc;
+            MachDep d;
+            d.name = (const char*)lc + dc->dylib_info.name.offset;
+            d.reexport = cmd == LC_REEXPORT_DYLIB;
+            d.weak = cmd == LC_LOAD_WEAK_DYLIB;
+            im->deps.push_back(d);
+        } else if (cmd == LC_ID_DYLIB) {
+            const dylib_command* dc = (const dylib_command*)lc;
+            im->install_name = (const char*)lc + dc->dylib_info.name.offset;
+        } else if (cmd == LC_RPATH) {
+            im->rpaths.push_back((const char*)lc + 12);
+        } else if (cmd == LC_MAIN && lc->cmdsize >= sizeof(entry_point_command)) {
+            im->entry = text_vmaddr + slide + ((const entry_point_command*)lc)->entryoff;
+        } else if (cmd == LC_UNIXTHREAD) {
+            const uint32_t* p = (const uint32_t*)(lc + 1);
+            if (p[0] == ARM_THREAD_STATE64 && p[1] >= sizeof(arm_thread_state64_t) / 4)
+                im->entry = ((const arm_thread_state64_t*)(p + 2))->pc + slide;
+        }
+        off += lc->cmdsize;
+    }
+
+    // pass 3: dyld metadata -> pointers into the mapped __LINKEDIT
+    const MachSegment* le = nullptr;
+    for (const MachSegment& s : im->segs)
+        if (!strncmp(s.name, "__LINKEDIT", 16)) le = &s;
+    auto le_ptr = [&](uint32_t fileoff) -> const uint8_t* {
+        return le ? (const uint8_t*)(le->addr + (fileoff - le->fileoff)) : nullptr;
+    };
+    off = 0;
+    for (uint32_t i = 0; i < mh.ncmds && off + sizeof(load_command) <= mh.sizeofcmds; i++) {
+        const load_command* lc = (const load_command*)&cmds[off];
+        if (lc->cmdsize < 8 || off + lc->cmdsize > mh.sizeofcmds) break;
+        if (lc->cmd == LC_DYLD_CHAINED_FIXUPS) {
+            const linkedit_data_command* d = (const linkedit_data_command*)lc;
+            im->chained = le_ptr(d->dataoff);
+            im->chained_size = d->datasize;
+        } else if (lc->cmd == LC_DYLD_EXPORTS_TRIE) {
+            const linkedit_data_command* d = (const linkedit_data_command*)lc;
+            im->exports = le_ptr(d->dataoff);
+            im->exports_size = d->datasize;
+        } else if (lc->cmd == LC_DYLD_INFO || lc->cmd == LC_DYLD_INFO_ONLY) {
+            const dyld_info_command* d = (const dyld_info_command*)lc;
+            if (d->rebase_size) { im->rebase = le_ptr(d->rebase_off); im->rebase_size = d->rebase_size; }
+            if (d->bind_size) { im->bind = le_ptr(d->bind_off); im->bind_size = d->bind_size; }
+            if (d->lazy_bind_size) { im->lazy_bind = le_ptr(d->lazy_bind_off); im->lazy_bind_size = d->lazy_bind_size; }
+            if (d->export_size && !im->exports) { im->exports = le_ptr(d->export_off); im->exports_size = d->export_size; }
+        }
+        off += lc->cmdsize;
+    }
+    close(fd);
+
+    MachImage* raw = im.release();
+    raw->index = (uint32_t)g_images.size();
+    g_images.push_back(raw);
+    g_by_name[guest_path] = raw;
+    if (raw->install_name != guest_path) g_by_name[raw->install_name] = raw;
+    XEF_LOG(1, "xef-osx: mapped %s at %#lx (slide %#lx, %zu deps)", guest_path.c_str(),
+            (unsigned long)raw->header, (unsigned long)raw->slide, raw->deps.size());
+    return raw;
+}
+
+// Maps the dependencies of `im` (depth first) after the image itself is registered.
+static void load_dependencies(MachImage* im) {
+    for (size_t i = 0; i < im->deps.size(); i++) {
+        size_t before = g_images.size();
+        MachImage* d = load_dependency(im, im->deps[i].name, im->deps[i].weak);
+        im->deps[i].image = d;
+        if (d && g_images.size() > before) load_dependencies(d);
+    }
+}
+
+// Rebase + bind one image, then restore the segment protections.
+static void link_image(MachImage* im) {
+    if (im->bound) return;
+    im->bound = true;
+    // dependencies first so that re-exports resolve
+    for (MachDep& d : im->deps)
+        if (d.image && !d.image->bound) link_image(d.image);
+
+    apply_rebase_opcodes(im);
+    apply_bind_opcodes(im, im->bind, im->bind_size);
+    apply_bind_opcodes(im, im->lazy_bind, im->lazy_bind_size);
+    apply_chained_fixups(im);
+
+    // initializers (pointers are final now)
+    for (const MachImage::InitSection& s : im->init_sections) {
+        if (s.type == 0x09) {
+            for (uint64_t o = 0; o + 8 <= s.size; o += 8)
+                if (uint64_t f = *(uint64_t*)(s.addr + o)) im->inits.push_back(f);
+        } else {
+            for (uint64_t o = 0; o + 4 <= s.size; o += 4)
+                im->inits.push_back(im->header + *(uint32_t*)(s.addr + o));
+        }
+    }
+
+    // thread-local descriptors: key = image index + 1 (see dyld_tlv_address)
+    for (uint64_t o = 0; o + 24 <= im->tlv_vars_size; o += 24)
+        ((uint64_t*)(im->tlv_vars + o))[1] = im->index + 1;
+
+    for (const MachSegment& s : im->segs) {
+        if (!s.size || !strncmp(s.name, "__PAGEZERO", 16)) continue;
+        mprotect((void*)page_align_down(s.addr), page_align_up(s.size + (s.addr & 4095)),
+                 prot_from_macho(s.initprot));
+    }
+}
+
+static void link_all() {
+    for (size_t i = 0; i < g_images.size(); i++) link_image(g_images[i]);
+}
+
+// Dylibs that libSystem would provide but that live as separate files in our rootfs.
+static void load_implicit_images() {
+    static const char* const kImplicit[] = {"/usr/lib/system/libunwind.dylib"};
+    for (const char* n : kImplicit) {
+        if (find_loaded(n)) continue;
+        std::string host = resolve_guest_path(n);
+        if (access(host.c_str(), R_OK) != 0) continue;
+        if (MachImage* im = map_image(n, host, false)) load_dependencies(im);
+    }
+}
+
+bool load_macho(const char* path, LoadedImage& img) {
+    std::lock_guard<std::recursive_mutex> lk(g_dyld_lock);
+    img.exe_path = path;
+    img.host_path = resolve_guest_path(path);
+    if (access(img.host_path.c_str(), R_OK) != 0) img.host_path = path;
+
+    // Initialize commpage for macOS guest
+    commpage_init();
+    darwin_hle_init();
+
+    char rp[4096];
+    g_exe_dir = dir_of(realpath(path, rp) ? std::string(rp) : std::string(path));
+
+    MachImage* exe = map_image(path, img.host_path, true);
+    if (!exe) return false;
+    if (!exe->entry) {
+        fprintf(stderr, "xef-osx: No entry point found in Mach-O binary\n");
+        return false;
+    }
+    load_dependencies(exe);
+    load_implicit_images();
+    link_all();
+
+    img.exe_base = exe->header;
+    img.min_addr = ~0ull;
+    img.max_addr = 0;
+    for (const MachSegment& s : exe->segs) {
+        if (!s.size || !strncmp(s.name, "__PAGEZERO", 16)) continue;
+        img.min_addr = std::min<GuestAddr>(img.min_addr, s.addr);
+        img.max_addr = std::max<GuestAddr>(img.max_addr, s.addr + s.size);
+    }
+    img.entry = exe->entry;
+    img.exe_entry = exe->entry;
+    img.brk_start = page_align_up(img.max_addr);
+    XEF_LOG(1, "xef-osx: Mach-O ARM64 loaded %s: base=%#lx entry=%#lx min=%#lx max=%#lx (%zu images)",
+            path, (unsigned long)img.exe_base, (unsigned long)img.entry,
+            (unsigned long)img.min_addr, (unsigned long)img.max_addr, g_images.size());
+    return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Initializers, dlopen, TLV
+// ---------------------------------------------------------------------------------------------
+static void run_inits_of(MachImage* im, std::vector<MachImage*>& seen, const u64* args) {
+    if (im->initialized) return;
+    for (MachImage* s : seen) if (s == im) return;
+    seen.push_back(im);
+    for (MachDep& d : im->deps)
+        if (d.image) run_inits_of(d.image, seen, args);
+    im->initialized = true;
+    for (uint64_t f : im->inits) {
+        XEF_LOG(2, "xef-osx: init %s: %#lx", im->path.c_str(), (unsigned long)f);
+        guest_call(f, 4, args);
+    }
+}
+
+void dyld_run_initializers(uint64_t argc, uint64_t argv, uint64_t envp, uint64_t apple) {
+    std::lock_guard<std::recursive_mutex> lk(g_dyld_lock);
+    u64 args[4] = {argc, argv, envp, apple};
+    std::vector<MachImage*> seen;
+    // implicit images (libunwind) first, then the executable's tree
+    for (size_t i = g_images.size(); i-- > 1;) run_inits_of(g_images[i], seen, args);
+    if (!g_images.empty()) run_inits_of(g_images[0], seen, args);
+}
+
+MachImage* dyld_dlopen(const char* path) {
+    std::lock_guard<std::recursive_mutex> lk(g_dyld_lock);
+    if (!path) return g_images.empty() ? nullptr : g_images[0];
+    size_t before = g_images.size();
+    MachImage* im = load_dependency(g_images.empty() ? nullptr : g_images[0], path, false);
+    if (!im) return nullptr;
+    if (g_images.size() > before || !im->bound) {
+        for (size_t i = before; i < g_images.size(); i++) load_dependencies(g_images[i]);
+        link_all();
+        u64 args[4] = {(u64)g_darwin_argc, (u64)(uintptr_t)g_darwin_argv, (u64)(uintptr_t)g_darwin_envp, 0};
+        std::vector<MachImage*> seen;
+        for (size_t i = before; i < g_images.size(); i++) run_inits_of(g_images[i], seen, args);
+        run_inits_of(im, seen, args);
+    }
+    return im;
+}
+
+void* dyld_tlv_address(uint64_t desc_addr) {
+    struct Desc { uint64_t thunk, key, offset; };
+    const Desc* d = (const Desc*)desc_addr;
+    MachImage* im = nullptr;
+    if (d->key >= 1 && d->key <= g_images.size()) im = g_images[d->key - 1];
+    if (!im) im = dyld_image_containing(desc_addr);
+    if (!im) return nullptr;
+    static thread_local std::vector<void*> blocks;
+    if (blocks.size() <= im->index) blocks.resize(im->index + 1, nullptr);
+    void*& b = blocks[im->index];
+    if (!b) {
+        size_t total = std::max<uint64_t>(im->tlv_total, 16);
+        b = calloc(1, total + 64);
+        if (im->tlv_init && im->tlv_init_size) memcpy(b, (void*)im->tlv_init, im->tlv_init_size);
+    }
+    return (uint8_t*)b + d->offset;
 }
 
 bool is_macho_binary(const char* path, bool& is_fat, bool& is_arm64) {
@@ -354,343 +904,6 @@ bool is_macho_binary(const char* path, bool& is_fat, bool& is_arm64) {
 
     close(fd);
     return false;
-}
-
-static int prot_from_macho(uint32_t p) {
-    int r = 0;
-    if (p & 1) r |= PROT_READ;
-    if (p & 2) r |= PROT_WRITE;
-    if (p & 4) r |= PROT_EXEC;
-    return r;
-}
-
-bool load_macho(const char* path, LoadedImage& img) {
-    img.exe_path = path;
-    img.host_path = resolve_guest_path(path);
-    if (access(img.host_path.c_str(), R_OK) != 0) img.host_path = path;
-
-    int fd = open(img.host_path.c_str(), O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return false;
-
-    uint32_t magic = 0;
-    if (read(fd, &magic, sizeof(magic)) != sizeof(magic)) {
-        close(fd);
-        return false;
-    }
-
-    uint64_t slice_offset = 0;
-    uint64_t slice_size = 0;
-
-    if (magic == FAT_MAGIC || magic == FAT_CIGAM) {
-        bool swap = (magic == FAT_CIGAM);
-        fat_header fh;
-        lseek(fd, 0, SEEK_SET);
-        if (read(fd, &fh, sizeof(fh)) != sizeof(fh)) { close(fd); return false; }
-        uint32_t narch = swap ? bswap32(fh.nfat_arch) : fh.nfat_arch;
-        bool found = false;
-        for (uint32_t i = 0; i < narch; i++) {
-            fat_arch fa;
-            if (read(fd, &fa, sizeof(fa)) != sizeof(fa)) break;
-            uint32_t cpu = swap ? bswap32(fa.cputype) : fa.cputype;
-            if (cpu == CPU_TYPE_ARM64) {
-                slice_offset = swap ? bswap32(fa.offset) : fa.offset;
-                slice_size   = swap ? bswap32(fa.size)   : fa.size;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            fprintf(stderr, "xef-osx: FAT binary contains no ARM64 slice\n");
-            close(fd);
-            return false;
-        }
-    } else if (magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64) {
-        bool swap = (magic == FAT_CIGAM_64);
-        fat_header fh;
-        lseek(fd, 0, SEEK_SET);
-        if (read(fd, &fh, sizeof(fh)) != sizeof(fh)) { close(fd); return false; }
-        uint32_t narch = swap ? bswap32(fh.nfat_arch) : fh.nfat_arch;
-        bool found = false;
-        for (uint32_t i = 0; i < narch; i++) {
-            fat_arch_64 fa64;
-            if (read(fd, &fa64, sizeof(fa64)) != sizeof(fa64)) break;
-            uint32_t cpu = swap ? bswap32(fa64.cputype) : fa64.cputype;
-            if (cpu == CPU_TYPE_ARM64) {
-                slice_offset = swap ? bswap64(fa64.offset) : fa64.offset;
-                slice_size   = swap ? bswap64(fa64.size)   : fa64.size;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            fprintf(stderr, "xef-osx: FAT64 binary contains no ARM64 slice\n");
-            close(fd);
-            return false;
-        }
-    }
-
-    lseek(fd, slice_offset, SEEK_SET);
-    mach_header_64 mh;
-    if (read(fd, &mh, sizeof(mh)) != sizeof(mh)) {
-        close(fd);
-        return false;
-    }
-
-    bool swap = (mh.magic == MH_CIGAM_64);
-    uint32_t cputype    = swap ? bswap32(mh.cputype) : mh.cputype;
-    uint32_t filetype   = swap ? bswap32(mh.filetype) : mh.filetype;
-    uint32_t ncmds      = swap ? bswap32(mh.ncmds) : mh.ncmds;
-    uint32_t sizeofcmds = swap ? bswap32(mh.sizeofcmds) : mh.sizeofcmds;
-    uint32_t flags      = swap ? bswap32(mh.flags) : mh.flags;
-    (void)filetype; (void)flags; (void)slice_size;
-
-    if (cputype != CPU_TYPE_ARM64) {
-        fprintf(stderr, "xef-osx: Unsupported Mach-O CPU type: %u (expected ARM64)\n", cputype);
-        close(fd);
-        return false;
-    }
-
-    std::vector<uint8_t> cmdbuf(sizeofcmds);
-    if (read(fd, cmdbuf.data(), sizeofcmds) != (ssize_t)sizeofcmds) {
-        close(fd);
-        return false;
-    }
-
-    // Initialize commpage for macOS guest
-    commpage_init();
-
-    uint64_t text_vmaddr = 0;
-    uint64_t entry_offset = 0;
-    bool has_main = false;
-    bool has_unixthread = false;
-    uint64_t unixthread_pc = 0;
-    uint64_t slide = 0;
-
-    uint64_t chained_fixups_offset = 0;
-    uint64_t chained_fixups_size = 0;
-    bool has_chained_fixups = false;
-
-    dyld_info_command dyld_info = {};
-    bool has_dyld_info = false;
-    std::vector<uint64_t> seg_vmaddrs;
-
-    // Scan segments to determine addresses
-    img.min_addr = ~0ull;
-    img.max_addr = 0;
-
-    // First pass: locate __TEXT segment to know base
-    uint32_t off = 0;
-    for (uint32_t i = 0; i < ncmds && off + sizeof(load_command) <= sizeofcmds; i++) {
-        const load_command* lc = (const load_command*)&cmdbuf[off];
-        uint32_t cmd = swap ? bswap32(lc->cmd) : lc->cmd;
-        uint32_t cmdsize = swap ? bswap32(lc->cmdsize) : lc->cmdsize;
-        if (cmd == LC_SEGMENT_64 && cmdsize >= sizeof(segment_command_64)) {
-            const segment_command_64* seg = (const segment_command_64*)lc;
-            uint64_t vmaddr = swap ? bswap64(seg->vmaddr) : seg->vmaddr;
-            if (strncmp(seg->segname, "__TEXT", 16) == 0) {
-                text_vmaddr = vmaddr;
-                img.exe_base = text_vmaddr + slide;
-            }
-        }
-        off += cmdsize;
-    }
-
-    // Second pass: map segments
-    off = 0;
-    for (uint32_t i = 0; i < ncmds && off + sizeof(load_command) <= sizeofcmds; i++) {
-        const load_command* lc = (const load_command*)&cmdbuf[off];
-        uint32_t cmd = swap ? bswap32(lc->cmd) : lc->cmd;
-        uint32_t cmdsize = swap ? bswap32(lc->cmdsize) : lc->cmdsize;
-
-        if (cmd == LC_SEGMENT_64 && cmdsize >= sizeof(segment_command_64)) {
-            const segment_command_64* seg = (const segment_command_64*)lc;
-            uint64_t vmaddr   = swap ? bswap64(seg->vmaddr) : seg->vmaddr;
-            uint64_t vmsize   = swap ? bswap64(seg->vmsize) : seg->vmsize;
-            uint64_t fileoff  = swap ? bswap64(seg->fileoff) : seg->fileoff;
-            uint64_t filesize = swap ? bswap64(seg->filesize) : seg->filesize;
-            uint32_t initprot = swap ? bswap32(seg->initprot) : seg->initprot;
-            uint32_t maxprot  = swap ? bswap32(seg->maxprot) : seg->maxprot;
-            (void)maxprot;
-
-            if (strncmp(seg->segname, "__PAGEZERO", 16) == 0) {
-                // Protect PAGEZERO area (typically 4GB on 64-bit Mach-O)
-                if (vmsize > 0) {
-                    mmap((void*)vmaddr, vmsize, PROT_NONE,
-                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
-                }
-                seg_vmaddrs.push_back(vmaddr);
-                off += cmdsize;
-                continue;
-            }
-
-            uint64_t target_addr = vmaddr + slide;
-            int prot = prot_from_macho(initprot);
-
-            if (filesize > 0) {
-                uint64_t map_page_start = page_align_down(target_addr);
-                uint64_t page_offset    = target_addr - map_page_start;
-                uint64_t file_page_start = page_align_down(slice_offset + fileoff);
-                uint64_t map_len        = page_align_up(filesize + page_offset);
-
-                void* r = mmap((void*)map_page_start, map_len, prot | PROT_WRITE,
-                               MAP_PRIVATE | MAP_FIXED, fd, file_page_start);
-                if (r == MAP_FAILED) {
-                    fprintf(stderr, "xef-osx: Failed to mmap segment %s at %#lx (len %#lx): %m\n",
-                            seg->segname, (unsigned long)map_page_start, (unsigned long)map_len);
-                    close(fd);
-                    return false;
-                }
-
-                // If vmsize > filesize, allocate zeroed memory for BSS
-                if (vmsize > filesize) {
-                    uint64_t bss_start = target_addr + filesize;
-                    uint64_t bss_page_start = page_align_up(bss_start);
-                    // Zero end of mapped file page
-                    if (bss_page_start > bss_start) {
-                        memset((void*)bss_start, 0, bss_page_start - bss_start);
-                    }
-                    uint64_t bss_page_end = page_align_up(target_addr + vmsize);
-                    if (bss_page_end > bss_page_start) {
-                        void* b = mmap((void*)bss_page_start, bss_page_end - bss_page_start,
-                                       prot | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-                        if (b == MAP_FAILED) {
-                            fprintf(stderr, "xef-osx: Failed to mmap BSS for %s\n", seg->segname);
-                            close(fd);
-                            return false;
-                        }
-                    }
-                }
-
-                if (!(prot & PROT_WRITE)) {
-                    mprotect((void*)map_page_start, page_align_up(vmsize + page_offset), prot);
-                }
-            } else if (vmsize > 0) {
-                // Pure anonymous segment
-                uint64_t map_page_start = page_align_down(target_addr);
-                uint64_t map_len = page_align_up(vmsize);
-                void* r = mmap((void*)map_page_start, map_len, prot,
-                               MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-                if (r == MAP_FAILED) {
-                    fprintf(stderr, "xef-osx: Failed to mmap anon segment %s\n", seg->segname);
-                    close(fd);
-                    return false;
-                }
-            }
-
-            // Inspect sections in this segment for __thread_data
-            uint32_t nsects = swap ? bswap32(seg->nsects) : seg->nsects;
-            if (nsects > 0 && cmdsize >= sizeof(segment_command_64) + nsects * sizeof(section_64)) {
-                const section_64* scts = (const section_64*)(seg + 1);
-                for (uint32_t s = 0; s < nsects; s++) {
-                    const section_64& sct = scts[s];
-                    if (strncmp(sct.sectname, "__thread_data", 16) == 0) {
-                        uint64_t saddr = swap ? bswap64(sct.addr) : sct.addr;
-                        uint64_t ssize = swap ? bswap64(sct.size) : sct.size;
-                        g_darwin_tlv_template = (const uint8_t*)(saddr + slide);
-                        g_darwin_tlv_template_size = (size_t)ssize;
-                        XEF_LOG(2, "xef-osx: found __thread_data template at %p (size %#zx)",
-                                g_darwin_tlv_template, g_darwin_tlv_template_size);
-                    }
-                }
-            }
-
-            img.min_addr = std::min(img.min_addr, (GuestAddr)target_addr);
-            img.max_addr = std::max(img.max_addr, (GuestAddr)(target_addr + vmsize));
-            seg_vmaddrs.push_back(target_addr);
-        } else if (cmd == LC_MAIN && cmdsize >= sizeof(entry_point_command)) {
-            const entry_point_command* ep = (const entry_point_command*)lc;
-            entry_offset = swap ? bswap64(ep->entryoff) : ep->entryoff;
-            has_main = true;
-        } else if (cmd == LC_DYLD_CHAINED_FIXUPS && cmdsize >= sizeof(linkedit_data_command)) {
-            const linkedit_data_command* ldc = (const linkedit_data_command*)lc;
-            chained_fixups_offset = swap ? bswap32(ldc->dataoff) : ldc->dataoff;
-            chained_fixups_size   = swap ? bswap32(ldc->datasize) : ldc->datasize;
-            has_chained_fixups    = true;
-        } else if ((cmd == LC_DYLD_INFO || cmd == LC_DYLD_INFO_ONLY) && cmdsize >= sizeof(dyld_info_command)) {
-            const dyld_info_command* dic = (const dyld_info_command*)lc;
-            dyld_info = *dic;
-            if (swap) {
-                dyld_info.rebase_off    = bswap32(dyld_info.rebase_off);
-                dyld_info.rebase_size   = bswap32(dyld_info.rebase_size);
-                dyld_info.bind_off      = bswap32(dyld_info.bind_off);
-                dyld_info.bind_size     = bswap32(dyld_info.bind_size);
-                dyld_info.weak_bind_off = bswap32(dyld_info.weak_bind_off);
-                dyld_info.weak_bind_size= bswap32(dyld_info.weak_bind_size);
-                dyld_info.lazy_bind_off = bswap32(dyld_info.lazy_bind_off);
-                dyld_info.lazy_bind_size= bswap32(dyld_info.lazy_bind_size);
-                dyld_info.export_off    = bswap32(dyld_info.export_off);
-                dyld_info.export_size   = bswap32(dyld_info.export_size);
-            }
-            has_dyld_info = true;
-        } else if (cmd == LC_UNIXTHREAD) {
-            // flavor and count follow load_command
-            const uint32_t* p = (const uint32_t*)(lc + 1);
-            uint32_t flavor = swap ? bswap32(p[0]) : p[0];
-            uint32_t count  = swap ? bswap32(p[1]) : p[1];
-            if (flavor == ARM_THREAD_STATE64 && count >= sizeof(arm_thread_state64_t) / 4) {
-                const arm_thread_state64_t* ts = (const arm_thread_state64_t*)(p + 2);
-                unixthread_pc = swap ? bswap64(ts->pc) : ts->pc;
-                has_unixthread = true;
-            }
-        }
-
-        off += cmdsize;
-    }
-
-    if (has_chained_fixups && chained_fixups_size > 0) {
-        resolve_chained_fixups(fd, slice_offset, chained_fixups_offset, chained_fixups_size, img.exe_base);
-    }
-
-    if (has_dyld_info) {
-        auto read_and_exec = [&](uint32_t fileoff, uint32_t size, auto fn) {
-            if (size == 0) return;
-            std::vector<uint8_t> buf(size);
-            lseek(fd, slice_offset + fileoff, SEEK_SET);
-            if (read(fd, buf.data(), size) == (ssize_t)size) {
-                fn(buf.data(), size);
-            }
-        };
-
-        if (dyld_info.rebase_size > 0 && slide != 0) {
-            read_and_exec(dyld_info.rebase_off, dyld_info.rebase_size, [&](const uint8_t* b, size_t s) {
-                execute_dyld_rebase(b, s, seg_vmaddrs, slide);
-            });
-        }
-        if (dyld_info.bind_size > 0) {
-            read_and_exec(dyld_info.bind_off, dyld_info.bind_size, [&](const uint8_t* b, size_t s) {
-                execute_dyld_bind(b, s, seg_vmaddrs);
-            });
-        }
-        if (dyld_info.weak_bind_size > 0) {
-            read_and_exec(dyld_info.weak_bind_off, dyld_info.weak_bind_size, [&](const uint8_t* b, size_t s) {
-                execute_dyld_bind(b, s, seg_vmaddrs, true);
-            });
-        }
-        if (dyld_info.lazy_bind_size > 0) {
-            read_and_exec(dyld_info.lazy_bind_off, dyld_info.lazy_bind_size, [&](const uint8_t* b, size_t s) {
-                execute_dyld_bind(b, s, seg_vmaddrs);
-            });
-        }
-    }
-
-    close(fd);
-
-    if (has_main) {
-        img.entry = text_vmaddr + slide + entry_offset;
-        img.exe_entry = img.entry;
-    } else if (has_unixthread) {
-        img.entry = unixthread_pc + slide;
-        img.exe_entry = img.entry;
-    } else {
-        fprintf(stderr, "xef-osx: No entry point found in Mach-O binary\n");
-        return false;
-    }
-
-    img.brk_start = page_align_up(img.max_addr);
-    XEF_LOG(1, "xef-osx: Mach-O ARM64 loaded %s: base=%#lx entry=%#lx min=%#lx max=%#lx",
-            path, (unsigned long)img.exe_base, (unsigned long)img.entry,
-            (unsigned long)img.min_addr, (unsigned long)img.max_addr);
-    return true;
 }
 
 GuestAddr setup_darwin_stack(const LoadedImage& img, int argc, char** argv, char** envp, CpuState* st) {
@@ -811,7 +1024,9 @@ GuestAddr setup_darwin_stack(const LoadedImage& img, int argc, char** argv, char
         st->x[30] = g_darwin_exit_trampoline;
         XEF_LOG(1, "xef-osx: setting initial lr=%#lx", (unsigned long)g_darwin_exit_trampoline);
         st->x[kGuestSP] = final_sp;
-        st->pc = img.entry;
+        // the start stub runs the images' initializers, then branches to the entry point
+        g_darwin_start_target = img.entry;
+        st->pc = g_darwin_start_stub;
         st->eflags = 0x203; // Canonical flags (AArch64 NZCV = 0, Carry = 0)
     }
 
