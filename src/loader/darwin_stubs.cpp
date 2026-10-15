@@ -14,6 +14,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <vector>
+#include <string>
+#include <pthread.h>
 
 namespace xef {
 
@@ -116,6 +118,40 @@ static const char* st_bootstrap_strerror(int) { return "unknown bootstrap error"
 static unsigned st_qos_class_self() { return 0x15; }       // QOS_CLASS_DEFAULT
 static void st_noop() {}
 static int st_fprintf_l_dummy() { return 0; }
+static const char* st_getprogname() {
+    static std::string n;
+    if (n.empty()) { const char* p = strrchr(g_darwin_exe_path.c_str(), '/'); n = p ? p + 1 : g_darwin_exe_path; }
+    return n.c_str();
+}
+static void* st_malloc_create_zone(size_t, unsigned) { return (void*)1; }
+static pthread_t g_main_pthread = pthread_self();
+static uint64_t st_pthread_main_thread_np() { return (uint64_t)g_main_pthread; }
+static void* st_getsectbynamefromheader_64(const void* mh, const char* seg, const char* sect) {
+    // returns a pointer to a Darwin `struct section_64`
+    for (MachImage* im : dyld_images())
+        if (im->header == (uint64_t)(uintptr_t)mh)
+            for (const MachSection& s : im->sects)
+                if (!strncmp(s.seg, seg, 16) && !strncmp(s.sect, sect, 16)) {
+                    struct Sec { char sectname[16], segname[16]; uint64_t addr, size; uint32_t offset, align, reloff, nreloc, flags, r1, r2, r3; };
+                    Sec* r = new Sec(); memset(r, 0, sizeof *r);
+                    memcpy(r->sectname, s.sect, 16); memcpy(r->segname, s.seg, 16);
+                    r->addr = s.addr - im->slide; r->size = s.size;
+                    return r;
+                }
+    return nullptr;
+}
+static void* st_getsegbyname(const char* seg) {
+    MachImage* im = dyld_images().empty() ? nullptr : dyld_images()[0];
+    if (!im) return nullptr;
+    for (const MachSegment& s : im->segs)
+        if (!strncmp(s.name, seg, 16)) {
+            struct Seg { uint32_t cmd, cmdsize; char segname[16]; uint64_t vmaddr, vmsize, fileoff, filesize; uint32_t maxprot, initprot, nsects, flags; };
+            Seg* r = new Seg(); memset(r, 0, sizeof *r);
+            memcpy(r->segname, s.name, 16); r->vmaddr = s.addr - im->slide; r->vmsize = s.size;
+            return r;
+        }
+    return nullptr;
+}
 
 struct StubEntry { const char* name; void* fn; };
 static const StubEntry kStubs[] = {
@@ -156,7 +192,32 @@ static const StubEntry kStubs[] = {
     {"_NXGetLocalArchInfo", (void*)&st_null}, {"_NXFindBestFatArch", (void*)&st_null},
 };
 
+static void st_noop2() {}
+static int st_zero2() { return 0; }
+static void* st_null2() { return nullptr; }
+static void st_memset_pattern4(void* b, const void* p, size_t n) {
+    uint8_t* d = (uint8_t*)b; const uint8_t* s = (const uint8_t*)p;
+    for (size_t i = 0; i < n; i++) d[i] = s[i & 3];
+}
+static int st_vm_copy(uint32_t, uint64_t src, uint64_t n, uint64_t dst) { memmove((void*)(uintptr_t)dst, (void*)(uintptr_t)src, n); return 0; }
+static int st_task_info(uint32_t, int, void* info, uint32_t* cnt) { if (info && cnt) memset(info, 0, *cnt * 4); return 0; }
+static const StubEntry kStubs2[] = {
+    {"_getprogname", (void*)&st_getprogname}, {"_malloc_create_zone", (void*)&st_malloc_create_zone},
+    {"_malloc_destroy_zone", (void*)&st_noop2}, {"_malloc_set_zone_name", (void*)&st_noop2}, {"_malloc_get_zone_name", (void*)&st_null2},
+    {"_pthread_main_thread_np", (void*)&st_pthread_main_thread_np}, {"_getsectbynamefromheader_64", (void*)&st_getsectbynamefromheader_64},
+    {"_getsegbyname", (void*)&st_getsegbyname}, {"_memset_pattern4", (void*)&st_memset_pattern4}, {"_vm_copy", (void*)&st_vm_copy},
+    {"_task_info", (void*)&st_task_info},
+    {"_xpc_retain", (void*)&st_null2}, {"_xpc_copy_description", (void*)&st_null2}, {"_xpc_array_append_value", (void*)&st_noop2},
+    {"_xpc_connection_create_mach_service", (void*)&st_null2}, {"_xpc_connection_resume", (void*)&st_noop2},
+    {"_xpc_connection_send_message", (void*)&st_noop2}, {"_xpc_connection_send_message_with_reply", (void*)&st_noop2},
+    {"_xpc_connection_send_message_with_reply_sync", (void*)&st_null2}, {"_xpc_connection_set_event_handler", (void*)&st_noop2},
+    {"_xpc_dictionary_create_reply", (void*)&st_null2}, {"_xpc_dictionary_get_string", (void*)&st_null2},
+    {"_xpc_dictionary_get_uint64", (void*)&st_zero2}, {"_xpc_dictionary_get_value", (void*)&st_null2},
+    {"_xpc_dictionary_set_string", (void*)&st_noop2}, {"_xpc_dictionary_set_uint64", (void*)&st_noop2}, {"_xpc_dictionary_set_value", (void*)&st_noop2},
+};
+
 void* darwin_stub_lookup(const char* name) {
+    for (const StubEntry& e : kStubs2) if (!strcmp(e.name, name)) return e.fn;
     for (const StubEntry& e : kStubs) if (!strcmp(e.name, name)) return e.fn;
     return nullptr;
 }
@@ -166,6 +227,7 @@ void* darwin_stub_data_lookup(const char* name) {
     static char xpc_types[16][64];
     static int n = 0;
     static std::vector<std::pair<std::string, void*>> made;
+    if (!strcmp(name, "_vm_page_size")) { static uint64_t ps = 4096; return &ps; }
     if (!strncmp(name, "__xpc_type_", 11)) {
         for (auto& p : made) if (p.first == name) return p.second;
         void* d = xpc_types[n++ % 16];

@@ -1087,3 +1087,102 @@ EXPORT dispatch_object_t dispatch_data_copy_region(dispatch_object_t x, size_t l
     (void)loc;
     return x;
 }
+
+// ---------------------------------------------------------------------------------------------
+// dispatch_io (blocking reads/writes executed on the target queue)
+// ---------------------------------------------------------------------------------------------
+typedef void (^io_handler_t)(int done, dispatch_object_t data, int error);
+typedef void (^io_cleanup_t)(int error);
+@interface OS_dispatch_io : OS_dispatch_object { @public int fd; int owned; io_cleanup_t cleanup; OS_dispatch_queue *queue; } @end
+@implementation OS_dispatch_io @end
+
+EXPORT dispatch_object_t dispatch_io_create(unsigned long type, int fd, dispatch_object_t q, io_cleanup_t cleanup) {
+    (void)type;
+    OS_dispatch_io *io = (OS_dispatch_io *)obj_new([OS_dispatch_io class]);
+    io->fd = fd; io->queue = q; io->cleanup = cleanup ? Block_copy(cleanup) : NULL;
+    return io;
+}
+EXPORT dispatch_object_t dispatch_io_create_with_path(unsigned long type, const char *path, int oflag, unsigned mode, dispatch_object_t q, io_cleanup_t cleanup) {
+    int fd = open(path, oflag, mode);
+    if (fd < 0) { if (cleanup) dispatch_async(q, ^{ cleanup(errno); }); return NULL; }
+    OS_dispatch_io *io = dispatch_io_create(type, fd, q, cleanup);
+    io->owned = 1;
+    return io;
+}
+EXPORT void dispatch_io_set_low_water(dispatch_object_t io, size_t n) { (void)io; (void)n; }
+EXPORT void dispatch_io_set_high_water(dispatch_object_t io, size_t n) { (void)io; (void)n; }
+EXPORT void dispatch_io_set_interval(dispatch_object_t io, uint64_t n, unsigned long f) { (void)io; (void)n; (void)f; }
+EXPORT void dispatch_io_barrier(dispatch_object_t io, dispatch_block_t b) { dispatch_async(((OS_dispatch_io *)io)->queue, b); }
+EXPORT void dispatch_io_close(dispatch_object_t o, unsigned long flags) {
+    (void)flags;
+    OS_dispatch_io *io = o;
+    if (io->owned && io->fd >= 0) close(io->fd);
+    io->fd = -1;
+    if (io->cleanup) { io_cleanup_t c = io->cleanup; io->cleanup = NULL; dispatch_async(io->queue, ^{ c(0); Block_release(c); }); }
+}
+EXPORT void dispatch_io_read(dispatch_object_t o, off_t offset, size_t length, dispatch_object_t q, io_handler_t handler) {
+    OS_dispatch_io *io = o;
+    int fd = io->fd;
+    io_handler_t h = Block_copy(handler);
+    dispatch_async(q, ^{
+        size_t cap = length == SIZE_MAX ? 65536 : length;
+        uint8_t *buf = malloc(cap ? cap : 1);
+        size_t got = 0; int err = 0;
+        while (got < cap) {
+            ssize_t r = offset >= 0 && 0 ? pread(fd, buf + got, cap - got, offset + got) : read(fd, buf + got, cap - got);
+            if (r < 0) { err = errno; break; }
+            if (r == 0) break;
+            got += r;
+            if (length == SIZE_MAX && got == cap) { cap *= 2; buf = realloc(buf, cap); }
+        }
+        __block uint8_t *b = buf;
+        dispatch_object_t d = dispatch_data_create(buf, got, q, ^{ free(b); });
+        h(1, d, err);
+        [(id)d release];
+        Block_release(h);
+    });
+}
+EXPORT void dispatch_io_write(dispatch_object_t o, off_t offset, dispatch_object_t data, dispatch_object_t q, io_handler_t handler) {
+    (void)offset;
+    OS_dispatch_io *io = o;
+    int fd = io->fd;
+    io_handler_t h = Block_copy(handler);
+    [(id)data retain];
+    dispatch_async(q, ^{
+        const void *p = NULL; size_t n = 0;
+        dispatch_object_t m = dispatch_data_create_map(data, &p, &n);
+        size_t done = 0; int err = 0;
+        while (done < n) { ssize_t r = write(fd, (const char *)p + done, n - done); if (r < 0) { err = errno; break; } done += r; }
+        [(id)m release];
+        h(1, NULL, err);
+        [(id)data release];
+        Block_release(h);
+    });
+}
+EXPORT void dispatch_read(int fd, size_t length, dispatch_object_t q, void (^handler)(dispatch_object_t, int)) {
+    void (^h)(dispatch_object_t, int) = Block_copy(handler);
+    dispatch_async(q, ^{
+        uint8_t *buf = malloc(length ? length : 1);
+        ssize_t r = read(fd, buf, length);
+        int err = r < 0 ? errno : 0;
+        __block uint8_t *b = buf;
+        dispatch_object_t d = dispatch_data_create(buf, r > 0 ? r : 0, q, ^{ free(b); });
+        h(d, err);
+        [(id)d release];
+        Block_release(h);
+    });
+}
+EXPORT void dispatch_write(int fd, dispatch_object_t data, dispatch_object_t q, void (^handler)(dispatch_object_t, int)) {
+    void (^h)(dispatch_object_t, int) = Block_copy(handler);
+    [(id)data retain];
+    dispatch_async(q, ^{
+        const void *p = NULL; size_t n = 0;
+        dispatch_object_t m = dispatch_data_create_map(data, &p, &n);
+        size_t done = 0; int err = 0;
+        while (done < n) { ssize_t r = write(fd, (const char *)p + done, n - done); if (r < 0) { err = errno; break; } done += r; }
+        [(id)m release];
+        h(NULL, err);
+        [(id)data release];
+        Block_release(h);
+    });
+}

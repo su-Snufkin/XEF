@@ -55,6 +55,7 @@ struct ThunkEntry {
 static std::vector<ThunkEntry> g_thunks;
 void* darwin_sys_shim_lookup(const char* name);
 void* darwin_stub_lookup(const char* name);
+void* darwin_mach_lookup(const char* name);
 void* darwin_stub_data_lookup(const char* name);
 void* darwin_sys_data_lookup(const char* name);
 static std::unordered_map<std::string, uint64_t> g_symbol_cache;
@@ -1883,6 +1884,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = sh->fn;
     } else if (void* sf = darwin_sys_shim_lookup(name)) {
         host_fn = sf;
+    } else if (void* sf3 = darwin_mach_lookup(name)) {
+        host_fn = sf3;
     } else if (void* sf2 = darwin_stub_lookup(name)) {
         host_fn = sf2;
     } else if (strcmp(name, "__dyld_objc_register_callbacks") == 0) {
