@@ -143,6 +143,10 @@ static bool handle_darwin_sysctl(CpuState* st, const int* mib, int namelen,
     return false;
 }
 
+bool darwin_sysctl_impl(const int* mib, int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
+    return handle_darwin_sysctl(nullptr, mib, namelen, oldp, oldlenp, newp, newlen);
+}
+
 void do_darwin_syscall(CpuState* st) {
     uint64_t full_nr = st->x[16];
     if (full_nr == 0 && st->x[8] != 0) {

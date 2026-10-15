@@ -55,6 +55,7 @@ struct MachImage {
     const uint8_t* lazy_bind = nullptr; size_t lazy_bind_size = 0;
     struct InitSection { uint64_t addr, size; uint32_t type; };
     std::vector<InitSection> init_sections;
+    uint64_t routines_init = 0;         // LC_ROUTINES_64 (ld -init)
     uint64_t entry = 0;                 // LC_MAIN / LC_UNIXTHREAD target (executables)
 };
 

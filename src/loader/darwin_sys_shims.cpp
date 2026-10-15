@@ -3,6 +3,9 @@
 #include "loader/darwin_hle.h"
 #include "loader/macho_image.h"
 #include "thunks/thunks.h"
+#include "os/thread.h"
+#include "os/signals.h"
+#include "runtime/cpu_state.h"
 #include "common/common.h"
 
 #include <errno.h>
@@ -166,9 +169,91 @@ static void sh_abort_with_reason(uint32_t, uint64_t, const char* msg, uint64_t) 
     abort();
 }
 static void sh_fault_with_payload() {}
+static void sh_abort() {
+    ThreadCtx* t = tls_thread;
+    u64 lr = t ? t->st->x[30] : 0;
+    MachImage* im = dyld_image_containing(lr);
+    fprintf(stderr, "xef-osx: abort() called from %s+%#lx\n", im ? im->path.c_str() : "?", (unsigned long)(im ? lr - im->header : lr));
+    fflush(stdout);
+    abort();
+}
+
+// ---- OSAtomic / OSSpinLock (libplatform) ----------------------------------------------------------
+#define OSA_ADD(name, T) static T sh_##name(T a, volatile T* p) { return __atomic_add_fetch(p, a, __ATOMIC_SEQ_CST); }
+OSA_ADD(OSAtomicAdd32, int32_t) OSA_ADD(OSAtomicAdd64, int64_t)
+static int32_t sh_OSAtomicIncrement32(volatile int32_t* p) { return __atomic_add_fetch(p, 1, __ATOMIC_SEQ_CST); }
+static int32_t sh_OSAtomicDecrement32(volatile int32_t* p) { return __atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST); }
+static int64_t sh_OSAtomicIncrement64(volatile int64_t* p) { return __atomic_add_fetch(p, 1, __ATOMIC_SEQ_CST); }
+static int64_t sh_OSAtomicDecrement64(volatile int64_t* p) { return __atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST); }
+static bool sh_OSAtomicCAS32(int32_t o, int32_t n, volatile int32_t* p) { return __atomic_compare_exchange_n(p, &o, n, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); }
+static bool sh_OSAtomicCAS64(int64_t o, int64_t n, volatile int64_t* p) { return __atomic_compare_exchange_n(p, &o, n, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); }
+static int32_t sh_OSAtomicOr32(uint32_t m, volatile uint32_t* p) { return __atomic_or_fetch(p, m, __ATOMIC_SEQ_CST); }
+static int32_t sh_OSAtomicAnd32(uint32_t m, volatile uint32_t* p) { return __atomic_and_fetch(p, m, __ATOMIC_SEQ_CST); }
+static int32_t sh_OSAtomicXor32(uint32_t m, volatile uint32_t* p) { return __atomic_xor_fetch(p, m, __ATOMIC_SEQ_CST); }
+static int32_t sh_OSAtomicOr32Orig(uint32_t m, volatile uint32_t* p) { return __atomic_fetch_or(p, m, __ATOMIC_SEQ_CST); }
+static int32_t sh_OSAtomicAnd32Orig(uint32_t m, volatile uint32_t* p) { return __atomic_fetch_and(p, m, __ATOMIC_SEQ_CST); }
+static int32_t sh_OSAtomicXor32Orig(uint32_t m, volatile uint32_t* p) { return __atomic_fetch_xor(p, m, __ATOMIC_SEQ_CST); }
+static bool sh_OSAtomicTestAndSet(uint32_t n, volatile void* a) {
+    volatile uint8_t* p = (volatile uint8_t*)a + (n >> 3); uint8_t m = 0x80 >> (n & 7);
+    return __atomic_fetch_or(p, m, __ATOMIC_SEQ_CST) & m;
+}
+static bool sh_OSAtomicTestAndClear(uint32_t n, volatile void* a) {
+    volatile uint8_t* p = (volatile uint8_t*)a + (n >> 3); uint8_t m = 0x80 >> (n & 7);
+    return __atomic_fetch_and(p, (uint8_t)~m, __ATOMIC_SEQ_CST) & m;
+}
+static void sh_OSMemoryBarrier() { __atomic_thread_fence(__ATOMIC_SEQ_CST); }
+static void sh_OSSpinLockLock(volatile int32_t* l) {
+    int32_t e = 0;
+    while (!__atomic_compare_exchange_n(l, &e, 1, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) { e = 0; sched_yield(); }
+}
+static bool sh_OSSpinLockTry(volatile int32_t* l) { int32_t e = 0; return __atomic_compare_exchange_n(l, &e, 1, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED); }
+static void sh_OSSpinLockUnlock(volatile int32_t* l) { __atomic_store_n(l, 0, __ATOMIC_RELEASE); }
 
 struct SysShim { const char* name; void* fn; };
 static const SysShim kSys[] = {
+    {"_OSAtomicAdd32", (void*)&sh_OSAtomicAdd32},
+    {"_OSAtomicAdd32Barrier", (void*)&sh_OSAtomicAdd32},
+    {"_OSAtomicAdd64", (void*)&sh_OSAtomicAdd64},
+    {"_OSAtomicAdd64Barrier", (void*)&sh_OSAtomicAdd64},
+    {"_OSAtomicIncrement32", (void*)&sh_OSAtomicIncrement32},
+    {"_OSAtomicIncrement32Barrier", (void*)&sh_OSAtomicIncrement32},
+    {"_OSAtomicDecrement32", (void*)&sh_OSAtomicDecrement32},
+    {"_OSAtomicDecrement32Barrier", (void*)&sh_OSAtomicDecrement32},
+    {"_OSAtomicIncrement64", (void*)&sh_OSAtomicIncrement64},
+    {"_OSAtomicIncrement64Barrier", (void*)&sh_OSAtomicIncrement64},
+    {"_OSAtomicDecrement64", (void*)&sh_OSAtomicDecrement64},
+    {"_OSAtomicDecrement64Barrier", (void*)&sh_OSAtomicDecrement64},
+    {"_OSAtomicCompareAndSwap32", (void*)&sh_OSAtomicCAS32},
+    {"_OSAtomicCompareAndSwap32Barrier", (void*)&sh_OSAtomicCAS32},
+    {"_OSAtomicCompareAndSwapInt", (void*)&sh_OSAtomicCAS32},
+    {"_OSAtomicCompareAndSwapIntBarrier", (void*)&sh_OSAtomicCAS32},
+    {"_OSAtomicCompareAndSwap64", (void*)&sh_OSAtomicCAS64},
+    {"_OSAtomicCompareAndSwap64Barrier", (void*)&sh_OSAtomicCAS64},
+    {"_OSAtomicCompareAndSwapLong", (void*)&sh_OSAtomicCAS64},
+    {"_OSAtomicCompareAndSwapLongBarrier", (void*)&sh_OSAtomicCAS64},
+    {"_OSAtomicCompareAndSwapPtr", (void*)&sh_OSAtomicCAS64},
+    {"_OSAtomicCompareAndSwapPtrBarrier", (void*)&sh_OSAtomicCAS64},
+    {"_OSAtomicOr32", (void*)&sh_OSAtomicOr32},
+    {"_OSAtomicOr32Barrier", (void*)&sh_OSAtomicOr32},
+    {"_OSAtomicAnd32", (void*)&sh_OSAtomicAnd32},
+    {"_OSAtomicAnd32Barrier", (void*)&sh_OSAtomicAnd32},
+    {"_OSAtomicXor32", (void*)&sh_OSAtomicXor32},
+    {"_OSAtomicXor32Barrier", (void*)&sh_OSAtomicXor32},
+    {"_OSAtomicOr32Orig", (void*)&sh_OSAtomicOr32Orig},
+    {"_OSAtomicOr32OrigBarrier", (void*)&sh_OSAtomicOr32Orig},
+    {"_OSAtomicAnd32Orig", (void*)&sh_OSAtomicAnd32Orig},
+    {"_OSAtomicAnd32OrigBarrier", (void*)&sh_OSAtomicAnd32Orig},
+    {"_OSAtomicXor32Orig", (void*)&sh_OSAtomicXor32Orig},
+    {"_OSAtomicXor32OrigBarrier", (void*)&sh_OSAtomicXor32Orig},
+    {"_OSAtomicTestAndSet", (void*)&sh_OSAtomicTestAndSet},
+    {"_OSAtomicTestAndSetBarrier", (void*)&sh_OSAtomicTestAndSet},
+    {"_OSAtomicTestAndClear", (void*)&sh_OSAtomicTestAndClear},
+    {"_OSAtomicTestAndClearBarrier", (void*)&sh_OSAtomicTestAndClear},
+    {"_OSMemoryBarrier", (void*)&sh_OSMemoryBarrier},
+    {"_OSSpinLockLock", (void*)&sh_OSSpinLockLock},
+    {"_OSSpinLockTry", (void*)&sh_OSSpinLockTry},
+    {"_OSSpinLockUnlock", (void*)&sh_OSSpinLockUnlock},
+    {"_spin_lock_try", (void*)&sh_OSSpinLockTry},
     {"_dyld_program_sdk_at_least", (void*)&sh_sdk_at_least},
     {"_dyld_get_active_platform", (void*)&sh_active_platform},
     {"_dyld_image_header_containing_address", (void*)&sh_header_containing},
@@ -213,6 +298,7 @@ static const SysShim kSys[] = {
     {"_os_variant_allows_internal_security_policies", (void*)&sh_false},
     {"_os_variant_has_internal_diagnostics", (void*)&sh_false},
     {"_os_fault_with_payload", (void*)&sh_fault_with_payload},
+    {"_abort", (void*)&sh_abort},
     {"_abort_with_reason", (void*)&sh_abort_with_reason},
     {"_dispatch_queue_get_label", (void*)&sh_queue_label},
 };

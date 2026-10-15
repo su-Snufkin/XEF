@@ -11,7 +11,7 @@ pass=0; fail=0
 for n in "${names[@]}"; do
   src=$(cd tests/darwin/mac; ls $n.c $n.cpp $n.m 2>/dev/null | head -1)
   case $src in
-    *.c)   cc="clang -O1";;
+    *.c)   if grep -q CoreFoundation tests/darwin/mac/$src; then cc="clang -O1 -framework CoreFoundation"; else cc="clang -O1"; fi;;
     *.cpp) cc="clang++ -O1 -std=c++20";;
     *.m)   if grep -q Foundation.h tests/darwin/mac/$src; then cc="clang -fobjc-arc -framework Foundation"; else cc="clang -fobjc-arc -lobjc"; fi;;
   esac

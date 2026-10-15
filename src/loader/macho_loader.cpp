@@ -175,7 +175,11 @@ static uint64_t resolve_import(MachImage* img, int ordinal, const char* name, bo
     }
     if (r) return r;
     if (hle_dep) {
-        // explicit HLE implementations win over other images for libSystem-provided names
+        // libSystem's names: a real system dylib in the rootfs (libdispatch-lite, libunwind, blocks, ...)
+        // wins over the HLE; then the explicit HLE implementations; then the host libc fallback
+        for (size_t i = 1; i < g_images.size() && !r; i++)
+            r = dyld_lookup_rec(g_images[i], name, 0);
+        if (r) return r;
         r = darwin_hle_resolve_symbol(name, true, true);
         if (r) return r;
     }
@@ -655,6 +659,9 @@ static MachImage* map_image(const std::string& guest_path, const std::string& ho
             im->rpaths.push_back((const char*)lc + 12);
         } else if (cmd == LC_MAIN && lc->cmdsize >= sizeof(entry_point_command)) {
             im->entry = text_vmaddr + slide + ((const entry_point_command*)lc)->entryoff;
+        } else if (cmd == LC_ROUTINES_64 && lc->cmdsize >= 24) {
+            // `ld -init`: the library's initializer routine runs before the __mod_init_func entries
+            im->routines_init = *(const uint64_t*)((const uint8_t*)lc + 8) + slide;
         } else if (cmd == LC_UNIXTHREAD) {
             const uint32_t* p = (const uint32_t*)(lc + 1);
             if (p[0] == ARM_THREAD_STATE64 && p[1] >= sizeof(arm_thread_state64_t) / 4)
@@ -727,6 +734,7 @@ static void link_image(MachImage* im) {
     apply_chained_fixups(im);
 
     // initializers (pointers are final now)
+    if (im->routines_init) im->inits.push_back(im->routines_init);
     for (const MachImage::InitSection& s : im->init_sections) {
         if (s.type == 0x09) {
             for (uint64_t o = 0; o + 8 <= s.size; o += 8)
@@ -755,7 +763,7 @@ static void link_all() {
 // Dylibs that libSystem would provide but that live as separate files in our rootfs.
 static void load_implicit_images() {
     static const char* const kImplicit[] = {"/usr/lib/libunwind.1.dylib", "/usr/lib/system/libsystem_blocks.dylib",
-                                            "/usr/lib/libobjc.A.dylib"};
+                                            "/usr/lib/libobjc.A.dylib", "/usr/lib/system/libdispatch.dylib"};
     for (const char* n : kImplicit) {
         if (find_loaded(n)) continue;
         std::string host = resolve_guest_path(n);

@@ -24,6 +24,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <wchar.h>
+#include <pwd.h>
 #include <locale.h>
 #include <ctype.h>
 #include <chrono>
@@ -53,6 +54,8 @@ struct ThunkEntry {
 
 static std::vector<ThunkEntry> g_thunks;
 void* darwin_sys_shim_lookup(const char* name);
+void* darwin_stub_lookup(const char* name);
+void* darwin_stub_data_lookup(const char* name);
 void* darwin_sys_data_lookup(const char* name);
 static std::unordered_map<std::string, uint64_t> g_symbol_cache;
 static std::unordered_set<std::string> g_host_fallback_names;   // resolved only through the host's dlsym
@@ -824,6 +827,87 @@ static int darwin_vasprintf(char** out, const char* format, const uint64_t* ap) 
 static int darwin_vsprintf(char* str, const char* format, const uint64_t* ap) { return darwin_sprintf(str, format, ap); }
 static int darwin_vprintf(const char* format, const uint64_t* ap) { return darwin_vfprintf(stdout, format, ap); }
 static int darwin_vdprintf(int fd, const char* format, const uint64_t* ap) { return darwin_dprintf(fd, format, ap); }
+// Apple's fortified (_chk) variants: the object-size argument is ignored
+static size_t darwin_strlcpy_impl(char* d, const char* s, size_t n) {
+    size_t l = strlen(s);
+    if (n) { size_t c = l >= n ? n - 1 : l; memcpy(d, s, c); d[c] = 0; }
+    return l;
+}
+static size_t darwin_strlcat_impl(char* d, const char* s, size_t n) {
+    size_t dl = strnlen(d, n), sl = strlen(s);
+    if (dl == n) return n + sl;
+    size_t c = std::min(sl, n - dl - 1);
+    memcpy(d + dl, s, c); d[dl + c] = 0;
+    return dl + sl;
+}
+static void darwin_report_null(const char* fn) {
+    ThreadCtx* t = tls_thread;
+    u64 lr = t ? t->st->x[30] : 0;
+    MachImage* im = dyld_image_containing(lr);
+    fprintf(stderr, "xef-osx: %s(NULL) called from %s+%#lx\n", fn, im ? im->path.c_str() : "?", (unsigned long)(im ? lr - im->header : lr));
+}
+static size_t darwin_strlcpy_chk(char* d, const char* s, size_t n, size_t) { if (!s) { darwin_report_null("strlcpy"); return 0; } return darwin_strlcpy_impl(d, s, n); }
+static size_t darwin_strlcat_chk(char* d, const char* s, size_t n, size_t) { return darwin_strlcat_impl(d, s, n); }
+static char* darwin_strcpy_chk(char* d, const char* s, size_t) { return strcpy(d, s); }
+static char* darwin_stpcpy_chk(char* d, const char* s, size_t) { return stpcpy(d, s); }
+static char* darwin_strcat_chk(char* d, const char* s, size_t) { return strcat(d, s); }
+static char* darwin_strncpy_chk(char* d, const char* s, size_t n, size_t) { return strncpy(d, s, n); }
+static char* darwin_stpncpy_chk(char* d, const char* s, size_t n, size_t) { return stpncpy(d, s, n); }
+static char* darwin_strncat_chk(char* d, const char* s, size_t n, size_t) { return strncat(d, s, n); }
+static void* darwin_memmove_chk(void* d, const void* s, size_t n, size_t) { return memmove(d, s, n); }
+static void* darwin_memset_chk(void* d, int c, size_t n, size_t) { return memset(d, c, n); }
+static int darwin_snprintf_chk(char* s, size_t n, int, size_t, const char* fmt, const uint64_t* ap) { return darwin_vsnprintf(s, n, fmt, ap); }
+static int darwin_sprintf_chk(char* s, int, size_t, const char* fmt, const uint64_t* ap) { return darwin_vsnprintf(s, (size_t)1 << 30, fmt, ap); }
+static int darwin_vsnprintf_chk(char* s, size_t n, int, size_t, const char* fmt, const uint64_t* ap) { return darwin_vsnprintf(s, n, fmt, ap); }
+static int darwin_vsprintf_chk(char* s, int, size_t, const char* fmt, const uint64_t* ap) { return darwin_vsnprintf(s, (size_t)1 << 30, fmt, ap); }
+static int darwin_fprintf_chk(FILE* f, int, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(f, fmt, ap); }
+static int darwin_printf_chk(int, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(stdout, fmt, ap); }
+static int darwin_vfprintf_chk(FILE* f, int, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(f, fmt, ap); }
+static int darwin_vprintf_chk(int, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(stdout, fmt, ap); }
+// ---- passwd database in Darwin layout --------------------------------------------------------------
+struct DarwinPasswd {
+    char* pw_name; char* pw_passwd; uint32_t pw_uid; uint32_t pw_gid; int64_t pw_change;
+    char* pw_class; char* pw_gecos; char* pw_dir; char* pw_shell; int64_t pw_expire;
+};
+static void fill_darwin_passwd(DarwinPasswd* d, const struct passwd* p) {
+    memset(d, 0, sizeof(*d));
+    d->pw_name = p->pw_name; d->pw_passwd = p->pw_passwd; d->pw_uid = p->pw_uid; d->pw_gid = p->pw_gid;
+    d->pw_gecos = p->pw_gecos; d->pw_dir = p->pw_dir; d->pw_shell = p->pw_shell;
+    static char empty[] = "";
+    d->pw_class = empty;
+}
+static DarwinPasswd* darwin_getpwuid(uint32_t uid) {
+    static thread_local DarwinPasswd d;
+    struct passwd* p = getpwuid(uid);
+    if (!p) return nullptr;
+    fill_darwin_passwd(&d, p);
+    return &d;
+}
+static DarwinPasswd* darwin_getpwnam(const char* name) {
+    static thread_local DarwinPasswd d;
+    struct passwd* p = getpwnam(name);
+    if (!p) return nullptr;
+    fill_darwin_passwd(&d, p);
+    return &d;
+}
+static int darwin_getpwuid_r(uint32_t uid, DarwinPasswd* out, char* buf, size_t len, DarwinPasswd** res) {
+    struct passwd pw, *p = nullptr;
+    int r = getpwuid_r(uid, &pw, buf, len, &p);
+    if (r == 0 && p) { fill_darwin_passwd(out, p); *res = out; } else *res = nullptr;
+    return r;
+}
+static int darwin_getpwnam_r(const char* name, DarwinPasswd* out, char* buf, size_t len, DarwinPasswd** res) {
+    struct passwd pw, *p = nullptr;
+    int r = getpwnam_r(name, &pw, buf, len, &p);
+    if (r == 0 && p) { fill_darwin_passwd(out, p); *res = out; } else *res = nullptr;
+    return r;
+}
+static int darwin_pthread_atfork(u64, u64, u64) { return 0; }
+static int darwin_fprintf_l(FILE* f, void*, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(f, fmt, ap); }
+static int darwin_printf_l(void*, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(stdout, fmt, ap); }
+static int darwin_sprintf_l(char* s, void*, const char* fmt, const uint64_t* ap) { return darwin_vsnprintf(s, (size_t)1 << 30, fmt, ap); }
+static int darwin_vfprintf_l(FILE* f, void*, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(f, fmt, ap); }
+static int darwin_vsnprintf_l(char* s, size_t n, void*, const char* fmt, const uint64_t* ap) { return darwin_vsnprintf(s, n, fmt, ap); }
 static int darwin_tolower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
 static int darwin_toupper(int c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
 static int darwin_tolower_l(int c, void*) { return darwin_tolower(c); }
@@ -965,6 +1049,21 @@ static const ShimEntry kShims[] = {
     {"_towlower_l", (void*)&darwin_towlower_l, -1},
     {"_towupper_l", (void*)&darwin_towupper_l, -1},
     {"_newlocale", (void*)&darwin_newlocale, -1}, {"_freelocale", (void*)&darwin_freelocale, -1}, {"_uselocale", (void*)&darwin_uselocale, -1},
+    {"___strlcpy_chk", (void*)&darwin_strlcpy_chk, -1}, {"___strlcat_chk", (void*)&darwin_strlcat_chk, -1},
+    {"___strcpy_chk", (void*)&darwin_strcpy_chk, -1}, {"___stpcpy_chk", (void*)&darwin_stpcpy_chk, -1},
+    {"___strcat_chk", (void*)&darwin_strcat_chk, -1}, {"___strncpy_chk", (void*)&darwin_strncpy_chk, -1},
+    {"___stpncpy_chk", (void*)&darwin_stpncpy_chk, -1}, {"___strncat_chk", (void*)&darwin_strncat_chk, -1},
+    {"___memmove_chk", (void*)&darwin_memmove_chk, -1}, {"___memset_chk", (void*)&darwin_memset_chk, -1},
+    {"___snprintf_chk", (void*)&darwin_snprintf_chk, 5}, {"___sprintf_chk", (void*)&darwin_sprintf_chk, 4},
+    {"___vsnprintf_chk", (void*)&darwin_vsnprintf_chk, -1}, {"___vsprintf_chk", (void*)&darwin_vsprintf_chk, -1},
+    {"___fprintf_chk", (void*)&darwin_fprintf_chk, 3}, {"___printf_chk", (void*)&darwin_printf_chk, 2},
+    {"___vfprintf_chk", (void*)&darwin_vfprintf_chk, -1}, {"___vprintf_chk", (void*)&darwin_vprintf_chk, -1},
+    {"_strlcpy", (void*)&darwin_strlcpy_impl, -1}, {"_strlcat", (void*)&darwin_strlcat_impl, -1},
+    {"_fprintf_l", (void*)&darwin_fprintf_l, 3}, {"_printf_l", (void*)&darwin_printf_l, 2}, {"_sprintf_l", (void*)&darwin_sprintf_l, 3},
+    {"_vfprintf_l", (void*)&darwin_vfprintf_l, -1}, {"_vsnprintf_l", (void*)&darwin_vsnprintf_l, -1},
+    {"_getpwuid", (void*)&darwin_getpwuid, -1}, {"_getpwnam", (void*)&darwin_getpwnam, -1},
+    {"_getpwuid_r", (void*)&darwin_getpwuid_r, -1}, {"_getpwnam_r", (void*)&darwin_getpwnam_r, -1},
+    {"_pthread_atfork", (void*)&darwin_pthread_atfork, -1},
     {"_pthread_mach_thread_np", (void*)&darwin_pthread_mach_thread_np, -1},
     {"___udivti3", (void*)&darwin_udivti3, -2}, {"___divti3", (void*)&darwin_divti3, -2},
     {"__dyld_lookup_section_info", (void*)&darwin_dyld_lookup_section_info, -2},
@@ -1545,6 +1644,10 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         return it->second;
     }
 
+    if (void* d = darwin_stub_data_lookup(name)) {
+        g_symbol_cache[name] = (uint64_t)(uintptr_t)d;
+        return (uint64_t)(uintptr_t)d;
+    }
     if (void* d = darwin_sys_data_lookup(name)) {
         g_symbol_cache[name] = (uint64_t)(uintptr_t)d;
         return (uint64_t)(uintptr_t)d;
@@ -1780,6 +1883,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = sh->fn;
     } else if (void* sf = darwin_sys_shim_lookup(name)) {
         host_fn = sf;
+    } else if (void* sf2 = darwin_stub_lookup(name)) {
+        host_fn = sf2;
     } else if (strcmp(name, "__dyld_objc_register_callbacks") == 0) {
         host_fn = (void*)&dyld_objc_register_callbacks;
     } else if (strcmp(name, "__dyld_objc_notify_register") == 0) {
