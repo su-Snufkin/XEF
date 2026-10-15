@@ -39,10 +39,10 @@ Statusy: [ ] następne, [~] w toku, [x] zrobione, [!] zablokowane.
 - [x] A7 docs (HANDOFF, GUI), commit
 
 ### Etap B — P2: Cocoa przez AppKit-lite (cand3)
-- [ ] B1 lista selektorów cand3 (otool -ov), `rootfs-src/appkit/`
-- [ ] B2 `tools/build_appkit.sh` + AppKit/Cocoa/OpenGL.framework (arm64 Mach-O, budowa na Macu)
-- [ ] B3 `src/loader/darwin_appkit_host.cpp` (okno/zdarzenia/swap przez X11+GLX)
-- [ ] B4 cand3_cocoa: okno + 300 klatek + exit 0, porównanie z Makiem
+- [x] B1 lista selektorów cand3 (otool -ov), `rootfs-src/appkit/`
+- [x] B2 `tools/build_appkit.sh` + AppKit/Cocoa/OpenGL.framework (arm64 Mach-O, budowa na Macu)
+- [x] B3 `src/loader/darwin_appkit_host.cpp` (okno/zdarzenia/swap przez X11+GLX)
+- [x] B4 cand3_cocoa: okno + 300 klatek + exit 0, porównanie z Makiem
 
 ### Etap C — GLFW (cand1)
 - [ ] C1 zebrać `unresolved symbol` na poziomie logowania 1; zasilić stubami CG/IOKit/Carbon/CoreVideo

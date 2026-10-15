@@ -311,3 +311,18 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   (GLFW/Cocoa to etapy B i C w `docs/MACOS_3D_PLAN.md`).
 - Lokalnie `tests/darwin/run_tests.sh` i `tests/guest/run.sh` nie budują się bez `ld64.lld`/`ld.lld`; prebuilt
   `hello_darwin`, `complex_darwin`, `hello_universal` działają (rc 0).
+
+### 5. Cocoa przez AppKit-lite (2026-10-15)
+- `rootfs-src/appkit/` (AppKit.m ~480 LOC, MRC; Cocoa.c, OpenGL.c) + `tools/build_appkit.sh`: własne dyliby arm64 budowane na Macu
+  (NSApplication/NSWindow/NSView/NSOpenGLView/NSOpenGLContext/NSOpenGLPixelFormat/NSEvent/NSScreen + stuby), instalowane w
+  `darwin-rootfs/System/Library/Frameworks/{AppKit(Versions/C; A->C),Cocoa,OpenGL}.framework`. Wołają płaskie funkcje
+  `xef_host_*` (kontrakt: `rootfs-src/appkit/xef_host.h`). Listy selektorów: `cand3_selectors.txt`, `cand1_selectors.txt` (GLFW).
+- `src/loader/darwin_appkit_host.cpp`: strona hosta (okno X11 + własny kontekst GLX na okno, zdarzenia X → NSEvent, tabela
+  keycode; okno tworzone niemapowane, `show` czeka na MapNotify; okno nigdy nie mapowane (HIDDEN=1) też ma działający GL).
+- `tests/darwin/cocoa_gl` (z cand3_cocoa + zrzut PPM klatki 299): ta sama binarka działa na Macu i na XEF; referencja
+  `tests/darwin/mac_gl/ref_cocoa.ppm` (SSIM ≥0,95 wymagane w gl_test.sh; wyszło ~1,0). Zdarzenia (klawisze/mysz/resize/close) są
+  zaimplementowane, ale nietestowane w czasie działania (aplikacja ich nie dostaje).
+- Znane luki (etap C, GLFW): NSImage, NSBitmapImageRep, NSPasteboard, NSTextInputContext, NSTrackingArea, NSUserDefaults,
+  dane `NSCalibratedRGBColorSpace`, CoreGraphics/IOKit/Carbon/CoreVideo; `___sincosf_stret` (HFA 2×float) nieobsłużone
+  (stub w darwin_stubs.cpp tylko double); profil core z NSOpenGLPixelFormat ignorowany (zawsze kontekst legacy/compat).
+- Logowanie: poziom 1 = flaga `-v` (nie zmienna środowiskowa).
