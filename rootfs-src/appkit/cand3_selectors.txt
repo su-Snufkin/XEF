@@ -1,0 +1,36 @@
+# cand3_cocoa: classes/symbols imported from AppKit/CF/objc (nm -u / imports)
+      0x0010  _NSApp  (from AppKit)
+      0x0011  _OBJC_CLASS_$_NSApplication  (from AppKit)
+      0x0012  _OBJC_CLASS_$_NSOpenGLPixelFormat  (from AppKit)
+      0x0013  _OBJC_CLASS_$_NSWindow  (from AppKit)
+      0x0014  _NSDefaultRunLoopMode  (from CoreFoundation)
+      0x0015  _objc_alloc  (from libobjc)
+      0x0016  _objc_autoreleasePoolPop  (from libobjc)
+      0x0017  _objc_autoreleasePoolPush  (from libobjc)
+      0x0018  _objc_msgSend  (from libobjc)
+      0x0019  __objc_empty_cache  (from libobjc)
+      0x001A  _OBJC_METACLASS_$_NSOpenGLView  (from AppKit)
+      0x001B  _OBJC_METACLASS_$_NSObject  (from libobjc)
+      0x001C  _OBJC_CLASS_$_NSOpenGLView  (from AppKit)
+# link deps (otool -L)
+	/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa (compatibility version 1.0.0, current version 24.0.0)
+	/System/Library/Frameworks/OpenGL.framework/Versions/A/OpenGL (compatibility version 1.0.0, current version 1.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.10.108)
+	/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4040.1.255)
+	/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)
+# selectors (__objc_methname)
+bounds
+drawRect:
+flushBuffer
+initWithAttributes:
+initWithContentRect:styleMask:backing:defer:
+initWithFrame:pixelFormat:
+makeCurrentContext
+makeKeyAndOrderFront:
+nextEventMatchingMask:untilDate:inMode:dequeue:
+openGLContext
+sendEvent:
+setActivationPolicy:
+setContentView:
+sharedApplication

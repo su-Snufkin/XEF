@@ -1,0 +1,427 @@
+# cand1_gl21 (GLFW 3.4 cocoa backend): imports from AppKit/Cocoa/Foundation/CF/libobjc
+      0x0020  _CFArrayAppendValue  (from CoreFoundation)
+      0x0021  _CFArrayCreateMutable  (from CoreFoundation)
+      0x0022  _CFArrayGetCount  (from CoreFoundation)
+      0x0023  _CFArrayGetValueAtIndex  (from CoreFoundation)
+      0x0024  _CFArraySortValues  (from CoreFoundation)
+      0x0025  _CFBundleCopyPrivateFrameworksURL  (from CoreFoundation)
+      0x0026  _CFBundleCopyResourcesDirectoryURL  (from CoreFoundation)
+      0x0027  _CFBundleGetBundleWithIdentifier  (from CoreFoundation)
+      0x0028  _CFBundleGetDataPointerForName  (from CoreFoundation)
+      0x0029  _CFBundleGetFunctionPointerForName  (from CoreFoundation)
+      0x002A  _CFBundleGetMainBundle  (from CoreFoundation)
+      0x002B  _CFDictionaryCreateMutable  (from CoreFoundation)
+      0x002C  _CFDictionaryGetValue  (from CoreFoundation)
+      0x002D  _CFDictionaryGetValueIfPresent  (from CoreFoundation)
+      0x002E  _CFDictionarySetValue  (from CoreFoundation)
+      0x002F  _CFGetTypeID  (from CoreFoundation)
+      0x0030  _CFNumberCreate  (from CoreFoundation)
+      0x0031  _CFNumberGetValue  (from CoreFoundation)
+      0x0032  _CFRelease  (from CoreFoundation)
+      0x0033  _CFRunLoopGetMain  (from CoreFoundation)
+      0x0034  _CFRunLoopRunInMode  (from CoreFoundation)
+      0x0035  _CFStringCompare  (from CoreFoundation)
+      0x0036  _CFStringCreateWithCString  (from CoreFoundation)
+      0x0037  _CFStringCreateWithCharactersNoCopy  (from CoreFoundation)
+      0x0038  _CFStringGetCString  (from CoreFoundation)
+      0x0039  _CFStringGetLength  (from CoreFoundation)
+      0x003A  _CFStringGetMaximumSizeForEncoding  (from CoreFoundation)
+      0x003B  _CFURLCopyLastPathComponent  (from CoreFoundation)
+      0x003C  _CFURLCreateCopyAppendingPathComponent  (from CoreFoundation)
+      0x003D  _CFURLGetFileSystemRepresentation  (from CoreFoundation)
+      0x003E  _NSDefaultRunLoopMode  (from CoreFoundation)
+      0x003F  _OBJC_CLASS_$_NSArray  (from CoreFoundation)
+      0x0040  _OBJC_CLASS_$_NSDate  (from CoreFoundation)
+      0x0041  _OBJC_CLASS_$_NSDictionary  (from CoreFoundation)
+      0x0042  _OBJC_CLASS_$_NSURL  (from CoreFoundation)
+      0x0043  _OBJC_CLASS_$_NSUserDefaults  (from CoreFoundation)
+      0x0044  ___kCFBooleanTrue  (from CoreFoundation)
+      0x0045  _kCFAllocatorDefault  (from CoreFoundation)
+      0x0046  _kCFAllocatorNull  (from CoreFoundation)
+      0x0047  _kCFRunLoopDefaultMode  (from CoreFoundation)
+      0x0048  _kCFTypeArrayCallBacks  (from CoreFoundation)
+      0x0049  _kCFTypeDictionaryKeyCallBacks  (from CoreFoundation)
+      0x004A  _kCFTypeDictionaryValueCallBacks  (from CoreFoundation)
+      0x007A  _NSApp  (from AppKit)
+      0x007B  _NSCalibratedRGBColorSpace  (from AppKit)
+      0x007C  _NSPasteboardTypeString  (from AppKit)
+      0x007D  _NSPasteboardTypeURL  (from AppKit)
+      0x007E  _NSPasteboardURLReadingFileURLsOnlyKey  (from AppKit)
+      0x007F  _NSTextInputContextKeyboardSelectionDidChangeNotification  (from AppKit)
+      0x0080  _OBJC_CLASS_$_NSApplication  (from AppKit)
+      0x0081  _OBJC_CLASS_$_NSBitmapImageRep  (from AppKit)
+      0x0082  _OBJC_CLASS_$_NSColor  (from AppKit)
+      0x0083  _OBJC_CLASS_$_NSCursor  (from AppKit)
+      0x0084  _OBJC_CLASS_$_NSEvent  (from AppKit)
+      0x0085  _OBJC_CLASS_$_NSImage  (from AppKit)
+      0x0086  _OBJC_CLASS_$_NSMenu  (from AppKit)
+      0x0087  _OBJC_CLASS_$_NSMenuItem  (from AppKit)
+      0x0088  _OBJC_CLASS_$_NSOpenGLContext  (from AppKit)
+      0x0089  _OBJC_CLASS_$_NSOpenGLPixelFormat  (from AppKit)
+      0x008A  _OBJC_CLASS_$_NSPasteboard  (from AppKit)
+      0x008B  _OBJC_CLASS_$_NSRunningApplication  (from AppKit)
+      0x008C  _OBJC_CLASS_$_NSScreen  (from AppKit)
+      0x008D  _OBJC_CLASS_$_NSTrackingArea  (from AppKit)
+      0x008E  _OBJC_CLASS_$_NSWindow  (from AppKit)
+      0x00AC  _NSMouseInRect  (from Foundation)
+      0x00AD  _NSSelectorFromString  (from Foundation)
+      0x00AE  _OBJC_CLASS_$_NSAttributedString  (from Foundation)
+      0x00AF  _OBJC_CLASS_$_NSBundle  (from Foundation)
+      0x00B0  _OBJC_CLASS_$_NSMutableAttributedString  (from Foundation)
+      0x00B1  _OBJC_CLASS_$_NSNotificationCenter  (from Foundation)
+      0x00B2  _OBJC_CLASS_$_NSString  (from Foundation)
+      0x00B3  _OBJC_CLASS_$_NSThread  (from Foundation)
+      0x00B4  _objc_alloc  (from libobjc)
+      0x00B5  _objc_alloc_init  (from libobjc)
+      0x00B6  _objc_autoreleasePoolPop  (from libobjc)
+      0x00B7  _objc_autoreleasePoolPush  (from libobjc)
+      0x00B8  _objc_enumerationMutation  (from libobjc)
+      0x00B9  _objc_msgSend  (from libobjc)
+      0x00BA  _objc_msgSendSuper2  (from libobjc)
+      0x00BB  _objc_opt_class  (from libobjc)
+      0x00BC  _objc_opt_isKindOfClass  (from libobjc)
+      0x00BD  _objc_opt_respondsToSelector  (from libobjc)
+      0x00BE  _objc_release  (from libobjc)
+      0x00BF  _objc_retain  (from libobjc)
+      0x00C1  ___CFConstantStringClassReference  (from CoreFoundation)
+      0x00C2  ___kCFBooleanFalse  (from CoreFoundation)
+      0x00C3  _OBJC_CLASS_$_NSConstantDictionary  (from CoreFoundation)
+      0x00C4  __objc_empty_cache  (from libobjc)
+      0x00C5  _OBJC_METACLASS_$_NSObject  (from libobjc)
+      0x00C6  _OBJC_CLASS_$_NSObject  (from libobjc)
+      0x00C7  _OBJC_CLASS_$_NSView  (from AppKit)
+      0x00C8  _OBJC_METACLASS_$_NSView  (from AppKit)
+      0x00C9  _OBJC_METACLASS_$_NSWindow  (from AppKit)
+# link deps
+	/System/Library/Frameworks/OpenGL.framework/Versions/A/OpenGL (compatibility version 1.0.0, current version 1.0.0)
+	/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa (compatibility version 1.0.0, current version 24.0.0)
+	/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)
+	/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4040.1.255)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.10.108)
+	/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics (compatibility version 64.0.0, current version 1957.0.0)
+	/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)
+	/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4040.1.255)
+	/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)
+# selectors
+#,R
+@"NSString",?,R,C
+@"NSString",R,C
+B,?,R
+BeamCursor
+Q,R
+TF8String
+ackingScaleFactor
+ainBundle
+akeCurrentContext
+akeFirstResponder:
+akeKeyAndOrderFront:
+alidAttributesForMarkedText
+alueForKey:
+anBecomeKeyView
+anBecomeKeyWindow
+anBecomeMainWindow
+antsUpdateLayer
+arkedRange
+arkedText
+asMarkedText
+asPreciseScrollingDeltas
+ascadeTopLeftFromPoint:
+aselineDeltaForCharacterAtIndex:
+ash
+ateWithTimeIntervalSinceNow:
+athForResource:ofType:
+ayer
+bjectAtIndexedSubscript:
+bjectForKeyedSubscript:
+cceptsFirstMouse:
+cceptsFirstResponder
+cclusionState
+creens
+crollWheel:
+crollingDeltaX
+crollingDeltaY
+ctivateIgnoringOtherApps:
+ddItem:
+ddItemWithTitle:action:keyEquivalent:
+ddLocalMonitorForEventsMatchingMask:handler:
+ddObserver:selector:name:object:
+ddRepresentation:
+ddTrackingArea:
+eadObjectsForClasses:options:
+ealloc
+ebugDescription
+eclareTypes:owner:
+efaultCenter
+egisterDefaults:
+egisterForDraggedTypes:
+elease
+electedKeyboardInputSourceChanged:
+electedRange
+elf
+eltaX
+eltaY
+eminiaturize:
+emoveMonitor:
+emoveObserver:
+emoveObserver:name:object:
+emoveTrackingArea:
+endEvent:
+eneralPasteboard
+ength
+enter
+eparatorItem
+equestUserAttention:
+erformDragOperation:
+erformMiniaturize:
+erformSelector:
+erformSelector:withObject:
+erformSelector:withObject:withObject:
+erformZoom:
+erminate:
+escription
+esizeLeftRightCursor
+esizeUpDownCursor
+espondsToSelector:
+et
+etAcceptsMouseMovedEvents:
+etActivationPolicy:
+etAlphaValue:
+etBackgroundColor:
+etBytes:maxLength:usedLength:encoding:options:range:remainingRange:
+etCollectionBehavior:
+etContentAspectRatio:
+etContentMaxSize:
+etContentMinSize:
+etContentView:
+etContentsScale:
+etDelegate:
+etFrame:display:
+etFrameAutosaveName:
+etFrameOrigin:
+etHasShadow:
+etIgnoresMouseEvents:
+etKeyEquivalentModifierMask:
+etLayer:
+etLevel:
+etMainMenu:
+etMarkedText:selectedRange:replacementRange:
+etMiniwindowTitle:
+etOpaque:
+etResizeIncrements:
+etRestorable:
+etServicesMenu:
+etString:
+etString:forType:
+etStyleMask:
+etSubmenu:
+etTabbingMode:
+etTitle:
+etValues:forParameter:
+etView:
+etWantsBestResolutionOpenGLSurface:
+etWantsLayer:
+etWindowsMenu:
+etachNewThreadSelector:toTarget:withObject:
+etain
+etainCount
+eviceDescription
+extEventMatchingMask:untilDate:inMode:dequeue:
+eyCode
+eyDown:
+eyUp:
+eyWindow
+haracterIndexForPoint:
+haredApplication
+ictionaryWithObjects:forKeys:count:
+ide
+ide:
+ideOtherApplications:
+iewDidChangeBackingProperties
+ightMouseDown:
+ightMouseDragged:
+ightMouseUp:
+ileSystemRepresentation
+indow
+indowDidBecomeKey:
+indowDidChangeOcclusionState:
+indowDidDeminiaturize:
+indowDidMiniaturize:
+indowDidMove:
+indowDidResignKey:
+indowDidResize:
+indowLevel
+indowNumber
+indowNumberAtPoint:belowWindowWithWindowNumber:
+indowShouldClose:
+iniaturize:
+iniwindowTitle
+irstRectForCharacterRange:actualRange:
+isibleFrame
+istantFuture
+istantPast
+itmapData
+lagsChanged:
+lass
+lassNamed:
+learColor
+learCurrentContext
+lose
+losedHandCursor
+lphaValue
+lushBuffer
+nfoDictionary
+nhide
+nhideAllApplications:
+nionRectInVisibleSelectedRange
+nit
+nitWithAttributedString:
+nitWithAttributes:
+nitWithBitmapDataPlanes:pixelsWide:pixelsHigh:bitsPerSample:samplesPerPixel:hasAlpha:isPlanar:colorSpaceName:bitmapFormat:bytesPerRow:bitsPerPixel:
+nitWithContentRect:styleMask:backing:defer:
+nitWithFormat:shareContext:
+nitWithGlfwWindow:
+nitWithImage:hotSpot:
+nitWithRect:options:owner:userInfo:
+nitWithSize:
+nitWithString:
+nitWithTitle:
+nmarkText
+nsertAdaptiveImageGlyph:replacementRange:
+nsertText:replacementRange:
+nsignedIntValue
+nterpretKeyEvents:
+oCommandBySelector:
+oNothing:
+oadNibNamed:owner:topLevelObjects:
+ocalizedName
+ocationInWindow
+ocumentVisibleRect
+odifierFlags
+oggleFullScreen:
+ointingHandCursor
+one
+onformsToProtocol:
+ontainsObject:
+ontentRectForFrameRect:
+onvertRectToBacking:
+onvertRectToScreen:
+oom:
+ostEvent:atStart:
+ounds
+ount
+ountByEnumeratingWithState:objects:count:
+ouse:inRect:
+ouseDown:
+ouseDragged:
+ouseEntered:
+ouseExited:
+ouseLocation
+ouseLocationOutsideOfEventStream
+ouseMoved:
+ouseUp:
+pdate
+pdateLayer
+pdateTrackingAreas
+perationNotAllowedCursor
+pplication:continueUserActivity:restorationHandler:
+pplication:delegateHandlesKey:
+pplication:didDecodeRestorableState:
+pplication:didFailToContinueUserActivityWithType:error:
+pplication:didFailToRegisterForRemoteNotificationsWithError:
+pplication:didReceiveRemoteNotification:
+pplication:didRegisterForRemoteNotificationsWithDeviceToken:
+pplication:didUpdateUserActivity:
+pplication:handlerForIntent:
+pplication:openFile:
+pplication:openFileWithoutUI:
+pplication:openFiles:
+pplication:openTempFile:
+pplication:openURLs:
+pplication:printFile:
+pplication:printFiles:withSettings:showPrintPanels:
+pplication:userDidAcceptCloudKitShareWithMetadata:
+pplication:willContinueUserActivityWithType:
+pplication:willEncodeRestorableState:
+pplication:willPresentError:
+pplicationDidBecomeActive:
+pplicationDidChangeOcclusionState:
+pplicationDidChangeScreenParameters:
+pplicationDidFinishLaunching:
+pplicationDidHide:
+pplicationDidResignActive:
+pplicationDidUnhide:
+pplicationDidUpdate:
+pplicationDockMenu:
+pplicationOpenUntitledFile:
+pplicationProtectedDataDidBecomeAvailable:
+pplicationProtectedDataWillBecomeUnavailable:
+pplicationShouldAutomaticallyLocalizeKeyEquivalents:
+pplicationShouldHandleReopen:hasVisibleWindows:
+pplicationShouldOpenUntitledFile:
+pplicationShouldTerminate:
+pplicationShouldTerminateAfterLastWindowClosed:
+pplicationSupportsSecureRestorableState:
+pplicationWillBecomeActive:
+pplicationWillFinishLaunching:
+pplicationWillHide:
+pplicationWillResignActive:
+pplicationWillTerminate:
+pplicationWillUnhide:
+pplicationWillUpdate:
+rackingArea
+ractionOfDistanceThroughGlyphForPoint:
+raggingEntered:
+raggingLocation
+raggingPasteboard
+rame
+rameRectForContentRect:
+rameRectForContentRect:styleMask:
+rawRect:
+rawsVerticallyForCharacterAtIndex:
+rderFront:
+rderFrontStandardAboutPanel:
+rderOut:
+referredTextAccessoryPlacement
+rosshairCursor
+rrangeInFront:
+rray
+rrayWithObjects:count:
+rrowCursor
+sEqual:
+sEqualToString:
+sFinishedLaunching
+sKeyWindow
+sKindOfClass:
+sMemberOfClass:
+sMiniaturized
+sOpaque
+sProxy
+sVisible
+sZoomed
+tandardUserDefaults
+therEventWithType:location:modifierFlags:timestamp:windowNumber:context:subtype:data1:data2:
+therMouseDown:
+therMouseDragged:
+therMouseUp:
+top:
+tring
+tringForType:
+tringWithFormat:
+tringWithUTF8String:
+ttributedString
+ttributedSubstringForProposedRange:actualRange:
+tyleMask
+un
+undleWithPath:
+uperclass
+upportsAdaptiveImageGlyph
+urrentApplication
+urrentEvent
+ursorUpdate:
+utableString
+utorelease
+uttonNumber
+ypes
+ytes
+{CGRect={CGPoint=dd}{CGSize=dd}},?,R
