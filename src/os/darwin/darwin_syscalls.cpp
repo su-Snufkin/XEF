@@ -2,6 +2,7 @@
 #include "os/darwin/darwin_syscalls.h"
 #include "os/darwin/darwin_types.h"
 #include "os/thread.h"
+#include "os/signals.h"
 #include "runtime/code_cache.h"
 #include "runtime/dispatch.h"
 #include "loader/elf_loader.h"
@@ -229,6 +230,9 @@ void do_darwin_syscall(CpuState* st) {
             nr, (unsigned long)a0, (unsigned long)a1, (unsigned long)a2, (unsigned long)a3);
 
     switch (nr) {
+    case 184:    // sigreturn(ucontext*, infostyle)
+        sig_darwin_sigreturn(st, a0);
+        return;
     case DARWIN_SYS_exit:
         _exit((int)a0);
         break;

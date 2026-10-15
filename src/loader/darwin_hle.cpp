@@ -59,6 +59,9 @@ static std::vector<ThunkEntry> g_thunks;
 void* darwin_sys_shim_lookup(const char* name);
 void* darwin_stub_lookup(const char* name);
 void* darwin_mach_lookup(const char* name);
+void* darwin_signal_lookup(const char* name);
+void* darwin_net_lookup(const char* name);
+void darwin_signals_init(uint8_t* stub);
 void* darwin_stub_data_lookup(const char* name);
 void* darwin_sys_data_lookup(const char* name);
 static std::unordered_map<std::string, uint64_t> g_symbol_cache;
@@ -1783,6 +1786,11 @@ void darwin_hle_init() {
     start_insns[2] = 0xd61f0200u;   // br x16
     start_insns[3] = 0xd503201fu;
     g_darwin_start_stub = (uint64_t)(uintptr_t)start_stub;
+
+    // signal-return stub (16 bytes)
+    uint8_t* sigret = g_thunk_code + g_thunk_code_used;
+    g_thunk_code_used += 16;
+    darwin_signals_init(sigret);
 }
 
 uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit_only) {
@@ -2035,6 +2043,10 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = sh->fn;
     } else if (void* sf = darwin_sys_shim_lookup(name)) {
         host_fn = sf;
+    } else if (void* sf5 = darwin_net_lookup(name)) {
+        host_fn = sf5;
+    } else if (void* sf4 = darwin_signal_lookup(name)) {
+        host_fn = sf4;
     } else if (void* sf3 = darwin_mach_lookup(name)) {
         host_fn = sf3;
     } else if (void* sf2 = darwin_stub_lookup(name)) {

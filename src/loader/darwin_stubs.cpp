@@ -108,6 +108,7 @@ struct SincosRet { double s, c; };
 static SincosRet st_sincos_stret(double x) { return {__builtin_sin(x), __builtin_cos(x)}; }
 static int st_dlopen_preflight(const char*) { return 1; }
 static int st_zero() { return 0; }
+static int st_one() { return 1; }
 static void* st_null() { return nullptr; }
 static int st_pthread_main_np() { return getpid() == (pid_t)syscall(186 /*gettid*/) ? 1 : 0; }
 static int st_pthread_getugid_np(uint32_t* u, uint32_t* g) { *u = geteuid(); *g = getegid(); return 0; }
@@ -187,7 +188,7 @@ static const StubEntry kStubs[] = {
     {"_vm_purgable_control", (void*)&st_kern_failure}, {"_mach_make_memory_entry_64", (void*)&st_kern_failure},
     {"_mach_vm_region", (void*)&st_kern_failure}, {"_mach_vm_map", (void*)&st_kern_failure},
     {"_mach_port_space_info", (void*)&st_kern_failure}, {"_mach_port_get_set_status", (void*)&st_kern_failure},
-    {"___darwin_check_fd_set_overflow", (void*)&st_zero},
+    {"___darwin_check_fd_set_overflow", (void*)&st_one},
     {"_NSStartSearchPathEnumeration", (void*)&st_zero}, {"_NSGetNextSearchPathEnumeration", (void*)&st_zero},
     {"_NXGetLocalArchInfo", (void*)&st_null}, {"_NXFindBestFatArch", (void*)&st_null},
 };

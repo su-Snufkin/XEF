@@ -31,6 +31,7 @@ struct GuestSigaction {
     u64 flags;
     u64 restorer;
     u64 mask;
+    u64 darwin;     // 1: delivered with a Darwin (xnu arm64) signal frame
 };
 
 static GuestSigaction g_actions[65];
@@ -311,7 +312,8 @@ i64 sig_rt_sigaction(CpuState*, int sig, u64 act, u64 oact, u64 sigsetsize) {
     if (sig < 1 || sig > 64 || sigsetsize != 8) return -EINVAL;
     GuestSigaction a, old;
     if (act) {
-        a = *(GuestSigaction*)act;
+        memcpy(&a, (void*)act, 32);          // the Linux ABI struct has 4 words
+        a.darwin = 0;
         if (sig == SIGKILL || sig == SIGSTOP) return -EINVAL;
     }
     {
@@ -319,7 +321,7 @@ i64 sig_rt_sigaction(CpuState*, int sig, u64 act, u64 oact, u64 sigsetsize) {
         old = g_actions[sig];
         if (act) g_actions[sig] = a;
     }
-    if (oact) *(GuestSigaction*)oact = old;
+    if (oact) memcpy((void*)oact, &old, 32);
     if (act) {
         if (sigbit(sig) & kInternalSigs) return 0;  // XEF keeps its own handler (synchronous delivery: TODO)
         struct sigaction h {};
@@ -387,6 +389,144 @@ static_assert(offsetof(GUcontext, mc) == 176, "ucontext layout");
 static_assert(offsetof(GSigcontext, reserved) == 288, "sigcontext layout");
 constexpr u32 FPSIMD_MAGIC = 0x46508001;
 
+
+// ---- Darwin (xnu arm64) signal frames ---------------------------------------------------------------------
+struct DSiginfo {
+    int32_t d_signo, d_errno, d_code, d_pid;
+    uint32_t d_uid; int32_t d_status;
+    u64 d_addr, d_value, d_band, pad[7];
+};
+struct DMcontext {
+    u64 far; u32 esr, exception;               // exception state
+    u64 x[29], fp, lr, sp, pc; u32 cpsr, flags;   // thread state
+    u8 neon[32 * 16]; u32 fpsr, fpcr;          // neon state
+};
+struct DUcontext {
+    int32_t uc_onstack; uint32_t uc_sigmask;
+    u64 ss_sp, ss_size; int32_t ss_flags, ss_pad;
+    u64 uc_link, uc_mcsize, uc_mcontext;
+};
+struct DFrame {
+    DSiginfo info;      // 104 -> 112
+    u8 pad0[8];
+    DUcontext uc;       // 56
+    u8 pad1[8];
+    DMcontext mc;
+    u64 rec[2];
+};
+constexpr u64 kDarwinUcOffset = offsetof(DFrame, uc);
+static u64 g_darwin_sigreturn_tramp;
+
+int linux_to_darwin_sig(int l) {
+    switch (l) {
+        case SIGBUS: return 10; case SIGSYS: return 12; case SIGURG: return 16; case SIGSTOP: return 17;
+        case SIGTSTP: return 18; case SIGCONT: return 19; case SIGCHLD: return 20; case SIGIO: return 23;
+        case SIGUSR1: return 30; case SIGUSR2: return 31; default: return l;
+    }
+}
+int darwin_to_linux_sig(int d) {
+    switch (d) {
+        case 10: return SIGBUS; case 12: return SIGSYS; case 16: return SIGURG; case 17: return SIGSTOP;
+        case 18: return SIGTSTP; case 19: return SIGCONT; case 20: return SIGCHLD; case 23: return SIGIO;
+        case 30: return SIGUSR1; case 31: return SIGUSR2; case 7: return 0 /*SIGEMT*/; case 29: return 0 /*SIGINFO*/;
+        default: return d;
+    }
+}
+u64 linux_mask_to_darwin(u64 m) {
+    u32 r = 0;
+    for (int l = 1; l <= 31; l++) if (m & sigbit(l)) { int d = linux_to_darwin_sig(l); if (d >= 1 && d <= 32) r |= 1u << (d - 1); }
+    return r;
+}
+u64 darwin_mask_to_linux(u64 dm) {
+    u64 r = 0;
+    for (int d = 1; d <= 32; d++) if (dm & (1ull << (d - 1))) { int l = darwin_to_linux_sig(d); if (l > 0) r |= sigbit(l); }
+    return r;
+}
+
+void sig_darwin_set_tramp(u64 tramp) { g_darwin_sigreturn_tramp = tramp; }
+
+// act: Darwin sigaction fields already converted by the caller to (handler, linux-style flags, linux mask)
+i64 sig_darwin_sigaction(int lsig, u64 handler, u64 flags, u64 mask, u64* old_handler, u64* old_flags, u64* old_mask) {
+    if (lsig < 1 || lsig > 64) return -EINVAL;
+    GuestSigaction old;
+    {
+        std::lock_guard<std::mutex> lk(g_actions_lock);
+        old = g_actions[lsig];
+        g_actions[lsig] = GuestSigaction{handler, flags, g_darwin_sigreturn_tramp, mask, 1};
+    }
+    if (old_handler) { *old_handler = old.handler; *old_flags = old.flags; *old_mask = old.mask; }
+    if (sigbit(lsig) & kInternalSigs) return 0;
+    struct sigaction h {};
+    if (handler == (u64)SIG_DFL || handler == (u64)SIG_IGN) {
+        h.sa_handler = (void (*)(int))handler;
+    } else {
+        h.sa_sigaction = async_handler;
+        h.sa_flags = SA_SIGINFO | SA_ONSTACK | ((flags & G_SA_RESTART) ? SA_RESTART : 0);
+        sigfillset(&h.sa_mask);
+    }
+    sigaction(lsig, &h, nullptr);
+    return 0;
+}
+
+static void deliver_darwin(CpuState* st, int sig, const siginfo_t& si, u64 saved_mask, const GuestSigaction& a) {
+    ThreadCtx* t = st->thread;
+    u64 sp = st->x[kGuestSP];
+    if ((a.flags & G_SA_ONSTACK) && t->ss_size && !(sp > t->ss_sp && sp <= t->ss_sp + t->ss_size))
+        sp = t->ss_sp + t->ss_size;
+    else
+        sp -= 128;                      // the arm64 red zone
+    sp = (sp - sizeof(DFrame)) & ~15ull;
+    DFrame* f = (DFrame*)sp;
+    memset(f, 0, sizeof *f);
+    f->info.d_signo = linux_to_darwin_sig(sig);
+    f->info.d_code = si.si_code;
+    f->info.d_pid = si.si_pid;
+    f->info.d_uid = si.si_uid;
+    if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE) f->info.d_addr = (u64)si.si_addr;
+    f->uc.uc_sigmask = (u32)linux_mask_to_darwin(saved_mask);
+    f->uc.ss_sp = t->ss_sp; f->uc.ss_size = t->ss_size; f->uc.ss_flags = t->ss_size ? 0 : 4;   // SS_DISABLE
+    f->uc.uc_mcsize = sizeof(DMcontext);
+    f->uc.uc_mcontext = (u64)&f->mc;
+    DMcontext& mc = f->mc;
+    if (sig == SIGSEGV || sig == SIGBUS) mc.far = (u64)si.si_addr;
+    for (int i = 0; i < 29; i++) mc.x[i] = st->x[i];
+    mc.fp = st->x[29]; mc.lr = st->x[30]; mc.sp = st->x[kGuestSP]; mc.pc = st->pc;
+    mc.cpsr = eflags_to_nzcv(st->eflags);
+    memcpy(mc.neon, st->v, 512);
+    mc.fpsr = st->fpsr; mc.fpcr = st->fpcr;
+    f->rec[0] = st->x[29]; f->rec[1] = st->x[30];
+    st->x[0] = (u64)linux_to_darwin_sig(sig);
+    st->x[1] = (u64)&f->info;
+    st->x[2] = (u64)&f->uc;
+    st->x[29] = (u64)f->rec;
+    st->x[30] = g_darwin_sigreturn_tramp;
+    st->x[kGuestSP] = sp;
+    st->pc = a.handler;
+    u64 nm = saved_mask | a.mask;
+    if (!(a.flags & G_SA_NODEFER)) nm |= sigbit(sig);
+    host_setmask(nm);
+    if (a.flags & G_SA_RESETHAND) {
+        struct sigaction h {};
+        h.sa_handler = SIG_DFL;
+        sigaction(sig, &h, nullptr);
+    }
+}
+
+void sig_darwin_sigreturn(CpuState* st, u64 uctx) {
+    DUcontext* uc = (DUcontext*)uctx;
+    DMcontext& mc = *(DMcontext*)uc->uc_mcontext;
+    for (int i = 0; i < 29; i++) st->x[i] = mc.x[i];
+    st->x[29] = mc.fp; st->x[30] = mc.lr; st->x[kGuestSP] = mc.sp; st->pc = mc.pc;
+    st->eflags = nzcv_to_eflags(mc.cpsr);
+    memcpy(st->v, mc.neon, 512);
+    st->fpsr = mc.fpsr; st->fpcr = mc.fpcr;
+    u32 rm = (st->fpcr >> 22) & 3, rc = ((rm & 1) << 1) | (rm >> 1);
+    __builtin_ia32_ldmxcsr(0x1F80 | (rc << 13) | ((st->fpcr >> 24) & 1 ? 0x8040 : 0));
+    host_setmask(darwin_mask_to_linux(uc->uc_sigmask));
+    if (__atomic_load_n(&st->thread->pending, __ATOMIC_SEQ_CST)) st->pending_signal = 1;
+}
+u64 sig_darwin_ucontext_offset() { return kDarwinUcOffset; }
+
 static void deliver_one(CpuState* st, int sig, const siginfo_t& si, u64 saved_mask) {
     ThreadCtx* t = st->thread;
     GuestSigaction a;   // a copy: the guest may change it concurrently
@@ -407,6 +547,7 @@ static void deliver_one(CpuState* st, int sig, const siginfo_t& si, u64 saved_ma
         raise(sig);
         return;
     }
+    if (a.darwin) { deliver_darwin(st, sig, si, saved_mask, a); return; }
     u64 sp = st->x[kGuestSP];
     if ((a.flags & G_SA_ONSTACK) && t->ss_size && !(sp > t->ss_sp && sp <= t->ss_sp + t->ss_size))
         sp = t->ss_sp + t->ss_size;
