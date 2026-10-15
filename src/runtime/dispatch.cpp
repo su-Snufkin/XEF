@@ -16,6 +16,7 @@
 #include "os/signals.h"
 #include "os/syscalls.h"
 #include "loader/darwin_hle.h"
+#include "os/thread.h"
 #include "profile/stats.h"
 #include "runtime/aot.h"
 
@@ -106,7 +107,7 @@ static BlockMeta* translate(ThreadCtx* t, GuestAddr pc) {
             if (pc == 0 && st->x[30] != 0 && st->x[30] != g_darwin_exit_trampoline)
                 fprintf(stderr, "xef-osx: warning: jump to address 0 (lr=%#lx)\n", (unsigned long)st->x[30]);
             darwin_run_exit_handlers();
-            exit((int)st->x[0]);
+            guest_process_exit((int)st->x[0]);
         }
         char lr[512];
         if (g_opt.trace) trace_dump();
@@ -304,7 +305,7 @@ static void run_guest(ThreadCtx* t, bool nested) {
             if (g_is_darwin && (st->pc == g_darwin_mach_header || st->pc == g_darwin_exit_trampoline)) {
                 XEF_LOG(1, "xef-osx: binary returned with exit code %d", (int)st->x[0]);
                 darwin_run_exit_handlers();
-                exit((int)st->x[0]);
+                guest_process_exit((int)st->x[0]);
             }
             host = get_or_translate(t, st->pc);
             {   // indirect branches / returns assume NZCV dead at their target (a64::g_abi_flags)

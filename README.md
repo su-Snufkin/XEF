@@ -60,3 +60,32 @@ Aby uruchomić testy:
 ```bash
 tests/darwin/run_tests.sh
 ```
+
+---
+
+## Rootfs z bibliotekami macOS (dyliby budowane z open source na prawdziwym Macu)
+
+`xef-osx` ładuje zależności (`LC_LOAD_DYLIB`) z rootfs (`-L darwin-rootfs`). libSystem jest emulowane
+(HLE, `src/loader/darwin_hle.cpp`, `darwin_sys_shims.cpp`, `darwin_stubs.cpp`, `darwin_mach.cpp`), a reszta to
+prawdziwy kod arm64 zbudowany z otwartych źródeł na zdalnym Macu (`ssh mac`, patrz `CLAUDE.local.md`):
+
+| Biblioteka | Źródło | Skrypt |
+|---|---|---|
+| libc++, libc++abi, libunwind | LLVM 19 | `tools/build_darwin_rootfs.sh` |
+| libobjc (Objective-C runtime) | Apple objc4-951 | `tools/build_libobjc.sh` |
+| libsystem_blocks (bloki + klasy ObjC) | Apple libclosure | `tools/build_system_libs.sh` |
+| libdispatch (własna, "lite") | `rootfs-src/libdispatch-lite` | `tools/build_libdispatch_lite.sh` |
+| libicucore | ICU 74 | `tools/build_icu.sh` |
+| CoreFoundation | Darling (`darling-corefoundation`) | `tools/build_corefoundation.sh` |
+| Foundation | Darling (`darling-foundation`) | `tools/build_foundation.sh` |
+
+Dane (strefy czasowe): `tools/setup_darwin_rootfs_data.sh`. Eksperymentalnie (nieużywane przez HLE): prawdziwy
+`libsystem_kernel` (`tools/build_libsystem_kernel.sh`) i libplatform (`tools/build_libplatform.sh`).
+
+Testy referencyjne — program jest kompilowany prawdziwym Apple clang na Macu, uruchamiany tam i pod XEF, a wyniki
+porównywane:
+
+```bash
+tests/darwin/macref.sh            # wszystkie tests/darwin/mac/*.{c,cpp,m}
+tests/darwin/try.sh plik.m        # jeden plik: wynik z Maca vs xef-osx
+```

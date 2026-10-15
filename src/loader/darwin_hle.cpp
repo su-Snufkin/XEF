@@ -12,6 +12,9 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <sys/ioctl.h>
+#include <ftw.h>
+#include <algorithm>
 #include <fcntl.h>
 #include <sys/random.h>
 #include <sys/epoll.h>
@@ -207,7 +210,7 @@ void darwin_run_exit_handlers() {
 
 static void darwin_exit_wrapper(int code) {
     darwin_run_exit_handlers();
-    exit(code);
+    guest_process_exit(code);
 }
 
 static int darwin_ulock_wait(uint32_t op, void* addr, uint64_t value, uint32_t timeout_us) {
@@ -576,7 +579,9 @@ static int darwin_open(const char* path, int dflags, mode_t mode) {
     if (!path) { errno = EFAULT; return -1; }
     std::string hp = resolve_guest_path(path);
     int lflags = darwin_open_flags_to_linux(dflags);
-    return open(hp.c_str(), lflags, mode);
+    int r = open(hp.c_str(), lflags, mode);
+    XEF_LOG(2, "darwin_open('%s' -> '%s', dflags=%#x lflags=%#x mode=%o) = %d errno=%d", path, hp.c_str(), dflags, lflags, mode, r, r < 0 ? errno : 0);
+    return r;
 }
 
 static int darwin_openat(int dfd, const char* path, int dflags, mode_t mode) {
@@ -621,6 +626,63 @@ static darwin_dirent* darwin_readdir(DIR* dirp) {
     }
     return nullptr;
 }
+
+// ---- nftw / scandir with guest callbacks ------------------------------------------------------------
+static thread_local u64 tl_nftw_cb = 0;
+static int nftw_tramp(const char* path, const struct stat* sb, int typeflag, struct FTW* ftwbuf) {
+    static const int map[] = {0, 1, 2, 4 /*NS*/, 5 /*SL*/, 3 /*DP*/, 6 /*SLN*/};   // Linux -> Darwin
+    darwin_stat64 ds;
+    convert_stat_to_darwin(*sb, &ds);
+    struct { int base; int level; } fb = {ftwbuf->base, ftwbuf->level};
+    u64 a[4] = {(u64)(uintptr_t)path, (u64)(uintptr_t)&ds, (u64)map[typeflag < 7 ? typeflag : 0], (u64)(uintptr_t)&fb};
+    return (int)guest_call(tl_nftw_cb, 4, a);
+}
+static int darwin_nftw(const char* path, u64 cb, int nopenfd, int flags) {
+    int lf = 0;
+    if (flags & 1) lf |= FTW_PHYS;
+    if (flags & 2) lf |= FTW_MOUNT;
+    if (flags & 4) lf |= FTW_DEPTH;
+    if (flags & 8) lf |= FTW_CHDIR;
+    u64 save = tl_nftw_cb; tl_nftw_cb = cb;
+    int r = nftw(path, nftw_tramp, nopenfd, lf);
+    tl_nftw_cb = save;
+    return r;
+}
+struct DarwinDirent { uint64_t d_ino; uint64_t d_seekoff; uint16_t d_reclen; uint16_t d_namlen; uint8_t d_type; char d_name[1024]; };
+static int darwin_scandir(const char* dir, DarwinDirent*** list, u64 filter, u64 compar) {
+    DIR* d = opendir(dir);
+    if (!d) return -1;
+    std::vector<DarwinDirent*> v;
+    while (struct dirent* e = readdir(d)) {
+        DarwinDirent* de = (DarwinDirent*)calloc(1, sizeof(DarwinDirent));
+        de->d_ino = e->d_ino; de->d_type = e->d_type;
+        size_t n = strnlen(e->d_name, 1023);
+        memcpy(de->d_name, e->d_name, n);
+        de->d_namlen = (uint16_t)n;
+        de->d_reclen = (uint16_t)sizeof(DarwinDirent);
+        if (filter) {
+            u64 a[1] = {(u64)(uintptr_t)de};
+            if (!guest_call(filter, 1, a)) { free(de); continue; }
+        }
+        v.push_back(de);
+    }
+    closedir(d);
+    if (compar) {
+        // insertion-style merge using the guest comparator on pointers-to-pointers
+        std::stable_sort(v.begin(), v.end(), [&](DarwinDirent* x, DarwinDirent* y) {
+            DarwinDirent* px = x; DarwinDirent* py = y;
+            u64 a[2] = {(u64)(uintptr_t)&px, (u64)(uintptr_t)&py};
+            return (int)guest_call(compar, 2, a) < 0;
+        });
+    }
+    DarwinDirent** out = (DarwinDirent**)malloc((v.size() + 1) * sizeof(void*));
+    for (size_t i = 0; i < v.size(); i++) out[i] = v[i];
+    out[v.size()] = nullptr;
+    *list = out;
+    return (int)v.size();
+}
+// alphasort / versionsort for scandir (Darwin dirent layout)
+static int darwin_alphasort(const DarwinDirent** a, const DarwinDirent** b) { return strcoll((*a)->d_name, (*b)->d_name); }
 
 // Grand Central Dispatch (GCD) Semaphores
 struct DarwinSemaphore {
@@ -1005,7 +1067,13 @@ static U128Ret darwin_dyld_lookup_section_info(uint64_t mh, uint64_t, uint64_t k
 }
 
 struct ShimEntry { const char* name; void* fn; int variadic_fixed; };   // variadic_fixed: >=0 -> args from stack
+static int darwin_open_v(const char* path, int dflags, const uint64_t* ap);
+static int darwin_openat_v(int dfd, const char* path, int dflags, const uint64_t* ap);
+static int darwin_fcntl_v(int fd, int cmd, const uint64_t* ap);
+static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap);
 static const ShimEntry kShims[] = {
+    {"__xef_open", (void*)&darwin_open_v, 2}, {"__xef_openat", (void*)&darwin_openat_v, 3}, {"__xef_fcntl", (void*)&darwin_fcntl_v, 2},
+    {"__xef_ioctl", (void*)&darwin_ioctl_v, 2},
     {"_snprintf_l", (void*)&darwin_snprintf_l, 4}, {"_sprintf", (void*)&darwin_sprintf, 2},
     {"_asprintf", (void*)&darwin_asprintf, 2}, {"_asprintf_l", (void*)&darwin_asprintf_l, 3},
     {"_dprintf", (void*)&darwin_dprintf, 2}, {"_vasprintf", (void*)&darwin_vasprintf, -1},
@@ -1577,6 +1645,83 @@ static int darwin_fcntl(int fd, int cmd, uint64_t arg) {
     return res;
 }
 
+// ---- variadic fcntl / open / ioctl (Darwin passes the extra argument on the stack) ----------------------------
+static int linux_flags_to_darwin_fl(int lf) {
+    int d = lf & 3;                 // O_RDONLY/O_WRONLY/O_RDWR are 0/1/2 on both
+    if (lf & O_NONBLOCK) d |= 0x0004;
+    if (lf & O_APPEND)   d |= 0x0008;
+    if (lf & O_ASYNC)    d |= 0x0040;
+    if (lf & O_SYNC)     d |= 0x0080;
+    return d;
+}
+struct DarwinFlock { int64_t l_start; int64_t l_len; int32_t l_pid; int16_t l_type; int16_t l_whence; };
+static int darwin_fcntl_v(int fd, int cmd, const uint64_t* ap) {
+    uint64_t arg = ap ? ap[0] : 0;
+    switch (cmd) {
+        case 0: return fcntl(fd, F_DUPFD, (int)arg);
+        case 67: return fcntl(fd, F_DUPFD_CLOEXEC, (int)arg);
+        case 1: return fcntl(fd, F_GETFD);
+        case 2: return fcntl(fd, F_SETFD, (int)arg);
+        case 3: { int r = fcntl(fd, F_GETFL); return r < 0 ? r : linux_flags_to_darwin_fl(r); }
+        case 4: { int lf = darwin_open_flags_to_linux((int)arg) & ~(O_ACCMODE | O_CREAT | O_TRUNC | O_EXCL); return fcntl(fd, F_SETFL, lf); }
+        case 5: return fcntl(fd, F_GETOWN);
+        case 6: return fcntl(fd, F_SETOWN, (int)arg);
+        case 7: case 8: case 9: {      // F_GETLK / F_SETLK / F_SETLKW
+            DarwinFlock* df = (DarwinFlock*)(uintptr_t)arg;
+            struct flock fl;
+            memset(&fl, 0, sizeof fl);
+            fl.l_start = df->l_start; fl.l_len = df->l_len; fl.l_pid = df->l_pid;
+            fl.l_type = df->l_type == 1 ? F_RDLCK : df->l_type == 2 ? F_UNLCK : F_WRLCK;   // Darwin RDLCK=1 UNLCK=2 WRLCK=3
+            fl.l_whence = df->l_whence;
+            int r = fcntl(fd, cmd == 7 ? F_GETLK : cmd == 8 ? F_SETLK : F_SETLKW, &fl);
+            if (cmd == 7 && r == 0) {
+                df->l_start = fl.l_start; df->l_len = fl.l_len; df->l_pid = fl.l_pid;
+                df->l_type = fl.l_type == F_RDLCK ? 1 : fl.l_type == F_UNLCK ? 2 : 3;
+            }
+            return r;
+        }
+        case 50: {                     // F_GETPATH
+            char link[64], buf[4096];
+            snprintf(link, sizeof link, "/proc/self/fd/%d", fd);
+            ssize_t n = readlink(link, buf, sizeof buf - 1);
+            if (n < 0) return -1;
+            buf[n] = 0;
+            strncpy((char*)(uintptr_t)arg, buf, 1024);
+            return 0;
+        }
+        case 51: return fsync(fd);     // F_FULLFSYNC
+        case 48: case 45: case 42: case 43: case 44: case 73: case 74: return 0;   // NOCACHE, RDAHEAD, PREALLOCATE, SETSIZE..., NOSIGPIPE
+        default: errno = EINVAL; return -1;
+    }
+}
+static int darwin_open_v(const char* path, int dflags, const uint64_t* ap) {
+    mode_t mode = (dflags & 0x200) ? (mode_t)(ap ? ap[0] : 0) : 0;     // O_CREAT
+    return darwin_open(path, dflags, mode);
+}
+static int darwin_openat_v(int dfd, const char* path, int dflags, const uint64_t* ap) {
+    mode_t mode = (dflags & 0x200) ? (mode_t)(ap ? ap[0] : 0) : 0;
+    if (dfd == -2) dfd = AT_FDCWD;     // Darwin AT_FDCWD
+    return darwin_openat(dfd, path, dflags, mode);
+}
+static int darwin_isatty(int fd) { return isatty(fd); }
+struct DarwinWinsize { unsigned short ws_row, ws_col, ws_xpixel, ws_ypixel; };
+static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap) {
+    void* arg = ap ? (void*)(uintptr_t)ap[0] : nullptr;
+    switch (req) {
+        case 0x40087468: { struct winsize w; if (ioctl(fd, TIOCGWINSZ, &w)) return -1; DarwinWinsize* d = (DarwinWinsize*)arg; d->ws_row = w.ws_row; d->ws_col = w.ws_col; d->ws_xpixel = w.ws_xpixel; d->ws_ypixel = w.ws_ypixel; return 0; }
+        case 0x4004667f: return ioctl(fd, FIONREAD, arg);                  // FIONREAD
+        case 0x8004667e: return ioctl(fd, FIONBIO, arg);                   // FIONBIO
+        case 0x20006601: return ioctl(fd, FIOCLEX);                        // FIOCLEX
+        case 0x20006602: return ioctl(fd, FIONCLEX);                       // FIONCLEX
+        case 0x40487413: case 0x402c7413: {                                // TIOCGETA: report "is a tty" via the host
+            if (!isatty(fd)) { errno = ENOTTY; return -1; }
+            memset(arg, 0, 72);
+            return 0;
+        }
+        default: errno = ENOTTY; return -1;
+    }
+}
+
 void darwin_hle_init() {
     std::lock_guard<std::mutex> lk(g_hle_lock);
     if (g_thunk_code) return;
@@ -1836,9 +1981,9 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
                strcmp(name, "_readdir") == 0 || strcmp(name, "readdir") == 0) {
         host_fn = (void*)&darwin_readdir;
     } else if (strcmp(name, "_open") == 0 || strcmp(name, "open") == 0) {
-        host_fn = (void*)&darwin_open;
+        host_fn = (void*)&darwin_open_v;
     } else if (strcmp(name, "_openat") == 0 || strcmp(name, "openat") == 0) {
-        host_fn = (void*)&darwin_openat;
+        host_fn = (void*)&darwin_openat_v;
     } else if (strcmp(name, "_pthread_create") == 0 || strcmp(name, "pthread_create") == 0) {
         host_fn = (void*)&darwin_pthread_create;
     } else if (strcmp(name, "_pthread_join") == 0 || strcmp(name, "pthread_join") == 0) {
@@ -1877,7 +2022,7 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
     } else if (strcmp(name, "_kevent") == 0 || strcmp(name, "kevent") == 0) {
         host_fn = (void*)&darwin_kevent;
     } else if (strcmp(name, "_fcntl") == 0 || strcmp(name, "fcntl") == 0) {
-        host_fn = (void*)&darwin_fcntl;
+        host_fn = (void*)&darwin_fcntl_v;
     } else if (const ShimEntry* sh = [&]() -> const ShimEntry* {
                    for (const ShimEntry& e : kShims) if (!strcmp(e.name, name)) return &e;
                    return nullptr; }()) {
@@ -1908,6 +2053,16 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_copyfile_state_free;
     } else if (strcmp(name, "_fcopyfile") == 0 || strcmp(name, "_copyfile") == 0) {
         host_fn = (void*)&darwin_enosys;
+    } else if (strcmp(name, "_ioctl") == 0) {
+        host_fn = (void*)&darwin_ioctl_v;
+    } else if (strcmp(name, "_isatty") == 0) {
+        host_fn = (void*)&darwin_isatty;
+    } else if (strcmp(name, "_nftw") == 0) {
+        host_fn = (void*)&darwin_nftw;
+    } else if (strcmp(name, "_scandir") == 0 || strcmp(name, "_scandir$INODE64") == 0) {
+        host_fn = (void*)&darwin_scandir;
+    } else if (strcmp(name, "_alphasort") == 0 || strcmp(name, "_alphasort$INODE64") == 0) {
+        host_fn = (void*)&darwin_alphasort;
     } else if (strcmp(name, "_qsort") == 0) {
         host_fn = (void*)&darwin_qsort;
     } else if (strcmp(name, "_qsort_r") == 0) {
@@ -1999,6 +2154,14 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
     return guest_addr;
 }
 
+static thread_local const char* tl_hle_name = nullptr;
+static thread_local u64 tl_hle_lr = 0;
+bool darwin_hle_current(const char** name, u64* lr) {
+    if (!tl_hle_name) return false;
+    *name = tl_hle_name; *lr = tl_hle_lr;
+    return true;
+}
+
 void darwin_hle_dispatch(CpuState* st) {
     u64 id = st->x[17];
     void* host_fn = nullptr;
@@ -2013,6 +2176,9 @@ void darwin_hle_dispatch(CpuState* st) {
         name = g_thunks[id].name.c_str();
         errno_ret = g_thunks[id].errno_ret;
     }
+    struct HleScope { ~HleScope() { tl_hle_name = nullptr; } } hle_scope;
+    tl_hle_name = name;
+    tl_hle_lr = st->x[30];
     XEF_LOG(2, "hle: %s(x0=%#lx, x1=%#lx, x2=%#lx, x3=%#lx)", name,
             (unsigned long)st->x[0], (unsigned long)st->x[1], (unsigned long)st->x[2], (unsigned long)st->x[3]);
 

@@ -63,6 +63,9 @@ struct MachImage {
 const std::vector<MachImage*>& dyld_images();
 MachImage* dyld_image_containing(uint64_t addr);
 
+// "path+0xoffset" of the image containing addr (for crash reports); empty when unknown
+std::string dyld_describe(uint64_t addr);
+
 // Look up an exported symbol of `img` (follows re-exports). Returns 0 when absent.
 uint64_t dyld_image_lookup(MachImage* img, const char* name);
 // Flat lookup over every loaded image.

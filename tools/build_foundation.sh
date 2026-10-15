@@ -14,11 +14,13 @@ import re, os
 t = open(os.environ['HOME'] + '/xef-remote/src/darling/foundation/CMakeLists.txt').read()
 m = re.search(r'set\(foundation_sources(.*?)\n\)', t, re.S).group(1)
 m = re.sub(r'#.*', '', m)
-skip = ('NSXPC', 'PortCoder', 'NSMachBootstrapServer', 'NSTask.m', 'NSKeyValueObserving.m')
-print(' '.join(('src/NSLog_xef.m' if x == 'src/NSLog.m' else x) for x in m.split() if x.endswith(('.m', '.c', '.mm')) and not x.startswith('$') and not any(k in x for k in skip)))
+skip = ('NSXPC', 'PortCoder', 'NSMachBootstrapServer', 'NSTask.m')
+print(' '.join(('src/NSLog_xef.m' if x == 'src/NSLog.m' else 'src/NSKeyValueObserving_xef.m' if x == 'src/NSKeyValueObserving.m' else x) for x in m.split() if x.endswith(('.m', '.c', '.mm')) and not x.startswith('$') and not any(k in x for k in skip)))
 PY
 )
 cp $HOME/xef-remote/src/compat/xef_objc_msgsend.h $FB/
+# KVO: IMP has no prototype on arm64
+sed -e 's/cachedIMP(/((id(*)(id,SEL))cachedIMP)(/g' -e 's/kvcon\.cachedObservationInfoImplementation(/((id(*)(id,SEL))kvcon.cachedObservationInfoImplementation)(/g' $FD/src/NSKeyValueObserving.m > $FD/src/NSKeyValueObserving_xef.m
 # NSLog goes to stderr with [pid:thread-id] like on macOS
 sed -e 's/printf(/fprintf(stderr, /g' -e 's/uid_t uid = getuid();/unsigned long uid = (unsigned long)pthread_mach_thread_np(pthread_self());/' $FD/src/NSLog.m > $FD/src/NSLog_xef.m
 cd $FD

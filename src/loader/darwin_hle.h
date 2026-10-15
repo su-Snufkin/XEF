@@ -20,6 +20,9 @@ void darwin_run_exit_handlers();
 // Dispatches an HLE thunk call (st->x[17] = thunk ID)
 void darwin_hle_dispatch(CpuState* st);
 
+// The HLE function the calling guest thread is currently executing (for crash reports).
+bool darwin_hle_current(const char** name, uint64_t* lr);
+
 extern uint64_t g_darwin_stack_top;
 extern uint64_t g_darwin_stack_size;
 extern uint64_t g_darwin_mach_header;

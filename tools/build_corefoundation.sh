@@ -4,6 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 scp -q tools/xbuild.py mac:xef-remote/xbuild.py
+ssh mac 'mkdir -p ~/xef-remote/src/cf-extras'; rsync -a rootfs-src/corefoundation/ mac:xef-remote/src/cf-extras/
 ssh mac 'bash -s' <<'REMOTE'
 set -e
 W=$HOME/xef-remote/src; D=$W/darling; CF=$D/corefoundation; B=$W/cf-build; SDK=$(xcrun --show-sdk-path)
@@ -43,6 +44,19 @@ static inline void _vproc_transaction_try_exit(int s) {} static inline size_t _v
 EOF2
 printf '#pragma once\n' > $B/stub/vproc.h
 sed -E 's/objc_msgSend\(objc_msgSend\(clsDict, selAlloc\), selInit\)/((id(*)(id,SEL))objc_msgSend)(((id(*)(id,SEL))objc_msgSend)((id)clsDict, selAlloc), selInit)/; s/objc_msgSend\(objc_msgSend\(clsArray, selAlloc\), selInit\)/((id(*)(id,SEL))objc_msgSend)(((id(*)(id,SEL))objc_msgSend)((id)clsArray, selAlloc), selInit)/' $CF/CFRuntime.c > $CF/CFRuntime_xef.c
+# time zone: derive the system zone from /etc/localtime's target on any layout (Linux: ../usr/share/zoneinfo/X)
+python3 - <<'PY'
+import os
+cf = os.environ['HOME'] + '/xef-remote/src/darling/corefoundation/'
+t = open(cf + 'CFTimeZone.c').read()
+t = t.replace("if (strncmp(linkbuf, TZZONEINFO, sizeof(TZZONEINFO) - 1) == 0) {", "const char *xef_zi = strstr(linkbuf, \"zoneinfo/\");\n\tif (xef_zi) {\n\t    name = CFStringCreateWithBytes(kCFAllocatorSystemDefault, (uint8_t *)xef_zi + 9, strlen(xef_zi + 9), kCFStringEncodingUTF8, false);\n\t} else if (strncmp(linkbuf, TZZONEINFO, sizeof(TZZONEINFO) - 1) == 0) {")
+open(cf + 'CFTimeZone_xef.c', 'w').write(t)
+n = open(cf + 'NSTimeZone.m').read()
+n = n.replace('CFStringRef zoneName = CFStringCreateWithCString(kCFAllocatorDefault, getenv("TZ"), kCFStringEncodingUTF8);\n        localTZ = (NSTimeZone *)CFTimeZoneCreateWithName(NULL, zoneName, false);\n        [localTZ retain];\n        CFRelease(zoneName);', 'localTZ = (NSTimeZone *)CFTimeZoneCopySystem();')
+open(cf + 'NSTimeZone_xef.m', 'w').write(n)
+l = open(cf + 'CFLocale.c').read().replace('#define FALLBACK_LOCALE_NAME CFSTR("")', '#define FALLBACK_LOCALE_NAME CFSTR("en_US")')
+open(cf + 'CFLocale_xef.c', 'w').write(l)
+PY
 sed 's/    Class cls = objc_getClass(sup);/    if (objc_getClass(name)) return YES;\n    Class cls = objc_getClass(sup);/' $CF/NSBlock.m > $CF/NSBlock_xef.m
 cp $W/apple-oss/libdispatch/dispatch/*.h $B/inc/dispatch/; cp $W/apple-oss/libdispatch/private/*.h $B/inc/dispatch/
 cp $W/apple-oss/libdispatch/os/*.h $B/inc/os/ 2>/dev/null || true
@@ -53,18 +67,10 @@ t = open(os.environ['HOME'] + '/xef-remote/src/darling/corefoundation/CMakeLists
 c = re.search(r'set\(cf_c_sources(.*?)\n\)', t, re.S).group(1).split()
 m = re.search(r'set\(cf_sources(.*?)\n\)', t, re.S).group(1)
 m = [x for x in re.sub(r'#.*', '', m).split() if x.endswith(('.m', '.S')) and not x.startswith('$') and 'x86' not in x and 'ForwardingPrep' not in x]
-print(' '.join(("CFRuntime_xef.c" if x == "CFRuntime.c" else "NSBlock_xef.m" if x == "NSBlock.m" else x) for x in c + m) + ' ' + os.environ['B'] + '/patched/arm64_stubs.c')
+print(' '.join(("CFRuntime_xef.c" if x == "CFRuntime.c" else "NSBlock_xef.m" if x == "NSBlock.m" else "CFTimeZone_xef.c" if x == "CFTimeZone.c" else "CFLocale_xef.c" if x == "CFLocale.c" else "NSTimeZone_xef.m" if x == "NSTimeZone.m" else x) for x in c + m) + ' ' + os.environ['B'] + '/patched/arm64_forwarding.m')
 PY
 )
-cat > $B/patched/arm64_stubs.c <<'EOF2'
-#include <stdlib.h>
-#include <stdio.h>
-// NSInvocation-style message forwarding trampolines are not ported to arm64 yet
-void _CF_forwarding_prep_0(void) { fprintf(stderr, "CoreFoundation: message forwarding is not supported on arm64 yet\n"); abort(); }
-void _CF_forwarding_prep_1(void) { _CF_forwarding_prep_0(); }
-void _CF_forwarding_prep_b(void) { _CF_forwarding_prep_0(); }
-void __invoke__(void) { _CF_forwarding_prep_0(); }
-EOF2
+cp $HOME/xef-remote/src/cf-extras/arm64_forwarding.m $B/patched/arm64_forwarding.m
 cd $CF
 FLAGS="-arch arm64 -mmacosx-version-min=12.0 -O2 -w -Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -fgnu89-inline -fblocks -fconstant-cfstrings -fexceptions -fobjc-exceptions -include libkern/OSAtomic.h -include $CF/CoreFoundation_Prefix.h -include $CF/macros.h \
  -DDARLING=1 -D__BRIDGEOS_DEPRECATED(...)= -D__BRIDGEOS_AVAILABLE(...)= -D__BRIDGEOS_UNAVAILABLE= -DCF_BUILDING_CF -DDEPLOYMENT_TARGET_MACOSX=1 -DU_SHOW_DRAFT_API=1 -DU_SHOW_CPLUSPLUS_API=0 -DINCLUDE_OBJC -DDISPATCH_SUPPORT=1 -D__CONSTANT_CFSTRINGS__=1 -D__CONSTANT_STRINGS__=1 -DU_DISABLE_RENAMING=1 -DOBJC_OLD_DISPATCH_PROTOTYPES=1 -Dmarg_list=void* -DUADATPG_FORCE_12_HOUR_CYCLE=0x4000 -DUADATPG_FORCE_24_HOUR_CYCLE=0x8000 -DCF_BUILDING_CF_STATIC=0 \

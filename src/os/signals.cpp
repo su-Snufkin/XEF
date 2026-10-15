@@ -1,6 +1,9 @@
 // XEF — guest signals. Milestone-1 version: handlers are recorded, SIG_DFL/SIG_IGN
 // are forwarded to the host; delivery to guest handlers comes with milestone 4.
 #include "os/signals.h"
+#include "loader/macho_image.h"
+#include "loader/darwin_hle.h"
+#include "os/darwin/darwin_syscalls.h"
 #include "runtime/verify.h"
 
 #include <errno.h>
@@ -90,6 +93,26 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
     int n = snprintf(buf, sizeof buf, "xef: fatal signal %d at host %p [xef+%#lx] (fault addr %p)\n", sig, rip,
                      (unsigned long)(rip - (u8*)&__executable_start), si->si_addr);
     write(2, buf, n);
+    if (g_is_darwin) {
+        const char* hn; u64 hlr;
+        if (darwin_hle_current(&hn, &hlr)) {
+            std::string d = dyld_describe(hlr);
+            n = snprintf(buf, sizeof buf, "xef:   inside HLE function %s called from %s\n", hn, d.empty() ? "?" : d.c_str());
+            write(2, buf, n);
+            if (tls_thread) {   // guest frame-pointer chain
+                u64 fp = tls_thread->st->x[29];
+                for (int depth = 0; depth < 12 && fp && !(fp & 7); depth++) {
+                    u64 lr = ((u64*)fp)[1];
+                    std::string fd = dyld_describe(lr);
+                    n = snprintf(buf, sizeof buf, "xef:     #%d %s\n", depth, fd.empty() ? "?" : fd.c_str());
+                    write(2, buf, n);
+                    u64 nfp = ((u64*)fp)[0];
+                    if (nfp <= fp) break;
+                    fp = nfp;
+                }
+            }
+        }
+    }
     if (g_cache.contains(rip)) {
         BlockMeta* b = g_cache.find_by_host(rip);
         const PcMapEntry* pe = b ? g_cache.find_pc(b, rip) : nullptr;
@@ -101,6 +124,10 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
                 n = snprintf(buf, sizeof buf, "xef:   guest pc %#lx%s\n", (unsigned long)(b->start + pe->guest_off),
                              b->region ? " (tier-2 region)" : "");
                 write(2, buf, n);
+                if (g_is_darwin) {
+                    std::string d = dyld_describe(b->start + pe->guest_off);
+                    if (!d.empty()) { n = snprintf(buf, sizeof buf, "xef:   in %s\n", d.c_str()); write(2, buf, n); }
+                }
             }
         }
         CpuState* st = (CpuState*)(uc->uc_mcontext.gregs[REG_R15] - kStateBias);

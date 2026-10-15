@@ -13,7 +13,7 @@ for n in "${names[@]}"; do
   case $src in
     *.c)   if grep -q CoreFoundation tests/darwin/mac/$src; then cc="clang -O1 -framework CoreFoundation"; else cc="clang -O1"; fi;;
     *.cpp) cc="clang++ -O1 -std=c++20";;
-    *.m)   if grep -q Foundation.h tests/darwin/mac/$src; then cc="clang -fobjc-arc -framework Foundation"; else cc="clang -fobjc-arc -lobjc"; fi;;
+    *.m)   if grep -q Foundation.h tests/darwin/mac/$src; then cc="clang -framework Foundation"; else cc="clang -lobjc"; fi;;
   esac
   ssh mac "cd ~/xef-remote/src/macref && $cc $src -o $n && ./$n a b > $n.expected 2>/dev/null; echo \$? > $n.rc" || { echo "BUILD FAIL $n"; fail=$((fail+1)); continue; }
   rsync -az mac:xef-remote/src/macref/$n mac:xef-remote/src/macref/$n.expected mac:xef-remote/src/macref/$n.rc $OUT/

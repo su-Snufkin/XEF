@@ -73,6 +73,14 @@ MachImage* dyld_image_containing(uint64_t addr) {
     return nullptr;
 }
 
+std::string dyld_describe(uint64_t addr) {
+    MachImage* im = dyld_image_containing(addr);
+    if (!im) return "";
+    char b[64];
+    snprintf(b, sizeof b, "+%#lx", (unsigned long)(addr - im->header));
+    return im->path + b;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Exports trie
 // ---------------------------------------------------------------------------------------------

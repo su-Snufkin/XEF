@@ -23,3 +23,10 @@
 #define method_invoke(...) _XEF_MI_PICK(__VA_ARGS__, _XEF_MI3, _XEF_MI2, _XEF_MI1, _XEF_MI0, _unused)(__VA_ARGS__)
 #define method_invoke_stret method_invoke
 #define marg_list void *
+
+#define _XEF_MSS0(s, c)           (((id (*)(struct objc_super *, SEL))objc_msgSendSuper)((s), (c)))
+#define _XEF_MSS1(s, c, a)        (((id (*)(struct objc_super *, SEL, __typeof__(a)))objc_msgSendSuper)((s), (c), (a)))
+#define _XEF_MSS2(s, c, a, b)     (((id (*)(struct objc_super *, SEL, __typeof__(a), __typeof__(b)))objc_msgSendSuper)((s), (c), (a), (b)))
+#define _XEF_MSS3(s, c, a, b, d)  (((id (*)(struct objc_super *, SEL, __typeof__(a), __typeof__(b), __typeof__(d)))objc_msgSendSuper)((s), (c), (a), (b), (d)))
+#define _XEF_MSS_PICK(_1, _2, _3, _4, _5, NAME, ...) NAME
+#define objc_msgSendSuper(...) _XEF_MSS_PICK(__VA_ARGS__, _XEF_MSS3, _XEF_MSS2, _XEF_MSS1, _XEF_MSS0, _unused)(__VA_ARGS__)

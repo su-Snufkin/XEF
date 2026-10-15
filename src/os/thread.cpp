@@ -143,6 +143,16 @@ void guest_tid_init() {   // process start and fork child: just the calling thre
 extern thread_local u64 tls_thread_retval;
 void thread_set_retval(u64 v) { tls_thread_retval = v; }
 
+// Ends the whole guest process without running C++ static destructors (background threads of the HLE,
+// dispatch workers and timers may still be using them).
+void guest_process_exit(int code) {
+    fflush(nullptr);
+    aot::save();
+    signals_flush_output();
+    syscall(SYS_exit_group, code);
+    __builtin_unreachable();
+}
+
 void thread_exit(CpuState* st, int code) {
     ThreadCtx* t = st->thread;
     if (g_live_threads.fetch_sub(1) == 1) {
