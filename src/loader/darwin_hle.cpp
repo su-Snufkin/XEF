@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <sys/random.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <sched.h>
 #include <pthread.h>
 #include <string.h>
@@ -210,7 +211,7 @@ static uint32_t darwin_maskrune_wrapper(int c, uint32_t mask) {
 
 static void* darwin_memcpy_chk_wrapper(void* dst, const void* src, size_t len, size_t dst_len) {
     (void)dst_len;
-    return memcpy(dst, src, len);
+    return memmove(dst, src, len);
 }
 
 struct GuestAtExit { u64 fn, arg; bool cxa; };
@@ -2171,98 +2172,174 @@ static constexpr uint16_t DARWIN_EV_RECEIPT  = 0x0040;
 static constexpr uint16_t DARWIN_EV_ERROR    = 0x4000;
 static constexpr int16_t  DARWIN_EVFILT_USER = -10;
 
+// ---- kqueue emulation on top of epoll --------------------------------------------------------------------------
+// Supported filters: EVFILT_READ, EVFILT_WRITE (one epoll registration per fd, the kevent filters are tracked here, since
+// epoll cannot tell them apart and kqueue reports ident = fd, data, EV_EOF and the per-filter udata) and EVFILT_USER
+// (libuv's uv_async: triggered flag per ident, woken through an eventfd that is part of the epoll set).
+// Other filters (VNODE/PROC/SIGNAL/TIMER) fail with ENOTSUP (reported in the receipt when EV_RECEIPT is set).
+static constexpr uint16_t DARWIN_EV_ONESHOT  = 0x0010;
+static constexpr uint16_t DARWIN_EV_CLEAR    = 0x0020;
+static constexpr uint16_t DARWIN_EV_DISPATCH = 0x0080;
+static constexpr uint16_t DARWIN_EV_EOF      = 0x8000;
+static constexpr uint32_t DARWIN_NOTE_TRIGGER = 0x01000000;
+static constexpr uint32_t DARWIN_NOTE_FFCTRLMASK = 0xc0000000;
+static constexpr uint32_t DARWIN_NOTE_FFLAGSMASK = 0x00ffffff;
+
+struct KqEntry { void* udata; uint16_t flags; bool disabled; };
+struct KqUser { void* udata; uint16_t flags; uint32_t fflags; bool triggered, disabled; };
+struct KqState {
+    int evfd = -1;                                            // wakes epoll_wait for EVFILT_USER triggers
+    std::unordered_map<int, KqEntry> rd, wr;                  // fd -> registration
+    std::unordered_map<uint64_t, KqUser> user;
+};
+static std::mutex g_kq_lock;
+static std::unordered_map<int, KqState> g_kq;
+
+static void kq_sync_epoll(int kq, KqState& st, int fd) {      // make the epoll registration of fd match rd/wr
+    uint32_t ev = 0;
+    auto r = st.rd.find(fd), w = st.wr.find(fd);
+    bool et = false;
+    if (r != st.rd.end() && !r->second.disabled) { ev |= EPOLLIN | EPOLLRDHUP; et |= !!(r->second.flags & DARWIN_EV_CLEAR); }
+    if (w != st.wr.end() && !w->second.disabled) { ev |= EPOLLOUT; et |= !!(w->second.flags & DARWIN_EV_CLEAR); }
+    struct epoll_event e;
+    memset(&e, 0, sizeof e);
+    e.data.u64 = (uint64_t)fd;
+    e.events = ev | (et ? EPOLLET : 0);
+    if (!ev) { epoll_ctl(kq, EPOLL_CTL_DEL, fd, &e); return; }
+    if (epoll_ctl(kq, EPOLL_CTL_MOD, fd, &e) < 0 && errno == ENOENT) epoll_ctl(kq, EPOLL_CTL_ADD, fd, &e);
+}
+
 static int darwin_kqueue() {
     int epfd = epoll_create1(EPOLL_CLOEXEC);
     XEF_LOG(2, "darwin_kqueue() = %d", epfd);
+    if (epfd < 0) return -1;
+    int evfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (evfd < 0) { close(epfd); return -1; }
+    struct epoll_event e;
+    memset(&e, 0, sizeof e);
+    e.events = EPOLLIN;
+    e.data.u64 = ~0ull;
+    epoll_ctl(epfd, EPOLL_CTL_ADD, evfd, &e);
+    std::lock_guard<std::mutex> lk(g_kq_lock);
+    KqState& st = g_kq[epfd];                                 // (a closed kqueue's state is replaced when its fd number is reused)
+    if (st.evfd >= 0) close(st.evfd);
+    st = KqState();
+    st.evfd = evfd;
     return epfd;
+}
+
+static int kq_apply_change(int kq, KqState& st, const darwin_kevent_t& kev) {   // returns 0 or an errno
+    if (kev.filter == DARWIN_EVFILT_USER) {
+        KqUser& u = st.user[kev.ident];
+        if (kev.flags & DARWIN_EV_DELETE) { st.user.erase(kev.ident); return 0; }
+        if (kev.flags & DARWIN_EV_ADD) { u.udata = kev.udata; u.flags = kev.flags; }
+        if (kev.flags & DARWIN_EV_DISABLE) u.disabled = true;
+        if (kev.flags & DARWIN_EV_ENABLE) u.disabled = false;
+        uint32_t ctl = kev.fflags & DARWIN_NOTE_FFCTRLMASK, v = kev.fflags & DARWIN_NOTE_FFLAGSMASK;
+        if (ctl == 0x80000000u) u.fflags &= v; else if (ctl == 0xc0000000u) u.fflags |= v;   // NOTE_FFAND / NOTE_FFOR
+        else if (ctl == 0x40000000u) u.fflags = v;                                         // NOTE_FFCOPY
+        if (kev.fflags & DARWIN_NOTE_TRIGGER) {
+            u.triggered = true;
+            uint64_t one = 1;
+            if (write(st.evfd, &one, 8) < 0) {}
+        }
+        return 0;
+    }
+    if (kev.filter != DARWIN_EVFILT_READ && kev.filter != DARWIN_EVFILT_WRITE) return ENOTSUP;
+    int fd = (int)kev.ident;
+    auto& tab = kev.filter == DARWIN_EVFILT_READ ? st.rd : st.wr;
+    if (kev.flags & DARWIN_EV_DELETE) {
+        if (!tab.erase(fd)) return ENOENT;
+        kq_sync_epoll(kq, st, fd);
+        return 0;
+    }
+    if (kev.flags & DARWIN_EV_ADD) {
+        tab[fd] = KqEntry{kev.udata, kev.flags, (kev.flags & DARWIN_EV_DISABLE) != 0};
+        if (fcntl(fd, F_GETFD) < 0) { tab.erase(fd); return EBADF; }
+    } else if (tab.find(fd) == tab.end()) {
+        return ENOENT;
+    }
+    if (kev.flags & DARWIN_EV_DISABLE) tab[fd].disabled = true;
+    if (kev.flags & DARWIN_EV_ENABLE) tab[fd].disabled = false;
+    kq_sync_epoll(kq, st, fd);
+    return 0;
 }
 
 static int darwin_kevent(int kq, const darwin_kevent_t* changelist, int nchanges,
                          darwin_kevent_t* eventlist, int nevents, const struct timespec* timeout) {
-    XEF_LOG(2, "darwin_kevent(kq=%d, nchanges=%d, nevents=%d, timeout=%p)",
-            kq, nchanges, nevents, timeout);
-
-    int receipts_emitted = 0;
-
-    if (nchanges > 0 && changelist) {
-        for (int i = 0; i < nchanges; i++) {
+    XEF_LOG(2, "darwin_kevent(kq=%d, nchanges=%d, nevents=%d, timeout=%p)", kq, nchanges, nevents, timeout);
+    int out = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_kq_lock);
+        auto it = g_kq.find(kq);
+        if (it == g_kq.end()) { errno = EBADF; return -1; }
+        KqState& st = it->second;
+        for (int i = 0; i < nchanges && changelist; i++) {
             const darwin_kevent_t& kev = changelist[i];
-            XEF_LOG(2, "  change[%d]: ident=%lu, filter=%d, flags=%#x, fflags=%#x, data=%ld, udata=%p",
-                    i, (unsigned long)kev.ident, (int)kev.filter, (unsigned)kev.flags,
-                    (unsigned)kev.fflags, (long)kev.data, kev.udata);
-
-            int err = 0;
-            if (kev.filter == DARWIN_EVFILT_USER) {
-                // EVFILT_USER: simulated user event
-                err = 0;
-            } else {
-                int fd = (int)kev.ident;
-                struct epoll_event ev;
-                memset(&ev, 0, sizeof(ev));
-                ev.data.ptr = kev.udata;
-
-                uint32_t events = 0;
-                if (kev.filter == DARWIN_EVFILT_READ) events |= EPOLLIN;
-                if (kev.filter == DARWIN_EVFILT_WRITE) events |= EPOLLOUT;
-
-                ev.events = events;
-
-                if (kev.flags & DARWIN_EV_ADD) {
-                    if (epoll_ctl(kq, EPOLL_CTL_ADD, fd, &ev) < 0) {
-                        if (errno == EEXIST) {
-                            epoll_ctl(kq, EPOLL_CTL_MOD, fd, &ev);
-                        } else {
-                            err = errno;
-                        }
-                    }
-                } else if (kev.flags & DARWIN_EV_DELETE) {
-                    if (epoll_ctl(kq, EPOLL_CTL_DEL, fd, &ev) < 0) {
-                        err = errno;
-                    }
-                }
-            }
-
-            if ((kev.flags & DARWIN_EV_RECEIPT) && eventlist && receipts_emitted < nevents) {
-                darwin_kevent_t& rec = eventlist[receipts_emitted++];
+            XEF_LOG(2, "  change[%d]: ident=%lu, filter=%d, flags=%#x, fflags=%#x, data=%ld, udata=%p", i,
+                    (unsigned long)kev.ident, (int)kev.filter, (unsigned)kev.flags, (unsigned)kev.fflags, (long)kev.data, kev.udata);
+            int err = kq_apply_change(kq, st, kev);
+            if (err && !(kev.flags & DARWIN_EV_RECEIPT) && out >= nevents) { errno = err; return -1; }
+            if (((kev.flags & DARWIN_EV_RECEIPT) || err) && eventlist && out < nevents) {
+                darwin_kevent_t& rec = eventlist[out++];
                 rec = kev;
-                rec.flags = DARWIN_EV_ERROR;
-                rec.data = err; // 0 on success, or errno
+                rec.flags = (uint16_t)((kev.flags & ~DARWIN_EV_RECEIPT) | DARWIN_EV_ERROR);
+                rec.data = err;
             }
         }
     }
-
-    // If all changes were EV_RECEIPT, kevent returns receipts without waiting
-    if (receipts_emitted > 0) {
-        return receipts_emitted;
-    }
-
-    if (nevents <= 0 || !eventlist) {
-        return 0;
-    }
+    if (out > 0) return out;                                   // receipts / change errors are returned without waiting
+    if (nevents <= 0 || !eventlist) return 0;
 
     int timeout_ms = -1;
-    if (timeout) {
-        timeout_ms = (int)(timeout->tv_sec * 1000 + timeout->tv_nsec / 1000000);
-    }
+    if (timeout) timeout_ms = (int)std::min<int64_t>((int64_t)timeout->tv_sec * 1000 + (timeout->tv_nsec + 999999) / 1000000, INT32_MAX);
 
-    std::vector<struct epoll_event> ep_events(nevents);
-    int nfds = epoll_wait(kq, ep_events.data(), nevents, timeout_ms);
-    if (nfds < 0) {
-        return -1;
-    }
+    std::vector<struct epoll_event> ep(std::min(nevents, 1024));
+    int nfds = epoll_wait(kq, ep.data(), (int)ep.size(), timeout_ms);
+    if (nfds < 0) return -1;
 
+    std::lock_guard<std::mutex> lk(g_kq_lock);
+    auto it = g_kq.find(kq);
+    if (it == g_kq.end()) return 0;
+    KqState& st = it->second;
+    auto emit = [&](uint64_t ident, int16_t filter, uint16_t flags, uint32_t fflags, int64_t data, void* udata) {
+        if (out >= nevents) return;
+        darwin_kevent_t& k = eventlist[out++];
+        memset(&k, 0, sizeof k);
+        k.ident = ident; k.filter = filter; k.flags = flags; k.fflags = fflags; k.data = data; k.udata = udata;
+    };
     for (int i = 0; i < nfds; i++) {
-        darwin_kevent_t& kev = eventlist[i];
-        memset(&kev, 0, sizeof(kev));
-        kev.udata = ep_events[i].data.ptr;
-        if (ep_events[i].events & EPOLLIN) {
-            kev.filter = DARWIN_EVFILT_READ;
-        } else if (ep_events[i].events & EPOLLOUT) {
-            kev.filter = DARWIN_EVFILT_WRITE;
+        if (ep[i].data.u64 == ~0ull) {                         // EVFILT_USER wake-up
+            uint64_t v;
+            if (read(st.evfd, &v, 8) < 0) {}
+            for (auto& [id, u] : st.user)
+                if (u.triggered && !u.disabled) {
+                    emit(id, DARWIN_EVFILT_USER, (uint16_t)(u.flags & ~(DARWIN_EV_ADD | DARWIN_EV_DELETE)), u.fflags, 0, u.udata);
+                    if (u.flags & (DARWIN_EV_CLEAR | DARWIN_EV_ONESHOT | DARWIN_EV_DISPATCH)) u.triggered = false;
+                }
+            continue;
+        }
+        int fd = (int)ep[i].data.u64;
+        uint32_t e = ep[i].events;
+        bool hup = e & (EPOLLHUP | EPOLLRDHUP), err = e & EPOLLERR;
+        auto r = st.rd.find(fd);
+        if (r != st.rd.end() && !r->second.disabled && (e & (EPOLLIN | EPOLLHUP | EPOLLRDHUP | EPOLLERR))) {
+            int avail = 0;
+            if (ioctl(fd, FIONREAD, &avail) < 0) avail = 0;
+            emit((uint64_t)fd, DARWIN_EVFILT_READ, (uint16_t)((r->second.flags & ~(DARWIN_EV_ADD | DARWIN_EV_DELETE)) | (hup && !avail ? DARWIN_EV_EOF : 0)),
+                 0, avail, r->second.udata);
+            if (r->second.flags & DARWIN_EV_ONESHOT) { st.rd.erase(r); kq_sync_epoll(kq, st, fd); }
+            else if (r->second.flags & DARWIN_EV_DISPATCH) { r->second.disabled = true; kq_sync_epoll(kq, st, fd); }
+        }
+        auto w = st.wr.find(fd);
+        if (w != st.wr.end() && !w->second.disabled && (e & (EPOLLOUT | EPOLLHUP | EPOLLERR))) {
+            emit((uint64_t)fd, DARWIN_EVFILT_WRITE, (uint16_t)((w->second.flags & ~(DARWIN_EV_ADD | DARWIN_EV_DELETE)) | (hup || err ? DARWIN_EV_EOF : 0)),
+                 0, 65536, w->second.udata);
+            if (w->second.flags & DARWIN_EV_ONESHOT) { st.wr.erase(w); kq_sync_epoll(kq, st, fd); }
+            else if (w->second.flags & DARWIN_EV_DISPATCH) { w->second.disabled = true; kq_sync_epoll(kq, st, fd); }
         }
     }
-
-    return nfds;
+    return out;
 }
 
 // Darwin fcntl commands
@@ -2534,6 +2611,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_assert_rtn_wrapper;
     } else if (strcmp(name, "___maskrune") == 0) {
         host_fn = (void*)&darwin_maskrune_wrapper;
+    } else if (strcmp(name, "_memcpy") == 0 || strcmp(name, "memcpy") == 0) {
+        host_fn = (void*)&memmove;   // Darwin's memcpy is overlap-safe (same routine as memmove); glibc's is not
     } else if (strcmp(name, "___memcpy_chk") == 0) {
         host_fn = (void*)&darwin_memcpy_chk_wrapper;
     } else if (strcmp(name, "_atexit") == 0 || strcmp(name, "atexit") == 0) {
@@ -2588,10 +2667,10 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_NSGetArgv;
     } else if (strcmp(name, "__NSGetEnviron") == 0) {
         host_fn = (void*)&darwin_NSGetEnviron;
-    } else if (strcmp(name, "__NSGetExecutablePath") == 0) {
-        host_fn = (void*)&darwin_NSGetExecutablePath;
     } else if (strcmp(name, "__NSGetProgname") == 0) {
         host_fn = (void*)&darwin_NSGetProgname;
+    } else if (strcmp(name, "__NSGetExecutablePath") == 0) {
+        host_fn = (void*)&darwin_NSGetExecutablePath;
     } else if (strcmp(name, "__tlv_bootstrap") == 0) {
         host_fn = (void*)&darwin_tlv_bootstrap;
     } else if (strcmp(name, "__tlv_atexit") == 0) {
@@ -3069,8 +3148,6 @@ void darwin_hle_dispatch(CpuState* st) {
             if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
             return;
         }
-        if (sh->variadic_fixed == -2) {
-            u64 a[6] = {st->x[0], st->x[1], st->x[2], st->x[3], 0, 0};
         if (sh->variadic_fixed == -3 || sh->variadic_fixed == -4) {   // HFA of two floats / doubles in v0,v1
             uint8_t o0[16] = {}, o1[16] = {};
             if (sh->variadic_fixed == -3) {
@@ -3085,6 +3162,8 @@ void darwin_hle_dispatch(CpuState* st) {
             memcpy(st->v[0], o0, 16); memcpy(st->v[1], o1, 16);
             return;
         }
+        if (sh->variadic_fixed == -2) {
+            u64 a[6] = {st->x[0], st->x[1], st->x[2], st->x[3], 0, 0};
             u64 fr[8] = {};
             u64 x0 = 0;
             // the SysV struct return of two words is rax:rdx; xef_call_sysv only gives rax, so call directly
@@ -3118,10 +3197,10 @@ void darwin_hle_dispatch(CpuState* st) {
         }
     }
 
-    const uint64_t* guest_stack = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
-    u64 hstack[18];
     // Darwin passes the 7th and 8th integer arguments in x6/x7 and the rest on the guest stack; SysV
     // has six integer registers, so x6/x7 go first on the host stack, followed by the guest stack words.
+    const uint64_t* guest_stack = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
+    u64 hstack[18];
     hstack[0] = st->x[6];
     hstack[1] = st->x[7];
     memcpy(&hstack[2], guest_stack, 16 * sizeof(u64));
@@ -3129,9 +3208,9 @@ void darwin_hle_dispatch(CpuState* st) {
     errno = 0;
     u64 ret = xef_call_sysv(host_fn, iregs, fregs, hstack, 18, &xmm0_out);
     if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
+    if (name[1] == 'g' && name[2] == 'l') ret = darwin_gl_fix_ret(name, ret);
     if (errno_ret && (int64_t)ret > 34 && (int64_t)ret < 200) ret = (u64)darwin_errno_from_linux((int)ret);
     st->x[0] = ret;
-    if (name[1] == 'g' && name[2] == 'l') ret = darwin_gl_fix_ret(name, ret);
     memcpy(st->v[0], &xmm0_out, 8);
     XEF_LOG(2, "hle: %s -> %#lx", name, (unsigned long)ret);
 }

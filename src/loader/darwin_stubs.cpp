@@ -3,6 +3,7 @@
 #include "loader/darwin_hle.h"
 #include "loader/macho_image.h"
 #include "common/common.h"
+#include "runtime/dispatch.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -20,6 +21,7 @@
 #include <vector>
 #include <string>
 #include <pthread.h>
+#include <sys/mman.h>
 #include <dlfcn.h>
 
 namespace xef {
@@ -419,7 +421,46 @@ static int st_acl_get_tag_type(void*, int*) { return -1; }
 static char* st_fflagstostr(unsigned long) { static char empty[] = ""; return empty; }
 static int st_mbr_identifier_translate(int, void*, size_t, int, void*, size_t) { return 0; }
 
+static void st_sys_icache_invalidate(void* start, size_t len) { code_invalidate_range((GuestAddr)(uintptr_t)start, len); }
+static void st_srandomdev() { unsigned s; getrandom(&s, sizeof s, 0); srandom(s); }
+static void* st_pthread_override_start() { return (void*)1; }
+static int st_thread_info(uint32_t, int, void* info, uint32_t* cnt) { if (info && cnt) memset(info, 0, *cnt * 4); return 0; }
+static int st_neg_errno_notsup() { errno = ENOTSUP; return -1; }
+// Security.framework: no keychain, no trust store (callers fall back to their own CA bundles)
+static int st_secitem_notfound() { return -25300; }   // errSecItemNotFound
+static int st_notify_failed() { return 1; }           // NOTIFY_STATUS_FAILED
+static void* st_sec_data_sym(const char* name) {
+    static uint64_t cells[16]; static const char* names[16]; static int n = 0;
+    for (int i = 0; i < n; i++) if (!strcmp(names[i], name)) return &cells[i];
+    if (n == 16) return nullptr;
+    names[n] = strdup(name); cells[n] = 0x5ec0000 + n; return &cells[n++];
+}
+
+// Darwin madvise: only 0..3 (NORMAL/RANDOM/SEQUENTIAL/WILLNEED) share numbers and meaning with Linux. DONTNEED(4) is a
+// mere priority hint there but discards the pages on Linux; FREE(5)/ZERO_WIRED(6)/FREE_REUSABLE(7)/FREE_REUSE(8) would map to
+// REMOVE/WIPEONFORK/DONTFORK/FREE. V8's heap relies on the contents surviving, so everything else is accepted and ignored.
+static int st_madvise(void* addr, size_t len, int advice) {
+    if (advice >= 0 && advice <= 3) return madvise(addr, len, advice);
+    return 0;
+}
+static int st_posix_madvise(void* addr, size_t len, int advice) { return advice >= 0 && advice <= 4 ? 0 : EINVAL; }
+
 static const StubEntry kStubs2[] = {
+    {"_madvise", (void*)&st_madvise}, {"_posix_madvise", (void*)&st_posix_madvise},
+    {"_sys_icache_invalidate", (void*)&st_sys_icache_invalidate}, {"_sys_dcache_flush", (void*)&st_noop2},
+    {"_srandomdev", (void*)&st_srandomdev},
+    {"_pthread_set_qos_class_self_np", (void*)&st_zero2}, {"_pthread_override_qos_class_start_np", (void*)&st_pthread_override_start},
+    {"_pthread_override_qos_class_end_np", (void*)&st_zero2},
+    {"_thread_info", (void*)&st_thread_info}, {"_host_statistics", (void*)&st_kern_failure}, {"_host_processor_info", (void*)&st_kern_failure},
+    {"_mach_vm_remap", (void*)&st_kern_failure},
+    {"_os_signpost_enabled", (void*)&st_zero2}, {"__os_signpost_emit_with_name_impl", (void*)&st_noop2},
+    {"_notify_register_file_descriptor", (void*)&st_notify_failed}, {"_notify_cancel", (void*)&st_zero2},
+    {"_posix_spawn_file_actions_addinherit_np", (void*)&st_zero2},
+    {"_fsctl", (void*)&st_neg_errno_notsup}, {"_getsectdata", (void*)&st_null2}, {"_getsectiondata", (void*)&st_null2},
+    {"_SecItemCopyMatching", (void*)&st_secitem_notfound}, {"_SecCertificateCopyData", (void*)&st_null2},
+    {"_SecPolicyCopyProperties", (void*)&st_null2}, {"_SecPolicyCreateSSL", (void*)&st_null2},
+    {"_SecTrustCreateWithCertificates", (void*)&st_secitem_notfound}, {"_SecTrustEvaluateWithError", (void*)&st_zero2},
+    {"_SecTrustSettingsCopyTrustSettings", (void*)&st_secitem_notfound},
     {"_compat_mode", (void*)&st_compat_mode},
     {"_getbsize", (void*)&st_getbsize},
     {"_strmode", (void*)&st_strmode},
@@ -513,6 +554,7 @@ void* darwin_stub_data_lookup(const char* name) {
     static char xpc_types[16][64];
     static int n = 0;
     static std::vector<std::pair<std::string, void*>> made;
+    if (!strncmp(name, "_kSec", 5)) return st_sec_data_sym(name);
     if (!strcmp(name, "__os_log_default")) { static uint64_t dummy[8] = {}; return dummy; }
     if (!strcmp(name, "___NSDictionary0__struct")) { static uint64_t dummy[16] = {}; return dummy; }
     if (!strcmp(name, "___mb_cur_max")) { static int v = 1; return &v; }

@@ -147,6 +147,18 @@ static int d_bind(int fd, const void* a, socklen_t len) {
     sockaddr_storage ss; socklen_t ll = sa_to_linux(a, len, &ss);
     return bind(fd, (sockaddr*)&ss, ll);
 }
+// connectx(2): only the destination endpoint matters here (no source binding, no TFO data)
+static int d_connectx(int fd, const void* endpoints, uint32_t, uint32_t, const void*, uint32_t, size_t* len, uint32_t* connid) {
+    struct Ep { uint32_t srcif; uint32_t pad; const void* src; uint32_t srclen; uint32_t pad2; const void* dst; uint32_t dstlen; };
+    const Ep* ep = (const Ep*)endpoints;
+    if (!ep || !ep->dst) { errno = EINVAL; return -1; }
+    if (len) *len = 0;
+    if (connid) *connid = 1;
+    sockaddr_storage ss; socklen_t ll = sa_to_linux(ep->dst, ep->dstlen, &ss);
+    return connect(fd, (sockaddr*)&ss, ll);
+}
+static int d_sendmsg_x() { errno = ENOSYS; return -1; }
+
 static int d_connect(int fd, const void* a, socklen_t len) {
     sockaddr_storage ss; socklen_t ll = sa_to_linux(a, len, &ss);
     return connect(fd, (sockaddr*)&ss, ll);
@@ -331,6 +343,7 @@ static int d_inet_pton(int af, const char* src, void* dst) {
 struct NetShim { const char* name; void* fn; };
 static const NetShim kNet[] = {
     {"_socket", (void*)&d_socket}, {"_socketpair", (void*)&d_socketpair}, {"_bind", (void*)&d_bind}, {"_connect", (void*)&d_connect},
+    {"_connectx", (void*)&d_connectx}, {"_sendmsg_x", (void*)&d_sendmsg_x}, {"_recvmsg_x", (void*)&d_sendmsg_x},
     {"_accept", (void*)&d_accept}, {"_listen", (void*)&listen}, {"_getsockname", (void*)&d_getsockname}, {"_getpeername", (void*)&d_getpeername},
     {"_setsockopt", (void*)&d_setsockopt}, {"_getsockopt", (void*)&d_getsockopt}, {"_send", (void*)&d_send}, {"_recv", (void*)&d_recv},
     {"_sendto", (void*)&d_sendto}, {"_recvfrom", (void*)&d_recvfrom}, {"_sendmsg", (void*)&d_sendmsg}, {"_recvmsg", (void*)&d_recvmsg},

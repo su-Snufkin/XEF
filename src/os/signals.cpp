@@ -480,8 +480,68 @@ i64 sig_darwin_sigaction(int lsig, u64 handler, u64 flags, u64 mask, u64* old_ha
     return 0;
 }
 
+
+// Debug helper for XEF_DBG_SEGV_FRAMES: safe self-read (guest memory is host memory) and a best-effort V8 name dump.
+#include <sys/uio.h>
+static bool dbg_rd(u64 a, void* out, size_t n) {
+    struct iovec l{out, n}, r{(void*)a, n};
+    return process_vm_readv(getpid(), &l, 1, &r, 1, 0) == (ssize_t)n;
+}
+static void dbg_v8_str(u64 tagged) {   // flat one-byte V8 string (length at +0xb, chars at +0xf from the tagged pointer)
+    char b[48]; u32 len;
+    if (!(tagged & 1) || !dbg_rd(tagged + 0xb, &len, 4) || len > 40 || !dbg_rd(tagged + 0xf, b, len ? len : 1)) return;
+    for (u32 i = 0; i < len; i++) if (b[i] < 32 || b[i] > 126) return;
+    b[len] = 0; fprintf(stderr, " '%s'", b);
+}
+static void dbg_frames(CpuState* st) {   // walk the AAPCS64 frame chain; JS interpreter frames hold the JSFunction at fp-16
+    u64 fp = st->x[29];
+    for (int i = 0; i < 40 && fp; i++) {
+        u64 f[2], fn = 0, off = 0;
+        if (!dbg_rd(fp, f, 16)) break;
+        dbg_rd(fp - 16, &fn, 8); dbg_rd(fp - 40, &off, 8);
+        fprintf(stderr, "  frame fp=%#lx ret=%#lx fn=%#lx off=%#lx", (unsigned long)fp, (unsigned long)f[1], (unsigned long)fn, (unsigned long)off);
+        u64 sfi = 0;
+        if ((fn & 7) == 1 && dbg_rd(fn + 0x20 - 1, &sfi, 8) && (sfi & 1))
+            for (int k = 1; k < 6; k++) {
+                u64 w = 0; if (!dbg_rd(sfi - 1 + 8 * k, &w, 8)) continue;
+                dbg_v8_str(w);
+                if (k == 3 && (w & 1))   // ScopeInfo: look for strings (variable / function names) in its first words
+                    for (int j = 1; j < 14; j++) { u64 v = 0; if (dbg_rd(w - 1 + 8 * j, &v, 8)) dbg_v8_str(v); }
+            }
+        fprintf(stderr, "\n");
+        if (f[0] <= fp) break;
+        fp = f[0];
+    }
+}
 static void deliver_darwin(CpuState* st, int sig, const siginfo_t& si, u64 saved_mask, const GuestSigaction& a) {
     ThreadCtx* t = st->thread;
+    if (getenv("XEF_DBG_SEGV") && (sig == SIGSEGV || sig == SIGBUS)) {
+        fprintf(stderr, "xef: guest fault sig=%d addr=%p pc=%#lx\n", sig, si.si_addr, (unsigned long)st->pc);
+        for (int r = 0; r < 31; r++) fprintf(stderr, " x%d=%#lx%s", r, (unsigned long)st->x[r], r % 4 == 3 ? "\n" : "");
+        fprintf(stderr, "\n");
+        if (getenv("XEF_DBG_SEGV_SCAN")) {   // find 8-byte slots equal to x20 followed by 0 (cons string with null second)
+            FILE* m = fopen("/proc/self/maps", "r"); char ln[512];
+            while (m && fgets(ln, sizeof ln, m)) {
+                unsigned long lo, hi; char pr[8];
+                if (sscanf(ln, "%lx-%lx %7s", &lo, &hi, pr) != 3 || pr[0] != 'r' || hi - lo > (1ul << 36) || strstr(ln, "[stack") || strstr(ln, "xef")) continue;
+                for (u64* q = (u64*)lo; q + 1 < (u64*)hi; q++)
+                    if (getenv("XEF_DBG_SEGV_VAL") && q[0] == strtoull(getenv("XEF_DBG_SEGV_VAL"), nullptr, 16))
+                        { if (q[-2] < (1ul<<40) && (q[-3] & 1)) fprintf(stderr, " val %p: map=%#lx hl=%#lx first=%#lx second=%#lx\n", (void*)(q-3), (unsigned long)q[-3], (unsigned long)q[-2], (unsigned long)q[-1], (unsigned long)q[0]); }
+                    else if (q[0] == st->x[20] && (q[1] == 0 || getenv("XEF_DBG_SEGV_ANY"))) fprintf(stderr, " cand %p: map=%#lx hash/len=%#lx first=%#lx second=%#lx\n", (void*)q, (unsigned long)q[-2], (unsigned long)q[-1], (unsigned long)q[0], (unsigned long)q[1]);
+            }
+            if (m) fclose(m);
+        }
+        if (getenv("XEF_DBG_SEGV_FRAMES")) dbg_frames(st);
+        if (const char* e = getenv("XEF_DBG_SEGV_ADDR")) {   // dump 0x100 bytes starting at hex address
+            u64 a = strtoull(e, nullptr, 16) & ~7ull;
+            int n = getenv("XEF_DBG_SEGV_N") ? atoi(getenv("XEF_DBG_SEGV_N")) : 32;
+            for (int k = 0; k < n; k++) fprintf(stderr, " %#lx: %#lx\n", (unsigned long)(a + k * 8), (unsigned long)((u64*)a)[k]);
+        }
+        if (const char* e = getenv("XEF_DBG_SEGV_REG")) {   // dump 0x80 bytes around guest register xN (tag bit cleared)
+            int r = atoi(e); u64 a = (st->x[r] & ~7ull) - 0x40;
+            for (int k = 0; k < 16; k++) fprintf(stderr, " %#lx: %#lx\n", (unsigned long)(a + k * 8), (unsigned long)((u64*)a)[k]);
+        }
+    }
     u64 sp = st->x[kGuestSP];
     if ((a.flags & G_SA_ONSTACK) && t->ss_size && !(sp > t->ss_sp && sp <= t->ss_sp + t->ss_size))
         sp = t->ss_sp + t->ss_size;

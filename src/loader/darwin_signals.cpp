@@ -116,6 +116,7 @@ static int ds_kill(int pid, int dsig) {
 }
 static int ds_killpg(int pgrp, int dsig) { int l = darwin_to_linux_sig(dsig); return kill(-pgrp, l); }
 static int ds_raise(int dsig) {
+    if (getenv("XEF_DBG_RAISE")) fprintf(stderr, "xef: guest raise(%d)\n", dsig);
     int l = darwin_to_linux_sig(dsig);
     if (l <= 0) return err(EINVAL);
     return syscall(SYS_tgkill, getpid(), syscall(SYS_gettid), l) == 0 ? 0 : -1;
