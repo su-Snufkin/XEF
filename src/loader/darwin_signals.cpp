@@ -42,6 +42,10 @@ static int err(int e) { errno = e; return -1; }
 
 static int ds_sigaction(int dsig, const DarwinSigaction* act, DarwinSigaction* oact) {
     int l = darwin_to_linux_sig(dsig);
+    if (l <= 0 && (dsig == 7 || dsig == 29)) {   // SIGEMT / SIGINFO do not exist on Linux: accept and ignore
+        if (oact) { oact->handler = 0; oact->mask = 0; oact->flags = 0; }
+        return 0;
+    }
     if (l <= 0 || dsig == 9 || dsig == 17) return err(EINVAL);
     u64 oh = 0, of = 0, om = 0;
     i64 r;

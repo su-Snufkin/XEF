@@ -227,7 +227,11 @@ static void st_memset_pattern4(void* b, const void* p, size_t n) {
 }
 static int st_vm_copy(uint32_t, uint64_t src, uint64_t n, uint64_t dst) { memmove((void*)(uintptr_t)dst, (void*)(uintptr_t)src, n); return 0; }
 static int st_task_info(uint32_t, int, void* info, uint32_t* cnt) { if (info && cnt) memset(info, 0, *cnt * 4); return 0; }
+static int st_mb_cur_max() { return 1; }
+static const char* st_querylocale(int, void*) { return "C"; }
+static void* st_duplocale(void*) { return (void*)1; }
 static const StubEntry kStubs2[] = {
+    {"____mb_cur_max", (void*)&st_mb_cur_max}, {"_querylocale", (void*)&st_querylocale}, {"_duplocale", (void*)&st_duplocale},
     {"_clock_gettime", (void*)&st_clock_gettime}, {"_clock_getres", (void*)&st_clock_getres},
     {"_clock_gettime_nsec_np", (void*)&st_clock_gettime_nsec_np},
     {"_getprogname", (void*)&st_getprogname}, {"_malloc_create_zone", (void*)&st_malloc_create_zone},
@@ -255,6 +259,9 @@ void* darwin_stub_data_lookup(const char* name) {
     static char xpc_types[16][64];
     static int n = 0;
     static std::vector<std::pair<std::string, void*>> made;
+    if (!strcmp(name, "___mb_cur_max")) { static int v = 1; return &v; }
+    if (!strcmp(name, "___mb_sb_limit")) { static int v = 128; return &v; }
+    if (!strcmp(name, "_sys_nerr")) { static int v = 107; return &v; }
     if (!strcmp(name, "_vm_page_size")) { static uint64_t ps = 4096; return &ps; }
     if (!strncmp(name, "__xpc_type_", 11)) {
         for (auto& p : made) if (p.first == name) return p.second;

@@ -61,6 +61,7 @@ void* darwin_stub_lookup(const char* name);
 void* darwin_mach_lookup(const char* name);
 void* darwin_signal_lookup(const char* name);
 void* darwin_net_lookup(const char* name);
+void* darwin_pthread_lookup(const char* name);
 void darwin_signals_init(uint8_t* stub);
 void* darwin_stub_data_lookup(const char* name);
 void* darwin_sys_data_lookup(const char* name);
@@ -140,12 +141,12 @@ static const struct { int linux_e, darwin_e; } kErrnoMap[] = {
     {71, 100}, {62, 101}, {131, 104}, {130, 105}, {35, 11},
 };
 int darwin_errno_from_linux(int e) {
-    if (e <= 34) return e;
+    if (e <= 34 && e != 11) return e;      // 11 is EAGAIN on Linux but EDEADLK on Darwin
     for (auto& m : kErrnoMap) if (m.linux_e == e) return m.darwin_e;
     return e;
 }
 int darwin_errno_to_linux(int e) {
-    if (e <= 34) return e;
+    if (e <= 34 && e != 11) return e;
     for (auto& m : kErrnoMap) if (m.darwin_e == e) return m.linux_e;
     return e;
 }
@@ -1881,7 +1882,9 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
 
     // 2. Check special Darwin wrapper functions
     void* host_fn = nullptr;
-    if (strcmp(name, "___error") == 0) {
+    if (void* pt = darwin_pthread_lookup(name)) {
+        host_fn = pt;
+    } else if (strcmp(name, "___error") == 0) {
         host_fn = (void*)&darwin_error_wrapper;
     } else if (strcmp(name, "___stack_chk_fail") == 0) {
         host_fn = (void*)&darwin_stack_chk_fail_wrapper;
