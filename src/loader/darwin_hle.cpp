@@ -1,5 +1,6 @@
 // XEF-OSX — Darwin High-Level Emulation (HLE) Runtime implementation.
 #include "loader/darwin_hle.h"
+#include "loader/darwin_gl.h"
 #include "loader/macho_image.h"
 #include "loader/elf_loader.h"
 #include "os/darwin/darwin_types.h"
@@ -2404,6 +2405,10 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
     if (!name || !name[0]) return 0;
     darwin_hle_init();
 
+    // Host OpenGL (`_gl[A-Z]*`) and the window shim: before g_hle_lock (registration takes it) and before
+    // the host-libc dlsym fallback, so libc names never reach glX
+    if (uint64_t g = darwin_gl_resolve(name)) return g;
+
     std::lock_guard<std::mutex> lk(g_hle_lock);
     auto it = g_symbol_cache.find(name);
     if (it != g_symbol_cache.end()) {
@@ -3069,6 +3074,7 @@ void darwin_hle_dispatch(CpuState* st) {
     if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
     if (errno_ret && (int64_t)ret > 34 && (int64_t)ret < 200) ret = (u64)darwin_errno_from_linux((int)ret);
     st->x[0] = ret;
+    if (name[1] == 'g' && name[2] == 'l') ret = darwin_gl_fix_ret(name, ret);
     memcpy(st->v[0], &xmm0_out, 8);
     XEF_LOG(2, "hle: %s -> %#lx", name, (unsigned long)ret);
 }
