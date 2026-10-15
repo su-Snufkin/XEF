@@ -65,6 +65,15 @@ calling guest thread (nested JIT run, return via `hlt #0x5847`). Limits: the
 GBM/Wayland EGL platforms are not supported; X errors on the host connection are ignored instead
 of reaching the guest's handler.
 
+## macOS arm64 (Mach-O) OpenGL
+
+`build/xef-osx -L darwin-rootfs tests/darwin/gltri out.ppm` runs a macOS arm64 binary that calls OpenGL.framework
+(`_gl*`) and creates a window through the loader's X11/GLX shim; the GL calls run on the host's libGL (Mesa llvmpipe here)
+in the same process. Needs `DISPLAY` (e.g. `Xvfb :99 -screen 0 640x480x24`) and, for software rendering,
+`LIBGL_ALWAYS_SOFTWARE=1`. `tests/darwin/gl_test.sh` is the regression test (300 frames, two runs, screenshot check with
+`tools/imgcheck.py`). The same cube rendered on the real Mac (`tests/darwin/mac_gl/ref.ppm`) matches at SSIM 0.996.
+Cocoa/AppKit apps (NSOpenGLView, GLFW) are not supported yet, see `docs/MACOS_3D_PLAN.md`.
+
 ## Setup
 
 ```sh

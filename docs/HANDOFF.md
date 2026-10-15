@@ -294,3 +294,20 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
   - `node --version` wykonuje się i zwraca `v24.1.0`.
   - Silnik V8 pomyślnie startuje, alokuje stertę i wykonuje kod JS bootstrapu (`pre_execution.js`).
   - Aktualny punkt badania: weryfikacja callbacków V8 C++ API w `setupInspectorHooks` (`RegisterAsyncHookWrapper`).
+
+### 4. OpenGL dla Mach-O (2026-10-15)
+- `src/loader/darwin_gl.cpp`: importy `_gl[A-Z]*` z aplikacji arm64 Mach-O są rozwiązywane przez libGL hosta
+  (lazy `dlopen`, `glXGetProcAddressARB`) i rejestrowane przez `darwin_hle_register_function`. Hook jest na początku
+  `darwin_hle_resolve_symbol` (przed `g_hle_lock` i przed fallbackiem `dlsym` do libc). Aliasy `*VertexArraysAPPLE`,
+  maskowanie zwracanych wartości (`glIs*` 8 bitów, `glGetError` itp. 32 bity) w `darwin_gl_fix_ret`.
+- Shim okna (symbole tylko XEF): `_xef_win_create/_swap/_poll/_dump` (Xlib + GLX, `glXChooseVisual`, kontekst legacy;
+  `_xef_win_dump` zapisuje PPM P6 od góry do dołu, wołać przed swap).
+- Test: `tests/darwin/gl_test.sh` (Xvfb na wolnym display, `gltri` x2, SSIM między uruchomieniami, zrzut okna; wpięty w
+  `run_tests.sh` jako Test 5). `tests/darwin/gltri` budowany na Macu (`tests/darwin/mac_gl/build.sh`, brak `ld64.lld`
+  lokalnie). Referencja z prawdziwego Maca: `tests/darwin/mac_gl/ref.ppm` (SSIM 0,996 względem XEF; różnica to oświetlenie
+  Mesa/Apple). `GLTRI_HOLD_MS` trzyma ostatnią klatkę, żeby test zdążył zrobić zrzut okna.
+- Ograniczenia: wywołania GL z >8 argumentami całkowitymi (glTexImage3D, glBlitFramebuffer) nie są przepakowywane
+  (Apple pakuje stos w naturalnym rozmiarze); GL/Xlib tylko z wątku, który utworzył okno; brak AppKit/CoreGraphics/IOKit
+  (GLFW/Cocoa to etapy B i C w `docs/MACOS_3D_PLAN.md`).
+- Lokalnie `tests/darwin/run_tests.sh` i `tests/guest/run.sh` nie budują się bez `ld64.lld`/`ld.lld`; prebuilt
+  `hello_darwin`, `complex_darwin`, `hello_universal` działają (rc 0).
