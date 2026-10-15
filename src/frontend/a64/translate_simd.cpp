@@ -308,6 +308,15 @@ static bool fp_scalar(Translator& t, u32 i) {
         int sf = bit(i, 31);
         u32 rmode = bits(i, 20, 19), opcode = bits(i, 18, 16);
         Type it = sf ? Type::I64 : Type::I32;
+        if (!sf && ftype == 1 && rmode == 3 && opcode == 6) {   // FJCVTZS Wd, Dn (FEAT_JSCVT): sets NZCV = 0b0Z00
+            Val bitsv = ir.emit(Op::VToGpr, Type::I64, s.V(rn), kNone, kNone, 0, 0, 8);
+            Val packed = ir.emit(Op::Helper, Type::I64, bitsv, kNone, kNone, 0, 0, 8);
+            ir.inst(packed).sub = 3;   // helper id: FJCVTZS (result | Z << 32)
+            t.setX(rd, ir.trunc32(packed));
+            Val z = ir.and_(Type::I64, ir.lshr(Type::I64, packed, ir.c64(32)), ir.c64(1));
+            ir.set_flags(ir.emit(Op::FlagsFromNZCV, Type::Flags, ir.shl(Type::I64, z, ir.c64(30))));
+            return true;
+        }
         if (opcode == 6 || opcode == 7) {  // FMOV
             if (rmode == 0) {
                 if ((fs == 4 && sf) || (fs == 8 && !sf)) {

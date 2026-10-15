@@ -147,7 +147,7 @@ static bool compile_region(GuestAddr head) {
         bool inline_ok = a64::g_abi_flags && !has_unsupported(blk) && term;
         bool known_ret = false;
         for (int k = 0; term && k < ninl_ret; k++) known_ret |= inl_ret[k] == term->imm2;
-        if (inline_ok && term->op == ir::Op::ExitCall && !no_calls_at(R.pcs[qi]) && translated(term->imm) &&
+        if (inline_ok && term->op == ir::Op::ExitCall && !no_calls_at(R.pcs[qi]) && translated(term->imm) && !a64::ret_keeps_flags(term->imm) &&
             near_head(term->imm) && (known_ret || ninl_ret < 2)) {
             inl[qi] = true;
             inl_callee[qi] = term->imm;
@@ -158,7 +158,7 @@ static bool compile_region(GuestAddr head) {
             // the return address joins the region as the RETs' successor (edges set below)
             if (!R.contains(term->imm2) && R.n < kMaxRegionBlocks && translated(term->imm2) && near_head(term->imm2))
                 R.pcs[R.n++] = term->imm2;
-        } else if (inline_ok && term->op == ir::Op::ExitRet) {
+        } else if (inline_ok && term->op == ir::Op::ExitRet && !a64::ret_keeps_flags(blk.end - 4)) {
             ret_of[qi] = true;
         } else if (has_unsupported(blk) || !direct_terminator(blk, succ, &ns) || (is_call(blk) && no_calls_at(R.pcs[qi]))) {
             if (qi == 0) {

@@ -3,6 +3,7 @@
 // two-level-namespace ordinals, exports tries, re-exports, initializers, TLV and dlopen.
 #include "loader/macho_loader.h"
 #include "loader/macho_image.h"
+#include "frontend/a64/translate.h"
 #include "loader/macho_types.h"
 #include "loader/commpage.h"
 #include "loader/darwin_hle.h"
@@ -823,6 +824,9 @@ static void link_image(MachImage* im) {
         mprotect((void*)page_align_down(s.addr), page_align_up(s.size + (s.addr & 4095)),
                  prot_from_macho(s.initprot));
     }
+    // outlined helpers that return a value in NZCV need their RETs to keep the flags (a64::ret_keeps_flags)
+    for (const MachSection& sc : im->sects)
+        if (!strncmp(sc.seg, "__TEXT", 16) && !strncmp(sc.sect, "__text", 16)) a64::scan_flag_returning_calls(sc.addr, sc.addr + sc.size);
 }
 
 static void link_all() {

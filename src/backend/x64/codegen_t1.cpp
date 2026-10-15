@@ -15,6 +15,7 @@ namespace xef::backend {
 
 extern "C" u64 xef_helper_sysreg(u64, u64, u64 id);
 extern "C" u64 xef_helper_crc32(u64 crc, u64 data, u64 size_and_c);
+extern "C" u64 xef_helper_fjcvtzs(u64 bits, u64, u64);
 extern "C" u64 xef_helper_ic_ivau(u64 addr, u64, u64);
 
 int count_exits(const Block& b) {
@@ -849,6 +850,10 @@ void T1::emit_inst(Val v) {
     case Op::Helper: {
         if (in.sub == 2) {   // IC IVAU
             emit_call_c((void*)&xef_helper_ic_ivau, 0, in.a, 0, 0);
+            return;
+        }
+        if (in.sub == 3) {   // FJCVTZS: result | Z << 32
+            emit_call_c((void*)&xef_helper_fjcvtzs, v, in.a, 0, 0);
             return;
         }
         // sub=1: CRC32/CRC32C (size in .size, aux=1 for the Castagnoli polynomial)

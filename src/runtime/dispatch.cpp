@@ -277,6 +277,19 @@ static void run_guest(ThreadCtx* t, bool nested) {
             signals_deliver_pending(st);
             host = get_or_translate(t, st->pc);
         }
+        {   // XEF_DBG_PC=lo-hi (hex): log the full register file at every block entry in the range (use with --trace --max-block 1)
+            static const bool on = [] { return getenv("XEF_DBG_PC") != nullptr; }();
+            static u64 lo, hi;
+            static std::once_flag once;
+            if (on) {
+                std::call_once(once, [] { if (sscanf(getenv("XEF_DBG_PC"), "%lx-%lx", &lo, &hi) != 2) { lo = 0; hi = ~0ull; } });
+                if (st->pc >= lo && st->pc < hi) {
+                    fprintf(stderr, "pc=%#lx", (unsigned long)st->pc);
+                    for (int r = 0; r < 31; r++) fprintf(stderr, " x%d=%lx", r, (unsigned long)st->x[r]);
+                    fprintf(stderr, "\n");
+                }
+            }
+        }
         bool vf = verify_wants(st->pc) && verify_before(t, st);
         enter(st, host);
         if (vf) verify_after(st);
@@ -429,6 +442,26 @@ extern "C" u64 xef_helper_crc32(u64 crc, u64 data, u64 size_and_c) {
     u32 c = (u32)crc;
     for (int i = 0; i < size; i++) c = crc_table[t][(c ^ (u8)(data >> (8 * i))) & 0xff] ^ (c >> 8);
     return c;
+}
+
+// FJCVTZS (FEAT_JSCVT): double -> int32 with JavaScript ToInt32 semantics (truncate toward zero, modulo 2^32;
+// NaN/Inf -> 0). Returns the result in bits 0-31 and the Z flag in bit 32: Z = the conversion was exact, i.e. the
+// input is an integer in the int32 range and not -0.0.
+extern "C" u64 xef_helper_fjcvtzs(u64 bits, u64, u64) {
+    u64 sign = bits >> 63, frac = bits & ((1ull << 52) - 1);
+    int exp = (int)((bits >> 52) & 0x7ff);
+    if (exp == 0x7ff) return 0;
+    if (exp == 0) return (frac == 0 && !sign) ? (1ull << 32) : 0;   // +0.0 exact, -0.0 and denormals not
+    u64 m = frac | (1ull << 52);
+    int e = exp - 1075;                                              // value = m * 2^e
+    u32 r;
+    if (e >= 0) r = e >= 32 ? 0 : (u32)(m << e);
+    else r = -e >= 64 ? 0 : (u32)(m >> -e);
+    if (sign) r = 0u - r;
+    double d;
+    memcpy(&d, &bits, 8);
+    bool exact = d == __builtin_trunc(d) && d >= -2147483648.0 && d <= 2147483647.0;
+    return (u64)r | ((u64)exact << 32);
 }
 
 }  // namespace xef

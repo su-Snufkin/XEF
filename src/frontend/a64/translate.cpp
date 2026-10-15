@@ -4,6 +4,10 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 
+#include <atomic>
+#include <mutex>
+#include <unordered_set>
+
 namespace xef::a64 {
 
 using namespace ir;
@@ -1137,7 +1141,7 @@ static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast, bool memo
         case Q_WRITE: break;
         case Q_B: if (!push(s.t1)) return true; break;
         case Q_BL: if (!abi_kills_flags(Op::ExitCall)) return true; break;
-        case Q_RET: if (!abi_kills_flags(Op::ExitRet)) return true; break;
+        case Q_RET: if (!abi_kills_flags(Op::ExitRet) || ret_keeps_flags(run_end[next - 1] - 4)) return true; break;
         case Q_CB: if (!push(s.t1) || !push(s.t2)) return true; break;
         default: return true;   // Q_READ, Q_UNKNOWN
         }
@@ -1157,7 +1161,7 @@ static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast, bool memo
             case Q_WRITE: end = true; break;
             case Q_B: if (!push(t1)) return true; end = true; break;
             case Q_BL: if (!abi_kills_flags(Op::ExitCall)) return true; end = true; break;
-            case Q_RET: if (!abi_kills_flags(Op::ExitRet)) return true; end = true; break;
+            case Q_RET: if (!abi_kills_flags(Op::ExitRet) || ret_keeps_flags(pc)) return true; end = true; break;
             case Q_CB: if (!push(t1) || !push(t2)) return true; end = true; break;
             default: break;
             }
@@ -1207,6 +1211,44 @@ bool nzcv_read_first(GuestAddr pc) {
     return false;
 }
 
+
+// Functions that return a value in NZCV. Compilers do this for outlined helpers (LLVM's machine outliner: a
+// shared "ldr/ldrh/and/cmp ; ret" tail whose callers branch on the result); AAPCS64 says nothing about it
+// but Apple's toolchain emits them, so "flags are dead at RET" is only right for functions that no call site
+// uses this way. scan_flag_returning_calls() finds the callees: every direct BL whose return address reads NZCV
+// before writing it. ret_keeps_flags() then tells whether a RET belongs to such a function (the nearest preceding
+// function entry, with no other RET between, is one of them).
+static std::mutex g_flagret_mu;
+static std::unordered_set<GuestAddr> g_flagret;
+static std::atomic<bool> g_flagret_any{false};
+
+void scan_flag_returning_calls(GuestAddr lo, GuestAddr hi) {
+    if (!g_abi_flags) return;
+    std::unordered_set<GuestAddr> found;
+    for (GuestAddr p = lo & ~3ull; p + 4 <= hi; p += 4) {
+        u32 i = *(const u32*)p;
+        if ((i & 0xFC000000) != 0x94000000) continue;   // BL
+        GuestAddr t = p + (GuestAddr)(sext(i & 0x3FFFFFF, 26) * 4);
+        if (t < lo || t >= hi || found.count(t)) continue;
+        if (nzcv_read_first(p + 4)) found.insert(t);
+    }
+    if (found.empty()) return;
+    std::lock_guard<std::mutex> lk(g_flagret_mu);
+    g_flagret.insert(found.begin(), found.end());
+    g_flagret_any.store(true, std::memory_order_release);
+}
+
+bool ret_keeps_flags(GuestAddr ret_pc) {
+    if (!g_abi_flags || !g_flagret_any.load(std::memory_order_acquire)) return false;
+    std::lock_guard<std::mutex> lk(g_flagret_mu);
+    GuestAddr a = ret_pc;
+    for (int k = 0; k < 256; k++, a -= 4) {
+        if (g_flagret.count(a)) return true;
+        if (!guest_readable(a - 4) || *(const u32*)(a - 4) == 0xD65F03C0) break;   // previous function's RET
+    }
+    return false;
+}
+
 static void compute_flags_liveness(ir::Block& blk) {
     const Inst* term = nullptr;
     for (int v = blk.n - 1; v >= 1; v--)
@@ -1219,6 +1261,7 @@ static void compute_flags_liveness(ir::Block& blk) {
         blk.flags_live_out = nzcv_live_any(t, 2);
         break;
     }
+    case Op::ExitRet: blk.flags_live_out = !abi_kills_flags(term->op) || ret_keeps_flags(blk.end - 4); break;
     default: blk.flags_live_out = !abi_kills_flags(term->op); break;
     }
 }

@@ -23,6 +23,9 @@ bool guest_readable(GuestAddr pc);
 // True if NZCV may be read at pc before being written (bounded decode-ahead scan).
 bool nzcv_live_at(GuestAddr pc, int depth = 0);
 bool nzcv_read_first(GuestAddr pc);
+// RET of a function whose callers read NZCV on return (outlined helpers): flags must be kept (see translate.cpp).
+void scan_flag_returning_calls(GuestAddr lo, GuestAddr hi);
+bool ret_keeps_flags(GuestAddr ret_pc);
 extern bool g_abi_flags;   // NZCV dead at calls, returns and indirect branches (XEF_STRICT_FLAGS=1: no)
 
 // Decode helpers shared with SIMD translation.
