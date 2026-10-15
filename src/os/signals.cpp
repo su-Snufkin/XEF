@@ -146,6 +146,18 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
         for (int k = 0; k < 12 && n < (int)sizeof buf - 4; k++) n += snprintf(buf + n, sizeof buf - n, " %02x", rip[k]);
         buf[n++] = '\n';
         write(2, buf, n);
+        if (g_is_darwin) {
+            u64 fp = (block_host_reg(b, 29) != x64::NOREG) ? (u64)uc->uc_mcontext.gregs[host_greg_index(block_host_reg(b, 29))] : st->x[29];
+            for (int depth = 0; depth < 16 && fp && !(fp & 7); depth++) {
+                u64 lr = ((u64*)fp)[1];
+                std::string fd = dyld_describe(lr);
+                n = snprintf(buf, sizeof buf, "xef:     #%d %s (fp=%#lx, lr=%#lx)\n", depth, fd.empty() ? "?" : fd.c_str(), (unsigned long)fp, (unsigned long)lr);
+                write(2, buf, n);
+                u64 nfp = ((u64*)fp)[0];
+                if (nfp <= fp || nfp >= fp + 0x10000000) break;
+                fp = nfp;
+            }
+        }
     }
     _exit(128 + sig);
 }

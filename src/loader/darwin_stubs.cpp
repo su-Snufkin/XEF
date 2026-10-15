@@ -135,6 +135,7 @@ static int st_bootstrap_unknown() { return 1102; }          // BOOTSTRAP_UNKNOWN
 static const char* st_bootstrap_strerror(int) { return "unknown bootstrap error"; }
 static unsigned st_qos_class_self() { return 0x15; }       // QOS_CLASS_DEFAULT
 static void st_noop() {}
+static int st_pthread_jit_write_with_callback_np(int (*cb)(void*), void* ctx) { return cb ? cb(ctx) : 0; }
 static int st_fprintf_l_dummy() { return 0; }
 static const char* st_getprogname() {
     static std::string n;
@@ -188,6 +189,10 @@ static const StubEntry kStubs[] = {
     {"_bootstrap_register", (void*)&st_bootstrap_unknown},
     {"_qos_class_self", (void*)&st_qos_class_self}, {"_qos_class_main", (void*)&st_qos_class_self},
     {"_pthread_attr_set_qos_class_np", (void*)&st_zero},
+    {"_pthread_jit_write_protect_np", (void*)&st_noop},
+    {"_pthread_jit_write_protect_supported_np", (void*)&st_zero},
+    {"_pthread_jit_write_with_callback_np", (void*)&st_pthread_jit_write_with_callback_np},
+    {"_pthread_jit_write_freeze_callbacks_np", (void*)&st_noop},
     // asl (system log): accepted and dropped
     {"_asl_open", (void*)&st_null}, {"_asl_close", (void*)&st_noop}, {"_asl_new", (void*)&st_null}, {"_asl_free", (void*)&st_noop},
     {"_asl_set", (void*)&st_zero}, {"_asl_send", (void*)&st_zero}, {"_asl_log", (void*)&st_zero}, {"_asl_set_filter", (void*)&st_zero},

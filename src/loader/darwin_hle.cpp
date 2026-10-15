@@ -93,6 +93,19 @@ static thread_local const char* tl_hle_name = nullptr;
 static thread_local u64 tl_hle_lr = 0;
 
 // Darwin RuneLocale (ctype) structures
+struct DarwinRuneEntry {
+    int32_t min;
+    int32_t max;
+    int32_t map;
+    uint32_t* types;
+};
+
+struct DarwinRuneRange {
+    int32_t nranges;
+    int32_t pad;
+    DarwinRuneEntry* ranges;
+};
+
 struct DarwinRuneLocale {
     char magic[8];
     char encoding[32];
@@ -102,14 +115,32 @@ struct DarwinRuneLocale {
     uint32_t runetype[256];
     uint32_t maplower[256];
     uint32_t mapupper[256];
+    DarwinRuneRange runetype_ext;
+    DarwinRuneRange maplower_ext;
+    DarwinRuneRange mapupper_ext;
+    void* variable;
+    int32_t variable_len;
+    int32_t pad[3];
 };
+static_assert(offsetof(DarwinRuneLocale, runetype) == 60, "runetype offset");
+static_assert(offsetof(DarwinRuneLocale, maplower) == 1084, "maplower offset");
+static_assert(offsetof(DarwinRuneLocale, mapupper) == 2108, "mapupper offset");
+static_assert(offsetof(DarwinRuneLocale, runetype_ext) == 3136, "runetype_ext offset");
+static_assert(offsetof(DarwinRuneLocale, maplower_ext) == 3152, "maplower_ext offset");
+static_assert(offsetof(DarwinRuneLocale, mapupper_ext) == 3168, "mapupper_ext offset");
+static_assert(offsetof(DarwinRuneLocale, variable) == 3184, "variable offset");
+static_assert(offsetof(DarwinRuneLocale, variable_len) == 3192, "variable_len offset");
+static_assert(sizeof(DarwinRuneLocale) == 3208, "DarwinRuneLocale size");
 
 static DarwinRuneLocale g_darwin_rune_locale;
+static DarwinRuneLocale* g_darwin_current_rune_locale = &g_darwin_rune_locale;
 
 static void init_rune_locale() {
-    memcpy(g_darwin_rune_locale.magic, "RuneMagi", 8);
+    memset(&g_darwin_rune_locale, 0, sizeof(g_darwin_rune_locale));
+    memcpy(g_darwin_rune_locale.magic, "RuneMagA", 8);
     strcpy(g_darwin_rune_locale.encoding, "NONE");
     g_darwin_rune_locale.invalid_rune = 0xffffffff;
+    g_darwin_current_rune_locale = &g_darwin_rune_locale;
 
     for (int i = 0; i < 256; i++) {
         uint32_t flags = 0;
@@ -1515,6 +1546,30 @@ static int darwin_isprint_l(int c, void*) { return isprint(c); }
 static int darwin_iswctype_l(wint_t c, wctype_t t, void*) { return iswctype(c, t); }
 static wint_t darwin_towlower_l(wint_t c, void*) { return towlower(c); }
 static wint_t darwin_towupper_l(wint_t c, void*) { return towupper(c); }
+static int darwin_lc_to_linux(int cat) {
+    switch (cat) {
+        case 0: return LC_ALL;
+        case 1: return LC_COLLATE;
+        case 2: return LC_CTYPE;
+        case 3: return LC_MONETARY;
+        case 4: return LC_NUMERIC;
+        case 5: return LC_TIME;
+        case 6: return LC_MESSAGES;
+        default: return cat;
+    }
+}
+
+static char* darwin_setlocale(int category, const char* locale) {
+    int linux_cat = darwin_lc_to_linux(category);
+    char* r = setlocale(linux_cat, locale);
+    if (!r && locale) {
+        if (strcasecmp(locale, "UTF-8") == 0 || strcasecmp(locale, "utf8") == 0) {
+            r = setlocale(linux_cat, "C.UTF-8");
+        }
+    }
+    return r;
+}
+
 static void* darwin_newlocale(int, const char*, void*) { return (void*)1; }   // opaque non-null token
 static void darwin_freelocale(void*) {}
 static void* darwin_uselocale(void*) { return (void*)1; }
@@ -1588,6 +1643,7 @@ static const ShimEntry kShims[] = {
     {"_iswctype_l", (void*)&darwin_iswctype_l, -1},
     {"_towlower_l", (void*)&darwin_towlower_l, -1},
     {"_towupper_l", (void*)&darwin_towupper_l, -1},
+    {"_setlocale", (void*)&darwin_setlocale, -1},
     {"_newlocale", (void*)&darwin_newlocale, -1}, {"_freelocale", (void*)&darwin_freelocale, -1}, {"_uselocale", (void*)&darwin_uselocale, -1},
     {"___strlcpy_chk", (void*)&darwin_strlcpy_chk, -1}, {"___strlcat_chk", (void*)&darwin_strlcat_chk, -1},
     {"___strcpy_chk", (void*)&darwin_strcpy_chk, -1}, {"___stpcpy_chk", (void*)&darwin_stpcpy_chk, -1},
@@ -2309,8 +2365,13 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         g_symbol_cache[name] = addr;
         return addr;
     }
-    if (strcmp(name, "__DefaultRuneLocale") == 0) {
+    if (strcmp(name, "__DefaultRuneLocale") == 0 || strcmp(name, "_DefaultRuneLocale") == 0) {
         uint64_t addr = (uint64_t)(uintptr_t)&g_darwin_rune_locale;
+        g_symbol_cache[name] = addr;
+        return addr;
+    }
+    if (strcmp(name, "___CurrentRuneLocale") == 0 || strcmp(name, "__CurrentRuneLocale") == 0 || strcmp(name, "_CurrentRuneLocale") == 0) {
+        uint64_t addr = (uint64_t)(uintptr_t)&g_darwin_current_rune_locale;
         g_symbol_cache[name] = addr;
         return addr;
     }
