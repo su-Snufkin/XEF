@@ -51,4 +51,7 @@ echo "--- Test 3: Universal FAT binary (x86_64 + ARM64) ---"
 echo "--- Test 4: C program with arguments ---"
 "$XEF_OSX" "$DIR/test_c" "arg1" "arg2"
 
+echo "--- Test 5: OpenGL cube (Xvfb, gltri) ---"
+"$DIR/gl_test.sh"
+
 echo "=== ALL TESTS COMPLETED SUCCESSFULLY! ==="
