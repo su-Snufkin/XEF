@@ -16,6 +16,7 @@
 #include <vector>
 #include <string>
 #include <pthread.h>
+#include <dlfcn.h>
 
 namespace xef {
 
@@ -75,8 +76,20 @@ static int st_sysctlbyname(const char* name, void* oldp, size_t* oldlenp, void* 
     if (!strcmp(name, "hw.cachelinesize")) return put64(128);
     if (!strcmp(name, "hw.l1dcachesize")) return put64(65536);
     if (!strcmp(name, "hw.l2cachesize")) return put64(4194304);
-    if (!strcmp(name, "hw.optional.arm64")) return put32(1);
-    if (!strncmp(name, "hw.optional.", 12)) return put32(1);
+    if (!strcmp(name, "hw.optional.arm64") ||
+        !strcmp(name, "hw.optional.floatingpoint") ||
+        !strcmp(name, "hw.optional.neon") ||
+        !strcmp(name, "hw.optional.armv8_crc32") ||
+        !strcmp(name, "hw.optional.arm.FEAT_CRC32") ||
+        !strcmp(name, "hw.optional.armv8_1_atomics") ||
+        !strcmp(name, "hw.optional.arm.FEAT_LSE") ||
+        !strcmp(name, "hw.optional.arm.FEAT_AES") ||
+        !strcmp(name, "hw.optional.arm.FEAT_PMULL") ||
+        !strcmp(name, "hw.optional.arm.FEAT_SHA1") ||
+        !strcmp(name, "hw.optional.arm.FEAT_SHA256") ||
+        !strcmp(name, "hw.optional.arm.FEAT_SHA3") ||
+        !strcmp(name, "hw.optional.armv8_2_sha3")) return put32(1);
+    if (!strncmp(name, "hw.optional.", 12)) return put32(0);
     if (!strcmp(name, "hw.targettype")) { const char s[] = "J314sAP"; if (oldlenp) { if (oldp && *oldlenp >= sizeof s) memcpy(oldp, s, sizeof s); *oldlenp = sizeof s; } return 0; }
     if (!strcmp(name, "machdep.cpu.brand_string")) { const char s[] = "Apple M1"; if (oldlenp) { if (oldp && *oldlenp >= sizeof s) memcpy(oldp, s, sizeof s); *oldlenp = sizeof s; } return 0; }
     if (!strcmp(name, "kern.boottime")) {
@@ -230,6 +243,38 @@ static int st_task_info(uint32_t, int, void* info, uint32_t* cnt) { if (info && 
 static int st_mb_cur_max() { return 1; }
 static const char* st_querylocale(int, void*) { return "C"; }
 static void* st_duplocale(void*) { return (void*)1; }
+static char* st_ctermid_r(char* s) {
+    static char buf[16];
+    if (!s) s = buf;
+    strcpy(s, "/dev/tty");
+    return s;
+}
+static int st_lchflags(const char*, uint32_t) { return 0; }
+static void st_os_log_impl(void*, void*, uint8_t, const char*, uint8_t*, uint32_t) {}
+static bool st_os_log_type_enabled(void*, uint8_t) { return false; }
+static void* st_os_log_create(const char*, const char*) { return (void*)1; }
+static int st_mach_vm_read_overwrite(uint32_t, uint64_t addr, uint64_t size, uint64_t data, uint64_t* outsize) {
+    memcpy((void*)(uintptr_t)data, (void*)(uintptr_t)addr, size);
+    if (outsize) *outsize = size;
+    return 0;
+}
+static int st_mach_vm_write(uint32_t, uint64_t addr, uint64_t data, uint32_t cnt) {
+    memcpy((void*)(uintptr_t)addr, (void*)(uintptr_t)data, cnt);
+    return 0;
+}
+static int st_proc_regionfilename(int, uint64_t, void* buffer, uint32_t buffersize) {
+    if (buffer && buffersize) *(char*)buffer = 0;
+    return 0;
+}
+static int st_task_for_pid(uint32_t, int pid, uint32_t* t) {
+    if (t) *t = (pid == getpid()) ? 1 : 0;
+    return 0;
+}
+static int st_srget(FILE* fp) { return fgetc(fp); }
+static int st_swbuf(int c, FILE* fp) { return fputc(c, fp); }
+static void* st_swift_retain(void* obj) { return obj; }
+static void st_swift_release(void*) {}
+
 static const StubEntry kStubs2[] = {
     {"____mb_cur_max", (void*)&st_mb_cur_max}, {"_querylocale", (void*)&st_querylocale}, {"_duplocale", (void*)&st_duplocale},
     {"_clock_gettime", (void*)&st_clock_gettime}, {"_clock_getres", (void*)&st_clock_getres},
@@ -239,6 +284,22 @@ static const StubEntry kStubs2[] = {
     {"_pthread_main_thread_np", (void*)&st_pthread_main_thread_np}, {"_getsectbynamefromheader_64", (void*)&st_getsectbynamefromheader_64},
     {"_getsegbyname", (void*)&st_getsegbyname}, {"_memset_pattern4", (void*)&st_memset_pattern4}, {"_vm_copy", (void*)&st_vm_copy},
     {"_task_info", (void*)&st_task_info},
+    {"_ctermid_r", (void*)&st_ctermid_r},
+    {"_lchflags", (void*)&st_lchflags},
+    {"__os_log_impl", (void*)&st_os_log_impl},
+    {"_os_log_type_enabled", (void*)&st_os_log_type_enabled},
+    {"_os_log_create", (void*)&st_os_log_create},
+    {"_mach_vm_read_overwrite", (void*)&st_mach_vm_read_overwrite},
+    {"_mach_vm_write", (void*)&st_mach_vm_write},
+    {"_proc_regionfilename", (void*)&st_proc_regionfilename},
+    {"_task_for_pid", (void*)&st_task_for_pid},
+    {"___srget", (void*)&st_srget},
+    {"___swbuf", (void*)&st_swbuf},
+    {"_swift_retain", (void*)&st_swift_retain},
+    {"_swift_release", (void*)&st_swift_release},
+    {"_SCDynamicStoreCopyProxies", (void*)&st_null2},
+    {"_SCDynamicStoreCreate", (void*)&st_null2},
+    {"_SCDynamicStoreCopyValue", (void*)&st_null2},
     {"_xpc_retain", (void*)&st_null2}, {"_xpc_copy_description", (void*)&st_null2}, {"_xpc_array_append_value", (void*)&st_noop2},
     {"_xpc_connection_create_mach_service", (void*)&st_null2}, {"_xpc_connection_resume", (void*)&st_noop2},
     {"_xpc_connection_send_message", (void*)&st_noop2}, {"_xpc_connection_send_message_with_reply", (void*)&st_noop2},
@@ -255,10 +316,36 @@ void* darwin_stub_lookup(const char* name) {
 }
 
 // data symbols CoreFoundation / xpc expect
+static bool is_libedit_data_var(const char* name) {
+    static const char* const kDataVars[] = {
+        "rl_library_version", "rl_line_buffer", "rl_point", "rl_end", "rl_prompt",
+        "rl_already_prompted", "rl_terminal_name", "rl_startup_hook", "rl_event_hook",
+        "rl_getc_function", "rl_redisplay_function", "rl_pre_input_hook",
+        "rl_completion_entry_function", "rl_attempted_completion_function",
+        "rl_attempted_completion_over", "rl_completion_type",
+        "rl_completion_append_character", "rl_completion_suppress_append",
+        "rl_completion_query_items", "rl_completion_word_break_hook",
+        "rl_completion_display_matches_hook", "rl_basic_word_break_characters",
+        "rl_basic_quote_characters", "rl_completer_word_break_characters",
+        "rl_completer_quote_characters", "rl_filename_completion_desired",
+        "rl_ignore_completion_duplicates", "rl_inhibit_completion",
+        "rl_instream", "rl_outstream", "rl_readline_name", "rl_readline_version",
+        "rl_readline_state", "rl_catch_signals", "rl_catch_sigwinch",
+        "history_base", "history_length", "history_max_entries", "history_offset"
+    };
+    for (const char* v : kDataVars) {
+        if (!strcmp(name, v)) return true;
+    }
+    return false;
+}
+
+// data symbols CoreFoundation / xpc expect
 void* darwin_stub_data_lookup(const char* name) {
     static char xpc_types[16][64];
     static int n = 0;
     static std::vector<std::pair<std::string, void*>> made;
+    if (!strcmp(name, "__os_log_default")) { static uint64_t dummy[8] = {}; return dummy; }
+    if (!strcmp(name, "___NSDictionary0__struct")) { static uint64_t dummy[16] = {}; return dummy; }
     if (!strcmp(name, "___mb_cur_max")) { static int v = 1; return &v; }
     if (!strcmp(name, "___mb_sb_limit")) { static int v = 128; return &v; }
     if (!strcmp(name, "_sys_nerr")) { static int v = 107; return &v; }
@@ -269,7 +356,20 @@ void* darwin_stub_data_lookup(const char* name) {
         made.push_back({name, d});
         return d;
     }
+    static void* libedit = dlopen("libedit.so.0", RTLD_GLOBAL | RTLD_LAZY);
+    if (!libedit) libedit = dlopen("libedit.so.2", RTLD_GLOBAL | RTLD_LAZY);
+    if (!libedit) libedit = dlopen("libedit.so", RTLD_GLOBAL | RTLD_LAZY);
+    if (libedit) {
+        const char* clean_name = (name[0] == '_') ? name + 1 : name;
+        if (is_libedit_data_var(clean_name)) {
+            void* sym = dlsym(libedit, clean_name);
+            if (sym) return sym;
+        }
+    }
     return nullptr;
 }
+
+
+
 
 } // namespace xef

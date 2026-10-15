@@ -77,8 +77,25 @@ static bool walk_guest(const std::string& path, bool follow_last, std::string& p
 }
 
 std::string resolve_guest_path(const char* path, bool follow_last) {
+    if (!path) return "";
     if (const char* shim = thunk_lib_redirect(path)) return shim;
-    if (!path || path[0] != '/' || g_rootfs.empty()) return path ? path : "";
+    if (g_rootfs.empty()) return path;
+
+    std::string norm_p = path;
+    if (norm_p[0] != '/') {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd))) {
+            std::string full_host = std::string(cwd) + "/" + norm_p;
+            if (full_host.rfind(g_rootfs + "/", 0) == 0) {
+                norm_p = full_host.substr(g_rootfs.size());
+            }
+        }
+    } else if (norm_p.rfind(g_rootfs + "/", 0) == 0) {
+        norm_p = norm_p.substr(g_rootfs.size());
+    }
+    if (norm_p.empty() || norm_p[0] != '/') return path;
+    path = norm_p.c_str();
+
     std::string gp = path;
     while (gp.size() > 1 && gp.back() == '/') gp.pop_back();
     size_t sl = gp.rfind('/');
@@ -110,9 +127,50 @@ std::string resolve_guest_path(const char* path, bool follow_last) {
         std::string phys;
         bool abs = false;
         walk_guest(full, true, phys, abs);
-        if (abs) return g_rootfs + phys;   // relative links: the kernel follows them correctly
+        return g_rootfs + phys;
     }
     return g_rootfs + full;
+}
+
+bool resolve_guest_realpath(const char* path, std::string& out) {
+    if (!path || !path[0]) {
+        errno = ENOENT;
+        return false;
+    }
+    std::string full_path = path;
+    if (full_path[0] != '/') {
+        char cwd[PATH_MAX];
+        if (!getcwd(cwd, sizeof(cwd))) return false;
+        std::string scwd = cwd;
+        if (!g_rootfs.empty() && scwd.rfind(g_rootfs, 0) == 0) {
+            scwd = scwd.substr(g_rootfs.size());
+            if (scwd.empty() || scwd[0] != '/') scwd = "/" + scwd;
+        }
+        if (scwd.empty() || scwd.back() != '/') scwd += "/";
+        full_path = scwd + full_path;
+    }
+    if (g_rootfs.empty()) {
+        char buf[PATH_MAX];
+        if (!realpath(full_path.c_str(), buf)) return false;
+        out = buf;
+        return true;
+    }
+    std::string phys;
+    bool via_abs = false;
+    if (walk_guest(full_path, true, phys, via_abs)) {
+        struct stat st;
+        if (lstat((g_rootfs + phys).c_str(), &st) == 0) {
+            out = phys;
+            return true;
+        }
+    }
+    char buf[PATH_MAX];
+    if (realpath(full_path.c_str(), buf)) {
+        out = buf;
+        return true;
+    }
+    errno = ENOENT;
+    return false;
 }
 
 // HWCAP bits (arch/arm64/include/uapi/asm/hwcap.h)

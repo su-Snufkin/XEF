@@ -45,7 +45,7 @@ struct alignas(64) CpuState {
     u64 exit_info;      // ExitInfo* / helper arg
     void* ibtc;         // indirect branch target cache table
     ThreadCtx* thread;
-    u64 spill[16];      // codegen spill slots
+    u64 spill[64];      // codegen spill slots
     u32 fpcr, fpsr;
     u64 _pad0;
     alignas(16) u8 v[32][16];  // NEON / FP registers

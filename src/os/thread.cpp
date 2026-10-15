@@ -365,6 +365,13 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
         n = read(fd, hdr, sizeof hdr - 1);
         close(fd);
     }
+    bool is_macho = false;
+    if (n >= 4) {
+        uint32_t magic = *(const uint32_t*)hdr;
+        if (magic == 0xfeedfacf || magic == 0xcffaedfe || magic == 0xcafebabe || magic == 0xbebafeca) {
+            is_macho = true;
+        }
+    }
     if (n >= 20 && memcmp(hdr, "\x7f" "ELF", 4) == 0) {
         u16 machine = (u16)(hdr[18] | (hdr[19] << 8));
         if (machine == 62) {  // EM_X86_64: run natively
@@ -376,13 +383,21 @@ i64 process_execve(CpuState*, u64 gpath, u64 gargv, u64 genvp) {
             return -errno;
         }
         if (machine != 183) return -ENOEXEC;
-    } else return -ENOEXEC;
+    } else if (!is_macho) return -ENOEXEC;
     char self[4096];
     ssize_t sl = readlink("/proc/self/exe", self, sizeof self - 1);
     if (sl < 0) return -errno;
     self[sl] = 0;
     std::vector<char*> av;
     av.push_back(self);
+    std::string root_opt;
+    if (!g_rootfs.empty()) {
+        static char o_l[] = "-L";
+        av.push_back(o_l);
+        root_opt = g_rootfs;
+        av.push_back((char*)root_opt.c_str());
+    }
+
     // the new image runs with the same XEF options
     static char o_stats[] = "--stats", o_prof[] = "--profile", o_not2[] = "--no-tier2", o_trace[] = "--trace",
                 o_ir[] = "--dump-ir", o_code[] = "--dump-code", o_mb[] = "--max-block", o_t2t[] = "--tier2-threshold";

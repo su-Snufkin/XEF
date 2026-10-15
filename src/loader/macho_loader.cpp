@@ -63,6 +63,7 @@ static std::recursive_mutex g_dyld_lock;
 static std::vector<MachImage*> g_images;
 static std::unordered_map<std::string, MachImage*> g_by_name;   // install name / path -> image
 static std::string g_exe_dir;
+static std::string g_exe_real_dir;
 
 const std::vector<MachImage*>& dyld_images() { return g_images; }
 
@@ -479,20 +480,41 @@ static MachImage* load_dependency(MachImage* from, const std::string& name, bool
 
 static std::vector<std::string> expand_candidates(const std::string& name, MachImage* from) {
     std::vector<std::string> out;
-    auto subst = [&](const std::string& s, MachImage* ctx) -> std::string {
-        if (s.rfind("@executable_path/", 0) == 0) return g_exe_dir + "/" + s.substr(17);
-        if (s.rfind("@loader_path/", 0) == 0) return dir_of(ctx ? ctx->path : g_exe_dir) + "/" + s.substr(13);
-        return s;
+    auto subst = [&](const std::string& s, MachImage* ctx) -> std::vector<std::string> {
+        std::vector<std::string> res;
+        auto add_path = [&](const std::string& dir, const std::string& rel) {
+            res.push_back(dir + "/" + rel);
+        };
+        if (s.rfind("@executable_path/", 0) == 0) {
+            add_path(g_exe_dir, s.substr(17));
+            if (!g_exe_real_dir.empty() && g_exe_real_dir != g_exe_dir)
+                add_path(g_exe_real_dir, s.substr(17));
+        } else if (s.rfind("@loader_path/", 0) == 0) {
+            std::string d1 = dir_of(ctx ? ctx->path : g_exe_dir);
+            add_path(d1, s.substr(13));
+            if (ctx && !ctx->real_path.empty()) {
+                std::string d2 = dir_of(ctx->real_path);
+                if (d2 != d1) add_path(d2, s.substr(13));
+            }
+        } else {
+            res.push_back(s);
+        }
+        return res;
     };
     if (name.rfind("@rpath/", 0) == 0) {
         std::string tail = name.substr(7);
         std::vector<MachImage*> ctxs;
         if (from) ctxs.push_back(from);
-        if (!g_images.empty() && (g_images.empty() || from != g_images[0])) ctxs.push_back(g_images[0]);
-        for (MachImage* c : ctxs)
-            for (const std::string& rp : c->rpaths) out.push_back(subst(rp, c) + "/" + tail);
+        if (!g_images.empty() && (from != g_images[0])) ctxs.push_back(g_images[0]);
+        for (MachImage* c : ctxs) {
+            for (const std::string& rp : c->rpaths) {
+                for (const std::string& exp : subst(rp, c))
+                    out.push_back(exp + "/" + tail);
+            }
+        }
     } else {
-        out.push_back(subst(name, from));
+        for (const std::string& exp : subst(name, from))
+            out.push_back(exp);
     }
     return out;
 }
@@ -542,6 +564,12 @@ static MachImage* map_image(const std::string& guest_path, const std::string& ho
     std::unique_ptr<MachImage> im(new MachImage());
     im->path = guest_path;
     im->install_name = guest_path;
+    std::string real_guest = guest_path;
+    if (!g_rootfs.empty() && host_path.rfind(g_rootfs, 0) == 0) {
+        real_guest = host_path.substr(g_rootfs.size());
+        if (real_guest.empty() || real_guest[0] != '/') real_guest = "/" + real_guest;
+    }
+    im->real_path = real_guest;
     im->filetype = mh.filetype;
 
     // pass 1: segments -> address range
@@ -783,7 +811,7 @@ static void load_implicit_images() {
 bool load_macho(const char* path, LoadedImage& img) {
     std::lock_guard<std::recursive_mutex> lk(g_dyld_lock);
     img.exe_path = path;
-    img.host_path = resolve_guest_path(path);
+    img.host_path = resolve_guest_path(path, true);
     if (access(img.host_path.c_str(), R_OK) != 0) img.host_path = path;
 
     // Initialize commpage for macOS guest
@@ -792,6 +820,16 @@ bool load_macho(const char* path, LoadedImage& img) {
 
     char rp[4096];
     g_exe_dir = dir_of(realpath(path, rp) ? std::string(rp) : std::string(path));
+    if (realpath(img.host_path.c_str(), rp)) {
+        std::string rh = rp;
+        if (!g_rootfs.empty() && rh.rfind(g_rootfs, 0) == 0) {
+            rh = rh.substr(g_rootfs.size());
+            if (rh.empty() || rh[0] != '/') rh = "/" + rh;
+        }
+        g_exe_real_dir = dir_of(rh);
+    } else {
+        g_exe_real_dir = g_exe_dir;
+    }
 
     MachImage* exe = map_image(path, img.host_path, true);
     if (!exe) return false;

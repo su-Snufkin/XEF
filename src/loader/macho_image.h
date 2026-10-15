@@ -29,6 +29,7 @@ struct MachDep {
 
 struct MachImage {
     std::string path;           // guest path the image was loaded from
+    std::string real_path;      // canonical guest path (after resolving rootfs symlinks)
     std::string install_name;   // LC_ID_DYLIB (or path for the executable)
     uint64_t header = 0;        // address of the mach_header_64 (slid __TEXT)
     uint64_t slide = 0;

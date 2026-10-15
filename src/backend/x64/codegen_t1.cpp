@@ -419,11 +419,11 @@ void T1::evict(Reg r) {
             // (a dead value's stale slot may already belong to a live one)
             spill_used_ = 0;
             for (int v = 1; v < b_.n; v++)
-                if (vi_[v].k == L_SPILL && vi_[v].last >= cur_ && !vi_[v].dead) spill_used_ |= 1u << vi_[v].slot;
+                if (vi_[v].k == L_SPILL && vi_[v].last >= cur_ && !vi_[v].dead) spill_used_ |= 1ull << vi_[v].slot;
             s = free_spill_slot();
         }
         if (s < 0) fatal("codegen: out of spill slots (block %#lx, ir %d)", (unsigned long)b_.start, cur_);
-        spill_used_ |= 1u << s;
+        spill_used_ |= 1ull << s;
         as_.mov(8, mem(R15, XEF_ST(spill) + s * 8), r);
         x.k = L_SPILL;
         x.slot = (i8)s;
@@ -471,7 +471,7 @@ Opnd T1::opnd(Val v, bool allow_mem, bool allow_imm, int size) {
     // materialize into a temp register
     Reg t = alloc_temp();
     if (x.k == L_GMEM) { as_.mov(8, t, gmem(x.g)); x.home = (i8)x.g; }
-    else if (x.k == L_SPILL) { as_.mov(8, t, mem(R15, XEF_ST(spill) + x.slot * 8)); spill_used_ &= ~(1u << x.slot); }
+    else if (x.k == L_SPILL) { as_.mov(8, t, mem(R15, XEF_ST(spill) + x.slot * 8)); spill_used_ &= ~(1ull << x.slot); }
     else fatal("codegen: bad loc");
     assign_reg(r, t);
     pinned_ |= 1 << t;
@@ -502,7 +502,7 @@ void T1::release_operands(const Inst& in) {
         if (x.last <= cur_) {
             if (x.k == L_REG && owner_[x.reg] == r) owner_[x.reg] = 0;
             if (x.k == L_XMM && xowner_[x.reg] == r) xowner_[x.reg] = 0;
-            if (x.k == L_SPILL) spill_used_ &= ~(1u << x.slot);
+            if (x.k == L_SPILL) spill_used_ &= ~(1ull << x.slot);
             if (x.k == L_VSPILL) vspill_used_ &= ~(1ull << x.slot);
         }
     });

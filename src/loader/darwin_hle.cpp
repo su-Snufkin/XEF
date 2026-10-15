@@ -88,6 +88,8 @@ static void darwin_start_marker() {}
 uint64_t g_darwin_thread_exit_trampoline = 0;
 const uint8_t* g_darwin_tlv_template = nullptr;
 size_t g_darwin_tlv_template_size = 0;
+static thread_local const char* tl_hle_name = nullptr;
+static thread_local u64 tl_hle_lr = 0;
 
 // Darwin RuneLocale (ctype) structures
 struct DarwinRuneLocale {
@@ -377,14 +379,46 @@ static int darwin_snprintf(char* str, size_t size, const char* format, const uin
     return darwin_vsnprintf(str, size, format, ap);
 }
 
+static const char* darwin_strerror(int errnum) {
+    int le = darwin_errno_to_linux(errnum);
+    const char* msg = strerror(le);
+    return msg ? msg : "Unknown error";
+}
+
 static int darwin_strerror_r(int errnum, char* buf, size_t buflen) {
     if (!buf || buflen == 0) return ERANGE;
-    const char* msg = strerror(errnum);
+    const char* msg = strerror(darwin_errno_to_linux(errnum));
     if (!msg) msg = "Unknown error";
     strncpy(buf, msg, buflen - 1);
     buf[buflen - 1] = '\0';
     return 0;
 }
+
+static const char* darwin_getprogname() {
+    const char* p = strrchr(g_darwin_exe_path.c_str(), '/');
+    return p ? p + 1 : (g_darwin_exe_path.empty() ? "xef" : g_darwin_exe_path.c_str());
+}
+
+static void darwin_warn_impl(bool use_errno, const char* format, const uint64_t* ap) {
+    const char* prog = darwin_getprogname();
+    fprintf(stderr, "%s: ", prog);
+    if (format) {
+        std::string r = darwin_format(format, ap);
+        fprintf(stderr, "%s", r.c_str());
+        if (use_errno) fprintf(stderr, ": ");
+    }
+    if (use_errno) {
+        fprintf(stderr, "%s\n", darwin_strerror(g_darwin_errno));
+    } else {
+        fprintf(stderr, "\n");
+    }
+}
+
+static void darwin_err(int eval, const char* fmt, ...) { (void)eval; (void)fmt; }
+static void darwin_errx(int eval, const char* fmt, ...) { (void)eval; (void)fmt; }
+static void darwin_warn(const char* fmt, ...) { (void)fmt; }
+static void darwin_warnx(const char* fmt, ...) { (void)fmt; }
+
 
 static void* darwin_mmap(void* addr, size_t length, int prot, int dflags, int fd, off_t offset) {
     int lflags = 0;
@@ -599,6 +633,327 @@ static DIR* darwin_opendir(const char* name) {
     std::string hp = resolve_guest_path(name);
     return opendir(hp.c_str());
 }
+
+static FILE* darwin_fopen(const char* path, const char* mode) {
+    if (!path || !mode) { errno = EFAULT; return nullptr; }
+    std::string hp = resolve_guest_path(path);
+    return fopen(hp.c_str(), mode);
+}
+
+static int darwin_access(const char* path, int mode) {
+    if (!path) { errno = EFAULT; return -1; }
+    std::string hp = resolve_guest_path(path);
+    return access(hp.c_str(), mode);
+}
+
+static ssize_t darwin_readlink(const char* path, char* buf, size_t bufsiz) {
+    if (!path || !buf) { errno = EFAULT; return -1; }
+    std::string hp = resolve_guest_path(path, false);
+    return readlink(hp.c_str(), buf, bufsiz);
+}
+
+static int darwin_unlink(const char* path) {
+    if (!path) { errno = EFAULT; return -1; }
+    std::string hp = resolve_guest_path(path, false);
+    return unlink(hp.c_str());
+}
+
+static int darwin_remove(const char* path) {
+    if (!path) { errno = EFAULT; return -1; }
+    std::string hp = resolve_guest_path(path, false);
+    return remove(hp.c_str());
+}
+
+static int darwin_mkdir(const char* path, mode_t mode) {
+    if (!path) { errno = EFAULT; return -1; }
+    std::string hp = resolve_guest_path(path);
+    return mkdir(hp.c_str(), mode);
+}
+
+static int darwin_rmdir(const char* path) {
+    if (!path) { errno = EFAULT; return -1; }
+    std::string hp = resolve_guest_path(path);
+    return rmdir(hp.c_str());
+}
+
+static int darwin_rename(const char* oldpath, const char* newpath) {
+    if (!oldpath || !newpath) { errno = EFAULT; return -1; }
+    std::string ho = resolve_guest_path(oldpath, false);
+    std::string hn = resolve_guest_path(newpath, false);
+    return rename(ho.c_str(), hn.c_str());
+}
+
+static int darwin_chmod(const char* path, mode_t mode) {
+    if (!path) { errno = EFAULT; return -1; }
+    std::string hp = resolve_guest_path(path);
+    return chmod(hp.c_str(), mode);
+}
+
+static int darwin_chown(const char* path, uid_t owner, gid_t group) {
+    if (!path) { errno = EFAULT; return -1; }
+    std::string hp = resolve_guest_path(path);
+    return chown(hp.c_str(), owner, group);
+}
+
+static char* darwin_realpath(const char* path, char* resolved) {
+    if (!path) { errno = EINVAL; return nullptr; }
+    std::string out;
+    if (!resolve_guest_realpath(path, out)) {
+        return nullptr;
+    }
+    if (out.size() >= PATH_MAX) {
+        errno = ENAMETOOLONG;
+        return nullptr;
+    }
+    if (!resolved) {
+        resolved = (char*)malloc(out.size() + 1);
+        if (!resolved) {
+            errno = ENOMEM;
+            return nullptr;
+        }
+    }
+    memcpy(resolved, out.c_str(), out.size() + 1);
+    return resolved;
+}
+
+static char* darwin_getcwd(char* buf, size_t size) {
+    char hbuf[PATH_MAX];
+    if (!getcwd(hbuf, sizeof(hbuf))) return nullptr;
+    std::string cwd = hbuf;
+    if (!g_rootfs.empty() && cwd.rfind(g_rootfs, 0) == 0) {
+        cwd = cwd.substr(g_rootfs.size());
+        if (cwd.empty() || cwd[0] != '/') cwd = "/" + cwd;
+    }
+    if (!buf) {
+        if (size == 0) size = cwd.size() + 1;
+        buf = (char*)malloc(size);
+        if (!buf) {
+            errno = ENOMEM;
+            return nullptr;
+        }
+    }
+    if (cwd.size() + 1 > size) {
+        errno = ERANGE;
+        return nullptr;
+    }
+    memcpy(buf, cwd.c_str(), cwd.size() + 1);
+    return buf;
+}
+
+struct DarwinSpawnAttr {
+    short psa_flags;
+    pid_t psa_pgroup;
+    uint32_t psa_sigmask;
+    uint32_t psa_sigdefault;
+    int psa_priority;
+    size_t psa_binprefs_count;
+    uint32_t* psa_binprefs;
+};
+
+static int darwin_posix_spawnattr_init(void** attrp) {
+    if (!attrp) return EINVAL;
+    auto* a = (DarwinSpawnAttr*)calloc(1, sizeof(DarwinSpawnAttr));
+    if (!a) return ENOMEM;
+    *attrp = a;
+    return 0;
+}
+
+static int darwin_posix_spawnattr_destroy(void** attrp) {
+    if (!attrp || !*attrp) return EINVAL;
+    auto* a = (DarwinSpawnAttr*)*attrp;
+    if (a->psa_binprefs) free(a->psa_binprefs);
+    free(a);
+    *attrp = nullptr;
+    return 0;
+}
+
+static int darwin_posix_spawnattr_setflags(void** attrp, short flags) {
+    if (!attrp || !*attrp) return EINVAL;
+    auto* a = (DarwinSpawnAttr*)*attrp;
+    a->psa_flags = flags;
+    return 0;
+}
+
+static int darwin_posix_spawnattr_getflags(void** attrp, short* flags) {
+    if (!attrp || !*attrp || !flags) return EINVAL;
+    auto* a = (DarwinSpawnAttr*)*attrp;
+    *flags = a->psa_flags;
+    return 0;
+}
+
+static int darwin_posix_spawnattr_setbinpref_np(void** attrp, size_t count, const uint32_t* pref, size_t* ocount) {
+    if (!attrp || !*attrp) return EINVAL;
+    auto* a = (DarwinSpawnAttr*)*attrp;
+    if (count > 0 && pref) {
+        a->psa_binprefs = (uint32_t*)realloc(a->psa_binprefs, count * sizeof(uint32_t));
+        if (a->psa_binprefs) {
+            memcpy(a->psa_binprefs, pref, count * sizeof(uint32_t));
+            a->psa_binprefs_count = count;
+        }
+    }
+    if (ocount) *ocount = count;
+    return 0;
+}
+
+static int darwin_posix_spawnattr_getbinpref_np(void** attrp, size_t count, uint32_t* pref, size_t* ocount) {
+    if (!attrp || !*attrp) return EINVAL;
+    auto* a = (DarwinSpawnAttr*)*attrp;
+    size_t n = std::min(count, a->psa_binprefs_count);
+    if (pref && n > 0 && a->psa_binprefs) {
+        memcpy(pref, a->psa_binprefs, n * sizeof(uint32_t));
+    }
+    if (ocount) *ocount = n;
+    return 0;
+}
+
+static int darwin_posix_spawnattr_setpgroup(void** attrp, pid_t pgroup) {
+    if (!attrp || !*attrp) return EINVAL;
+    auto* a = (DarwinSpawnAttr*)*attrp;
+    a->psa_pgroup = pgroup;
+    return 0;
+}
+
+static int darwin_posix_spawnattr_setsigmask(void** attrp, const void*) {
+    if (!attrp || !*attrp) return EINVAL;
+    return 0;
+}
+
+static int darwin_posix_spawnattr_setsigdefault(void** attrp, const void*) {
+    if (!attrp || !*attrp) return EINVAL;
+    return 0;
+}
+
+static int darwin_posix_spawn_file_actions_init(void** actp) {
+    if (!actp) return EINVAL;
+    *actp = calloc(1, 64);
+    return 0;
+}
+
+static int darwin_posix_spawn_file_actions_destroy(void** actp) {
+    if (!actp) return EINVAL;
+    if (*actp) free(*actp);
+    *actp = nullptr;
+    return 0;
+}
+
+static int darwin_posix_spawn_file_actions_addclose(void**, int) { return 0; }
+static int darwin_posix_spawn_file_actions_adddup2(void**, int, int) { return 0; }
+static int darwin_posix_spawn_file_actions_addopen(void**, int, const char*, int, mode_t) { return 0; }
+
+static int darwin_posix_spawn(pid_t* pid, const char* path, void* file_actions, void* attrp, char* const argv[], char* const envp[]) {
+    if (!path || !path[0]) return ENOENT;
+    (void)file_actions;
+    std::string hp = resolve_guest_path(path);
+    std::string target_path = (access(hp.c_str(), R_OK) == 0) ? hp : path;
+    if (access(target_path.c_str(), R_OK) != 0) {
+        return ENOENT;
+    }
+
+    int fd = open(target_path.c_str(), O_RDONLY | O_CLOEXEC);
+    uint8_t hdr[24] = {0};
+    ssize_t n = 0;
+    if (fd >= 0) {
+        n = read(fd, hdr, sizeof(hdr));
+        close(fd);
+    }
+
+    bool is_x86_64 = false;
+    if (n >= 20 && memcmp(hdr, "\x7f" "ELF", 4) == 0) {
+        uint16_t machine = (uint16_t)(hdr[18] | (hdr[19] << 8));
+        if (machine == 62) is_x86_64 = true;
+    }
+
+    char self[4096];
+    ssize_t sl = readlink("/proc/self/exe", self, sizeof(self) - 1);
+    if (sl < 0) return errno;
+    self[sl] = '\0';
+
+    std::string exe_to_run = is_x86_64 ? target_path : std::string(self);
+
+    std::vector<std::string> args;
+    if (!is_x86_64) {
+        args.push_back(self);
+        if (!g_rootfs.empty()) {
+            args.push_back("-L");
+            args.push_back(g_rootfs);
+        }
+        if (argv && argv[0] && strcmp(argv[0], path) != 0) {
+            args.push_back("--argv0");
+            args.push_back(argv[0]);
+        }
+        args.push_back(path);
+    } else {
+        args.push_back((argv && argv[0]) ? argv[0] : target_path);
+    }
+
+    if (argv && argv[0]) {
+        for (int i = 1; argv[i]; i++) {
+            args.push_back(argv[i]);
+        }
+    }
+
+    std::vector<char*> c_argv;
+    for (auto& a : args) c_argv.push_back((char*)a.c_str());
+    c_argv.push_back(nullptr);
+
+    std::vector<char*> c_envp;
+    for (char* const* e = envp; e && *e; e++) {
+        c_envp.push_back(*e);
+    }
+    std::string root_env;
+    if (!g_rootfs.empty() && !is_x86_64) {
+        root_env = "XEF_ROOTFS=" + g_rootfs;
+        c_envp.push_back((char*)root_env.c_str());
+    }
+    c_envp.push_back(nullptr);
+
+    // Check POSIX_SPAWN_SETEXEC (0x0040 on macOS)
+    bool setexec = false;
+    if (attrp) {
+        DarwinSpawnAttr* a = *(DarwinSpawnAttr**)attrp;
+        if (a && (a->psa_flags & 0x0040)) setexec = true;
+    }
+
+    if (setexec) {
+        execve(exe_to_run.c_str(), c_argv.data(), c_envp.data());
+        return errno;
+    }
+
+    pid_t child = fork();
+    if (child < 0) return errno;
+    if (child == 0) {
+        execve(exe_to_run.c_str(), c_argv.data(), c_envp.data());
+        _exit(127);
+    }
+    if (pid) *pid = child;
+    return 0;
+}
+
+
+static int darwin_posix_spawnp(pid_t* pid, const char* file, void* file_actions, void* attrp, char* const argv[], char* const envp[]) {
+    if (!file || !file[0]) return ENOENT;
+    if (strchr(file, '/')) {
+        return darwin_posix_spawn(pid, file, file_actions, attrp, argv, envp);
+    }
+    // Search in PATH
+    const char* path_env = getenv("PATH");
+    if (!path_env) path_env = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin";
+    std::string pstr = path_env;
+    size_t start = 0;
+    while (start < pstr.size()) {
+        size_t end = pstr.find(':', start);
+        if (end == std::string::npos) end = pstr.size();
+        std::string cand = pstr.substr(start, end - start) + "/" + file;
+        std::string hcand = resolve_guest_path(cand.c_str());
+        if (access(hcand.c_str(), X_OK) == 0 || access(cand.c_str(), X_OK) == 0) {
+            return darwin_posix_spawn(pid, cand.c_str(), file_actions, attrp, argv, envp);
+        }
+        start = end + 1;
+    }
+    return ENOENT;
+}
+
+
 
 static int darwin_readdir_r(DIR* dirp, darwin_dirent* entry, darwin_dirent** result) {
     if (!dirp || !entry) {
@@ -1754,7 +2109,11 @@ void darwin_hle_init() {
     dlopen("/home/wron4/Pulpit/OSXEMU/lib/usr/lib/libc++abi.so.1", RTLD_GLOBAL | RTLD_LAZY);
     dlopen("/home/wron4/Pulpit/OSXEMU/lib/usr/lib/libc++.so.1", RTLD_GLOBAL | RTLD_LAZY);
     dlopen("libc++abi.so.1", RTLD_GLOBAL | RTLD_LAZY);
-    dlopen("libc++.so.1", RTLD_GLOBAL | RTLD_LAZY);
+    dlopen("libedit.so.0", RTLD_GLOBAL | RTLD_LAZY);
+    dlopen("libz.so.1", RTLD_GLOBAL | RTLD_LAZY);
+    dlopen("libzstd.so.1", RTLD_GLOBAL | RTLD_LAZY);
+    dlopen("liblzma.so.5", RTLD_GLOBAL | RTLD_LAZY);
+    dlopen("libbz2.so.1", RTLD_GLOBAL | RTLD_LAZY);
 
     // Create default return-from-main exit trampoline (mov x16, #1; svc #0x80)
     uint8_t* exit_stub = g_thunk_code + g_thunk_code_used;
@@ -1970,6 +2329,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_dyld_get_image_vmaddr_slide;
     } else if (strcmp(name, "__dyld_get_image_header") == 0) {
         host_fn = (void*)&darwin_dyld_get_image_header;
+    } else if (strcmp(name, "_strerror") == 0 || strcmp(name, "strerror") == 0) {
+        host_fn = (void*)&darwin_strerror;
     } else if (strcmp(name, "_strerror_r") == 0 || strcmp(name, "strerror_r") == 0) {
         host_fn = (void*)&darwin_strerror_r;
     } else if (strcmp(name, "_mmap") == 0 || strcmp(name, "mmap") == 0) {
@@ -2001,6 +2362,72 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_open_v;
     } else if (strcmp(name, "_openat") == 0 || strcmp(name, "openat") == 0) {
         host_fn = (void*)&darwin_openat_v;
+    } else if (strcmp(name, "_fopen") == 0 || strcmp(name, "fopen") == 0 ||
+               strcmp(name, "_fopen$DARWIN_EXTSN") == 0 || strcmp(name, "fopen$DARWIN_EXTSN") == 0) {
+        host_fn = (void*)&darwin_fopen;
+    } else if (strcmp(name, "_access") == 0 || strcmp(name, "access") == 0) {
+        host_fn = (void*)&darwin_access;
+    } else if (strcmp(name, "_readlink") == 0 || strcmp(name, "readlink") == 0) {
+        host_fn = (void*)&darwin_readlink;
+    } else if (strcmp(name, "_unlink") == 0 || strcmp(name, "unlink") == 0) {
+        host_fn = (void*)&darwin_unlink;
+    } else if (strcmp(name, "_remove") == 0 || strcmp(name, "remove") == 0) {
+        host_fn = (void*)&darwin_remove;
+    } else if (strcmp(name, "_mkdir") == 0 || strcmp(name, "mkdir") == 0) {
+        host_fn = (void*)&darwin_mkdir;
+    } else if (strcmp(name, "_rmdir") == 0 || strcmp(name, "rmdir") == 0) {
+        host_fn = (void*)&darwin_rmdir;
+    } else if (strcmp(name, "_rename") == 0 || strcmp(name, "rename") == 0) {
+        host_fn = (void*)&darwin_rename;
+    } else if (strcmp(name, "_chmod") == 0 || strcmp(name, "chmod") == 0) {
+        host_fn = (void*)&darwin_chmod;
+    } else if (strcmp(name, "_chown") == 0 || strcmp(name, "chown") == 0) {
+        host_fn = (void*)&darwin_chown;
+    } else if (strcmp(name, "_realpath") == 0 || strcmp(name, "realpath") == 0 ||
+               strcmp(name, "_realpath$DARWIN_EXTSN") == 0 || strcmp(name, "realpath$DARWIN_EXTSN") == 0) {
+        host_fn = (void*)&darwin_realpath;
+    } else if (strcmp(name, "_getcwd") == 0 || strcmp(name, "getcwd") == 0) {
+        host_fn = (void*)&darwin_getcwd;
+    } else if (strcmp(name, "_err") == 0 || strcmp(name, "err") == 0) {
+        host_fn = (void*)&darwin_err;
+    } else if (strcmp(name, "_errx") == 0 || strcmp(name, "errx") == 0) {
+        host_fn = (void*)&darwin_errx;
+    } else if (strcmp(name, "_warn") == 0 || strcmp(name, "warn") == 0) {
+        host_fn = (void*)&darwin_warn;
+    } else if (strcmp(name, "_warnx") == 0 || strcmp(name, "warnx") == 0) {
+        host_fn = (void*)&darwin_warnx;
+    } else if (strcmp(name, "_posix_spawn") == 0 || strcmp(name, "posix_spawn") == 0) {
+        host_fn = (void*)&darwin_posix_spawn;
+    } else if (strcmp(name, "_posix_spawnp") == 0 || strcmp(name, "posix_spawnp") == 0) {
+        host_fn = (void*)&darwin_posix_spawnp;
+    } else if (strcmp(name, "_posix_spawnattr_init") == 0 || strcmp(name, "posix_spawnattr_init") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_init;
+    } else if (strcmp(name, "_posix_spawnattr_destroy") == 0 || strcmp(name, "posix_spawnattr_destroy") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_destroy;
+    } else if (strcmp(name, "_posix_spawnattr_setflags") == 0 || strcmp(name, "posix_spawnattr_setflags") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_setflags;
+    } else if (strcmp(name, "_posix_spawnattr_getflags") == 0 || strcmp(name, "posix_spawnattr_getflags") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_getflags;
+    } else if (strcmp(name, "_posix_spawnattr_setbinpref_np") == 0 || strcmp(name, "posix_spawnattr_setbinpref_np") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_setbinpref_np;
+    } else if (strcmp(name, "_posix_spawnattr_getbinpref_np") == 0 || strcmp(name, "posix_spawnattr_getbinpref_np") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_getbinpref_np;
+    } else if (strcmp(name, "_posix_spawnattr_setpgroup") == 0 || strcmp(name, "posix_spawnattr_setpgroup") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_setpgroup;
+    } else if (strcmp(name, "_posix_spawnattr_setsigmask") == 0 || strcmp(name, "posix_spawnattr_setsigmask") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_setsigmask;
+    } else if (strcmp(name, "_posix_spawnattr_setsigdefault") == 0 || strcmp(name, "posix_spawnattr_setsigdefault") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_setsigdefault;
+    } else if (strcmp(name, "_posix_spawn_file_actions_init") == 0 || strcmp(name, "posix_spawn_file_actions_init") == 0) {
+        host_fn = (void*)&darwin_posix_spawn_file_actions_init;
+    } else if (strcmp(name, "_posix_spawn_file_actions_destroy") == 0 || strcmp(name, "posix_spawn_file_actions_destroy") == 0) {
+        host_fn = (void*)&darwin_posix_spawn_file_actions_destroy;
+    } else if (strcmp(name, "_posix_spawn_file_actions_addclose") == 0 || strcmp(name, "posix_spawn_file_actions_addclose") == 0) {
+        host_fn = (void*)&darwin_posix_spawn_file_actions_addclose;
+    } else if (strcmp(name, "_posix_spawn_file_actions_adddup2") == 0 || strcmp(name, "posix_spawn_file_actions_adddup2") == 0) {
+        host_fn = (void*)&darwin_posix_spawn_file_actions_adddup2;
+    } else if (strcmp(name, "_posix_spawn_file_actions_addopen") == 0 || strcmp(name, "posix_spawn_file_actions_addopen") == 0) {
+        host_fn = (void*)&darwin_posix_spawn_file_actions_addopen;
     } else if (strcmp(name, "_pthread_create") == 0 || strcmp(name, "pthread_create") == 0) {
         host_fn = (void*)&darwin_pthread_create;
     } else if (strcmp(name, "_pthread_join") == 0 || strcmp(name, "pthread_join") == 0) {
@@ -2156,7 +2583,7 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
 
     uint32_t thunk_id = (uint32_t)g_thunks.size();
     XEF_LOG(2, "darwin_hle: registered thunk id %u for symbol '%s'", thunk_id, name);
-    g_thunks.push_back({name, host_fn, strncmp(name, "_pthread_", 9) == 0 || strncmp(name, "_sem_", 5) == 0});
+    g_thunks.push_back({name, host_fn, strncmp(name, "_pthread_", 9) == 0 || strncmp(name, "_sem_", 5) == 0 || strstr(name, "posix_spawn") != nullptr});
 
     uint8_t* stub_ptr = g_thunk_code + g_thunk_code_used;
     g_thunk_code_used += 16; // 16-byte aligned
@@ -2175,8 +2602,6 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
     return guest_addr;
 }
 
-static thread_local const char* tl_hle_name = nullptr;
-static thread_local u64 tl_hle_lr = 0;
 bool darwin_hle_current(const char** name, u64* lr) {
     if (!tl_hle_name) return false;
     *name = tl_hle_name; *lr = tl_hle_lr;
@@ -2225,11 +2650,26 @@ void darwin_hle_dispatch(CpuState* st) {
 
     if (host_fn == (void*)&darwin_start_marker) {
         // x0..x3 = argc, argv, envp, apple (dyld's initializer arguments)
-        dyld_run_initializers(st->x[0], st->x[1], st->x[2], st->x[3]);
+        u64 argc = st->x[0];
+        u64 argv = st->x[1];
+        u64 envp = st->x[2];
+        u64 apple = st->x[3];
+        u64 sp = st->x[kGuestSP];
+        u64 lr = st->x[30];
+        dyld_run_initializers(argc, argv, envp, apple);
+        st->x[0] = argc;
+        st->x[1] = argv;
+        st->x[2] = envp;
+        st->x[3] = apple;
+        st->x[kGuestSP] = sp;
+        st->x[30] = lr;
         st->x[16] = g_darwin_start_target;
-        XEF_LOG(1, "xef-osx: initializers done, entering %#lx (lr=%#lx sp=%#lx)", (unsigned long)st->x[16], (unsigned long)st->x[30], (unsigned long)st->x[kGuestSP]);
+        XEF_LOG(1, "xef-osx: initializers done, entering %#lx (argc=%lu argv=%#lx lr=%#lx sp=%#lx)",
+                (unsigned long)st->x[16], (unsigned long)argc, (unsigned long)argv, (unsigned long)lr, (unsigned long)sp);
         return;
     }
+
+
 
     if (host_fn == (void*)&darwin_missing_symbol_fallback) {
         fatal("xef-osx: called unresolved Darwin symbol '%s'", name);
@@ -2268,6 +2708,33 @@ void darwin_hle_dispatch(CpuState* st) {
         st->x[0] = (uint64_t)darwin_vsnprintf((char*)(uintptr_t)st->x[0], (size_t)st->x[1], (const char*)(uintptr_t)st->x[2], va);
         return;
     }
+    if (host_fn == (void*)&darwin_err) {
+        int eval = (int)st->x[0];
+        const char* fmt = (const char*)(uintptr_t)st->x[1];
+        const uint64_t* sp = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
+        darwin_warn_impl(true, fmt, sp);
+        exit(eval);
+    }
+    if (host_fn == (void*)&darwin_errx) {
+        int eval = (int)st->x[0];
+        const char* fmt = (const char*)(uintptr_t)st->x[1];
+        const uint64_t* sp = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
+        darwin_warn_impl(false, fmt, sp);
+        exit(eval);
+    }
+    if (host_fn == (void*)&darwin_warn) {
+        const char* fmt = (const char*)(uintptr_t)st->x[0];
+        const uint64_t* sp = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
+        darwin_warn_impl(true, fmt, sp);
+        return;
+    }
+    if (host_fn == (void*)&darwin_warnx) {
+        const char* fmt = (const char*)(uintptr_t)st->x[0];
+        const uint64_t* sp = (const uint64_t*)(uintptr_t)st->x[kGuestSP];
+        darwin_warn_impl(false, fmt, sp);
+        return;
+    }
+
 
     if (const ShimEntry* sh = find_shim_by_fn(host_fn)) {
         if (sh->variadic_fixed >= 0) {

@@ -116,7 +116,7 @@ int main(int argc, char** argv, char** envp) {
     }
 
     // Check if the binary is Mach-O / FAT containing ARM64
-    std::string exe_resolved = resolve_guest_path(argv[i]);
+    std::string exe_resolved = resolve_guest_path(argv[i], true);
     bool is_fat = false, is_arm64 = false;
     if (is_macho_binary(exe_resolved.c_str(), is_fat, is_arm64)) {
         if (!is_arm64) fatal("%s: Mach-O/FAT binary does not contain an ARM64 slice", argv[i]);

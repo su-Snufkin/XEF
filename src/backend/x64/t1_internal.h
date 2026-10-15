@@ -115,7 +115,7 @@ private:
     Val gflags_ = kEntryFlags;  // guest NZCV as of the current instruction (last SetFlags)
     bool live_out_ = true;
     i32 entry_flags_last_ = 0;
-    u32 spill_used_ = 0;
+    u64 spill_used_ = 0;
     int nexits_ = 0;
     struct PendingStub { ExitInfo* e; };
     PendingStub stubs_[512];
@@ -218,13 +218,13 @@ private:
     void emit_test(Val f);
     // EFLAGS <- saved value without POPF (slow, microcoded): AH = flags byte, OF via add al,0x7f.
     void restore_spilled_flags() {
-        as_.mov(8, mem(R15, XEF_ST(spill) + 15 * 8), RAX);
+        as_.mov(8, mem(R15, XEF_ST(spill) + 63 * 8), RAX);
         as_.mov(4, RAX, mem(R15, XEF_ST(flags_spill)));
         as_.db(0x66); as_.db(0xC1); as_.db(0xC0); as_.db(8);    // rol ax, 8   (AH = E[7:0], AL = E[15:8])
         as_.db(0xC0); as_.db(0xE8); as_.db(3);                  // shr al, 3   (AL = OF)
         as_.alu_imm(ADD, 1, RAX, 0x7f);                          // OF = AL
         as_.sahf();                                              // SF ZF AF PF CF
-        as_.mov(8, RAX, mem(R15, XEF_ST(spill) + 15 * 8));
+        as_.mov(8, RAX, mem(R15, XEF_ST(spill) + 63 * 8));
     }
     Val resolve(Val v) const {
         while (vi_[v].k == L_ALIAS) v = I(v).a;
@@ -235,8 +235,8 @@ private:
     void free_reg(Reg r) { owner_[r] = 0; }
     void evict(Reg r);
     void take_reg(Reg r) { if (owner_[r]) evict(r); }
-    int free_spill_slot() const {   // slot 15 is reserved for flags restore
-        for (int i = 0; i < 15; i++) if (!(spill_used_ & (1u << i))) return i;
+    int free_spill_slot() const {   // slot 63 is reserved for flags restore
+        for (int i = 0; i < 63; i++) if (!(spill_used_ & (1ull << i))) return i;
         return -1;
     }
     void assign_reg(Val v, Reg r) {

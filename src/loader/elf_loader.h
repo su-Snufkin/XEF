@@ -25,6 +25,7 @@ extern std::string g_rootfs;
 // Host path of guest path `path`: inside the rootfs when it exists there, symlinks resolved as if
 // the rootfs were / (follow_last=false leaves a final symlink itself, for lstat/readlink/unlink).
 std::string resolve_guest_path(const char* path, bool follow_last = true);
+bool resolve_guest_realpath(const char* path, std::string& out);
 void guest_path_cache_clear();
 
 bool load_elf(const char* path, LoadedImage& img);

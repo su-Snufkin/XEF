@@ -1103,6 +1103,52 @@ static bool simd_crypto_sha2(Translator& t, u32 i) {
     }
 }
 
+static bool simd_crypto_armv82(Translator& t, u32 i) {
+    S s(t);
+    int rd = bits(i, 4, 0), rn = bits(i, 9, 5), rm = bits(i, 20, 16);
+    if (!bit(i, 23)) {
+        if (!bit(i, 15)) {
+            // 4-register crypto instructions (EOR3, BCAX)
+            int ra = bits(i, 14, 10);
+            int opc = bits(i, 22, 21);
+            if (opc == 0) {
+                // EOR3: Vd = Vn ^ Vm ^ Ra
+                Val t1 = s.vop(V_EOR, 16, 0, s.V(rn), s.V(rm));
+                s.setV(rd, s.vop(V_EOR, 16, 0, t1, s.V(ra)));
+                return true;
+            } else if (opc == 1) {
+                // BCAX: Vd = Vn ^ (Vm & ~Ra)
+                Val t1 = s.vop(V_BIC, 16, 0, s.V(rm), s.V(ra));
+                s.setV(rd, s.vop(V_EOR, 16, 0, s.V(rn), t1));
+                return true;
+            }
+        } else if (bits(i, 22, 21) == 3 && bits(i, 14, 12) == 0 && bits(i, 11, 10) == 3) {
+            // RAX1: Vd.d[i] = Vn.d[i] ^ rol64(Vm.d[i], 1)
+            Val m = s.V(rm);
+            Val s1 = s.vop(V_SHL_I, 8, 0, m, kNone, kNone, 1);
+            Val s2 = s.vop(V_USHR_I, 8, 0, m, kNone, kNone, 63);
+            Val rot = s.vop(V_ORR, 16, 0, s1, s2);
+            s.setV(rd, s.vop(V_EOR, 16, 0, s.V(rn), rot));
+            return true;
+        }
+    } else {
+        // bit(23) == 1: XAR Vd.2D, Vn.2D, Vm.2D, #imm6
+        if (bits(i, 22, 21) == 0) {
+            int imm6 = bits(i, 15, 10);
+            Val t1 = s.vop(V_EOR, 16, 0, s.V(rn), s.V(rm));
+            if (imm6 == 0) {
+                s.setV(rd, t1);
+            } else {
+                Val s1 = s.vop(V_USHR_I, 8, 0, t1, kNone, kNone, imm6);
+                Val s2 = s.vop(V_SHL_I, 8, 0, t1, kNone, kNone, 64 - imm6);
+                s.setV(rd, s.vop(V_ORR, 16, 0, s1, s2));
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Translator::simd_fp(u32 i) {
     u32 b2824 = bits(i, 28, 24);
     // Scalar floating point (not Advanced SIMD): bit 30 = 0, bits 28:24 = 11110 / 11111
@@ -1111,6 +1157,7 @@ bool Translator::simd_fp(u32 i) {
         return fp_scalar(*this, i);
     }
     bool scalar = bits(i, 31, 30) == 1 && bit(i, 28);
+    if (bits(i, 31, 24) == 0xCE) return simd_crypto_armv82(*this, i);
     if (bit(i, 31)) return false;
     if (!scalar && bit(i, 28)) return false;
     u32 b2824s = bits(i, 28, 24);

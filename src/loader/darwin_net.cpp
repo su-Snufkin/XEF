@@ -314,6 +314,20 @@ static int d_uname(char* u) {   // five 256-byte fields
     return 0;
 }
 
+static const char* d_inet_ntop(int af, const void* src, char* dst, socklen_t size) {
+    int laf = af_to_linux(af);
+    const char* r = inet_ntop(laf, src, dst, size);
+    if (!r) errno = darwin_errno_from_linux(errno);
+    return r;
+}
+
+static int d_inet_pton(int af, const char* src, void* dst) {
+    int laf = af_to_linux(af);
+    int r = inet_pton(laf, src, dst);
+    if (r < 0) errno = darwin_errno_from_linux(errno);
+    return r;
+}
+
 struct NetShim { const char* name; void* fn; };
 static const NetShim kNet[] = {
     {"_socket", (void*)&d_socket}, {"_socketpair", (void*)&d_socketpair}, {"_bind", (void*)&d_bind}, {"_connect", (void*)&d_connect},
@@ -324,6 +338,8 @@ static const NetShim kNet[] = {
     {"_select$1050", (void*)&d_select}, {"_pselect", (void*)&d_pselect}, {"_pselect$DARWIN_EXTSN", (void*)&d_pselect},
     {"_getaddrinfo", (void*)&d_getaddrinfo}, {"_freeaddrinfo", (void*)&d_freeaddrinfo}, {"_getnameinfo", (void*)&d_getnameinfo},
     {"_gai_strerror", (void*)&d_gai_strerror}, {"_uname", (void*)&d_uname},
+    {"_inet_ntop", (void*)&d_inet_ntop}, {"_inet_pton", (void*)&d_inet_pton},
+    {"inet_ntop", (void*)&d_inet_ntop}, {"inet_pton", (void*)&d_inet_pton},
 };
 void* darwin_net_lookup(const char* name) {
     for (const NetShim& s : kNet) if (!strcmp(s.name, name)) return s.fn;
