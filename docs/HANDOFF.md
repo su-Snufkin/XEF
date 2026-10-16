@@ -398,7 +398,7 @@ Zrobione:
   `host_processor_info`, `host_info`, zegary Mach; termios (`darwin_termios.cpp`: struktura, flagi, c_cc, prędkości, TIOC*, openpty/forkpty);
   tsearch/lfind/qsort_b z callbackami gościa; sysctl KERN_PROC/PROCARGS2/BOOTTIME; `dev_t` Darwina; cmsghdr (SCM_RIGHTS) w sendmsg/recvmsg.
 - `tools/ptyrun.py` — programy interaktywne na pty (wpisywanie klawiszy, wynik bez sekwencji escape).
-- macref 59/59 (stan po Deno). Dodatkowo: `darwin_fs.cpp` (rodzina `*at` przez nakładkę rootfs względem dirfd, xattr→`user.*`, statfs/statvfs,
+- macref 63/63 (stan po Bun). Dodatkowo: `darwin_fs.cpp` (rodzina `*at` przez nakładkę rootfs względem dirfd, xattr→`user.*`, statfs/statvfs,
   pathconf, mkstemp*, getattrlist, SysV IPC), CommonDigest (`darwin_commoncrypto.cpp`), popen/system przez `/bin/sh` rootfs
   (`fetch_bottle.py --shell`), EVFILT_SIGNAL, timeval z 32-bitowym usec, sem_open, kinfo_proc/PROCARGS2, cmsg/SCM_RIGHTS.
 - Rootfs w chmurze: `/bin/sh` = bash z butelki; `/usr/lib/libcurl.4.dylib` itd. (`--syslibs`). Komendy spoza rootfs (np. `ls`, `uname`)
@@ -430,6 +430,7 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | rustc 1.99 / cargo | działa | `cargo new`, `cargo build --release`, linkowanie `ld64.lld` (butelka lld) ze stub-SDK `tools/make_darwin_sdk.py`; binarka działa też natywnie na Macu (`tests/darwin/rust_test.sh`) |
 | ld64.lld 23 | działa | linker Mach-O pod xef-osx |
 | Deno 2.9 | działa | TypeScript (swc), WebCrypto, pliki, Deno.serve + fetch, Deno.Command (`tests/darwin/deno_test.sh`) |
+| Bun 1.4 | działa | TypeScript, Bun.write/file, Bun.serve + fetch, spawnSync, node:fs (`tests/darwin/bun_test.sh`) |
 | OpenJDK 27 | działa | `java -version`, `javac`, programy z wątkami/strumieniami, JIT C1/C2 (`tests/darwin/java_test.sh`) |
 
 Go i Rust (2026-10-16, cd.):
@@ -452,6 +453,10 @@ Go i Rust (2026-10-16, cd.):
   (przepuszczających flagi albo czytających je na wejściu: `cmp ; bl OUTLINED(csel …)`) — hashbrown liczył zły
   growth_left i swc psuł stertę. Diagnostyka: `XEF_DBG_FLAGS=1 --trace --max-block 1` wypisuje BL/RET, po których
   flagi uznano za martwe, a cel je czyta.
+- Bun: `__getdirentries64`, `mach_vm_map` z maską wyrównania (sterta struktur JSC, 4 GB), `vm_inherit`, `thread_switch`,
+  `mach_port_construct/destruct` + kqueue `EVFILT_MACHPORT` (eventfd portu czytelny, gdy czeka wiadomość), `kevent64`
+  (IMMEDIATE, ERROR_EVENTS), wszystkie `name$NOCANCEL` → implementacja `name` (wcześniej host z flagami Darwina),
+  SIGTRAP z adresem w siginfo.
 - libdispatch-lite: stan `dispatch_apply` na stercie z refcountem (spóźniony worker pisał w ramkę stosu wołającego;
   `foundation_threads` padał ~1/5, flaky także przed sesją). Przebudowa: `tools/build_libdispatch_lite.sh`.
 - Odłożone: clang/gcc „hello world” w C wymaga nagłówków SDK (stdio.h itd.) — z SDK Apple nie kopiujemy; do decyzji użytkownika.
