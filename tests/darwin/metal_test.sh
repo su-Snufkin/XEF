@@ -23,5 +23,15 @@ if [ -f tests/darwin/metallib_test ] && [ -f tests/darwin/AAPLShaders.metallib ]
   fi
 fi
 
+if [ -f tests/darwin/metalkit_test ]; then
+  OUT3=$(timeout 15 $X -L darwin-rootfs tests/darwin/metalkit_test 2>&1)
+  RC3=$?
+  if [ $RC3 -ne 0 ] || ! echo "$OUT3" | grep -q "PASS metalkit_test"; then
+    echo "FAIL metal_test (metalkit_test): rc=$RC3"
+    echo "$OUT3"
+    exit 1
+  fi
+fi
+
 echo "PASS metal_test"
 exit 0

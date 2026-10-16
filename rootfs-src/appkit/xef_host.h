@@ -68,6 +68,18 @@ typedef struct {
     float    uv_dims[2];
     int      filter_linear;   /* 1=linear, 0=nearest */
     int      clamp_to_edge;   /* 1=clamp, 0=repeat */
+    int      depth_test_enable;
+    int      depth_write_enable;
+    int      depth_compare_op;
+    int      stencil_test_enable;
+    int      stencil_compare_op;
+    int      stencil_fail_op;
+    int      stencil_depth_fail_op;
+    int      stencil_pass_op;
+    uint32_t stencil_read_mask;
+    uint32_t stencil_write_mask;
+    uint32_t stencil_ref;
+    uint32_t depth_tex_id;
 } xef_host_metal_pipeline_t;
 
 typedef struct {

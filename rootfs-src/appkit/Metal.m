@@ -1349,6 +1349,8 @@ static inline void xef_tex_sample(XEFMetalTexture *tex, XEFMetalSamplerState *sa
   NSString *_label;
   MTLCompareFunction _depthCompareFunction;
   BOOL _depthWriteEnabled;
+  MTLStencilDescriptor *_frontFaceStencil;
+  MTLStencilDescriptor *_backFaceStencil;
 }
 - (instancetype)initWithDescriptor:(MTLDepthStencilDescriptor *)desc device:(id<MTLDevice>)device;
 @end
@@ -1360,6 +1362,8 @@ static inline void xef_tex_sample(XEFMetalTexture *tex, XEFMetalSamplerState *sa
       _label = [desc.label copy];
       _depthCompareFunction = desc.depthCompareFunction;
       _depthWriteEnabled = desc.isDepthWriteEnabled;
+      _frontFaceStencil = [desc.frontFaceStencil copy];
+      _backFaceStencil = [desc.backFaceStencil copy];
     } else {
       _depthCompareFunction = MTLCompareFunctionAlways;
     }
@@ -1368,7 +1372,7 @@ static inline void xef_tex_sample(XEFMetalTexture *tex, XEFMetalSamplerState *sa
 }
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; }
-- (void)dealloc { [_label release]; [super dealloc]; }
+- (void)dealloc { [_label release]; [_frontFaceStencil release]; [_backFaceStencil release]; [super dealloc]; }
 @end
 
 enum {
@@ -1855,6 +1859,7 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   MTLCullMode _cullMode;
   MTLWinding _frontFacingWinding;
   float _blendColor[4];
+  uint32_t _stencilRef;
 }
 - (instancetype)initWithDescriptor:(MTLRenderPassDescriptor *)desc device:(id<MTLDevice>)device;
 @end
@@ -1993,8 +1998,8 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
 - (void)setBlendColorRed:(float)red green:(float)green blue:(float)blue alpha:(float)alpha {
   _blendColor[0] = red; _blendColor[1] = green; _blendColor[2] = blue; _blendColor[3] = alpha;
 }
-- (void)setStencilReferenceValue:(uint32_t)val {}
-- (void)setStencilFrontReferenceValue:(uint32_t)front backReferenceValue:(uint32_t)back {}
+- (void)setStencilReferenceValue:(uint32_t)val { _stencilRef = val; }
+- (void)setStencilFrontReferenceValue:(uint32_t)front backReferenceValue:(uint32_t)back { _stencilRef = front; }
 - (void)setTriangleFillMode:(MTLTriangleFillMode)fillMode {}
 - (void)setDepthClipMode:(MTLDepthClipMode)clipMode {}
 - (void)setDepthBias:(float)bias slopeScale:(float)slope clamp:(float)clamp {}
@@ -2594,6 +2599,29 @@ static void xef_fill_host_metal_pipeline(xef_host_metal_pipeline_t *pipe, XEFMet
   } else {
     pipe->filter_linear = 1;
     pipe->clamp_to_edge = 1;
+  }
+
+  /* Depth & Stencil states */
+  if (enc->_passDesc && enc->_passDesc.depthAttachment && enc->_passDesc.depthAttachment.texture) {
+    XEFMetalTexture *dtex = (XEFMetalTexture *)enc->_passDesc.depthAttachment.texture;
+    pipe->depth_tex_id = dtex->_hostTexId;
+  }
+  if (enc->_depthStencilState) {
+    pipe->depth_compare_op = (int)enc->_depthStencilState->_depthCompareFunction;
+    pipe->depth_write_enable = enc->_depthStencilState->_depthWriteEnabled ? 1 : 0;
+    pipe->depth_test_enable = (pipe->depth_compare_op != (int)MTLCompareFunctionAlways || pipe->depth_write_enable) ? 1 : 0;
+
+    MTLStencilDescriptor *st = enc->_depthStencilState->_frontFaceStencil;
+    if (st) {
+      pipe->stencil_test_enable = 1;
+      pipe->stencil_compare_op = (int)st.stencilCompareFunction;
+      pipe->stencil_fail_op = (int)st.stencilFailureOperation;
+      pipe->stencil_depth_fail_op = (int)st.depthFailureOperation;
+      pipe->stencil_pass_op = (int)st.depthStencilPassOperation;
+      pipe->stencil_read_mask = st.readMask;
+      pipe->stencil_write_mask = st.writeMask;
+      pipe->stencil_ref = enc->_stencilRef;
+    }
   }
 }
 

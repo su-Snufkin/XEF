@@ -152,13 +152,33 @@ struct PipelineKey {
     int write_mask;
     int prim_type;
     VkFormat rt_format;
+    int depth_test_enable;
+    int depth_write_enable;
+    int depth_compare_op;
+    int stencil_test_enable;
+    int stencil_compare_op;
+    int stencil_fail_op;
+    int stencil_depth_fail_op;
+    int stencil_pass_op;
+    uint32_t stencil_read_mask;
+    uint32_t stencil_write_mask;
 
     bool operator==(const PipelineKey& o) const {
         return blend_enable == o.blend_enable &&
                src_rgb == o.src_rgb && dst_rgb == o.dst_rgb && rgb_op == o.rgb_op &&
                src_a == o.src_a && dst_a == o.dst_a && a_op == o.a_op &&
                write_mask == o.write_mask && prim_type == o.prim_type &&
-               rt_format == o.rt_format;
+               rt_format == o.rt_format &&
+               depth_test_enable == o.depth_test_enable &&
+               depth_write_enable == o.depth_write_enable &&
+               depth_compare_op == o.depth_compare_op &&
+               stencil_test_enable == o.stencil_test_enable &&
+               stencil_compare_op == o.stencil_compare_op &&
+               stencil_fail_op == o.stencil_fail_op &&
+               stencil_depth_fail_op == o.stencil_depth_fail_op &&
+               stencil_pass_op == o.stencil_pass_op &&
+               stencil_read_mask == o.stencil_read_mask &&
+               stencil_write_mask == o.stencil_write_mask;
     }
 };
 
@@ -171,6 +191,10 @@ struct PipelineKeyHash {
         h ^= std::hash<int>()(k.write_mask) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.prim_type) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()((int)k.rt_format) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.depth_test_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.depth_write_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.depth_compare_op) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.stencil_test_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
         return h;
     }
 };
@@ -247,6 +271,34 @@ static VkPrimitiveTopology map_vk_prim_topology(int prim_type) {
     case 3: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     case 4: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
     default: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    }
+}
+
+static VkCompareOp map_vk_compare_op(int op) {
+    switch (op) {
+    case 0: return VK_COMPARE_OP_NEVER;
+    case 1: return VK_COMPARE_OP_LESS;
+    case 2: return VK_COMPARE_OP_EQUAL;
+    case 3: return VK_COMPARE_OP_LESS_OR_EQUAL;
+    case 4: return VK_COMPARE_OP_GREATER;
+    case 5: return VK_COMPARE_OP_NOT_EQUAL;
+    case 6: return VK_COMPARE_OP_GREATER_OR_EQUAL;
+    case 7: return VK_COMPARE_OP_ALWAYS;
+    default: return VK_COMPARE_OP_ALWAYS;
+    }
+}
+
+static VkStencilOp map_vk_stencil_op(int op) {
+    switch (op) {
+    case 0: return VK_STENCIL_OP_KEEP;
+    case 1: return VK_STENCIL_OP_ZERO;
+    case 2: return VK_STENCIL_OP_REPLACE;
+    case 3: return VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+    case 4: return VK_STENCIL_OP_DECREMENT_AND_CLAMP;
+    case 5: return VK_STENCIL_OP_INVERT;
+    case 6: return VK_STENCIL_OP_INCREMENT_AND_WRAP;
+    case 7: return VK_STENCIL_OP_DECREMENT_AND_WRAP;
+    default: return VK_STENCIL_OP_KEEP;
     }
 }
 
@@ -455,6 +507,23 @@ static VkPipeline get_or_create_pipeline(const PipelineKey& key, VkRenderPass re
     colorBlending.pAttachments = &colorBlendAttachment;
 
     VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDepthStencilStateCreateInfo depthStencil = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+    depthStencil.depthTestEnable = key.depth_test_enable ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = key.depth_write_enable ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp = map_vk_compare_op(key.depth_compare_op);
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = key.stencil_test_enable ? VK_TRUE : VK_FALSE;
+    if (key.stencil_test_enable) {
+        depthStencil.front.failOp = map_vk_stencil_op(key.stencil_fail_op);
+        depthStencil.front.passOp = map_vk_stencil_op(key.stencil_pass_op);
+        depthStencil.front.depthFailOp = map_vk_stencil_op(key.stencil_depth_fail_op);
+        depthStencil.front.compareOp = map_vk_compare_op(key.stencil_compare_op);
+        depthStencil.front.compareMask = key.stencil_read_mask;
+        depthStencil.front.writeMask = key.stencil_write_mask;
+        depthStencil.front.reference = 0; // overridden by dynamic or static
+        depthStencil.back = depthStencil.front;
+    }
+
     VkPipelineDynamicStateCreateInfo dynamicState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
     dynamicState.dynamicStateCount = 2;
     dynamicState.pDynamicStates = dynamicStates;
@@ -467,6 +536,7 @@ static VkPipeline get_or_create_pipeline(const PipelineKey& key, VkRenderPass re
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = g_pipeline_layout;
@@ -1155,6 +1225,16 @@ void draw(int handle,
     key.write_mask = pipe->write_mask;
     key.prim_type = prim_type;
     key.rt_format = rt.vk_fmt;
+    key.depth_test_enable = pipe->depth_test_enable;
+    key.depth_write_enable = pipe->depth_write_enable;
+    key.depth_compare_op = pipe->depth_compare_op;
+    key.stencil_test_enable = pipe->stencil_test_enable;
+    key.stencil_compare_op = pipe->stencil_compare_op;
+    key.stencil_fail_op = pipe->stencil_fail_op;
+    key.stencil_depth_fail_op = pipe->stencil_depth_fail_op;
+    key.stencil_pass_op = pipe->stencil_pass_op;
+    key.stencil_read_mask = pipe->stencil_read_mask;
+    key.stencil_write_mask = pipe->stencil_write_mask;
 
     VkPipeline pipeline = get_or_create_pipeline(key, rt.render_pass_load);
     if (pipeline == VK_NULL_HANDLE) return;

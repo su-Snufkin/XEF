@@ -518,5 +518,13 @@ Implementacja MetalVK (Natywny backend Vulkan dla Metal) pod XEF-OSX (2026-10-17
   - Dodano test integracyjny `tests/darwin/metallib_test.m` ładujący binarny plik `AAPLShaders.metallib`:
     - Weryfikuje prawidłowe odczytanie wszystkich funkcji (`vertexShader`, `fragmentShader`), ich typów oraz utworzenie stanu potoku `MTLRenderPipelineState`.
     - Rozszerzono `tests/darwin/metal_test.sh` o weryfikację archiwów metallib (`PASS metal_test`).
+- **Natywne wsparcie Depth & Stencil w MetalVK**:
+  - Rozszerzono `xef_host_metal_pipeline_t`, `PipelineKey` oraz `get_or_create_pipeline` w `darwin_metal_vk.cpp` o pełne stany bufora głębokości i szablonu (`VkPipelineDepthStencilStateCreateInfo`).
+  - Mapowanie operacji porównania (`VK_COMPARE_OP_LESS`, `EQUAL`, `GREATER`, `ALWAYS`, etc.) oraz operacji szablonu (`VK_STENCIL_OP_KEEP`, `ZERO`, `REPLACE`, `INCR_CLAMP`, etc.).
+  - Integracja `XEFMetalDepthStencilState`, front/back stencil descriptors oraz referencji szablonu (`setStencilReferenceValue:`).
+- **MetalKit.framework (`MTKView`)**:
+  - Zaimplementowano kompletny framework `MetalKit.framework` (`rootfs-src/appkit/MetalKit.m`) dostarczający `MTKView` i protokół `MTKViewDelegate`.
+  - Powiązanie z warstwą `CAMetalLayer`, obsługa `colorPixelFormat`, `depthStencilPixelFormat`, `clearColor`, `currentDrawable`, `currentRenderPassDescriptor`, delegata renderowania `drawInMTKView:` i automatycznego skalowania `drawableSize`.
+  - Przebudowano frameworki na Macu i zintegrowano z testem `tests/darwin/metalkit_test.m` (włączonym do `metal_test.sh`).
 
 
