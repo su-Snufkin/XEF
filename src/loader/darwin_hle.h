@@ -27,6 +27,8 @@ void* darwin_stdio_data_lookup(const char* name);
 void* darwin_proc_lookup(const char* name);           // darwin_proc.cpp: libproc
 void* darwin_termios_lookup(const char* name);        // darwin_termios.cpp
 void* darwin_fs_lookup(const char* name);
+void* darwin_fenv_lookup(const char* name);        // darwin_fenv.cpp: <fenv.h> (arm64 fenv_t, FPCR/FPSR)
+void* darwin_fenv_data_lookup(const char* name);   // _FE_DFL_ENV
 void* darwin_commoncrypto_lookup(const char* name);   // darwin_commoncrypto.cpp: CommonDigest             // darwin_fs.cpp: *at family, xattr, statfs, ...
 bool darwin_termios_ioctl(int fd, unsigned long req, void* arg, int* ret);
 pid_t darwin_fork();                                  // fork with atfork handlers (darwin_hle.cpp)     // guest pthread key destructors of the exiting thread
