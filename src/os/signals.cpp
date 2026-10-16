@@ -582,7 +582,7 @@ static void deliver_darwin(CpuState* st, int sig, const siginfo_t& si, u64 saved
     f->info.d_code = si.si_code;
     f->info.d_pid = si.si_pid;
     f->info.d_uid = si.si_uid;
-    if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE) f->info.d_addr = (u64)si.si_addr;
+    if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE || sig == SIGTRAP) f->info.d_addr = (u64)si.si_addr;
     f->uc.uc_sigmask = (u32)linux_mask_to_darwin(saved_mask);
     f->uc.ss_sp = t->ss_sp; f->uc.ss_size = t->ss_size; f->uc.ss_flags = t->ss_size ? 0 : 4;   // SS_DISABLE
     f->uc.uc_mcsize = sizeof(DMcontext);

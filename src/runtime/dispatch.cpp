@@ -381,8 +381,8 @@ static void run_guest(ThreadCtx* t, bool nested) {
             bool brk = st->exit_reason == EXIT_BRK && !(st->exit_info & 0x10000);
             int sig = brk ? SIGTRAP : SIGILL;
             if (g_actions_handler(sig)) {
-                XEF_LOG(1, "%s at %#lx: delivered to the guest", brk ? "brk" : "undefined instruction",
-                        (unsigned long)st->pc);
+                XEF_LOG(1, "%s at %#lx (lr %#lx): delivered to the guest", brk ? "brk" : "undefined instruction",
+                        (unsigned long)st->pc, (unsigned long)st->x[30]);
                 siginfo_t si {};
                 si.si_signo = sig;
                 si.si_code = brk ? TRAP_BRKPT : ILL_ILLOPC;
