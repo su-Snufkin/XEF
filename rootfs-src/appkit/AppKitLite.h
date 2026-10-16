@@ -5,7 +5,8 @@
 typedef NS_ENUM(NSUInteger, NSBackingStoreType) { NSBackingStoreRetained = 0, NSBackingStoreNonretained = 1, NSBackingStoreBuffered = 2 };
 typedef NS_OPTIONS(NSUInteger, NSWindowStyleMask) {
   NSWindowStyleMaskBorderless = 0, NSWindowStyleMaskTitled = 1 << 0, NSWindowStyleMaskClosable = 1 << 1,
-  NSWindowStyleMaskMiniaturizable = 1 << 2, NSWindowStyleMaskResizable = 1 << 3, NSWindowStyleMaskFullSizeContentView = 1 << 15 };
+  NSWindowStyleMaskMiniaturizable = 1 << 2, NSWindowStyleMaskResizable = 1 << 3,
+  NSWindowStyleMaskFullScreen = 1 << 14, NSWindowStyleMaskFullSizeContentView = 1 << 15 };
 typedef NS_ENUM(NSInteger, NSApplicationActivationPolicy) { NSApplicationActivationPolicyRegular, NSApplicationActivationPolicyAccessory, NSApplicationActivationPolicyProhibited };
 typedef NS_ENUM(NSUInteger, NSEventType) {
   NSEventTypeLeftMouseDown = 1, NSEventTypeLeftMouseUp = 2, NSEventTypeRightMouseDown = 3, NSEventTypeRightMouseUp = 4,
@@ -44,8 +45,19 @@ extern id NSApp;
 extern NSString *const NSWindowWillCloseNotification, *const NSApplicationDidFinishLaunchingNotification;
 extern NSString *const NSCalibratedRGBColorSpace, *const NSPasteboardTypeString, *const NSPasteboardTypeURL,
     *const NSPasteboardURLReadingFileURLsOnlyKey, *const NSTextInputContextKeyboardSelectionDidChangeNotification;
+extern NSString *const NSDefaultRunLoopMode, *const NSRunLoopCommonModes;
+extern NSString *const NSWindowDidFailToEnterFullScreenNotification, *const NSWindowDidFailToExitFullScreenNotification;
+extern const NSPoint NSZeroPoint;
+extern const NSRect NSZeroRect;
+BOOL NSPointInRect(NSPoint aPoint, NSRect aRect);
+BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 
-@interface NSResponder : NSObject
+@interface NSResponder : NSObject {
+@public
+  NSResponder *_nextResponder;
+}
+- (NSResponder *)nextResponder;
+- (void)setNextResponder:(NSResponder *)r;
 - (BOOL)acceptsFirstResponder;
 - (BOOL)becomeFirstResponder;
 - (BOOL)resignFirstResponder;
@@ -55,7 +67,9 @@ extern NSString *const NSCalibratedRGBColorSpace, *const NSPasteboardTypeString,
 - (void)otherMouseDown:(id)e; - (void)otherMouseUp:(id)e; - (void)otherMouseDragged:(id)e;
 - (void)scrollWheel:(id)e;
 - (void)mouseEntered:(id)e; - (void)mouseExited:(id)e; - (void)cursorUpdate:(id)e;
+- (void)tabletPoint:(id)e; - (void)tabletProximity:(id)e;
 - (void)interpretKeyEvents:(NSArray *)events;
+- (void)doCommandBySelector:(SEL)aSelector;
 @end
 
 @interface NSEvent : NSObject {
@@ -66,7 +80,7 @@ extern NSString *const NSCalibratedRGBColorSpace, *const NSPasteboardTypeString,
 - (NSEventType)type; - (unsigned short)keyCode; - (NSPoint)locationInWindow; - (NSEventModifierFlags)modifierFlags;
 - (NSString *)characters; - (NSString *)charactersIgnoringModifiers; - (id)window; - (NSTimeInterval)timestamp;
 - (NSInteger)buttonNumber; - (CGFloat)deltaX; - (CGFloat)deltaY; - (CGFloat)scrollingDeltaX; - (CGFloat)scrollingDeltaY;
-- (BOOL)hasPreciseScrollingDeltas; - (BOOL)isARepeat; - (NSInteger)clickCount;
+- (BOOL)hasPreciseScrollingDeltas; - (BOOL)isARepeat; - (NSInteger)clickCount; - (NSInteger)windowNumber;
 + (NSEvent *)otherEventWithType:(NSEventType)t location:(NSPoint)p modifierFlags:(NSUInteger)f timestamp:(NSTimeInterval)ts
     windowNumber:(NSInteger)w context:(id)c subtype:(short)s data1:(NSInteger)d1 data2:(NSInteger)d2;
 + (NSEventModifierFlags)modifierFlags; + (NSUInteger)pressedMouseButtons; + (NSPoint)mouseLocation;
@@ -182,6 +196,68 @@ extern NSString *const NSCalibratedRGBColorSpace, *const NSPasteboardTypeString,
 - (void)setIgnoresMouseEvents:(BOOL)f; - (CGFloat)alphaValue; - (void)setAlphaValue:(CGFloat)a; - (NSWindowOcclusionState)occlusionState; - (BOOL)isOpaque;
 - (NSRect)convertRectToScreen:(NSRect)r; - (NSPoint)mouseLocationOutsideOfEventStream; - (void)toggleFullScreen:(id)s;
 + (NSInteger)windowNumberAtPoint:(NSPoint)p belowWindowWithWindowNumber:(NSInteger)n;
+@end
+
+enum {
+  NSModalResponseOK = 1,
+  NSModalResponseCancel = 0,
+};
+typedef NSInteger NSModalResponse;
+
+@class NSURL;
+
+@interface NSSavePanel : NSWindow {
+@public
+  NSString *_prompt;
+  NSString *_message;
+  NSURL *_directoryURL;
+  NSString *_nameFieldStringValue;
+  NSArray *_allowedFileTypes;
+  NSArray *_allowedContentTypes;
+  BOOL _allowsOtherFileTypes;
+  BOOL _canCreateDirectories;
+  NSURL *_url;
+}
++ (NSSavePanel *)savePanel;
+- (void)setTitle:(NSString *)title;
+- (NSString *)title;
+- (void)setPrompt:(NSString *)prompt;
+- (NSString *)prompt;
+- (void)setMessage:(NSString *)message;
+- (NSString *)message;
+- (void)setDirectoryURL:(NSURL *)url;
+- (NSURL *)directoryURL;
+- (void)setNameFieldStringValue:(NSString *)value;
+- (NSString *)nameFieldStringValue;
+- (void)setAllowedFileTypes:(NSArray *)types;
+- (NSArray *)allowedFileTypes;
+- (void)setAllowedContentTypes:(NSArray *)types;
+- (NSArray *)allowedContentTypes;
+- (void)setAllowsOtherFileTypes:(BOOL)flag;
+- (BOOL)allowsOtherFileTypes;
+- (void)setCanCreateDirectories:(BOOL)flag;
+- (BOOL)canCreateDirectories;
+- (NSURL *)URL;
+- (void)beginSheetModalForWindow:(NSWindow *)window completionHandler:(void (^)(NSModalResponse returnCode))handler;
+- (void)beginWithCompletionHandler:(void (^)(NSModalResponse returnCode))handler;
+- (NSModalResponse)runModal;
+@end
+
+@interface NSOpenPanel : NSSavePanel {
+@public
+  BOOL _canChooseFiles;
+  BOOL _canChooseDirectories;
+  BOOL _allowsMultipleSelection;
+  NSArray *_urls;
+}
++ (NSOpenPanel *)openPanel;
+- (void)setCanChooseFiles:(BOOL)flag;
+- (BOOL)canChooseFiles;
+- (void)setCanChooseDirectories:(BOOL)flag;
+- (BOOL)canChooseDirectories;
+- (void)setAllowsMultipleSelection:(BOOL)flag;
+- (BOOL)allowsMultipleSelection;
+- (NSArray *)URLs;
 @end
 
 @interface NSApplication : NSResponder {

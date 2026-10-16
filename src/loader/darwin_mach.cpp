@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <sys/eventfd.h>
+#include <sys/syscall.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <thread>

@@ -156,6 +156,7 @@ pid_t darwin_spawn_shell(const char* cmd, int child_in, int child_out);
 static std::mutex g_popen_lock;
 static std::unordered_map<FILE*, pid_t> g_popen_pids;
 static void* s_popen(const char* cmd, const char* mode) {
+    XEF_LOG(1, "popen: cmd=%s", cmd ? cmd : "(null)");
     if (!cmd || !mode || (mode[0] != 'r' && mode[0] != 'w')) { errno = EINVAL; return nullptr; }
     bool rd = mode[0] == 'r';
     int p[2];

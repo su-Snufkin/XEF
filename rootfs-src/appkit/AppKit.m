@@ -39,6 +39,75 @@ NSString *const NSWindowWillStartLiveResizeNotification = @"NSWindowWillStartLiv
 NSString *const NSBackingPropertyOldScaleFactorKey = @"NSBackingPropertyOldScaleFactorKey";
 NSString *const NSDeviceRGBColorSpace = @"NSDeviceRGBColorSpace";
 NSString *const NSFilenamesPboardType = @"NSFilenamesPboardType";
+NSString *const NSApplicationDidChangeScreenParametersNotification = @"NSApplicationDidChangeScreenParametersNotification";
+NSString *const NSWindowDidChangeOcclusionStateNotification = @"NSWindowDidChangeOcclusionStateNotification";
+NSString *const NSWindowWillMiniaturizeNotification = @"NSWindowWillMiniaturizeNotification";
+NSString *const NSWindowWillMoveNotification = @"NSWindowWillMoveNotification";
+NSString *const NSCurrentLocaleDidChangeNotification = @"NSCurrentLocaleDidChangeNotification";
+NSString *const NSDefaultRunLoopMode = @"kCFRunLoopDefaultMode";
+NSString *const NSRunLoopCommonModes = @"kCFRunLoopCommonModes";
+NSString *const NSWindowDidFailToEnterFullScreenNotification = @"NSWindowDidFailToEnterFullScreenNotification";
+NSString *const NSWindowDidFailToExitFullScreenNotification = @"NSWindowDidFailToExitFullScreenNotification";
+const NSPoint NSZeroPoint = {0.0, 0.0};
+const NSRect NSZeroRect = {{0.0, 0.0}, {0.0, 0.0}};
+
+BOOL NSPointInRect(NSPoint p, NSRect r) {
+  return (p.x >= r.origin.x && p.x <= (r.origin.x + r.size.width) &&
+          p.y >= r.origin.y && p.y <= (r.origin.y + r.size.height));
+}
+BOOL NSMouseInRect(NSPoint p, NSRect r, BOOL flipped) {
+  return NSPointInRect(p, r);
+}
+
+NSString *const GCControllerDidConnectNotification = @"GCControllerDidConnectNotification";
+NSString *const GCControllerDidDisconnectNotification = @"GCControllerDidDisconnectNotification";
+NSString *const GCHapticDurationInfinite = @"GCHapticDurationInfinite";
+NSString *const GCHapticsLocalityHandles = @"GCHapticsLocalityHandles";
+NSString *const GCHapticsLocalityLeftHandle = @"GCHapticsLocalityLeftHandle";
+NSString *const GCHapticsLocalityLeftTrigger = @"GCHapticsLocalityLeftTrigger";
+NSString *const GCHapticsLocalityRightHandle = @"GCHapticsLocalityRightHandle";
+NSString *const GCHapticsLocalityRightTrigger = @"GCHapticsLocalityRightTrigger";
+NSString *const GCHapticsLocalityTriggers = @"GCHapticsLocalityTriggers";
+
+NSString *const GCInputButtonA = @"Button A";
+NSString *const GCInputButtonB = @"Button B";
+NSString *const GCInputButtonMenu = @"Button Menu";
+NSString *const GCInputButtonOptions = @"Button Options";
+NSString *const GCInputButtonX = @"Button X";
+NSString *const GCInputButtonY = @"Button Y";
+NSString *const GCInputDirectionPad = @"Direction Pad";
+NSString *const GCInputDualShockTouchpadButton = @"Touchpad Button";
+NSString *const GCInputDualShockTouchpadOne = @"Touchpad One";
+NSString *const GCInputDualShockTouchpadTwo = @"Touchpad Two";
+NSString *const GCInputLeftShoulder = @"Left Shoulder";
+NSString *const GCInputLeftThumbstick = @"Left Thumbstick";
+NSString *const GCInputLeftThumbstickButton = @"Left Thumbstick Button";
+NSString *const GCInputLeftTrigger = @"Left Trigger";
+NSString *const GCInputRightShoulder = @"Right Shoulder";
+NSString *const GCInputRightThumbstick = @"Right Thumbstick";
+NSString *const GCInputRightThumbstickButton = @"Right Thumbstick Button";
+NSString *const GCInputRightTrigger = @"Right Trigger";
+NSString *const GCInputXboxPaddleFour = @"Paddle Four";
+NSString *const GCInputXboxPaddleOne = @"Paddle One";
+NSString *const GCInputXboxPaddleThree = @"Paddle Three";
+NSString *const GCInputXboxPaddleTwo = @"Paddle Two";
+
+NSString *const AVCaptureDeviceTypeBuiltInWideAngleCamera = @"AVCaptureDeviceTypeBuiltInWideAngleCamera";
+NSString *const AVCaptureDeviceTypeExternalUnknown = @"AVCaptureDeviceTypeExternalUnknown";
+NSString *const AVCaptureSessionPresetHigh = @"AVCaptureSessionPresetHigh";
+NSString *const AVMediaTypeVideo = @"vide";
+
+const void *const kCGColorSpaceExtendedLinearSRGB = (const void*)1;
+const void *const kCGColorSpaceITUR_2100_PQ = (const void*)2;
+const void *const kCGColorSpaceSRGB = (const void*)3;
+const void *const kCGColorClear = (const void*)4;
+
+CFStringRef const kCVPixelBufferHeightKey = CFSTR("Height");
+CFStringRef const kCVPixelBufferPixelFormatTypeKey = CFSTR("PixelFormatType");
+CFStringRef const kCVPixelBufferWidthKey = CFSTR("Width");
+CFStringRef const kUTTagClassMIMEType = CFSTR("kUTTagClassMIMEType");
+CFStringRef const kUTTypeUTF8PlainText = CFSTR("public.utf8-plain-text");
+
 const double NSAppKitVersionNumber = 2685.0;   /* macOS 15-ish: SDL/GLFW only compare against old releases */
 static NSMutableArray *g_monitors;   /* local event monitors: @{@"mask", @"block"} */
 
@@ -55,17 +124,35 @@ static void screen_init(void) {
 
 static NSOpenGLContext *g_current;
 
+static NSUInteger g_guest_buttons = 0;
+
 /* ---------------------------------------------------------------- responder */
 @implementation NSResponder
+- (NSResponder *)nextResponder { return _nextResponder; }
+- (void)setNextResponder:(NSResponder *)r { _nextResponder = r; }
 - (BOOL)acceptsFirstResponder { return NO; }
 - (BOOL)becomeFirstResponder { return YES; }
 - (BOOL)resignFirstResponder { return YES; }
-- (void)keyDown:(id)e {} - (void)keyUp:(id)e {} - (void)flagsChanged:(id)e {}
-- (void)mouseDown:(id)e {} - (void)mouseUp:(id)e {} - (void)mouseMoved:(id)e {} - (void)mouseDragged:(id)e {}
-- (void)rightMouseDown:(id)e {} - (void)rightMouseUp:(id)e {} - (void)rightMouseDragged:(id)e {}
-- (void)otherMouseDown:(id)e {} - (void)otherMouseUp:(id)e {} - (void)otherMouseDragged:(id)e {}
-- (void)scrollWheel:(id)e {}
-- (void)mouseEntered:(id)e {} - (void)mouseExited:(id)e {} - (void)cursorUpdate:(id)e {}
+- (void)doCommandBySelector:(SEL)aSelector { if (_nextResponder && [_nextResponder respondsToSelector:@selector(doCommandBySelector:)]) [(id)_nextResponder doCommandBySelector:aSelector]; }
+- (void)keyDown:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(keyDown:)]) [(id)_nextResponder keyDown:e]; }
+- (void)keyUp:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(keyUp:)]) [(id)_nextResponder keyUp:e]; }
+- (void)flagsChanged:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(flagsChanged:)]) [(id)_nextResponder flagsChanged:e]; }
+- (void)mouseDown:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(mouseDown:)]) [(id)_nextResponder mouseDown:e]; }
+- (void)mouseUp:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(mouseUp:)]) [(id)_nextResponder mouseUp:e]; }
+- (void)mouseMoved:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(mouseMoved:)]) [(id)_nextResponder mouseMoved:e]; }
+- (void)mouseDragged:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(mouseDragged:)]) [(id)_nextResponder mouseDragged:e]; }
+- (void)rightMouseDown:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(rightMouseDown:)]) [(id)_nextResponder rightMouseDown:e]; }
+- (void)rightMouseUp:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(rightMouseUp:)]) [(id)_nextResponder rightMouseUp:e]; }
+- (void)rightMouseDragged:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(rightMouseDragged:)]) [(id)_nextResponder rightMouseDragged:e]; }
+- (void)otherMouseDown:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(otherMouseDown:)]) [(id)_nextResponder otherMouseDown:e]; }
+- (void)otherMouseUp:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(otherMouseUp:)]) [(id)_nextResponder otherMouseUp:e]; }
+- (void)otherMouseDragged:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(otherMouseDragged:)]) [(id)_nextResponder otherMouseDragged:e]; }
+- (void)scrollWheel:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(scrollWheel:)]) [(id)_nextResponder scrollWheel:e]; }
+- (void)mouseEntered:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(mouseEntered:)]) [(id)_nextResponder mouseEntered:e]; }
+- (void)mouseExited:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(mouseExited:)]) [(id)_nextResponder mouseExited:e]; }
+- (void)cursorUpdate:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(cursorUpdate:)]) [(id)_nextResponder cursorUpdate:e]; }
+- (void)tabletPoint:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(tabletPoint:)]) [(id)_nextResponder tabletPoint:e]; }
+- (void)tabletProximity:(id)e { if (_nextResponder && [_nextResponder respondsToSelector:@selector(tabletProximity:)]) [(id)_nextResponder tabletProximity:e]; }
 /* NSTextInputContext without input methods: printable characters go to insertText:replacementRange:, everything else
  * (return, delete, arrows, ...) to doCommandBySelector: like the default key bindings of a text view. */
 - (void)interpretKeyEvents:(NSArray *)events {
@@ -96,6 +183,7 @@ static NSOpenGLContext *g_current;
 - (NSString *)characters { return _chars ? _chars : @""; }
 - (NSString *)charactersIgnoringModifiers { return [self characters]; }
 - (id)window { return _window; }
+- (NSInteger)windowNumber { return _window ? [(NSWindow *)_window windowNumber] : 0; }
 - (NSTimeInterval)timestamp { return _ts; }
 - (NSInteger)buttonNumber { return _button; }
 - (CGFloat)deltaX { return _dx; } - (CGFloat)deltaY { return _dy; }
@@ -106,7 +194,10 @@ static NSOpenGLContext *g_current;
   NSEvent *e = [[[NSEvent alloc] init] autorelease]; e->_type = t; e->_loc = p; e->_flags = f; e->_ts = ts; return e;
 }
 + (NSEventModifierFlags)modifierFlags { return 0; }
-+ (NSUInteger)pressedMouseButtons { return 0; }
++ (NSUInteger)pressedMouseButtons {
+  int hb = xef_host_mouse_buttons();
+  return (NSUInteger)hb | g_guest_buttons;
+}
 + (NSPoint)mouseLocation {
   int sx = 0, sy = 0; if (!xef_host_pointer(0, &sx, &sy, NULL, NULL)) return NSMakePoint(0, 0);
   return NSMakePoint(sx, SCREEN_H - sy); }
@@ -197,6 +288,10 @@ static unichar key_char(int kc, int shift) {
           [NSValue valueWithSize:NSMakeSize(SCREEN_W, SCREEN_H)], @"NSDeviceSize", nil]; }
 - (NSRect)convertRectToBacking:(NSRect)r { return r; }
 - (NSString *)localizedName { return @"XEF Display"; }
+- (CGFloat)maximumExtendedDynamicRangeColorComponentValue { return 1.0; }
+- (CGFloat)maximumPotentialExtendedDynamicRangeColorComponentValue { return 1.0; }
+- (CGFloat)maximumReferenceExtendedDynamicRangeColorComponentValue { return 1.0; }
+- (id)colorSpace { return nil; }
 @end
 
 /* ------------------------------------------------------------ color / cursor */
@@ -306,15 +401,44 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   }
   return self; }
 + (NSRect)frameRectForContentRect:(NSRect)c styleMask:(NSWindowStyleMask)m {
-  if (m & NSWindowStyleMaskTitled) c.size.height += TITLEBAR; return c; }
+  if ((m & NSWindowStyleMaskTitled) && !(m & NSWindowStyleMaskFullScreen)) c.size.height += TITLEBAR; return c; }
 + (NSRect)contentRectForFrameRect:(NSRect)f styleMask:(NSWindowStyleMask)m {
-  if (m & NSWindowStyleMaskTitled) f.size.height -= TITLEBAR; return f; }
+  if ((m & NSWindowStyleMaskTitled) && !(m & NSWindowStyleMaskFullScreen)) f.size.height -= TITLEBAR; return f; }
 - (NSRect)contentRectForFrameRect:(NSRect)f { return [NSWindow contentRectForFrameRect:f styleMask:_style]; }
 - (NSRect)frameRectForContentRect:(NSRect)c { return [NSWindow frameRectForContentRect:c styleMask:_style]; }
-- (NSRect)frame { return _frame; }
+- (NSRect)frame {
+  if (_handle > 0) {
+    static BOOL querying = NO;
+    if (!querying) {
+      querying = YES;
+      int rx = 0, ry = 0, rw = 0, rh = 0;
+      if (xef_host_window_get_geometry(_handle, &rx, &ry, &rw, &rh)) {
+        NSRect c;
+        c.origin.x = rx;
+        c.origin.y = SCREEN_H - ry - rh;
+        c.size.width = rw;
+        c.size.height = rh;
+        NSRect f = [self frameRectForContentRect:c];
+        if (f.origin.x != _frame.origin.x || f.origin.y != _frame.origin.y ||
+            f.size.width != _frame.size.width || f.size.height != _frame.size.height) {
+          NSRect old = _frame;
+          _frame = f;
+          if (_content) [_content setFrame:NSMakeRect(0, 0, rw, rh)];
+          if (old.origin.x != f.origin.x || old.origin.y != f.origin.y) [self _notify:kWinDidMove selector:@selector(windowDidMove:)];
+          if (old.size.width != f.size.width || old.size.height != f.size.height) [self _notify:kWinDidResize selector:@selector(windowDidResize:)];
+        }
+      }
+      querying = NO;
+    }
+  }
+  return _frame;
+}
 - (void)_notify:(NSString *)name selector:(SEL)sel {
-  if (![_delegate respondsToSelector:sel]) return;
-  [_delegate performSelector:sel withObject:[NSNotification notificationWithName:name object:self]]; }
+  NSNotification *n = [NSNotification notificationWithName:name object:self];
+  [[NSNotificationCenter defaultCenter] postNotification:n];
+  if ([_delegate respondsToSelector:sel])
+    [_delegate performSelector:sel withObject:n];
+}
 /* stores a new frame; sync = push the content rect to the X11 window (false when the change came from the host) */
 - (void)_applyFrame:(NSRect)f sync:(BOOL)sync {
   NSRect old = _frame; _frame = f; NSRect c = [self contentRectForFrameRect:f];
@@ -340,17 +464,19 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   [v _setWindow:self]; }
 - (NSView *)contentView { return _content; }
 - (BOOL)isVisible { return _visible && !_mini; }
+- (void)setIsVisible:(BOOL)v { if (v) [self orderFront:nil]; else [self orderOut:nil]; }
 - (void)orderFront:(id)s {
   if (_visible) return;
   _visible = YES; xef_host_window_show(_handle);
+  [self frame];
   [self _notify:kWinDidOcclusion selector:@selector(windowDidChangeOcclusionState:)]; }
 - (void)makeKeyAndOrderFront:(id)s { [self orderFront:s]; [self makeKeyWindow]; }
 - (void)orderOut:(id)s {
   if (!_visible) return;
   _visible = NO; xef_host_window_hide(_handle);
   [self _notify:kWinDidOcclusion selector:@selector(windowDidChangeOcclusionState:)]; }
-- (BOOL)canBecomeKeyWindow { return (_style & NSWindowStyleMaskTitled) != 0; }
-- (BOOL)canBecomeMainWindow { return [self canBecomeKeyWindow]; }
+- (BOOL)canBecomeKeyWindow { return YES; }
+- (BOOL)canBecomeMainWindow { return YES; }
 - (void)makeKeyWindow {
   if (_closed || _key || ![self canBecomeKeyWindow]) return;
   for (NSWindow *o in [[[(NSApplication *)NSApp windows] copy] autorelease]) if (o != self && o->_key) [o resignKeyWindow];
@@ -401,7 +527,23 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   _unzoomed = _frame; NSRect v = [[NSScreen mainScreen] visibleFrame];
   [self _applyFrame:v sync:YES]; _zoomed = YES; }
 - (BOOL)isZoomed { return _zoomed; } - (void)performZoom:(id)s { [self zoom:s]; }
-- (void)toggleFullScreen:(id)s { [self zoom:s]; }   /* HLE: full screen == zoomed window on X11 without a window manager */
+- (void)toggleFullScreen:(id)s {
+  if (!(_style & NSWindowStyleMaskFullScreen)) {
+    _unzoomed = _frame;
+    [self _notify:NSWindowWillEnterFullScreenNotification selector:@selector(windowWillEnterFullScreen:)];
+    _style |= NSWindowStyleMaskFullScreen;
+    xef_host_window_set_fullscreen(_handle, 1);
+    NSRect full = NSMakeRect(0, 0, SCREEN_W, SCREEN_H);
+    [self _applyFrame:full sync:NO];
+    [self _notify:NSWindowDidEnterFullScreenNotification selector:@selector(windowDidEnterFullScreen:)];
+  } else {
+    [self _notify:NSWindowWillExitFullScreenNotification selector:@selector(windowWillExitFullScreen:)];
+    _style &= ~NSWindowStyleMaskFullScreen;
+    xef_host_window_set_fullscreen(_handle, 0);
+    [self _applyFrame:_unzoomed sync:YES];
+    [self _notify:NSWindowDidExitFullScreenNotification selector:@selector(windowDidExitFullScreen:)];
+  }
+}
 - (void)miniaturize:(id)s { if (_mini) return; _mini = YES; xef_host_window_hide(_handle); [self _notify:kWinDidMini selector:@selector(windowDidMiniaturize:)]; }
 - (void)deminiaturize:(id)s { if (!_mini) return; _mini = NO; if (_visible) xef_host_window_show(_handle); [self _notify:kWinDidDemini selector:@selector(windowDidDeminiaturize:)]; }
 - (BOOL)isMiniaturized { return _mini; } - (void)performMiniaturize:(id)s { [self miniaturize:s]; }
@@ -423,15 +565,17 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
       else [a->_owner mouseExited:e]; } }
 - (void)sendEvent:(NSEvent *)e {
   NSResponder *t = _first ? _first : (NSResponder *)_content;
+  NSView *target = _content ? [_content hitTest:[e locationInWindow]] : nil;
+  NSResponder *m = target ? (NSResponder *)target : (_content ? (NSResponder *)_content : (NSResponder *)self);
   switch (e->_type) {
   case NSEventTypeKeyDown: [t keyDown:e]; break; case NSEventTypeKeyUp: [t keyUp:e]; break;
   case NSEventTypeFlagsChanged: [t flagsChanged:e]; break;
-  case NSEventTypeLeftMouseDown: [self makeKeyWindow]; [_content mouseDown:e]; break; case NSEventTypeLeftMouseUp: [_content mouseUp:e]; break;
-  case NSEventTypeRightMouseDown: [_content rightMouseDown:e]; break; case NSEventTypeRightMouseUp: [_content rightMouseUp:e]; break;
-  case NSEventTypeOtherMouseDown: [_content otherMouseDown:e]; break; case NSEventTypeOtherMouseUp: [_content otherMouseUp:e]; break;
-  case NSEventTypeMouseMoved: [_content mouseMoved:e]; break; case NSEventTypeLeftMouseDragged: [_content mouseDragged:e]; break;
-  case NSEventTypeRightMouseDragged: [_content rightMouseDragged:e]; break; case NSEventTypeOtherMouseDragged: [_content otherMouseDragged:e]; break;
-  case NSEventTypeScrollWheel: [_content scrollWheel:e]; break;
+  case NSEventTypeLeftMouseDown: [self makeKeyWindow]; [m mouseDown:e]; break; case NSEventTypeLeftMouseUp: [m mouseUp:e]; break;
+  case NSEventTypeRightMouseDown: [m rightMouseDown:e]; break; case NSEventTypeRightMouseUp: [m rightMouseUp:e]; break;
+  case NSEventTypeOtherMouseDown: [m otherMouseDown:e]; break; case NSEventTypeOtherMouseUp: [m otherMouseUp:e]; break;
+  case NSEventTypeMouseMoved: [m mouseMoved:e]; break; case NSEventTypeLeftMouseDragged: [m mouseDragged:e]; break;
+  case NSEventTypeRightMouseDragged: [m rightMouseDragged:e]; break; case NSEventTypeOtherMouseDragged: [m otherMouseDragged:e]; break;
+  case NSEventTypeScrollWheel: [m scrollWheel:e]; break;
   case NSEventTypeMouseEntered: case NSEventTypeMouseExited: [self _hostEnterExit:e]; break;
   default: break; } }
 - (void)dealloc { if (!_closed) xef_host_window_close(_handle); [_content release]; [_title release]; [_miniTitle release]; [super dealloc]; }
@@ -472,28 +616,47 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)postEvent:(NSEvent *)e atStart:(BOOL)s { if (s) [_queue insertObject:e atIndex:0]; else [_queue addObject:e]; }
 
 - (NSWindow *)_eventWindow { NSWindow *w = [self keyWindow]; if (w) return w; for (NSWindow *x in _windows) if (x->_visible) return x; return [_windows firstObject]; }
+- (NSWindow *)_windowForHandle:(int)handle {
+  if (handle > 0) { for (NSWindow *w in _windows) if (w->_handle == handle) return w; }
+  return [self _eventWindow]; }
 
 /* translate a host event into an NSEvent; non-input host events are handled here and return nil */
 - (NSEvent *)_convert:(xef_host_event_t *)h {
-  NSWindow *w = [self _eventWindow];
+  NSWindow *w = [self _windowForHandle:h->handle];
   if (h->type == XEF_EV_CLOSE) { [w close]; return nil; }
   if (h->type == XEF_EV_FOCUS_IN) { _active = YES; [w makeKeyWindow]; return nil; }
   if (h->type == XEF_EV_FOCUS_OUT) { _active = NO; [w resignKeyWindow]; return nil; }
   if (h->type == XEF_EV_RESIZE) {
-    if (w) { NSRect f = w->_frame; NSRect c = [w contentRectForFrameRect:f]; c.size = NSMakeSize(h->x, h->y);
-      f.size = [w frameRectForContentRect:c].size; [w _applyFrame:f sync:NO]; }
+    if (w) [w frame];
     return nil; }
   NSEvent *e = [[[NSEvent alloc] init] autorelease];
   e->_type = (NSEventType)h->type; e->_keyCode = (unsigned short)h->keycode; e->_flags = (NSEventModifierFlags)h->flags; e->_window = w;
-  CGFloat ch = w && w->_content ? w->_content->_bounds.size.height : 0;
+  CGFloat ch = 0;
+  if (w) {
+    if (w->_content && w->_content->_bounds.size.height > 0)
+      ch = w->_content->_bounds.size.height;
+    else {
+      NSRect c = [w contentRectForFrameRect:w->_frame];
+      ch = c.size.height > 0 ? c.size.height : w->_frame.size.height;
+    }
+  }
   e->_loc = NSMakePoint(h->x, ch - h->y);
   e->_ts = [NSDate timeIntervalSinceReferenceDate];
   if (h->type == NSEventTypeScrollWheel) e->_dy = h->keycode;
   if (h->type == NSEventTypeKeyDown || h->type == NSEventTypeKeyUp) {
     unichar c = key_char(h->keycode, (h->flags & NSEventModifierFlagShift) != 0);
     if (c) e->_chars = [[NSString alloc] initWithCharacters:&c length:1]; }
-  if (h->type == NSEventTypeRightMouseDown || h->type == NSEventTypeRightMouseUp || h->type == NSEventTypeRightMouseDragged) e->_button = 1;
-  if (h->type >= NSEventTypeOtherMouseDown && h->type <= NSEventTypeOtherMouseDragged) e->_button = 2;
+  if (h->type == NSEventTypeLeftMouseDown) g_guest_buttons |= (1 << 0);
+  else if (h->type == NSEventTypeLeftMouseUp) g_guest_buttons &= ~(1 << 0);
+  else if (h->type == NSEventTypeRightMouseDown || h->type == NSEventTypeRightMouseUp || h->type == NSEventTypeRightMouseDragged) {
+    e->_button = 1;
+    if (h->type == NSEventTypeRightMouseDown) g_guest_buttons |= (1 << 1);
+    else if (h->type == NSEventTypeRightMouseUp) g_guest_buttons &= ~(1 << 1);
+  } else if (h->type >= NSEventTypeOtherMouseDown && h->type <= NSEventTypeOtherMouseDragged) {
+    e->_button = 2;
+    if (h->type == NSEventTypeOtherMouseDown) g_guest_buttons |= (1 << 2);
+    else if (h->type == NSEventTypeOtherMouseUp) g_guest_buttons &= ~(1 << 2);
+  }
   return e; }
 
 - (NSEvent *)_take:(NSUInteger)mask {
@@ -504,11 +667,14 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
     if (mask == (NSUInteger)NSEventMaskAny || ((1ULL << e->_type) & mask)) return e; } }
 
 - (NSEvent *)nextEventMatchingMask:(NSUInteger)m untilDate:(NSDate *)d inMode:(NSString *)mode dequeue:(BOOL)dq {
+  NSString *mde = mode ? mode : NSDefaultRunLoopMode;
+  [[NSRunLoop currentRunLoop] runMode:mde beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.0]];
   for (;;) {
     NSEvent *e = [self _take:m];
     if (e) { if (!dq) [_queue insertObject:e atIndex:0]; return e; }
     if (!d || [d timeIntervalSinceNow] <= 0) return nil;
-    usleep(1000); } }
+    usleep(1000);
+    [[NSRunLoop currentRunLoop] runMode:mde beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.0]]; } }
 
 - (void)sendEvent:(NSEvent *)e {
   NSEvent *prev = _current; _current = e; NSEvent *ev = e;
@@ -663,11 +829,6 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 
 /* ======================================================= SDL2 Cocoa backend */
 /* The rest of what SDL2's video backend (SDL_cocoa*.m) sends. Geometry is single-screen and scale 1.0 as above. */
-static char kNextResponderKey;
-@implementation NSResponder (XefSDL)
-- (NSResponder *)nextResponder { return objc_getAssociatedObject(self, &kNextResponderKey); }
-- (void)setNextResponder:(NSResponder *)r { objc_setAssociatedObject(self, &kNextResponderKey, r, OBJC_ASSOCIATION_ASSIGN); }
-@end
 
 @implementation NSView (XefSDL)
 - (NSRect)convertRect:(NSRect)r toView:(NSView *)v { return r; }      /* subviews fill their parent at the origin */
@@ -800,6 +961,9 @@ static char kNextResponderKey;
 @end
 
 @implementation NSImage (XefSDL)
+- (id)initWithContentsOfFile:(NSString *)path { return [self init]; }
+- (id)initWithData:(NSData *)data { return [self init]; }
+- (id)initWithSize:(NSSize)size { _size = size; return self; }
 - (void)drawInRect:(NSRect)d fromRect:(NSRect)s operation:(NSUInteger)op fraction:(CGFloat)f {}   /* no 2D drawing on X11-lite */
 - (void)setSize:(NSSize)s { _size = s; } - (BOOL)isValid { return YES; }
 - (void)lockFocus {} - (void)unlockFocus {}
@@ -836,6 +1000,135 @@ static NSGraphicsContext *g_gc;
 + (NSColorSpace *)sRGBColorSpace { static NSColorSpace *s; if (!s) s = [[NSColorSpace alloc] init]; return s; }
 + (NSColorSpace *)deviceRGBColorSpace { return [self sRGBColorSpace]; } + (NSColorSpace *)genericRGBColorSpace { return [self sRGBColorSpace]; }
 - (NSData *)ICCProfileData { return nil; } - (void *)CGColorSpace { return NULL; } - (NSInteger)numberOfColorComponents { return 3; }
+@end
+
+/* ------------------------------------------------------------- file dialogs */
+@implementation NSSavePanel
++ (NSSavePanel *)savePanel {
+  return [[[self alloc] init] autorelease];
+}
+- (id)init {
+  if ((self = [super init])) {
+    _allowsOtherFileTypes = YES;
+    _canCreateDirectories = YES;
+  }
+  return self;
+}
+- (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
+- (NSString *)title { return _title; }
+- (void)setPrompt:(NSString *)p { [p retain]; [_prompt release]; _prompt = p; }
+- (NSString *)prompt { return _prompt; }
+- (void)setMessage:(NSString *)m { [m retain]; [_message release]; _message = m; }
+- (NSString *)message { return _message; }
+- (void)setDirectoryURL:(NSURL *)u { [u retain]; [_directoryURL release]; _directoryURL = u; }
+- (NSURL *)directoryURL { return _directoryURL; }
+- (void)setNameFieldStringValue:(NSString *)v { [v retain]; [_nameFieldStringValue release]; _nameFieldStringValue = v; }
+- (NSString *)nameFieldStringValue { return _nameFieldStringValue; }
+- (void)setAllowedFileTypes:(NSArray *)t { [t retain]; [_allowedFileTypes release]; _allowedFileTypes = t; }
+- (NSArray *)allowedFileTypes { return _allowedFileTypes; }
+- (void)setAllowedContentTypes:(NSArray *)t { [t retain]; [_allowedContentTypes release]; _allowedContentTypes = t; }
+- (NSArray *)allowedContentTypes { return _allowedContentTypes; }
+- (void)setAllowsOtherFileTypes:(BOOL)f { _allowsOtherFileTypes = f; }
+- (BOOL)allowsOtherFileTypes { return _allowsOtherFileTypes; }
+- (void)setCanCreateDirectories:(BOOL)f { _canCreateDirectories = f; }
+- (BOOL)canCreateDirectories { return _canCreateDirectories; }
+- (NSURL *)URL { return _url; }
+
+- (NSModalResponse)runModal {
+  char buf[4096];
+  buf[0] = '\0';
+  const char *t = _title ? [_title UTF8String] : (_prompt ? [_prompt UTF8String] : NULL);
+  const char *init_p = NULL;
+  NSString *p = nil;
+  if (_directoryURL) {
+    p = [_directoryURL path];
+    if (_nameFieldStringValue && [_nameFieldStringValue length])
+      p = [p stringByAppendingPathComponent:_nameFieldStringValue];
+  } else if (_nameFieldStringValue && [_nameFieldStringValue length]) {
+    p = _nameFieldStringValue;
+  }
+  if (p) init_p = [p UTF8String];
+
+  BOOL is_open = [self isKindOfClass:[NSOpenPanel class]];
+  int is_dir = 0;
+  int allow_multi = 0;
+  if (is_open) {
+    NSOpenPanel *op = (NSOpenPanel *)self;
+    if (op->_canChooseDirectories && !op->_canChooseFiles) is_dir = 1;
+    if (op->_allowsMultipleSelection) allow_multi = 1;
+  }
+
+  int ok = xef_host_file_dialog(t, init_p, !is_open, is_dir, allow_multi, buf, sizeof(buf));
+  if (!ok || buf[0] == '\0') return NSModalResponseCancel;
+
+  NSMutableArray *urls = [NSMutableArray array];
+  char *saveptr = NULL;
+  char *line = strtok_r(buf, "\n", &saveptr);
+  while (line) {
+    if (*line) {
+      NSString *sp = [NSString stringWithUTF8String:line];
+      if (sp) {
+        NSURL *u = [NSURL fileURLWithPath:sp];
+        if (u) [urls addObject:u];
+      }
+    }
+    line = strtok_r(NULL, "\n", &saveptr);
+  }
+  if ([urls count] == 0) return NSModalResponseCancel;
+
+  [_url release];
+  _url = [[urls firstObject] retain];
+  if (is_open) {
+    NSOpenPanel *op = (NSOpenPanel *)self;
+    [op->_urls release];
+    op->_urls = [urls retain];
+  }
+  return NSModalResponseOK;
+}
+
+- (void)beginWithCompletionHandler:(void (^)(NSModalResponse returnCode))handler {
+  [self beginSheetModalForWindow:nil completionHandler:handler];
+}
+
+- (void)beginSheetModalForWindow:(NSWindow *)w completionHandler:(void (^)(NSModalResponse returnCode))handler {
+  NSModalResponse res = [self runModal];
+  if (handler) handler(res);
+}
+
+- (void)dealloc {
+  [_prompt release]; [_message release]; [_directoryURL release]; [_nameFieldStringValue release];
+  [_allowedFileTypes release]; [_allowedContentTypes release]; [_url release];
+  [super dealloc];
+}
+@end
+
+@implementation NSOpenPanel
++ (NSOpenPanel *)openPanel {
+  return [[[self alloc] init] autorelease];
+}
+- (id)init {
+  if ((self = [super init])) {
+    _canChooseFiles = YES;
+    _canChooseDirectories = NO;
+    _allowsMultipleSelection = NO;
+  }
+  return self;
+}
+- (void)setCanChooseFiles:(BOOL)f { _canChooseFiles = f; }
+- (BOOL)canChooseFiles { return _canChooseFiles; }
+- (void)setCanChooseDirectories:(BOOL)f { _canChooseDirectories = f; }
+- (BOOL)canChooseDirectories { return _canChooseDirectories; }
+- (void)setAllowsMultipleSelection:(BOOL)f { _allowsMultipleSelection = f; }
+- (BOOL)allowsMultipleSelection { return _allowsMultipleSelection; }
+- (NSArray *)URLs {
+  if (_urls) return _urls;
+  if (_url) return [NSArray arrayWithObject:_url];
+  return [NSArray array];
+}
+- (void)dealloc {
+  [_urls release];
+  [super dealloc];
+}
 @end
 
 void NSRectFill(NSRect r) {}

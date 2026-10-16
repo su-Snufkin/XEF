@@ -63,3 +63,18 @@ void CVDisplayLinkRelease(CVDisplayLinkRef link) {
 CVTime CVDisplayLinkGetNominalOutputVideoRefreshPeriod(CVDisplayLinkRef l) { CVTime t = { 1, REFRESH_HZ, 0 }; return t; }
 double CVDisplayLinkGetActualOutputVideoRefreshPeriod(CVDisplayLinkRef l) { return 1.0 / REFRESH_HZ; }
 CVReturn CVDisplayLinkGetCurrentTime(CVDisplayLinkRef l, CVTimeStamp *out) { if (out) stamp(out, now_ns()); return kCVReturnSuccess; }
+
+void *CVPixelBufferGetBaseAddress(CVPixelBufferRef pixelBuffer) { return NULL; }
+void *CVPixelBufferGetBaseAddressOfPlane(CVPixelBufferRef pixelBuffer, size_t planeIndex) { return NULL; }
+size_t CVPixelBufferGetBytesPerRow(CVPixelBufferRef pixelBuffer) { return 0; }
+size_t CVPixelBufferGetBytesPerRowOfPlane(CVPixelBufferRef pixelBuffer, size_t planeIndex) { return 0; }
+size_t CVPixelBufferGetHeight(CVPixelBufferRef pixelBuffer) { return 0; }
+size_t CVPixelBufferGetHeightOfPlane(CVPixelBufferRef pixelBuffer, size_t planeIndex) { return 0; }
+IOSurfaceRef CVPixelBufferGetIOSurface(CVPixelBufferRef pixelBuffer) { return NULL; }
+size_t CVPixelBufferGetPlaneCount(CVPixelBufferRef pixelBuffer) { return 0; }
+size_t CVPixelBufferGetWidth(CVPixelBufferRef pixelBuffer) { return 0; }
+Boolean CVPixelBufferIsPlanar(CVPixelBufferRef pixelBuffer) { return 0; }
+CVReturn CVPixelBufferLockBaseAddress(CVPixelBufferRef pixelBuffer, CVPixelBufferLockFlags lockFlags) { return kCVReturnSuccess; }
+CVReturn CVPixelBufferUnlockBaseAddress(CVPixelBufferRef pixelBuffer, CVPixelBufferLockFlags unlockFlags) { return kCVReturnSuccess; }
+
+

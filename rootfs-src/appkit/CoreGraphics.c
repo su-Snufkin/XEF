@@ -128,3 +128,8 @@ bool CGRectIntersectsRect(CGRect a, CGRect b) {
          a.origin.y < b.origin.y + b.size.height && b.origin.y < a.origin.y + a.size.height; }
 const CFStringRef kCGColorBlack = CFSTR("kCGColorBlack");
 CGColorRef CGColorGetConstantColor(CFStringRef name) { return (CGColorRef)name; }   /* opaque token: only passed back to AppKit-lite */
+CGColorSpaceRef CGColorSpaceCreateWithName(CFStringRef name) { return (CGColorSpaceRef)name; }
+void CGColorSpaceRelease(CGColorSpaceRef space) {}
+typedef void (*CGDisplayReconfigurationCallBack)(CGDirectDisplayID display, CGDisplayChangeSummaryFlags flags, void *userInfo);
+CGError CGDisplayRegisterReconfigurationCallback(CGDisplayReconfigurationCallBack proc, void *userInfo) { return kCGErrorSuccess; }
+CGError CGDisplayRemoveReconfigurationCallback(CGDisplayReconfigurationCallBack proc, void *userInfo) { return kCGErrorSuccess; }

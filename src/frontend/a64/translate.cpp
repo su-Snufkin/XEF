@@ -1,5 +1,6 @@
 // XEF — AArch64 base (integer / branch / load-store / system) translation.
 #include <sys/uio.h>
+#include <unistd.h>
 #include "frontend/a64/translate.h"
 
 #include <stdlib.h>

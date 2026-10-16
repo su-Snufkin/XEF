@@ -11,6 +11,11 @@
 #include <X11/XKBlib.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <vector>
+#include <string>
 #include <mutex>
 #include <map>
 
@@ -21,12 +26,14 @@ namespace {
 #define XEF_EV_RESIZE 1001
 #define XEF_EV_FOCUS_IN 1002
 #define XEF_EV_FOCUS_OUT 1003
-struct HostEvent { int type, keycode, x, y, flags; };
+struct HostEvent { int type, keycode, x, y, flags, handle; };
 
-struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0; unsigned long visid = 0; bool core = false; };
+struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0, x = 0, y = 0; unsigned long visid = 0; bool core = false; };
 std::mutex g_lock;
 Display* g_dpy = nullptr;
 Atom g_wm_delete = 0;
+Atom g_net_wm_state = 0;
+Atom g_net_wm_state_fullscreen = 0;
 std::map<int, HWin> g_wins;
 int g_next = 1;
 int g_cur = 0;
@@ -43,10 +50,17 @@ bool open_display() {
     g_dpy = open(getenv("DISPLAY"));
     if (!g_dpy) { XEF_LOG(1, "xef_host: cannot open display %s", getenv("DISPLAY") ? getenv("DISPLAY") : "(null)"); return false; }
     g_wm_delete = X<Atom (*)(Display*, const char*, int)>("XInternAtom")(g_dpy, "WM_DELETE_WINDOW", 0);
+    g_net_wm_state = X<Atom (*)(Display*, const char*, int)>("XInternAtom")(g_dpy, "_NET_WM_STATE", 0);
+    g_net_wm_state_fullscreen = X<Atom (*)(Display*, const char*, int)>("XInternAtom")(g_dpy, "_NET_WM_STATE_FULLSCREEN", 0);
     return true;
 }
 
 HWin* find(int h) { auto it = g_wins.find(h); return it == g_wins.end() ? nullptr : &it->second; }
+int find_handle(::Window w) {
+    for (auto& kv : g_wins)
+        if (kv.second.win == w) return kv.first;
+    return 0;
+}
 
 // X keysym -> macOS virtual key code (kVK_*); -1 = unknown
 int mac_key(KeySym ks) {
@@ -129,7 +143,7 @@ int xef_host_window_create(int x, int y, int w, int h, const char* title) {
     X<void (*)(Display*, ::Window, XSizeHints*)>("XSetWMNormalHints")(g_dpy, win, &sh);
     X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
     int id = g_next++;
-    HWin hw; hw.win = win; hw.ctx = ctx; hw.w = w; hw.h = h; hw.visid = visid;
+    HWin hw; hw.win = win; hw.ctx = ctx; hw.w = w; hw.h = h; hw.x = x; hw.y = y; hw.visid = visid;
     g_wins[id] = hw;
     return id;
 }
@@ -171,6 +185,27 @@ void xef_host_window_close(int h) {
     g_wins.erase(h);
 }
 
+void xef_host_window_set_fullscreen(int h, int enable) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    HWin* hw = find(h);
+    if (!hw || !g_dpy) return;
+    int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+    ::Window root = X<::Window (*)(Display*, int)>("XRootWindow")(g_dpy, scr);
+    XClientMessageEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = ClientMessage;
+    ev.window = hw->win;
+    ev.message_type = g_net_wm_state;
+    ev.format = 32;
+    ev.data.l[0] = enable ? 1 : 0;
+    ev.data.l[1] = g_net_wm_state_fullscreen;
+    ev.data.l[2] = 0;
+    ev.data.l[3] = 1;
+    X<int (*)(Display*, ::Window, int, long, XEvent*)>("XSendEvent")(
+        g_dpy, root, False, SubstructureNotifyMask | SubstructureRedirectMask, (XEvent*)&ev);
+    X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
+}
+
 int xef_host_pump(void* out) {
     std::lock_guard<std::mutex> lk(g_lock);
     if (!g_dpy) return 0;
@@ -185,27 +220,51 @@ int xef_host_pump(void* out) {
         switch (ev.type) {
         case ClientMessage:
             if ((Atom)ev.xclient.data.l[0] != g_wm_delete) continue;
-            o->type = XEF_EV_CLOSE; return 1;
+            o->type = XEF_EV_CLOSE;
+            o->handle = find_handle(ev.xclient.window);
+            return 1;
         case ConfigureNotify:
-            for (auto& kv : g_wins)
-                if (kv.second.win == ev.xconfigure.window && (kv.second.w != ev.xconfigure.width || kv.second.h != ev.xconfigure.height)) {
-                    kv.second.w = ev.xconfigure.width; kv.second.h = ev.xconfigure.height;
-                    o->type = XEF_EV_RESIZE; o->x = kv.second.w; o->y = kv.second.h; return 1;
+            for (auto& kv : g_wins) {
+                if (kv.second.win == ev.xconfigure.window) {
+                    int rx = 0, ry = 0;
+                    ::Window child = 0;
+                    int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+                    ::Window root = X<::Window (*)(Display*, int)>("XRootWindow")(g_dpy, scr);
+                    X<int (*)(Display*, ::Window, ::Window, int, int, int*, int*, ::Window*)>("XTranslateCoordinates")(
+                        g_dpy, kv.second.win, root, 0, 0, &rx, &ry, &child);
+                    if (kv.second.w != ev.xconfigure.width || kv.second.h != ev.xconfigure.height ||
+                        kv.second.x != rx || kv.second.y != ry) {
+                        kv.second.w = ev.xconfigure.width;
+                        kv.second.h = ev.xconfigure.height;
+                        kv.second.x = rx;
+                        kv.second.y = ry;
+                        o->type = XEF_EV_RESIZE;
+                        o->x = kv.second.w;
+                        o->y = kv.second.h;
+                        o->handle = kv.first;
+                        return 1;
+                    }
                 }
+            }
             continue;
         case EnterNotify: case LeaveNotify:
             if (ev.xcrossing.mode != NotifyNormal) continue;
             o->type = ev.type == EnterNotify ? 8 : 9; o->x = ev.xcrossing.x; o->y = ev.xcrossing.y;
-            o->flags = mac_flags(ev.xcrossing.state); return 1;
+            o->flags = mac_flags(ev.xcrossing.state);
+            o->handle = find_handle(ev.xcrossing.window);
+            return 1;
         case FocusIn: case FocusOut:
             if (ev.xfocus.mode != NotifyNormal && ev.xfocus.mode != NotifyWhileGrabbed) continue;
-            o->type = ev.type == FocusIn ? XEF_EV_FOCUS_IN : XEF_EV_FOCUS_OUT; return 1;
+            o->type = ev.type == FocusIn ? XEF_EV_FOCUS_IN : XEF_EV_FOCUS_OUT;
+            o->handle = find_handle(ev.xfocus.window);
+            return 1;
         case KeyPress: case KeyRelease: {
             KeySym ks = lookup ? lookup(g_dpy, ev.xkey.keycode, 0, 0) : 0;
             int mk = mac_key(ks);
             if (mk < 0) continue;
             o->type = ev.type == KeyPress ? 10 : 11; o->keycode = mk; o->flags = mac_flags(ev.xkey.state);
             o->x = ev.xkey.x; o->y = ev.xkey.y;
+            o->handle = find_handle(ev.xkey.window);
             // modifier keys are NSEventTypeFlagsChanged on macOS, carrying the flags AFTER the change
             // (X reports the state from before the event)
             int bit = ks == XK_Shift_L || ks == XK_Shift_R ? 1 << 17 : ks == XK_Control_L || ks == XK_Control_R ? 1 << 18 :
@@ -223,6 +282,7 @@ int xef_host_pump(void* out) {
             unsigned b = ev.xbutton.button;
             bool dn = ev.type == ButtonPress;
             o->x = ev.xbutton.x; o->y = ev.xbutton.y; o->flags = mac_flags(ev.xbutton.state);
+            o->handle = find_handle(ev.xbutton.window);
             if (b >= 4 && b <= 7) {   // wheel: 4 up, 5 down, (6/7 horizontal ignored)
                 if (!dn || b > 5) continue;
                 o->type = 22; o->keycode = b == 4 ? 1 : -1; return 1;
@@ -236,6 +296,7 @@ int xef_host_pump(void* out) {
         case MotionNotify:
             o->x = ev.xmotion.x; o->y = ev.xmotion.y; o->flags = mac_flags(ev.xmotion.state);
             o->type = (g_buttons & 1) ? 6 : (g_buttons & 4) ? 7 : (g_buttons & 2) ? 27 : 5;
+            o->handle = find_handle(ev.xmotion.window);
             return 1;
         default: continue;
         }
@@ -331,7 +392,7 @@ void xef_host_window_set_frame(int h, int x, int y, int w, int ht) {
     if (ht < 1) ht = 1;
     X<int (*)(Display*, ::Window, int, int, unsigned, unsigned)>("XMoveResizeWindow")(g_dpy, hw->win, x, y, (unsigned)w, (unsigned)ht);
     X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
-    hw->w = w; hw->h = ht;   // already reported to the guest by its own setFrame; no ConfigureNotify echo
+    hw->w = w; hw->h = ht; hw->x = x; hw->y = y;   // already reported to the guest by its own setFrame; no ConfigureNotify echo
 }
 
 int xef_host_pointer(int h, int* sx, int* sy, int* wx, int* wy) {
@@ -360,15 +421,137 @@ void xef_host_pointer_warp(int x, int y) {
     X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
 }
 
+int xef_host_mouse_buttons() {
+    std::lock_guard<std::mutex> lk(g_lock);
+    int mask = 0;
+    if (g_buttons & 1) mask |= (1 << 0);
+    if (g_buttons & 4) mask |= (1 << 1);
+    if (g_buttons & 2) mask |= (1 << 2);
+    return mask;
+}
+
+int xef_host_window_get_geometry(int h, int* rx, int* ry, int* rw, int* rh) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    HWin* hw = find(h);
+    if (!hw || !g_dpy) return 0;
+    int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+    ::Window root = X<::Window (*)(Display*, int)>("XRootWindow")(g_dpy, scr);
+    ::Window child = 0;
+    int x = 0, y = 0;
+    if (!X<int (*)(Display*, ::Window, ::Window, int, int, int*, int*, ::Window*)>("XTranslateCoordinates")(
+            g_dpy, hw->win, root, 0, 0, &x, &y, &child)) {
+        return 0;
+    }
+    ::Window r = 0;
+    int gx = 0, gy = 0;
+    unsigned int gw = hw->w, gh = hw->h, bw = 0, depth = 0;
+    if (X<int (*)(Display*, ::Window, ::Window*, int*, int*, unsigned int*, unsigned int*, unsigned int*, unsigned int*)>("XGetGeometry")(
+            g_dpy, hw->win, &r, &gx, &gy, &gw, &gh, &bw, &depth)) {
+        hw->w = gw;
+        hw->h = gh;
+    }
+    hw->x = x;
+    hw->y = y;
+    if (rx) *rx = x;
+    if (ry) *ry = y;
+    if (rw) *rw = hw->w;
+    if (rh) *rh = hw->h;
+    return 1;
+}
+
+int xef_host_file_dialog(const char* title, const char* initial_path, int is_save, int is_dir, int allow_multi, char* out_buf, int out_len) {
+    if (!out_buf || out_len <= 0) return 0;
+    out_buf[0] = '\0';
+
+    int pipefd[2];
+    if (pipe(pipefd) != 0) return 0;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return 0;
+    }
+
+    if (pid == 0) {
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+
+        std::vector<std::string> arg_strs;
+        arg_strs.push_back("zenity");
+        arg_strs.push_back("--file-selection");
+
+        if (is_dir) {
+            arg_strs.push_back("--directory");
+        }
+        if (is_save) {
+            arg_strs.push_back("--save");
+            arg_strs.push_back("--confirm-overwrite");
+        }
+        if (allow_multi) {
+            arg_strs.push_back("--multiple");
+            arg_strs.push_back("--separator=\n");
+        }
+        if (title && *title) {
+            arg_strs.push_back(std::string("--title=") + title);
+        }
+        if (initial_path && *initial_path) {
+            arg_strs.push_back(std::string("--filename=") + initial_path);
+        }
+
+        std::vector<char*> argv;
+        for (auto& s : arg_strs) {
+            argv.push_back(const_cast<char*>(s.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        execvp("zenity", argv.data());
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+    int total_read = 0;
+    while (total_read < out_len - 1) {
+        ssize_t n = read(pipefd[0], out_buf + total_read, out_len - 1 - total_read);
+        if (n <= 0) break;
+        total_read += (int)n;
+    }
+    out_buf[total_read] = '\0';
+    close(pipefd[0]);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+
+    while (total_read > 0 && (out_buf[total_read - 1] == '\n' || out_buf[total_read - 1] == '\r')) {
+        out_buf[--total_read] = '\0';
+    }
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && total_read > 0) {
+        return 1;
+    }
+    return 0;
+}
+
 struct Fn { const char* name; void* fn; };
 const Fn kFns[] = {
     {"_xef_host_window_create", (void*)&xef_host_window_create}, {"_xef_host_window_show", (void*)&xef_host_window_show}, {"_xef_host_window_hide", (void*)&xef_host_window_hide},
     {"_xef_host_window_set_title", (void*)&xef_host_window_set_title}, {"_xef_host_window_close", (void*)&xef_host_window_close},
+    {"_xef_host_window_set_fullscreen", (void*)&xef_host_window_set_fullscreen},
     {"_xef_host_pump", (void*)&xef_host_pump}, {"_xef_host_gl_make_current", (void*)&xef_host_gl_make_current},
     {"_xef_host_swap", (void*)&xef_host_swap},
     {"_xef_host_gl_set_profile", (void*)&xef_host_gl_set_profile}, {"_xef_host_screen_info", (void*)&xef_host_screen_info},
     {"_xef_host_window_set_frame", (void*)&xef_host_window_set_frame}, {"_xef_host_pointer", (void*)&xef_host_pointer},
     {"_xef_host_pointer_warp", (void*)&xef_host_pointer_warp},
+    {"_xef_host_mouse_buttons", (void*)&xef_host_mouse_buttons},
+    {"_xef_host_window_get_geometry", (void*)&xef_host_window_get_geometry},
+    {"_xef_host_file_dialog", (void*)&xef_host_file_dialog},
 };
 
 } // namespace

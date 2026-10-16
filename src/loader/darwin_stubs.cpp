@@ -607,6 +607,21 @@ static int st_timingsafe_bcmp(const void* a, const void* b, size_t n) {
     return d != 0;
 }
 
+static char* st_strnstr(const char* s, const char* find, size_t slen) {
+    char c = *find++;
+    if (!c) return (char*)s;
+    size_t len = strlen(find);
+    do {
+        char sc;
+        do {
+            if (slen-- < 1 || (sc = *s++) == 0) return nullptr;
+        } while (sc != c);
+        if (len > slen) return nullptr;
+    } while (strncmp(s, find, len) != 0);
+    return (char*)(s - 1);
+}
+
+
 // POSIX named semaphores: Darwin O_CREAT/O_EXCL are 0x200/0x800 and SEM_FAILED is (sem_t*)-1 (glibc: NULL).
 // sem_init/sem_destroy are not implemented on macOS (ENOSYS), and a Darwin sem_t is 4 bytes: glibc's would overflow.
 int darwin_open_flags_to_linux(int df);
@@ -717,6 +732,59 @@ static const StubEntry kStubs2[] = {
     {"_xpc_date_create_from_current", (void*)&st_null2},   // no XPC; Go calls it once at startup only to load libxpc
     {"_xpc_dictionary_get_uint64", (void*)&st_zero2}, {"_xpc_dictionary_get_value", (void*)&st_null2},
     {"_xpc_dictionary_set_string", (void*)&st_noop2}, {"_xpc_dictionary_set_uint64", (void*)&st_noop2}, {"_xpc_dictionary_set_value", (void*)&st_noop2},
+    {"_strnstr", (void*)&st_strnstr},
+    {"_MTLCreateSystemDefaultDevice", (void*)&st_null2},
+    {"_MTLCopyAllDevices", (void*)&st_null2},
+    {"_UTTypeCopyPreferredTagWithClass", (void*)&st_null2},
+    {"_UTTypeCreatePreferredIdentifierForTag", (void*)&st_null2},
+    {"_FFCreateDevice", (void*)&st_null2},
+    {"_FFDeviceCreateEffect", (void*)&st_null2},
+    {"_FFDeviceGetForceFeedbackCapabilities", (void*)&st_null2},
+    {"_FFDeviceGetForceFeedbackProperty", (void*)&st_null2},
+    {"_FFDeviceReleaseEffect", (void*)&st_zero2},
+    {"_FFDeviceSendForceFeedbackCommand", (void*)&st_zero2},
+    {"_FFDeviceSetForceFeedbackProperty", (void*)&st_zero2},
+    {"_FFEffectGetEffectStatus", (void*)&st_zero2},
+    {"_FFEffectSetParameters", (void*)&st_zero2},
+    {"_FFEffectStart", (void*)&st_zero2},
+    {"_FFEffectStop", (void*)&st_zero2},
+    {"_FFReleaseDevice", (void*)&st_zero2},
+    {"_CMTimeMake", (void*)&st_zero2},
+    {"_CMTimeGetSeconds", (void*)&st_zero2},
+    {"_CMFormatDescriptionGetMediaType", (void*)&st_zero2},
+    {"_CMFormatDescriptionGetMediaSubType", (void*)&st_zero2},
+    {"_CMVideoFormatDescriptionGetDimensions", (void*)&st_zero2},
+    {"_CMSampleBufferGetImageBuffer", (void*)&st_null2},
+    {"_CMSampleBufferGetSampleTimingInfo", (void*)&st_zero2},
+    {"_CFNetServiceCreate", (void*)&st_null2},
+    {"_CFNetServiceScheduleWithRunLoop", (void*)&st_noop2},
+    {"_CFNetServiceUnscheduleFromRunLoop", (void*)&st_noop2},
+    {"_CFNetServiceCancel", (void*)&st_noop2},
+    {"_CFNetServiceResolveWithTimeout", (void*)&st_zero2},
+    {"_CFNetServiceBrowserCreate", (void*)&st_null2},
+    {"_CFNetServiceBrowserScheduleWithRunLoop", (void*)&st_noop2},
+    {"_CFNetServiceBrowserUnscheduleFromRunLoop", (void*)&st_noop2},
+    {"_CFNetServiceBrowserSearchForServices", (void*)&st_zero2},
+    {"_CFNetServiceBrowserSearchForDomains", (void*)&st_zero2},
+    {"_CFNetServiceBrowserStopSearch", (void*)&st_noop2},
+    {"_CFNetServiceBrowserInvalidate", (void*)&st_noop2},
+    {"_CFNetServiceMonitorCreate", (void*)&st_null2},
+    {"_CFNetServiceMonitorScheduleWithRunLoop", (void*)&st_noop2},
+    {"_CFNetServiceMonitorUnscheduleFromRunLoop", (void*)&st_noop2},
+    {"_CFNetServiceMonitorStart", (void*)&st_zero2},
+    {"_CFNetServiceMonitorStop", (void*)&st_noop2},
+    {"_CFNetServiceSetClient", (void*)&st_zero2},
+    {"_CFNetServiceSetTXTData", (void*)&st_zero2},
+    {"_CFNetServiceGetAddressing", (void*)&st_null2},
+    {"_CFNetServiceGetDomain", (void*)&st_null2},
+    {"_CFNetServiceGetName", (void*)&st_null2},
+    {"_CFNetServiceGetPortNumber", (void*)&st_zero2},
+    {"_CFNetServiceGetTXTData", (void*)&st_null2},
+    {"_CFNetServiceGetTargetHost", (void*)&st_null2},
+    {"_CFNetServiceGetType", (void*)&st_null2},
+    {"_CFNetServiceCreateDictionaryWithTXTData", (void*)&st_null2},
+    {"_CFNetServiceCreateTXTDataWithDictionary", (void*)&st_null2},
+    {"_CFStreamCreatePairWithSocketToNetService", (void*)&st_zero2},
 };
 
 void* darwin_stub_lookup(const char* name) {

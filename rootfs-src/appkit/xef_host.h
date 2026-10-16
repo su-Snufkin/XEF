@@ -23,7 +23,7 @@
 #define XEF_EV_FOCUS_IN  1002
 #define XEF_EV_FOCUS_OUT 1003
 /* NSEventType 8 / 9 (MouseEntered / MouseExited) are also delivered; x,y = pointer inside the content area. */
-typedef struct { int type; int keycode; int x; int y; int flags; } xef_host_event_t;
+typedef struct { int type; int keycode; int x; int y; int flags; int handle; } xef_host_event_t;
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -32,6 +32,7 @@ void xef_host_window_show(int handle);
 void xef_host_window_hide(int handle);     /* unmap; show maps again */
 void xef_host_window_set_title(int handle, const char *title);
 void xef_host_window_close(int handle);
+void xef_host_window_set_fullscreen(int handle, int enable);
 int  xef_host_pump(void *ev_out);          /* xef_host_event_t*; 0 = no event */
 void xef_host_gl_make_current(int handle); /* 0 releases */
 void xef_host_swap(int handle);
@@ -46,6 +47,9 @@ void xef_host_window_set_frame(int handle, int x, int y, int w, int h);
 /* Pointer position in screen pixels and relative to the window's content area; returns 0 if unavailable. */
 int  xef_host_pointer(int handle, int *screen_x, int *screen_y, int *win_x, int *win_y);
 void xef_host_pointer_warp(int screen_x, int screen_y);
+int  xef_host_mouse_buttons(void);
+int  xef_host_window_get_geometry(int handle, int *rx, int *ry, int *rw, int *rh);
+int  xef_host_file_dialog(const char *title, const char *initial_path, int is_save, int is_dir, int allow_multi, char *out_buf, int out_len);
 #ifdef __cplusplus
 }
 #endif

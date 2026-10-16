@@ -58,8 +58,16 @@ CFIndex IOHIDElementGetLogicalMin(IOHIDElementRef e) { return 0; }
 CFIndex IOHIDElementGetLogicalMax(IOHIDElementRef e) { return 0; }
 CFIndex IOHIDValueGetIntegerValue(IOHIDValueRef v) { return 0; }
 
-/* ---- more of the empty IORegistry / HID manager (SDL2's joystick, haptic and power backends) --------------------- */
 const mach_port_t kIOMainPortDefault = 0;
+const mach_port_t kIOMasterPortDefault = 0;
+boolean_t IOObjectConformsTo(io_object_t object, const io_name_t className) { return 0; }
+io_registry_entry_t IORegistryEntryFromPath(mach_port_t mainPort, const io_string_t path) { return 0; }
+kern_return_t IORegistryEntryGetRegistryEntryID(io_registry_entry_t entry, uint64_t *entryID) { if (entryID) *entryID = 0; return kIOReturnNotFound; }
+CFMutableDictionaryRef IORegistryEntryIDMatching(uint64_t entryID) { return NULL; }
+io_service_t IOServiceGetMatchingService(mach_port_t mainPort, CFDictionaryRef matching) { if (matching) CFRelease(matching); return 0; }
+IOHIDDeviceRef IOHIDDeviceCreate(CFAllocatorRef allocator, io_service_t service) { return NULL; }
+void IOHIDManagerSetDeviceMatching(IOHIDManagerRef manager, CFDictionaryRef matching) { if (matching) CFRetain(matching); }
+
 IONotificationPortRef IONotificationPortCreate(mach_port_t port) { return (IONotificationPortRef)calloc(1, 64); }
 void IONotificationPortDestroy(IONotificationPortRef p) { free(p); }
 mach_port_t IONotificationPortGetMachPort(IONotificationPortRef p) { return 0; }

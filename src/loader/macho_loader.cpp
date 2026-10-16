@@ -177,7 +177,10 @@ static uint64_t resolve_import(MachImage* img, int ordinal, const char* name, bo
         if ((size_t)ordinal <= img->deps.size()) {
             MachImage* d = img->deps[ordinal - 1].image;
             if (d) r = dyld_image_lookup(d, name);
-            else hle_dep = true;
+            else {
+                hle_dep = true;
+                if (img->deps[ordinal - 1].weak) weak_import = true;
+            }
         }
     } else if (ordinal == 0) {
         r = dyld_image_lookup(img, name);
@@ -196,6 +199,9 @@ static uint64_t resolve_import(MachImage* img, int ordinal, const char* name, bo
     }
     r = dyld_flat_lookup(name);
     if (r) return r;
+    if (strncmp(name, "_OBJC_CLASS_$_", 14) == 0 || strncmp(name, "_OBJC_METACLASS_$_", 18) == 0) {
+        return 0;
+    }
     return darwin_hle_resolve_symbol(name, weak_import);
 }
 
