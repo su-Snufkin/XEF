@@ -112,6 +112,45 @@ static int f_renameatx_np(int fd1, const char* a, int fd2, const char* b, unsign
     return (int)syscall(SYS_renameat2, fd1, x.c_str(), fd2, y.c_str(), lf);
 }
 static int f_renamex_np(const char* a, const char* b, unsigned fl) { return f_renameatx_np(-2, a, -2, b, fl); }
+// __getdirentries64(fd, buf, size, *basep): Darwin struct dirent { u64 d_ino, d_seekoff; u16 d_reclen, d_namlen;
+// u8 d_type; char d_name[] } with d_reclen = (namlen + 32) & ~7, from getdents64. Darwin records are larger, so the
+// host read is limited and the directory offset rewound to the first entry that did not fit.
+static ssize_t f_getdirentries64(int fd, char* buf, size_t size, int64_t* basep) {
+    if (!buf) { errno = EFAULT; return -1; }
+    off_t pos = lseek(fd, 0, SEEK_CUR);
+    if (basep) *basep = pos;
+    std::vector<char> tmp(size < 65536 ? size : 65536);
+    size_t out = 0;
+    for (;;) {
+        long n = syscall(SYS_getdents64, fd, tmp.data(), tmp.size());
+        if (n < 0) return out ? (ssize_t)out : -1;
+        if (n == 0) return (ssize_t)out;
+        for (long p = 0; p < n;) {
+            struct LDirent { uint64_t ino; int64_t off; uint16_t reclen; uint8_t type; char name[1]; };
+            const LDirent* l = (const LDirent*)(tmp.data() + p);
+            size_t namlen = strlen(l->name);
+            size_t rec = (namlen + 32) & ~(size_t)7;
+            if (out + rec > size) {                   // the next call continues with this entry
+                lseek(fd, pos, SEEK_SET);
+                if (!out) { errno = EINVAL; return -1; }
+                return (ssize_t)out;
+            }
+            char* d = buf + out;
+            memset(d, 0, rec);
+            memcpy(d, &l->ino, 8);
+            memcpy(d + 8, &l->off, 8);
+            uint16_t rl = (uint16_t)rec, nl = (uint16_t)namlen;
+            memcpy(d + 16, &rl, 2);
+            memcpy(d + 18, &nl, 2);
+            d[20] = (char)l->type;
+            memcpy(d + 21, l->name, namlen + 1);
+            out += rec;
+            pos = l->off;                             // the position after this entry
+            p += l->reclen;
+        }
+    }
+}
+
 // pipe2 / dup3 (macOS 15+): Darwin O_NONBLOCK 0x4, O_CLOEXEC 0x1000000; anything else is EINVAL
 static int f_pipe2(int fds[2], int fl) {
     if (fl & ~(0x4 | 0x1000000)) { errno = EINVAL; return -1; }
@@ -719,7 +758,7 @@ void* darwin_fs_lookup(const char* name) {
     struct E { const char* n; void* f; };
     static const E k[] = {
         {"_mkdirat", (void*)&f_mkdirat}, {"_mkfifoat", (void*)&f_mkfifoat}, {"_mknodat", (void*)&f_mknodat},
-        {"_unlinkat", (void*)&f_unlinkat}, {"_renameat", (void*)&f_renameat}, {"_renameatx_np", (void*)&f_renameatx_np}, {"_pipe2", (void*)&f_pipe2}, {"_dup3", (void*)&f_dup3},
+        {"_unlinkat", (void*)&f_unlinkat}, {"_renameat", (void*)&f_renameat}, {"_renameatx_np", (void*)&f_renameatx_np}, {"_pipe2", (void*)&f_pipe2}, {"___getdirentries64", (void*)&f_getdirentries64}, {"_dup3", (void*)&f_dup3},
         {"_clonefile", (void*)&f_clonefile}, {"_clonefileat", (void*)&f_clonefileat}, {"_fclonefileat", (void*)&f_fclonefileat},
         {"_renamex_np", (void*)&f_renamex_np}, {"_readlinkat", (void*)&f_readlinkat}, {"_faccessat", (void*)&f_faccessat},
         {"_fchmodat", (void*)&f_fchmodat}, {"_fchownat", (void*)&f_fchownat}, {"_linkat", (void*)&f_linkat},
