@@ -388,10 +388,58 @@ static uint32_t host_processor_info_(uint32_t, int flavor, uint32_t* ncpu, uint6
     return KERN_SUCCESS_;
 }
 
+// host_info: HOST_BASIC_INFO (12 ints), HOST_SCHED_INFO (2 ints)
+static uint32_t host_info_(uint32_t, int flavor, int32_t* info, uint32_t* count) {
+    if (!info || !count) return KERN_INVALID_ARGUMENT_;
+    if (flavor == 1) {
+        if (*count < 12) return KERN_FAILURE_;   // as macOS for a too-small buffer
+        long conf = sysconf(_SC_NPROCESSORS_CONF), onl = sysconf(_SC_NPROCESSORS_ONLN);
+        uint64_t mem = (uint64_t)sysconf(_SC_PHYS_PAGES) * (uint64_t)sysconf(_SC_PAGESIZE);
+        memset(info, 0, 48);
+        info[0] = (int32_t)conf; info[1] = (int32_t)onl;
+        info[2] = (int32_t)(uint32_t)std::min<uint64_t>(mem, 0xffffffffu);
+        info[3] = 0x0100000c;          // CPU_TYPE_ARM64
+        info[4] = 2;                   // CPU_SUBTYPE_ARM64E (Apple silicon reports it)
+        info[5] = 0;
+        info[6] = (int32_t)onl; info[7] = (int32_t)conf; info[8] = (int32_t)onl; info[9] = (int32_t)conf;
+        memcpy(&info[10], &mem, 8);
+        *count = 12;
+        return KERN_SUCCESS_;
+    }
+    if (flavor == 3) {
+        if (*count < 2) return KERN_FAILURE_;
+        info[0] = 10; info[1] = 10;    // min_timeout, min_quantum (ms)
+        *count = 2;
+        return KERN_SUCCESS_;
+    }
+    return KERN_INVALID_ARGUMENT_;
+}
+// clock services: SYSTEM_CLOCK (0, = REALTIME_CLOCK 2) counts uptime like mach_absolute_time, CALENDAR_CLOCK (1) is wall time
+constexpr uint32_t kSysClockPort = 0x1f03, kCalClockPort = 0x1f07;
+static uint32_t host_get_clock_service_(uint32_t, int id, uint32_t* port) {
+    if (!port) return KERN_INVALID_ARGUMENT_;
+    if (id == 0 || id == 2) *port = kSysClockPort;
+    else if (id == 1) *port = kCalClockPort;
+    else return KERN_INVALID_ARGUMENT_;
+    return KERN_SUCCESS_;
+}
+struct MachTimespec { uint32_t tv_sec; int32_t tv_nsec; };
+static uint32_t clock_get_time_(uint32_t port, MachTimespec* t) {
+    if (!t) return KERN_INVALID_ARGUMENT_;
+    struct timespec ts;
+    if (port == kSysClockPort) clock_gettime(CLOCK_MONOTONIC, &ts);
+    else if (port == kCalClockPort) clock_gettime(CLOCK_REALTIME, &ts);
+    else return KERN_INVALID_ARGUMENT_;
+    t->tv_sec = (uint32_t)ts.tv_sec;
+    t->tv_nsec = (int32_t)ts.tv_nsec;
+    return KERN_SUCCESS_;
+}
+
 struct MachShim { const char* name; void* fn; };
 static const MachShim kMach[] = {
     {"_host_statistics", (void*)&host_statistics_}, {"_host_statistics64", (void*)&host_statistics64_},
-    {"_host_processor_info", (void*)&host_processor_info_},
+    {"_host_processor_info", (void*)&host_processor_info_}, {"_host_info", (void*)&host_info_},
+    {"_host_get_clock_service", (void*)&host_get_clock_service_}, {"_clock_get_time", (void*)&clock_get_time_},
     {"_mach_port_allocate", (void*)&mach_port_allocate_}, {"_mach_port_destroy", (void*)&mach_port_destroy_},
     {"_mach_port_deallocate", (void*)&mach_port_deallocate_}, {"_mach_port_insert_right", (void*)&mach_port_insert_right_},
     {"_mach_port_mod_refs", (void*)&mach_port_mod_refs_}, {"_mach_port_type", (void*)&mach_port_type_},

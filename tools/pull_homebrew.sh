@@ -44,8 +44,12 @@ PY
 )
 echo "$list" | while IFS=$'\t' read -r p real; do
   mkdir -p "darwin-rootfs$(dirname "$real")"
+  [ -L "darwin-rootfs$real" ] && rm -f "darwin-rootfs$real"
   rsync -aL "mac:$real" "darwin-rootfs$real"
   # keep the path used in load commands (symlinked names) as symlinks to the real file
-  if [ "$p" != "$real" ]; then mkdir -p "darwin-rootfs$(dirname "$p")"; ln -srfn "darwin-rootfs$real" "darwin-rootfs$p" 2>/dev/null || true; fi
+  # (skip when the local path already leads to the copied file, e.g. opt/<keg> is a symlink into Cellar:
+  #  ln would replace the file with a link to itself)
+  if [ "$p" != "$real" ] && [ "$(realpath -m "darwin-rootfs$p")" != "$(realpath -m "darwin-rootfs$real")" ]; then
+    mkdir -p "darwin-rootfs$(dirname "$p")"; ln -srfn "darwin-rootfs$real" "darwin-rootfs$p" 2>/dev/null || true; fi
 done
 echo "$list" | wc -l | xargs echo "files copied:"

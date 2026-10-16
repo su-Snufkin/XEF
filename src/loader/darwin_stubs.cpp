@@ -57,7 +57,13 @@ static int st_uuid_parse(const char* s, uuid_t_ out) {
 }
 
 // ---- sysctl -------------------------------------------------------------------------------------------
+bool darwin_kern_proc_sysctl(const int* mib, int n, void* oldp, size_t* oldlenp, int* err);
 static int st_sysctl(const int* mib, unsigned namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
+    int kerr;
+    if (darwin_kern_proc_sysctl(mib, (int)namelen, oldp, oldlenp, &kerr)) {
+        if (kerr) { errno = kerr; return -1; }
+        return 0;
+    }
     if (darwin_sysctl_impl(mib, (int)namelen, oldp, oldlenp, newp, newlen)) return 0;
     errno = ENOENT;
     return -1;
@@ -68,6 +74,7 @@ static const SysctlName kNames[] = {
     {"hw.pagesize", {6, 7}, 2}, {"hw.memsize", {6, 24}, 2}, {"hw.physmem", {6, 5}, 2}, {"hw.usermem", {6, 6}, 2},
     {"hw.byteorder", {6, 4}, 2}, {"kern.ostype", {1, 1}, 2}, {"kern.osrelease", {1, 2}, 2}, {"kern.osrevision", {1, 3}, 2},
     {"kern.version", {1, 4}, 2}, {"kern.hostname", {1, 10}, 2}, {"kern.osversion", {1, 65}, 2}, {"kern.argmax", {1, 8}, 2},
+    {"kern.boottime", {1, 21}, 2},
 };
 static int st_sysctlbyname(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
     for (const SysctlName& n : kNames)
@@ -98,12 +105,6 @@ static int st_sysctlbyname(const char* name, void* oldp, size_t* oldlenp, void* 
     if (!strncmp(name, "hw.optional.", 12)) return put32(0);
     if (!strcmp(name, "hw.targettype")) { const char s[] = "J314sAP"; if (oldlenp) { if (oldp && *oldlenp >= sizeof s) memcpy(oldp, s, sizeof s); *oldlenp = sizeof s; } return 0; }
     if (!strcmp(name, "machdep.cpu.brand_string")) { const char s[] = "Apple M1"; if (oldlenp) { if (oldp && *oldlenp >= sizeof s) memcpy(oldp, s, sizeof s); *oldlenp = sizeof s; } return 0; }
-    if (!strcmp(name, "kern.boottime")) {
-        struct sysinfo si; sysinfo(&si);
-        struct { int64_t sec; int32_t usec; int32_t pad; } bt = { (int64_t)time(nullptr) - si.uptime, 0, 0 };
-        if (oldlenp) { if (oldp && *oldlenp >= sizeof bt) memcpy(oldp, &bt, sizeof bt); *oldlenp = sizeof bt; }
-        return 0;
-    }
     if (!strcmp(name, "kern.osproductversion")) { const char s[] = "26.0"; if (oldlenp) { if (oldp && *oldlenp >= sizeof s) memcpy(oldp, s, sizeof s); *oldlenp = sizeof s; } return 0; }
     if (!strcmp(name, "kern.proc_translated") || !strcmp(name, "sysctl.proc_translated")) return put32(0);
     errno = ENOENT;
@@ -134,6 +135,41 @@ static int st_pthread_getugid_np(uint32_t* u, uint32_t* g) { *u = geteuid(); *g 
 static const char* st_mach_error_string(int e) { return e == 0 ? "(os/kern) successful" : "(os/kern) failure"; }
 static int st_kern_failure() { return 5; }                 // KERN_FAILURE
 static int st_bootstrap_unknown() { return 1102; }          // BOOTSTRAP_UNKNOWN_SERVICE
+static int st_bootstrap_not_privileged() { return 1100; }   // BOOTSTRAP_NOT_PRIVILEGED: no launchd namespace to join
+static int st_kern_invalid_arg() { return 4; }              // KERN_INVALID_ARGUMENT
+// libresolv base64 (b64_ntop / b64_pton as in BIND): ntop returns the length or -1, pton the decoded length or -1
+static const char kB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static int st_b64_ntop(const unsigned char* src, size_t len, char* dst, size_t cap) {
+    size_t out = 0;
+    for (size_t i = 0; i < len; i += 3) {
+        uint32_t v = (uint32_t)src[i] << 16 | (i + 1 < len ? (uint32_t)src[i + 1] << 8 : 0) | (i + 2 < len ? src[i + 2] : 0);
+        char q[4] = {kB64[v >> 18 & 63], kB64[v >> 12 & 63], i + 1 < len ? kB64[v >> 6 & 63] : '=', i + 2 < len ? kB64[v & 63] : '='};
+        if (out + 4 >= cap) return -1;
+        memcpy(dst + out, q, 4);
+        out += 4;
+    }
+    if (out >= cap) return -1;
+    dst[out] = 0;
+    return (int)out;
+}
+static int st_b64_pton(const char* src, unsigned char* dst, size_t cap) {
+    uint32_t acc = 0; int bits = 0; size_t out = 0; int pad = 0;
+    for (const char* p = src; *p; p++) {
+        if (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') continue;
+        if (*p == '=') { pad++; continue; }
+        if (pad) return -1;
+        const char* q = strchr(kB64, *p);
+        if (!q) return -1;
+        acc = acc << 6 | (uint32_t)(q - kB64); bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            if (dst) { if (out >= cap) return -1; dst[out] = (unsigned char)(acc >> bits); }
+            out++;
+        }
+    }
+    if (pad > 2 || (bits && (acc & ((1u << bits) - 1)))) return -1;
+    return (int)out;
+}
 static const char* st_bootstrap_strerror(int) { return "unknown bootstrap error"; }
 static unsigned st_qos_class_self() { return 0x15; }       // QOS_CLASS_DEFAULT
 static void st_noop() {}
@@ -187,7 +223,9 @@ static const StubEntry kStubs[] = {
     {"_mach_error_string", (void*)&st_mach_error_string}, {"_bootstrap_strerror", (void*)&st_bootstrap_strerror},
     {"_bootstrap_look_up2", (void*)&st_bootstrap_unknown}, {"_bootstrap_look_up", (void*)&st_bootstrap_unknown},
     {"_bootstrap_check_in", (void*)&st_bootstrap_unknown}, {"_bootstrap_register2", (void*)&st_bootstrap_unknown},
-    {"_bootstrap_register", (void*)&st_bootstrap_unknown},
+    {"_bootstrap_register", (void*)&st_bootstrap_unknown}, {"_bootstrap_look_up_per_user", (void*)&st_bootstrap_unknown},
+    {"_bootstrap_get_root", (void*)&st_bootstrap_not_privileged}, {"_task_set_special_port", (void*)&st_kern_invalid_arg},
+    {"_res_9_b64_ntop", (void*)&st_b64_ntop}, {"_res_9_b64_pton", (void*)&st_b64_pton},
     {"_qos_class_self", (void*)&st_qos_class_self}, {"_qos_class_main", (void*)&st_qos_class_self},
     {"_pthread_attr_set_qos_class_np", (void*)&st_zero},
     {"_pthread_jit_write_protect_np", (void*)&st_noop},
@@ -619,6 +657,13 @@ void* darwin_stub_data_lookup(const char* name) {
     if (!strcmp(name, "__os_log_default")) { static uint64_t dummy[8] = {}; return dummy; }
     if (!strcmp(name, "___NSDictionary0__struct")) { static uint64_t dummy[16] = {}; return dummy; }
     if (!strcmp(name, "___mb_cur_max")) { static int v = 1; return &v; }
+    if (!strcmp(name, "_bootstrap_port")) { static uint32_t port = 0x707; return &port; }   // MACH_PORT_NULL-free placeholder
+    if (!strcmp(name, "_sys_signame")) {     // BSD lowercase signal names, indexed by Darwin signal number
+        static const char* const names[32] = {"Signal 0", "hup", "int", "quit", "ill", "trap", "abrt", "emt", "fpe", "kill", "bus",
+            "segv", "sys", "pipe", "alrm", "term", "urg", "stop", "tstp", "cont", "chld", "ttin", "ttou", "io", "xcpu", "xfsz",
+            "vtalrm", "prof", "winch", "info", "usr1", "usr2"};
+        return (void*)names;
+    }
     if (!strcmp(name, "_GSS_C_NT_HOSTBASED_SERVICE")) {   // gss_OID: 1.2.840.113554.1.2.1.4
         struct Oid { uint32_t length; const void* elements; };
         static const Oid oid = {10, "\x2a\x86\x48\x86\xf7\x12\x01\x02\x01\x04"};

@@ -62,13 +62,13 @@ static int open_flags_darwin_to_linux(u64 df) {
 static void convert_stat_to_darwin(const struct stat& src, darwin_stat64* dst) {
     if (!dst) return;
     memset(dst, 0, sizeof(*dst));
-    dst->st_dev           = (int32_t)src.st_dev;
+    dst->st_dev           = darwin_dev_from_linux(src.st_dev);
     dst->st_mode          = (uint16_t)src.st_mode;
     dst->st_nlink         = (uint16_t)src.st_nlink;
     dst->st_ino           = (uint64_t)src.st_ino;
     dst->st_uid           = (uint32_t)src.st_uid;
     dst->st_gid           = (uint32_t)src.st_gid;
-    dst->st_rdev          = (int32_t)src.st_rdev;
+    dst->st_rdev          = darwin_dev_from_linux(src.st_rdev);
     dst->st_atime_sec     = (int64_t)src.st_atim.tv_sec;
     dst->st_atime_nsec    = (int64_t)src.st_atim.tv_nsec;
     dst->st_mtime_sec     = (int64_t)src.st_mtim.tv_sec;
@@ -112,6 +112,15 @@ static bool handle_darwin_sysctl(CpuState* st, const int* mib, int namelen,
         case DARWIN_KERN_VERSION:   copy_str("Darwin Kernel Version 21.6.0; root:xnu-8020.140.49~2/RELEASE_ARM64"); return true;
         case DARWIN_KERN_OSVERSION: copy_str("21G115"); return true;
         case DARWIN_KERN_ARGMAX:    copy_u32(1048576); return true;
+        case DARWIN_KERN_BOOTTIME: {   // struct timeval (64-bit tv_sec, 32-bit tv_usec + pad)
+            struct timespec rt, bt;
+            clock_gettime(CLOCK_REALTIME, &rt);
+            clock_gettime(CLOCK_BOOTTIME, &bt);
+            int64_t ns = ((int64_t)rt.tv_sec - bt.tv_sec) * 1000000000ll + (rt.tv_nsec - bt.tv_nsec);
+            struct { int64_t sec; int32_t usec, pad; } tv = {ns / 1000000000ll, (int32_t)(ns % 1000000000ll / 1000), 0};
+            copy_out(&tv, sizeof tv);
+            return true;
+        }
         case DARWIN_KERN_HOSTNAME: {
             char h[256] = "localhost";
             gethostname(h, sizeof(h));

@@ -4,6 +4,7 @@
 #include "loader/darwin_hle.h"
 #include "loader/elf_loader.h"
 #include "os/thread.h"
+#include "os/darwin/darwin_types.h"
 #include "common/common.h"
 
 #include <dirent.h>
@@ -349,12 +350,136 @@ static int sh_proc_listchildpids(int ppid, void* buf, int size) {
     return (int)n;
 }
 
+// devname_r(dev, type, buf, len): the /dev entry (relative name) of a Darwin-encoded device number, NULL if none
+static char* sh_devname_r(uint32_t ddev, uint32_t type, char* buf, int len) {
+    uint64_t want = linux_dev_from_darwin(ddev);
+    for (const char* dir : {"/dev", "/dev/pts"}) {
+        DIR* d = opendir(dir);
+        if (!d) continue;
+        while (dirent* e = readdir(d)) {
+            if (e->d_name[0] == '.') continue;
+            std::string p = std::string(dir) + "/" + e->d_name;
+            struct stat st;
+            if (lstat(p.c_str(), &st) || (st.st_mode & S_IFMT) != (type & S_IFMT) || st.st_rdev != want) continue;
+            closedir(d);
+            std::string rel = p.substr(5);
+            if ((int)rel.size() >= len) return nullptr;
+            memcpy(buf, rel.c_str(), rel.size() + 1);
+            return buf;
+        }
+        closedir(d);
+    }
+    return nullptr;
+}
+static char* sh_devname(uint32_t ddev, uint32_t type) {
+    static thread_local char buf[64];
+    return sh_devname_r(ddev, type, buf, sizeof buf);
+}
+
+// ---- sysctl KERN_PROC (struct kinfo_proc, 648 bytes) and KERN_PROCARGS2 --------------------------------------
+static void fill_kinfo(int pid, const LinuxStat& s, uint8_t* k) {
+    memset(k, 0, 648);
+    ProcBsdInfo b;
+    fill_bsd(pid, s, &b);
+    uint64_t sec = b.pbi_start_tvsec; int32_t usec = (int32_t)b.pbi_start_tvusec;
+    memcpy(k + 0, &sec, 8); memcpy(k + 8, &usec, 4);                      // p_starttime
+    int32_t flag = 0x4004 | (s.tty ? 0x2 : 0);                              // P_LP64 | P_EXEC | P_CONTROLT
+    memcpy(k + 32, &flag, 4);
+    k[36] = (uint8_t)b.pbi_status;                                          // p_stat
+    int32_t p = pid; memcpy(k + 40, &p, 4);                                // p_pid
+    k[240] = 31; k[241] = 31; k[242] = (uint8_t)(int8_t)s.nice;            // p_priority, p_usrpri, p_nice
+    std::string comm = base_name(guest_exe(pid)).substr(0, 16);
+    memcpy(k + 243, comm.c_str(), comm.size());                             // p_comm[17] (MAXCOMLEN 16 + NUL)
+    memcpy(k + 392, &b.pbi_ruid, 4); memcpy(k + 396, &b.pbi_svuid, 4);      // e_pcred
+    memcpy(k + 400, &b.pbi_rgid, 4); memcpy(k + 404, &b.pbi_svgid, 4);
+    int32_t ref = 1; memcpy(k + 416, &ref, 4); memcpy(k + 420, &b.pbi_uid, 4);   // e_ucred
+    int16_t ng = 1; memcpy(k + 424, &ng, 2); memcpy(k + 428, &b.pbi_gid, 4);
+    memcpy(k + 560, &b.pbi_ppid, 4); memcpy(k + 564, &b.pbi_pgid, 4);       // e_ppid, e_pgid
+    int32_t tdev = s.tty ? darwin_dev_from_linux((uint64_t)(uint32_t)s.tty) : -1;
+    memcpy(k + 572, &tdev, 4); memcpy(k + 576, &s.tpgid, 4);                // e_tdev, e_tpgid
+}
+// returns false if the MIB is not KERN_PROC / KERN_PROCARGS2; *err = errno value (0 = success)
+bool darwin_kern_proc_sysctl(const int* mib, int n, void* oldp, size_t* oldlenp, int* err) {
+    *err = 0;
+    if (n < 2 || mib[0] != 1) return false;
+    if (mib[1] == 14 && n >= 3) {   // KERN_PROC
+        int what = mib[2], arg = n >= 4 ? mib[3] : 0;
+        std::vector<int32_t> pids;
+        if (what == 1) { if (read_stat(arg).ok) pids.push_back(arg); }
+        else if (what == 0) pids = list_pids(1, 0);
+        else if (what == 2) pids = list_pids(2, (uint32_t)arg);
+        else if (what == 4) pids = list_pids(3, (uint32_t)linux_dev_from_darwin((uint32_t)arg));
+        else if (what == 5) pids = list_pids(4, (uint32_t)arg);
+        else if (what == 6) pids = list_pids(5, (uint32_t)arg);
+        else if (what == 3) {   // KERN_PROC_SESSION: same session id as pid arg
+            for (int32_t q : list_pids(1, 0)) if (getsid(q) == (arg ? getsid(arg) : getsid(0))) pids.push_back(q);
+        } else { *err = EINVAL; return true; }
+        if (!oldlenp) { *err = EINVAL; return true; }
+        if (!oldp) { *oldlenp = (pids.size() + (what == 1 ? 0 : 8)) * 648; return true; }
+        size_t room = *oldlenp / 648, out = 0;
+        for (int32_t q : pids) {
+            LinuxStat s = read_stat(q);
+            if (!s.ok) continue;
+            if (out == room) { *err = ENOMEM; break; }
+            fill_kinfo(q, s, (uint8_t*)oldp + out * 648);
+            out++;
+        }
+        *oldlenp = out * 648;
+        return true;
+    }
+    if ((mib[1] == 49 || mib[1] == 38) && n >= 3) {   // KERN_PROCARGS2: int argc, exec path, NULs, argv[], envp[]
+        int pid = mib[2];
+        std::string cl = read_file("/proc/" + std::to_string(pid) + "/cmdline");
+        if (cl.empty()) { *err = EINVAL; return true; }
+        std::vector<std::string> av;
+        for (size_t i = 0; i < cl.size();) { size_t e = cl.find('\0', i); if (e == std::string::npos) e = cl.size(); av.push_back(cl.substr(i, e - i)); i = e + 1; }
+        std::string exe = guest_exe(pid);
+        char self[PATH_MAX], tgt[PATH_MAX];
+        ssize_t sn = readlink("/proc/self/exe", self, sizeof self - 1), tn = readlink(("/proc/" + std::to_string(pid) + "/exe").c_str(), tgt, sizeof tgt - 1);
+        if (sn > 0 && tn == sn && !memcmp(self, tgt, (size_t)sn)) {   // under XEF: drop "xef [opts]"
+            std::string argv0;
+            size_t i = 1;
+            for (; i < av.size(); i++) {
+                if (av[i] == "--argv0" && i + 1 < av.size()) { argv0 = av[++i]; continue; }
+                if (av[i] == "-L" || av[i] == "--tier2-threshold" || av[i] == "--max-block") { i++; continue; }
+                if (!av[i].empty() && av[i][0] == '-') continue;
+                break;
+            }
+            std::vector<std::string> g(av.begin() + (long)std::min(i, av.size()), av.end());
+            if (!g.empty() && !argv0.empty()) g[0] = argv0;
+            av = g;
+        }
+        std::string env = read_file("/proc/" + std::to_string(pid) + "/environ");
+        std::string buf(4, '\0');
+        int32_t argc = (int32_t)av.size();
+        memcpy(&buf[0], &argc, 4);
+        if (mib[1] == 38) buf.clear();
+        buf += exe; buf.push_back('\0');
+        while (buf.size() % 8) buf.push_back('\0');
+        for (auto& a : av) { buf += a; buf.push_back('\0'); }
+        for (size_t i = 0; i < env.size();) {
+            size_t e = env.find('\0', i); if (e == std::string::npos) e = env.size();
+            std::string kv = env.substr(i, e - i);
+            if (kv.rfind("XEF_ROOTFS=", 0) != 0) { buf += kv; buf.push_back('\0'); }
+            i = e + 1;
+        }
+        if (!oldlenp) { *err = EINVAL; return true; }
+        if (!oldp) { *oldlenp = buf.size(); return true; }
+        if (*oldlenp < buf.size()) { *err = ENOMEM; return true; }
+        memcpy(oldp, buf.data(), buf.size());
+        *oldlenp = buf.size();
+        return true;
+    }
+    return false;
+}
+
 void* darwin_proc_lookup(const char* name) {
     struct E { const char* n; void* f; };
     static const E k[] = {
         {"_proc_pidinfo", (void*)&sh_proc_pidinfo}, {"_proc_pidpath", (void*)&sh_proc_pidpath},
         {"_proc_name", (void*)&sh_proc_name}, {"_proc_listpids", (void*)&sh_proc_listpids},
-        {"_proc_listallpids", (void*)&sh_proc_listallpids}, {"_proc_listchildpids", (void*)&sh_proc_listchildpids},
+        {"_proc_listallpids", (void*)&sh_proc_listallpids},
+        {"_devname_r", (void*)&sh_devname_r}, {"_devname", (void*)&sh_devname}, {"_proc_listchildpids", (void*)&sh_proc_listchildpids},
     };
     for (const E& e : k) if (!strcmp(e.n, name)) return e.f;
     return nullptr;

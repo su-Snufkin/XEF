@@ -128,14 +128,82 @@ static bool sockopt_to_linux(int dlevel, int dopt, int* llevel, int* lopt) {
     *llevel = dlevel; *lopt = dopt;
     return true;
 }
+// Darwin MSG_*: OOB 1, PEEK 2, DONTROUTE 4, EOR 8, TRUNC 0x10, CTRUNC 0x20, WAITALL 0x40, DONTWAIT 0x80, NOSIGNAL 0x80000
 static int msgflags_to_linux(int d) {
-    int l = d & 0x0f;                       // OOB, PEEK, DONTROUTE, EOR
+    int l = d & 0x07;                       // OOB, PEEK, DONTROUTE
+    if (d & 0x08) l |= MSG_EOR;
+    if (d & 0x10) l |= MSG_TRUNC;
+    if (d & 0x20) l |= MSG_CTRUNC;
     if (d & 0x40) l |= MSG_WAITALL;
     if (d & 0x80) l |= MSG_DONTWAIT;
     if (d & 0x80000) l |= MSG_NOSIGNAL;
-    if (d & 0x20) l |= MSG_TRUNC;
-    if (d & 0x10) l |= MSG_CTRUNC;
     return l;
+}
+static int msgflags_to_darwin(int l) {
+    int d = l & 0x07;
+    if (l & MSG_EOR) d |= 0x08;
+    if (l & MSG_TRUNC) d |= 0x10;
+    if (l & MSG_CTRUNC) d |= 0x20;
+    if (l & MSG_WAITALL) d |= 0x40;
+    if (l & MSG_DONTWAIT) d |= 0x80;
+    return d;
+}
+
+// Control messages. Darwin: struct cmsghdr {u32 len; int level; int type} (12 bytes), data and headers 4-byte aligned;
+// SOL_SOCKET is 0xffff. Linux: {size_t len; int level; int type} (16 bytes), 8-byte aligned.
+constexpr size_t kDCmsgHdr = 12;
+static inline size_t dalign(size_t n) { return (n + 3) & ~(size_t)3; }
+struct CmsgMap { int dlevel, dtype, llevel, ltype; };
+static const CmsgMap kCmsg[] = {
+    {0xffff, 1, SOL_SOCKET, SCM_RIGHTS}, {0xffff, 2, SOL_SOCKET, SO_TIMESTAMP},
+    {0, 26, IPPROTO_IP, IP_PKTINFO}, {0, 3, IPPROTO_IP, IP_TOS}, {0, 4, IPPROTO_IP, IP_TTL},
+    {41, 46, IPPROTO_IPV6, IPV6_PKTINFO}, {41, 36, IPPROTO_IPV6, IPV6_TCLASS}, {41, 47, IPPROTO_IPV6, IPV6_HOPLIMIT},
+};
+// Darwin control buffer -> Linux; false if it holds something we cannot express
+static bool cmsg_to_linux(const uint8_t* d, size_t dlen, std::vector<uint8_t>& out) {
+    size_t off = 0;
+    while (off + kDCmsgHdr <= dlen) {
+        uint32_t len; int32_t level, type;
+        memcpy(&len, d + off, 4); memcpy(&level, d + off + 4, 4); memcpy(&type, d + off + 8, 4);
+        if (len < kDCmsgHdr || off + len > dlen) return false;
+        size_t dl = len - kDCmsgHdr;
+        int ll = level, lt = type;
+        for (const CmsgMap& m : kCmsg) if (m.dlevel == level && m.dtype == type) { ll = m.llevel; lt = m.ltype; break; }
+        if (level == 0xffff && ll == level) return false;   // other SOL_SOCKET messages (SCM_CREDS): no counterpart
+        size_t at = out.size();
+        out.resize(at + CMSG_SPACE(dl));
+        struct cmsghdr* c = (struct cmsghdr*)&out[at];
+        c->cmsg_len = CMSG_LEN(dl); c->cmsg_level = ll; c->cmsg_type = lt;
+        memcpy(CMSG_DATA(c), d + off + kDCmsgHdr, dl);
+        off += dalign(len);
+    }
+    return true;
+}
+// Linux control buffer -> Darwin buffer of `cap` bytes; returns the bytes used, *trunc set when something did not fit
+static size_t cmsg_to_darwin(struct msghdr* lm, uint8_t* d, size_t cap, bool* trunc) {
+    size_t off = 0;
+    for (struct cmsghdr* c = CMSG_FIRSTHDR(lm); c; c = CMSG_NXTHDR(lm, c)) {
+        int dlv = c->cmsg_level, dt = c->cmsg_type;
+        for (const CmsgMap& m : kCmsg) if (m.llevel == c->cmsg_level && m.ltype == c->cmsg_type) { dlv = m.dlevel; dt = m.dtype; break; }
+        const uint8_t* data = CMSG_DATA(c);
+        size_t dl = c->cmsg_len - CMSG_LEN(0);
+        uint8_t tv[16];
+        if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SO_TIMESTAMP) {   // struct timeval: same 16-byte layout
+            memcpy(tv, data, 16); data = tv; dl = 16;
+        }
+        if (off + kDCmsgHdr + dl > cap) {
+            *trunc = true;
+            if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS)   // the fds would leak in the process
+                for (size_t i = 0; i < dl / 4; i++) { int fd; memcpy(&fd, data + i * 4, 4); close(fd); }
+            continue;
+        }
+        uint32_t len = (uint32_t)(kDCmsgHdr + dl);
+        memcpy(d + off, &len, 4); memcpy(d + off + 4, &dlv, 4); memcpy(d + off + 8, &dt, 4);
+        memcpy(d + off + kDCmsgHdr, data, dl);
+        off += dalign(len);
+        if (off > cap) off = cap;
+    }
+    return off;
 }
 
 static int d_socket(int dom, int type, int proto) {
@@ -222,14 +290,26 @@ static ssize_t d_sendmsg(int fd, const DMsghdr* m, int fl) {
     sockaddr_storage ss;
     if (m->name) { lm.msg_namelen = sa_to_linux(m->name, m->namelen, &ss); lm.msg_name = &ss; }
     lm.msg_iov = m->iov; lm.msg_iovlen = m->iovlen;
-    return sendmsg(fd, &lm, msgflags_to_linux(fl) | MSG_NOSIGNAL);    // control messages are not translated
+    std::vector<uint8_t> ctl;
+    if (m->control && m->controllen) {
+        if (!cmsg_to_linux((const uint8_t*)m->control, m->controllen, ctl)) { errno = EINVAL; return -1; }
+        lm.msg_control = ctl.data(); lm.msg_controllen = ctl.size();
+    }
+    return sendmsg(fd, &lm, msgflags_to_linux(fl) | MSG_NOSIGNAL);
 }
 static ssize_t d_recvmsg(int fd, DMsghdr* m, int fl) {
     struct msghdr lm; memset(&lm, 0, sizeof lm);
     sockaddr_storage ss; lm.msg_name = m->name ? &ss : nullptr; lm.msg_namelen = m->name ? sizeof ss : 0;
     lm.msg_iov = m->iov; lm.msg_iovlen = m->iovlen;
-    ssize_t r = recvmsg(fd, &lm, msgflags_to_linux(fl));
-    if (r >= 0) { if (m->name) m->namelen = sa_to_darwin((sockaddr*)&ss, lm.msg_namelen, m->name, m->namelen); m->controllen = 0; m->flags = lm.msg_flags; }
+    std::vector<uint8_t> ctl;
+    if (m->control && m->controllen) { ctl.resize(m->controllen * 2 + 64); lm.msg_control = ctl.data(); lm.msg_controllen = ctl.size(); }
+    ssize_t r = recvmsg(fd, &lm, msgflags_to_linux(fl) | 0);
+    if (r >= 0) {
+        if (m->name) m->namelen = sa_to_darwin((sockaddr*)&ss, lm.msg_namelen, m->name, m->namelen);
+        bool trunc = false;
+        m->controllen = (m->control && m->controllen) ? (uint32_t)cmsg_to_darwin(&lm, (uint8_t*)m->control, m->controllen, &trunc) : 0;
+        m->flags = msgflags_to_darwin(lm.msg_flags) | (trunc ? 0x20 : 0);
+    }
     return r;
 }
 static int d_shutdown(int fd, int how) { return shutdown(fd, how); }

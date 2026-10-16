@@ -756,13 +756,13 @@ struct darwin_dirent {
 static void convert_stat_to_darwin(const struct stat& src, darwin_stat64* dst) {
     if (!dst) return;
     memset(dst, 0, sizeof(*dst));
-    dst->st_dev           = (int32_t)src.st_dev;
+    dst->st_dev           = darwin_dev_from_linux(src.st_dev);
     dst->st_mode          = (uint16_t)src.st_mode;
     dst->st_nlink         = (uint16_t)src.st_nlink;
     dst->st_ino           = (uint64_t)src.st_ino;
     dst->st_uid           = (uint32_t)src.st_uid;
     dst->st_gid           = (uint32_t)src.st_gid;
-    dst->st_rdev          = (int32_t)src.st_rdev;
+    dst->st_rdev          = darwin_dev_from_linux(src.st_rdev);
     dst->st_atime_sec     = (int64_t)src.st_atim.tv_sec;
     dst->st_atime_nsec    = (int64_t)src.st_atim.tv_nsec;
     dst->st_mtime_sec     = (int64_t)src.st_mtim.tv_sec;

@@ -218,4 +218,15 @@ constexpr int DARWIN_HW_PAGESIZE       = 7;
 constexpr int DARWIN_HW_MEMSIZE        = 24;
 constexpr int DARWIN_HW_AVAILCPU       = 25;
 
+// dev_t: Darwin packs major << 24 | minor (24 bits); Linux uses its own split encoding (makedev)
+inline int32_t darwin_dev_from_linux(uint64_t l) {
+    uint32_t maj = (uint32_t)(((l >> 32) & 0xfffff000u) | ((l >> 8) & 0xfffu));
+    uint32_t min = (uint32_t)(((l >> 12) & 0xffffff00u) | (l & 0xffu));
+    return (int32_t)(((maj & 0xffu) << 24) | (min & 0xffffffu));
+}
+inline uint64_t linux_dev_from_darwin(uint32_t d) {
+    uint64_t maj = d >> 24, min = d & 0xffffff;
+    return ((maj & 0xfffff000ull) << 32) | ((maj & 0xfffull) << 8) | ((min & 0xffffff00ull) << 12) | (min & 0xffull);
+}
+
 } // namespace xef
