@@ -2,6 +2,7 @@
 // (uuid, sysctl, xpc/asl/bootstrap placeholders, misc BSD helpers).
 #include "loader/darwin_hle.h"
 #include "loader/macho_image.h"
+#include "loader/elf_loader.h"
 #include "common/common.h"
 #include "runtime/dispatch.h"
 
@@ -534,6 +535,30 @@ static int st_madvise(void* addr, size_t len, int advice) {
 }
 static int st_posix_madvise(void* addr, size_t len, int advice) { return advice >= 0 && advice <= 4 ? 0 : EINVAL; }
 
+// libxcselect: the SDK of the active developer directory (clang uses it without -isysroot/SDKROOT). Here that is the
+// stub SDK tools/make_darwin_sdk.py installs at /opt/xef-sdk, when present; the caller frees the string.
+static bool st_xcselect_host_sdk_path(int, char** path) {
+    if (!path) return false;
+    *path = nullptr;
+    struct stat sb;
+    if (stat(resolve_guest_path("/opt/xef-sdk/SDKSettings.json").c_str(), &sb) != 0) return false;
+    *path = strdup("/opt/xef-sdk");
+    return *path != nullptr;
+}
+
+// <mach-o/utils.h> macho_arch_name_for_cpu_type: the arch name of a cpu type/subtype pair (capability bits ignored)
+static const char* st_macho_arch_name_for_cpu_type(int32_t type, int32_t subtype) {
+    int32_t sub = subtype & 0x00ffffff;
+    switch ((uint32_t)type) {
+    case 0x0100000cu: return sub == 2 ? "arm64e" : sub == 1 ? "arm64v8" : "arm64";
+    case 0x0200000cu: return "arm64_32";
+    case 0x01000007u: return sub == 8 ? "x86_64h" : "x86_64";
+    case 7: return "i386";
+    case 12: return sub == 9 ? "armv7" : sub == 11 ? "armv7s" : sub == 12 ? "armv7k" : sub == 6 ? "armv6" : "arm";
+    }
+    return nullptr;
+}
+
 // C11 Annex K memset_s (Darwin errno values: EINVAL 22, E2BIG 7, EOVERFLOW 84)
 static int st_memset_s(void* s, size_t smax, int c, size_t n) {
     if (!s) return 22;
@@ -599,7 +624,7 @@ void* st_sem_open_entry(const char* name, int oflag, const uint64_t* ap) { retur
 static int st_cc_initialize(void** ctx, int, int*, const char**) { if (ctx) *ctx = nullptr; return 223; }   // ccErrServerUnavailable
 
 static const StubEntry kStubs2[] = {
-    {"_memset_s", (void*)&st_memset_s}, {"_cc_initialize", (void*)&st_cc_initialize}, {"_sem_init", (void*)&st_sem_enosys}, {"_sem_destroy", (void*)&st_sem_enosys}, {"_timingsafe_bcmp", (void*)&st_timingsafe_bcmp},
+    {"_memset_s", (void*)&st_memset_s}, {"_xcselect_host_sdk_path", (void*)&st_xcselect_host_sdk_path}, {"_macho_arch_name_for_cpu_type", (void*)&st_macho_arch_name_for_cpu_type}, {"_cc_initialize", (void*)&st_cc_initialize}, {"_sem_init", (void*)&st_sem_enosys}, {"_sem_destroy", (void*)&st_sem_enosys}, {"_timingsafe_bcmp", (void*)&st_timingsafe_bcmp},
     {"_task_policy_set", (void*)&st_zero2},   // scheduling role/QoS hint (like pthread_set_qos_class_self_np)
     {"_gss_get_mic", (void*)&st_gss_unavailable}, {"_gss_verify_mic", (void*)&st_gss_unavailable},
     {"_gss_release_oid_set", (void*)&st_gss_release},
