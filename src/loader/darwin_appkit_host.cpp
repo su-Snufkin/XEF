@@ -20,6 +20,7 @@
 #include <map>
 #include <unordered_map>
 #include "../../rootfs-src/appkit/xef_host.h"
+#include "darwin_metal_vk.h"
 
 namespace xef {
 namespace {
@@ -323,7 +324,7 @@ void xef_host_swap(int h) {
     swap(g_dpy, w->win);
 }
 
-void xef_host_present_pixels(int h, const void* pixels, int pw, int ph, int format) {
+extern "C" void xef_host_present_pixels(int h, const void* pixels, int pw, int ph, int format) {
     std::lock_guard<std::mutex> lk(g_lock);
     HWin* w = find(h);
     if (!w || !g_dpy) return;
@@ -719,6 +720,9 @@ static inline unsigned int map_blend_op(int op) {
 }
 
 uint32_t xef_host_metal_tex_create(int w, int h, int fmt, int is_render_target) {
+    if (xef::metal_vk::is_available()) {
+        return xef::metal_vk::tex_create(w, h, fmt, is_render_target);
+    }
     std::lock_guard<std::mutex> lk(g_lock);
     uint32_t id = g_next_tex_id++;
     HostTex ht;
@@ -746,6 +750,10 @@ uint32_t xef_host_metal_tex_create(int w, int h, int fmt, int is_render_target) 
 }
 
 void xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::tex_update(tex_id, x, y, w, h, data, pitch);
+        return;
+    }
     if (!data || w <= 0 || h <= 0) return;
     std::lock_guard<std::mutex> lk(g_lock);
     auto it = g_host_texs.find(tex_id);
@@ -780,6 +788,10 @@ void xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, cons
 }
 
 void xef_host_metal_tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::tex_copy(src_tex_id, sx, sy, sw, sh, dst_tex_id, dx, dy);
+        return;
+    }
     std::lock_guard<std::mutex> lk(g_lock);
     auto it_s = g_host_texs.find(src_tex_id);
     auto it_d = g_host_texs.find(dst_tex_id);
@@ -819,6 +831,10 @@ void xef_host_metal_tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh
 }
 
 void xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, int pitch) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::tex_readback(tex_id, x, y, w, h, out_data, pitch);
+        return;
+    }
     if (!out_data || w <= 0 || h <= 0) return;
     std::lock_guard<std::mutex> lk(g_lock);
     auto it = g_host_texs.find(tex_id);
@@ -847,6 +863,10 @@ void xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, vo
 }
 
 void xef_host_metal_tex_destroy(uint32_t tex_id) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::tex_destroy(tex_id);
+        return;
+    }
     std::lock_guard<std::mutex> lk(g_lock);
     auto it = g_host_texs.find(tex_id);
     if (it == g_host_texs.end()) return;
@@ -860,6 +880,10 @@ void xef_host_metal_tex_destroy(uint32_t tex_id) {
 }
 
 void xef_host_metal_pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, float b, float a) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::pass_begin(handle, rt_tex_id, clear, r, g, b, a);
+        return;
+    }
     std::lock_guard<std::mutex> lk(g_lock);
     if (!ensure_gl_context(handle)) return;
     auto it = g_host_texs.find(rt_tex_id);
@@ -891,6 +915,10 @@ void xef_host_metal_pass_begin(int handle, uint32_t rt_tex_id, int clear, float 
 }
 
 void xef_host_metal_pass_end(int handle, uint32_t rt_tex_id) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::pass_end(handle, rt_tex_id);
+        return;
+    }
     std::lock_guard<std::mutex> lk(g_lock);
     static auto glBindFramebuffer_fn = G<void (*)(unsigned int, unsigned int)>("glBindFramebuffer");
     if (glBindFramebuffer_fn) glBindFramebuffer_fn(0x8D40 /*GL_FRAMEBUFFER*/, 0);
@@ -903,6 +931,10 @@ void xef_host_metal_draw(int handle,
                          int vertex_count,
                          const uint32_t* indices,
                          int index_count) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::draw(handle, pipe, prim_type, vertices, vertex_count, indices, index_count);
+        return;
+    }
     if (!pipe || !vertices || vertex_count <= 0) return;
     std::lock_guard<std::mutex> lk(g_lock);
     if (!ensure_gl_context(handle)) return;
@@ -1065,6 +1097,10 @@ void xef_host_metal_draw(int handle,
 }
 
 void xef_host_metal_present_gpu(int handle, uint32_t tex_id) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::present(handle, tex_id);
+        return;
+    }
     std::lock_guard<std::mutex> lk(g_lock);
     HWin* w = find(handle);
     if (!w || !g_dpy) return;
@@ -1373,6 +1409,13 @@ int xef_host_file_dialog(const char* title, const char* initial_path, int is_sav
     return 0;
 }
 
+const char* xef_host_metal_backend_name() {
+    if (xef::metal_vk::is_available()) {
+        return xef::metal_vk::get_device_name();
+    }
+    return "Host OpenGL 3.3";
+}
+
 struct Fn { const char* name; void* fn; };
 const Fn kFns[] = {
     {"_xef_host_window_create", (void*)&xef_host_window_create}, {"_xef_host_window_show", (void*)&xef_host_window_show}, {"_xef_host_window_hide", (void*)&xef_host_window_hide},
@@ -1396,6 +1439,7 @@ const Fn kFns[] = {
     {"_xef_host_metal_pass_end", (void*)&xef_host_metal_pass_end},
     {"_xef_host_metal_draw", (void*)&xef_host_metal_draw},
     {"_xef_host_metal_present_gpu", (void*)&xef_host_metal_present_gpu},
+    {"_xef_host_metal_backend_name", (void*)&xef_host_metal_backend_name},
     {"xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
     {"xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
     {"xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
@@ -1405,6 +1449,7 @@ const Fn kFns[] = {
     {"xef_host_metal_pass_end", (void*)&xef_host_metal_pass_end},
     {"xef_host_metal_draw", (void*)&xef_host_metal_draw},
     {"xef_host_metal_present_gpu", (void*)&xef_host_metal_present_gpu},
+    {"xef_host_metal_backend_name", (void*)&xef_host_metal_backend_name},
 };
 
 } // namespace

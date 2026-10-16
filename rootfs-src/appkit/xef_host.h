@@ -94,6 +94,7 @@ void     xef_host_metal_draw(int handle,
                              int index_count);
 
 void     xef_host_metal_present_gpu(int handle, uint32_t tex_id);
+const char *xef_host_metal_backend_name(void);
 #ifdef __cplusplus
 }
 #endif

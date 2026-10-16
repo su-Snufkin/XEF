@@ -497,4 +497,22 @@ macOS GUI / 3D & Metal (2026-10-16):
   - Emulator Nintendo 64 `orbit64` (SDL3 + Metal GPU): pomyślna inicjalizacja urządzenia Metal (`XEFMetalDevice`), eliminacja czarnego ekranu poprzez implementację warstw `NSView` (`+layerClass`, `-makeBackingLayer`, `setWantsLayer:YES`), podpięcie `CAMetalDrawable` i transfer pikseli swapchaina SDL3. Pełny interfejs GUI, okładki, przyciski i emulacja gry (`Mario Kart 64`) działają płynnie i stabilnie w 60 FPS (11.3 ms/klatkę).
   - Wszystkie testy regresji (`tests/darwin/gl_test.sh`: gltri, gltri_core, cocoa_gl, glfw_gl21, glfw_gl32 oraz `tests/darwin/metal_test.sh`) przechodzą w 100% (PASS gl_test, PASS metal_test).
 
+Implementacja MetalVK (Natywny backend Vulkan dla Metal) pod XEF-OSX (2026-10-17):
+- **Architektura MetalVK dla XEF-OSX**:
+  - Nowoczesna warstwa akceleracji sprzętowej tłumacząca potok Apple Metal bezpośrednio na Vulkan 1.3 / 1.4 dla Linuksa.
+- **Implementacja backendu Vulkan dla Metal (`src/loader/darwin_metal_vk.h`, `src/loader/darwin_metal_vk.cpp`, `src/loader/darwin_metal_vk_spv.h`)**:
+  - Dynamiczny loader Vulkan (`dlopen("libvulkan.so.1")`, dynamiczne rozwiązywanie funkcji instancji i urządzenia przez `vkGetInstanceProcAddr`).
+  - Wybór i inicjalizacja urządzenia GPU (preferencja dedykowanego GPU `VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU`, np. NVIDIA GeForce RTX 4050, z fallbackiem do zintegrowanego Intel RPL-P).
+  - Format mappings: pełne mapowanie formatów pikseli Metal na Vulkan (`MTLPixelFormatBGRA8Unorm` -> `VK_FORMAT_B8G8R8A8_UNORM`, `RGBA8Unorm`, `R8Unorm`, `RG8Unorm`, `RGBA16Float`, `Depth32Float`, itp.).
+  - Zarządzanie teksturami: `tex_create`, `tex_update`, `tex_copy`, `tex_readback`, `tex_destroy` z buforami staging i barierami pamięci (`VkImageMemoryBarrier`).
+  - Render pass i bufor ramki: render passy z czyszczeniem (`VK_ATTACHMENT_LOAD_OP_CLEAR`) i ładowaniem (`VK_ATTACHMENT_LOAD_OP_LOAD`), obsługa buforów ramki `VkFramebuffer`.
+  - Potoki graficzne i shadery: wbudowane shadery SPIR-V vertex i fragment dla operacji 2D/3D i blitów Metal, dynamiczny viewport i scissor, pełne mapowanie operacji i współczynników blendingu alfa (`VkPipelineColorBlendAttachmentState`).
+  - Rysowanie i prezentacja: nagrywanie komend rysowania (`vkCmdDraw`, `vkCmdDrawIndexed`), synchronizacja kolejki `VkQueue` i transfer do prezentacji okna.
+  - Elastyczny wybór backendu: automatyczna detekcja Vulkan z bezpiecznym fallbackiem do OpenGL (`XEF_METAL_BACKEND=vulkan|gl`).
+- **Warstwa Mach-O (`rootfs-src/appkit/Metal.m`, `rootfs-src/appkit/xef_host.h`)**:
+  - Funkcja `xef_host_metal_backend_name()` przekazująca nazwę akceleratora hosta.
+  - `-name` w `XEFMetalDevice` zwraca nazwę fizycznego GPU Vulkan: `Apple M1 (MetalVK: NVIDIA GeForce RTX 4050 Laptop GPU)`.
+  - Przebudowano `Metal.framework` na maszynie Mac i zsynchronizowano do `darwin-rootfs`.
+  - Weryfikacja: `cand4_metal` pomyślnie inicjalizuje backend MetalVK na NVIDIA RTX 4050 i przechodzi 300 klatek offscreen (`PASS metal_test`).
+
 

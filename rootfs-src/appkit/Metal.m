@@ -3237,7 +3237,13 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   return s_dev;
 }
 
-- (NSString *)name { return @"Apple M1 (XEF Metal Engine)"; }
+- (NSString *)name {
+  const char *bname = xef_host_metal_backend_name();
+  if (bname && strlen(bname) > 0) {
+    return [NSString stringWithFormat:@"Apple M1 (MetalVK: %s)", bname];
+  }
+  return @"Apple M1 (MetalVK Vulkan Engine)";
+}
 - (uint64_t)registryID { return 0x100000001ULL; }
 - (BOOL)isLowPower { return NO; }
 - (BOOL)isHeadless { return NO; }
