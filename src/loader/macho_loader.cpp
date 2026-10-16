@@ -850,8 +850,15 @@ static void link_image(MachImage* im) {
                  prot_from_macho(s.initprot));
     }
     // outlined helpers that return a value in NZCV need their RETs to keep the flags (a64::ret_keeps_flags)
-    for (const MachSection& sc : im->sects)
+    for (const MachSection& sc : im->sects) {
         if (!strncmp(sc.seg, "__TEXT", 16) && !strncmp(sc.sect, "__text", 16)) a64::scan_flag_returning_calls(sc.addr, sc.addr + sc.size);
+        // Go's compiler does not follow AAPCS64 for NZCV: type-switch jump tables branch (BR) with the flags of an
+        // earlier CMP still live at the target. Translate the whole process with strict flag semantics.
+        if (!strncmp(sc.sect, "__go_buildinfo", 16) && a64::g_abi_flags) {
+            a64::g_abi_flags = false;
+            XEF_LOG(1, "xef-osx: %s is a Go binary: NZCV kept across calls/returns/indirect branches", im->path.c_str());
+        }
+    }
 }
 
 static void link_all() {
