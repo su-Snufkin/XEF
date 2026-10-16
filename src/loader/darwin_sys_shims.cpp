@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <linux/futex.h>
 #include <atomic>
+#include <mutex>
 #include <vector>
 
 namespace xef {
@@ -120,28 +121,61 @@ static size_t zn_pressure_relief(void*, size_t) { return 0; }
 static int zn_claimed_address(void*, void* p) { return p != nullptr; }
 static unsigned zn_batch_malloc(void*, size_t n, void** r, unsigned c) { unsigned i = 0; for (; i < c; i++) if (!(r[i] = malloc(n))) break; return i; }
 static void zn_batch_free(void*, void** to_be_freed, unsigned c) { for (unsigned i = 0; i < c; i++) free(to_be_freed[i]); }
+static uint64_t* make_zone(const char* zname) {
+    uint64_t* zone = (uint64_t*)calloc(24, sizeof(uint64_t));
+    auto stub = [](const char* name, void* fn) { return (uint64_t)darwin_hle_register_function(name, fn); };
+    zone[2] = stub("_xef_zone_size", (void*)&zn_size);
+    zone[3] = stub("_xef_zone_malloc", (void*)&zn_malloc);
+    zone[4] = stub("_xef_zone_calloc", (void*)&zn_calloc);
+    zone[5] = stub("_xef_zone_valloc", (void*)&zn_valloc);
+    zone[6] = stub("_xef_zone_free", (void*)&zn_free);
+    zone[7] = stub("_xef_zone_realloc", (void*)&zn_realloc);
+    zone[8] = stub("_xef_zone_destroy", (void*)&zn_destroy);
+    zone[9] = (uint64_t)zname;
+    zone[10] = stub("_xef_zone_batch_malloc", (void*)&zn_batch_malloc);
+    zone[11] = stub("_xef_zone_batch_free", (void*)&zn_batch_free);
+    *(uint32_t*)&zone[13] = 13;                        // version
+    zone[14] = stub("_xef_zone_memalign", (void*)&zn_memalign);
+    zone[15] = stub("_xef_zone_free_definite_size", (void*)&zn_free_definite_size);
+    zone[16] = stub("_xef_zone_pressure_relief", (void*)&zn_pressure_relief);
+    zone[17] = stub("_xef_zone_claimed_address", (void*)&zn_claimed_address);
+    return zone;
+}
+// The zone registry (malloc_zones[] in libmalloc): allocators such as jemalloc register their zone and promote it to
+// zones[0]. Allocation through malloc()/malloc_zone_*() stays with the host allocator; only the list is kept.
+static std::mutex g_zone_lock;
+static std::vector<uint64_t> g_zones;
+static uint64_t g_zone_snapshot[64];
 static void* sh_malloc_default_zone() {
     static uint64_t* zone;
-    if (!zone) {
-        zone = (uint64_t*)calloc(24, sizeof(uint64_t));
-        auto stub = [](const char* name, void* fn) { return (uint64_t)darwin_hle_register_function(name, fn); };
-        zone[2] = stub("_xef_zone_size", (void*)&zn_size);
-        zone[3] = stub("_xef_zone_malloc", (void*)&zn_malloc);
-        zone[4] = stub("_xef_zone_calloc", (void*)&zn_calloc);
-        zone[5] = stub("_xef_zone_valloc", (void*)&zn_valloc);
-        zone[6] = stub("_xef_zone_free", (void*)&zn_free);
-        zone[7] = stub("_xef_zone_realloc", (void*)&zn_realloc);
-        zone[8] = stub("_xef_zone_destroy", (void*)&zn_destroy);
-        zone[9] = (uint64_t)"DefaultMallocZone";
-        zone[10] = stub("_xef_zone_batch_malloc", (void*)&zn_batch_malloc);
-        zone[11] = stub("_xef_zone_batch_free", (void*)&zn_batch_free);
-        *(uint32_t*)&zone[13] = 13;                        // version
-        zone[14] = stub("_xef_zone_memalign", (void*)&zn_memalign);
-        zone[15] = stub("_xef_zone_free_definite_size", (void*)&zn_free_definite_size);
-        zone[16] = stub("_xef_zone_pressure_relief", (void*)&zn_pressure_relief);
-        zone[17] = stub("_xef_zone_claimed_address", (void*)&zn_claimed_address);
-    }
+    std::lock_guard<std::mutex> lk(g_zone_lock);
+    if (!zone) { zone = make_zone("DefaultMallocZone"); g_zones.insert(g_zones.begin(), (uint64_t)zone); }
     return zone;
+}
+static void* sh_malloc_default_purgeable_zone() {
+    sh_malloc_default_zone();
+    static uint64_t* zone;
+    std::lock_guard<std::mutex> lk(g_zone_lock);
+    if (!zone) { zone = make_zone("DefaultPurgeableMallocZone"); g_zones.push_back((uint64_t)zone); }
+    return zone;
+}
+static void sh_malloc_zone_register(void* z) {
+    sh_malloc_default_zone();
+    std::lock_guard<std::mutex> lk(g_zone_lock);
+    if (g_zones.size() < 64) g_zones.push_back((uint64_t)z);
+}
+static void sh_malloc_zone_unregister(void* z) {
+    std::lock_guard<std::mutex> lk(g_zone_lock);
+    for (size_t i = 0; i < g_zones.size(); i++)
+        if (g_zones[i] == (uint64_t)z) { g_zones[i] = g_zones.back(); g_zones.pop_back(); return; }   // as libmalloc
+}
+static int sh_malloc_get_all_zones(uint32_t, void*, uint64_t** addresses, unsigned* count) {
+    sh_malloc_default_zone();
+    std::lock_guard<std::mutex> lk(g_zone_lock);
+    for (size_t i = 0; i < g_zones.size(); i++) g_zone_snapshot[i] = g_zones[i];
+    if (addresses) *addresses = g_zone_snapshot;
+    if (count) *count = (unsigned)g_zones.size();
+    return 0;
 }
 static size_t sh_malloc_size(const void* p) { return p ? malloc_usable_size((void*)p) : 0; }
 static void* sh_reallocf(void* p, size_t n) {
@@ -316,6 +350,9 @@ static const SysShim kSys[] = {
     {"_task_threads", (void*)&sh_task_threads},
     {"_thread_get_state", (void*)&sh_thread_get_state},
     {"_malloc_default_zone", (void*)&sh_malloc_default_zone},
+    {"_malloc_default_purgeable_zone", (void*)&sh_malloc_default_purgeable_zone},
+    {"_malloc_zone_register", (void*)&sh_malloc_zone_register}, {"_malloc_zone_unregister", (void*)&sh_malloc_zone_unregister},
+    {"_malloc_get_all_zones", (void*)&sh_malloc_get_all_zones},
     {"_malloc_zone_malloc_with_options", (void*)&sh_malloc_zone_malloc_with_options},
     {"_malloc_zone_malloc", (void*)&sh_malloc_zone_malloc}, {"_malloc_zone_calloc", (void*)&sh_malloc_zone_calloc},
     {"_malloc_zone_realloc", (void*)&sh_malloc_zone_realloc}, {"_malloc_zone_valloc", (void*)&sh_malloc_zone_valloc},
