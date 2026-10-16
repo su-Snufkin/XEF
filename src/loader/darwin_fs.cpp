@@ -158,8 +158,47 @@ static int f_lchmod(const char* p, mode_t m) {   // Linux cannot chmod a symlink
     return chmod(s.c_str(), m);
 }
 static int f_creat(const char* p, mode_t m) { return open(rp(p).c_str(), O_CREAT | O_WRONLY | O_TRUNC, m); }
-static int f_utimes(const char* p, const struct timeval* tv) { return utimes(rp(p).c_str(), tv); }   // timeval: same layout
-static int f_lutimes(const char* p, const struct timeval* tv) { return lutimes(rp(p, false).c_str(), tv); }
+// Darwin struct timeval is {int64 tv_sec; int32 tv_usec; 4 bytes padding}: the padding is not part of tv_usec
+static const struct timeval* tv_in(const void* d, struct timeval* l, int n) {
+    if (!d) return nullptr;
+    for (int i = 0; i < n; i++) {
+        memcpy(&l[i].tv_sec, (const char*)d + 16 * i, 8);
+        int32_t us; memcpy(&us, (const char*)d + 16 * i + 8, 4);
+        l[i].tv_usec = us;
+    }
+    return l;
+}
+static void tv_out(const struct timeval* l, void* d, int n) {
+    if (!d) return;
+    for (int i = 0; i < n; i++) {
+        memcpy((char*)d + 16 * i, &l[i].tv_sec, 8);
+        int32_t us = (int32_t)l[i].tv_usec; memcpy((char*)d + 16 * i + 8, &us, 4);
+        memset((char*)d + 16 * i + 12, 0, 4);
+    }
+}
+static int f_utimes(const char* p, const void* tv) { struct timeval l[2]; return utimes(rp(p).c_str(), tv_in(tv, l, 2)); }
+static int f_lutimes(const char* p, const void* tv) { struct timeval l[2]; return lutimes(rp(p, false).c_str(), tv_in(tv, l, 2)); }
+static int f_futimes(int fd, const void* tv) { struct timeval l[2]; return futimes(fd, tv_in(tv, l, 2)); }
+static int f_setitimer(int which, const void* nv, void* ov) {   // itimerval = {interval, value}
+    struct itimerval n, o;
+    if (nv) tv_in(nv, &n.it_interval, 2);
+    int r = setitimer((__itimer_which_t)which, nv ? &n : nullptr, ov ? &o : nullptr);
+    if (r == 0 && ov) tv_out(&o.it_interval, ov, 2);
+    return r;
+}
+static int f_getitimer(int which, void* cv) {
+    struct itimerval c;
+    int r = getitimer((__itimer_which_t)which, &c);
+    if (r == 0) tv_out(&c.it_interval, cv, 2);
+    return r;
+}
+static int f_settimeofday(const void* tv, const void* tz) { struct timeval l; return settimeofday(tv_in(tv, &l, 1), (const struct timezone*)tz); }
+static int f_adjtime(const void* d, void* od) {
+    struct timeval l, o;
+    int r = adjtime(tv_in(d, &l, 1), od ? &o : nullptr);
+    if (r == 0 && od) tv_out(&o, od, 1);
+    return r;
+}
 struct DarwinUtimbuf { int64_t actime, modtime; };
 static int f_utime(const char* p, const DarwinUtimbuf* b) {
     if (!b) return utimes(rp(p).c_str(), nullptr);
@@ -423,7 +462,9 @@ void* darwin_fs_lookup(const char* name) {
         {"_chdir", (void*)&f_chdir}, {"_chroot", (void*)&f_chroot}, {"_link", (void*)&f_link}, {"_symlink", (void*)&f_symlink},
         {"_truncate", (void*)&f_truncate}, {"_mkfifo", (void*)&f_mkfifo}, {"_mknod", (void*)&f_mknod},
         {"_lchown", (void*)&f_lchown}, {"_lchmod", (void*)&f_lchmod}, {"_creat", (void*)&f_creat},
-        {"_utimes", (void*)&f_utimes}, {"_lutimes", (void*)&f_lutimes}, {"_utime", (void*)&f_utime},
+        {"_utimes", (void*)&f_utimes}, {"_lutimes", (void*)&f_lutimes}, {"_futimes", (void*)&f_futimes},
+        {"_utime", (void*)&f_utime}, {"_setitimer", (void*)&f_setitimer}, {"_getitimer", (void*)&f_getitimer},
+        {"_settimeofday", (void*)&f_settimeofday}, {"_adjtime", (void*)&f_adjtime},
         {"_pathconf", (void*)&f_pathconf}, {"_fpathconf", (void*)&f_fpathconf},
         {"_mkstemp", (void*)&f_mkstemp}, {"_mkstemps", (void*)&f_mkstemps}, {"_mkostemp", (void*)&f_mkostemp},
         {"_mkostemps", (void*)&f_mkostemps}, {"_mkdtemp", (void*)&f_mkdtemp},

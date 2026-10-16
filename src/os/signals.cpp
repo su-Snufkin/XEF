@@ -716,7 +716,7 @@ void sig_rt_sigreturn(CpuState* st) {
     if (__atomic_load_n(&st->thread->pending, __ATOMIC_SEQ_CST)) st->pending_signal = 1;
 }
 
-i64 sig_rt_sigsuspend(CpuState* st, u64 set, u64 sigsetsize) {
+i64 sig_rt_sigsuspend(CpuState* st, u64 set, u64 sigsetsize, bool libc_ret) {
     if (sigsetsize != 8) return -EINVAL;
     u64 old = host_blocked();
     u64 tmp = *(u64*)set & ~kInternalSigs;
@@ -728,7 +728,7 @@ i64 sig_rt_sigsuspend(CpuState* st, u64 set, u64 sigsetsize) {
         r = r < 0 ? -errno : r;
     } while (r == -EINTR && !(__atomic_load_n(&st->thread->pending, __ATOMIC_SEQ_CST) & ~tmp));
     // deliver now with the temporary mask; the handler's sigreturn restores the old mask
-    st->x[0] = (u64)r;
+    st->x[0] = libc_ret ? (u64)-1 : (u64)r;
     deliver_pending_masked(st, old, tmp);
     return r;
 }

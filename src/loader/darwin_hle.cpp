@@ -33,6 +33,7 @@
 #include <math.h>
 #include <wchar.h>
 #include <pwd.h>
+#include <grp.h>
 #include <locale.h>
 #include <regex.h>
 #include <ctype.h>
@@ -1842,6 +1843,24 @@ static int darwin_getpwnam_r(const char* name, DarwinPasswd* out, char* buf, siz
     if (r == 0 && p) { fill_darwin_passwd(out, p); *res = out; } else *res = nullptr;
     return r;
 }
+// group database: struct group has the same layout; Darwin's standard groups missing on Linux hosts map to their
+// counterparts ("nobody" -> "nogroup", "wheel" -> "root")
+static const char* darwin_group_alias(const char* name) {
+    if (!name) return nullptr;
+    if (!strcmp(name, "nobody")) return "nogroup";
+    if (!strcmp(name, "wheel")) return "root";
+    return nullptr;
+}
+static struct group* darwin_getgrnam(const char* name) {
+    struct group* g = getgrnam(name);
+    if (!g && darwin_group_alias(name)) g = getgrnam(darwin_group_alias(name));
+    return g;
+}
+static int darwin_getgrnam_r(const char* name, struct group* out, char* buf, size_t len, struct group** res) {
+    int r = getgrnam_r(name, out, buf, len, res);
+    if (r == 0 && !*res && darwin_group_alias(name)) r = getgrnam_r(darwin_group_alias(name), out, buf, len, res);
+    return r;
+}
 // pthread_atfork + fork: prepare handlers run in reverse registration order, parent/child ones in order
 struct AtforkEntry { u64 prepare, parent, child; };
 static std::mutex g_atfork_lock;
@@ -2099,6 +2118,7 @@ static const ShimEntry kShims[] = {
     {"_getpwuid", (void*)&darwin_getpwuid, -1}, {"_getpwnam", (void*)&darwin_getpwnam, -1},
     {"_getpwuid_r", (void*)&darwin_getpwuid_r, -1}, {"_getpwnam_r", (void*)&darwin_getpwnam_r, -1},
     {"_pthread_atfork", (void*)&darwin_pthread_atfork, -1},
+    {"_getgrnam", (void*)&darwin_getgrnam, -1}, {"_getgrnam_r", (void*)&darwin_getgrnam_r, -1},
     {"_fork", (void*)&darwin_fork, -1}, {"_vfork", (void*)&darwin_fork, -1},
     {"_pthread_mach_thread_np", (void*)&darwin_pthread_mach_thread_np, -1},
     {"_regcomp", (void*)&darwin_regcomp, -1}, {"_regcomp$DARWIN_EXTSN", (void*)&darwin_regcomp, -1},
@@ -3905,8 +3925,10 @@ void darwin_hle_dispatch(CpuState* st) {
     memcpy(&hstack[2], guest_stack, 16 * sizeof(u64));
     u64 xmm0_out = 0;
     errno = 0;
+    u64 pc_before = st->pc;
     u64 ret = xef_call_sysv(host_fn, iregs, fregs, hstack, 18, &xmm0_out);
     if (errno) g_darwin_errno = darwin_errno_from_linux(errno);
+    if (st->pc != pc_before) return;   // the call delivered a signal (sigsuspend): registers belong to the handler now
     if (name[1] == 'g' && name[2] == 'l') ret = darwin_gl_fix_ret(name, ret);
     if (errno_ret && (int64_t)ret > 34 && (int64_t)ret < 200) ret = (u64)darwin_errno_from_linux((int)ret);
     st->x[0] = ret;

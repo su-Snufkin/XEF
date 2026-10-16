@@ -88,7 +88,7 @@ static int ds_sigismember(const uint32_t* s, int sig) { if (sig < 1 || sig > 31)
 
 static int ds_sigsuspend(const uint32_t* set) {
     u64 l = darwin_mask_to_linux(*set);
-    i64 r = sig_rt_sigsuspend(cur_state(), (u64)&l, 8);
+    i64 r = sig_rt_sigsuspend(cur_state(), (u64)&l, 8, true);   // the frame keeps x0 = -1; errno EINTR below
     return err((int)-r);
 }
 static int ds_sigpending(uint32_t* set) {
