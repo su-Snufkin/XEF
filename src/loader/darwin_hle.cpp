@@ -303,19 +303,42 @@ static void darwin_missing_symbol_fallback() {
 static std::string darwin_format(const char* format, const uint64_t* ap) {
     std::string out;
     const char* p = format;
-    auto next = [&]() -> uint64_t { return ap ? *ap++ : 0; };
+    const uint64_t* base = ap;
+    int pos = 0;   // positional argument (%n$) of the current conversion, 0: sequential
+    auto next = [&]() -> uint64_t {
+        if (pos > 0) return base ? base[pos - 1] : 0;
+        return ap ? *ap++ : 0;
+    };
+    // "n$" after '%' or '*': a 1-based argument index (every argument is one 8-byte slot, so any order works)
+    auto dollar = [&](const char* q, int* idx) -> const char* {
+        int n = 0;
+        const char* r = q;
+        while (isdigit((unsigned char)*r)) n = n * 10 + (*r++ - '0');
+        if (r != q && *r == '$') { *idx = n; return r + 1; }
+        return q;
+    };
     while (*p) {
         if (*p != '%') { out.push_back(*p++); continue; }
         const char* start = p++;
         if (*p == '%') { out.push_back('%'); p++; continue; }
+        pos = 0;
+        p = dollar(p, &pos);
         std::string flags, width, prec;
         bool has_prec = false;
         while (*p && strchr("-+ #0'", *p)) flags.push_back(*p++);
-        if (*p == '*') { int w = (int)next(); if (w < 0) { flags.push_back('-'); w = -w; } width = std::to_string(w); p++; }
+        auto star = [&]() -> int {   // '*' or '*m$'
+            int idx = 0;
+            const char* q = dollar(p + 1, &idx);
+            int v;
+            if (idx > 0) { v = base ? (int)base[idx - 1] : 0; p = q; }
+            else { int save = pos; pos = 0; v = (int)next(); pos = save; p++; }
+            return v;
+        };
+        if (*p == '*') { int w = star(); if (w < 0) { flags.push_back('-'); w = -w; } width = std::to_string(w); }
         else while (isdigit((unsigned char)*p)) width.push_back(*p++);
         if (*p == '.') {
             has_prec = true; p++;
-            if (*p == '*') { int pr = (int)next(); if (pr < 0) has_prec = false; else prec = std::to_string(pr); p++; }
+            if (*p == '*') { int pr = star(); if (pr < 0) has_prec = false; else prec = std::to_string(pr); }
             else while (isdigit((unsigned char)*p)) prec.push_back(*p++);
             if (has_prec && prec.empty()) prec = "0";
         }
@@ -2082,11 +2105,12 @@ static int darwin_fcntl_v(int fd, int cmd, const uint64_t* ap);
 static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap);
 void* st_sem_open_entry(const char* name, int oflag, const uint64_t* ap);
 int darwin_semctl_v(int id, int num, int cmd, const uint64_t* ap);   // darwin_fs.cpp
+int st_shm_open_entry(const char* name, int oflag, const uint64_t* ap);   // darwin_stubs.cpp
 static void* darwin_sem_open_v(const char* name, int oflag, const uint64_t* ap) { return st_sem_open_entry(name, oflag, ap); }
 static const ShimEntry kShims[] = {
     {"__xef_open", (void*)&darwin_open_v, 2}, {"__xef_openat", (void*)&darwin_openat_v, 3}, {"__xef_fcntl", (void*)&darwin_fcntl_v, 2},
     {"__xef_ioctl", (void*)&darwin_ioctl_v, 2},
-    {"_sem_open", (void*)&darwin_sem_open_v, 2}, {"_semctl", (void*)&darwin_semctl_v, 3}, {"_system", (void*)&darwin_system, -1},
+    {"_sem_open", (void*)&darwin_sem_open_v, 2}, {"_shm_open", (void*)&st_shm_open_entry, 2}, {"_semctl", (void*)&darwin_semctl_v, 3}, {"_system", (void*)&darwin_system, -1},
     {"_execl", (void*)&darwin_execl, 2}, {"_execlp", (void*)&darwin_execlp, 2}, {"_execle", (void*)&darwin_execle, 2},
     {"_execve", (void*)&darwin_execve, -1}, {"_execv", (void*)&darwin_execv, -1}, {"_execvp", (void*)&darwin_execvp, -1},
     {"_execvP", (void*)&darwin_execvP, -1},

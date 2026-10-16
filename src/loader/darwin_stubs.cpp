@@ -536,6 +536,11 @@ static void* st_sem_open(const char* name, int oflag, const uint64_t* ap) {
     return s == SEM_FAILED ? (void*)-1 : (void*)s;
 }
 static int st_sem_enosys() { errno = ENOSYS; return -1; }
+// shm_open(name, oflag, ...): Darwin O_* flags (variadic mode)
+int st_shm_open_entry(const char* name, int oflag, const uint64_t* ap) {
+    int lf = darwin_open_flags_to_linux(oflag);
+    return shm_open(name, lf, (mode_t)((lf & O_CREAT) && ap ? ap[0] : 0));
+}
 void* st_sem_open_entry(const char* name, int oflag, const uint64_t* ap) { return st_sem_open(name, oflag, ap); }
 
 // Kerberos.framework CCAPI: no credentials-cache server; MIT krb5 (Homebrew) then finds no API: ccache
