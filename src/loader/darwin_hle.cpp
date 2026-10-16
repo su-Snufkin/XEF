@@ -178,6 +178,7 @@ static const struct { int linux_e, darwin_e; } kErrnoMap[] = {
     {113, 65}, {39, 66}, {87, 68}, {122, 69}, {116, 70}, {66, 71}, {37, 77}, {38, 78}, {125, 89}, {43, 90},
     {42, 91}, {84, 92}, {61, 96}, {74, 94}, {72, 95}, {67, 97}, {63, 98}, {60, 99},
     {71, 100}, {62, 101}, {131, 104}, {130, 105}, {35, 11},
+    {1093, 93},   // ENOATTR: no Linux errno (xattr calls report ENODATA); darwin_fs.cpp uses 1093 for it
 };
 int darwin_errno_from_linux(int e) {
     if (e <= 34 && e != 11) return e;      // 11 is EAGAIN on Linux but EDEADLK on Darwin
@@ -809,25 +810,19 @@ static int darwin_fstat_fn(int fd, darwin_stat64* dst) {
 
 static inline int darwin_dfd_to_linux(int dfd) { return (dfd == -2) ? AT_FDCWD : dfd; }
 
+std::string darwin_fstatat_path(int* dfd, const char* path, int dflag, int* lflags);   // darwin_fs.cpp
 static int darwin_fstatat_fn(int dfd, const char* path, darwin_stat64* dst, int flag) {
     if (!path || !dst) { errno = EFAULT; return -1; }
-    dfd = darwin_dfd_to_linux(dfd);
-    std::string hp;
-    if (path[0] == '/') {
-        hp = resolve_guest_path(path);
-        path = hp.c_str();
-    }
+    int lflags;
+    std::string hp = darwin_fstatat_path(&dfd, path, flag, &lflags);
     struct stat host_st;
-    int lflags = 0;
-    if (flag & 0x0020) lflags |= AT_SYMLINK_NOFOLLOW;
-    if (flag & 0x0002) lflags |= AT_SYMLINK_NOFOLLOW;
-    int r = fstatat(dfd, path, &host_st, lflags);
+    int r = fstatat(dfd, hp.c_str(), &host_st, lflags);
     if (r < 0) return -1;
     convert_stat_to_darwin(host_st, dst);
     return 0;
 }
 
-static int darwin_open_flags_to_linux(int df) {
+int darwin_open_flags_to_linux(int df) {
     int lf = 0;
     if ((df & 3) == 0) lf |= O_RDONLY;
     if ((df & 3) == 1) lf |= O_WRONLY;
@@ -853,17 +848,8 @@ static int darwin_open(const char* path, int dflags, mode_t mode) {
     return r;
 }
 
-static int darwin_openat(int dfd, const char* path, int dflags, mode_t mode) {
-    if (!path) { errno = EFAULT; return -1; }
-    dfd = darwin_dfd_to_linux(dfd);
-    std::string hp;
-    if (path[0] == '/') {
-        hp = resolve_guest_path(path);
-        path = hp.c_str();
-    }
-    int lflags = darwin_open_flags_to_linux(dflags);
-    return openat(dfd, path, lflags, mode);
-}
+int darwin_openat_impl(int dfd, const char* path, int dflags, mode_t mode);   // darwin_fs.cpp
+static int darwin_openat(int dfd, const char* path, int dflags, mode_t mode) { return darwin_openat_impl(dfd, path, dflags, mode); }
 
 static DIR* darwin_opendir(const char* name) {
     if (!name) { errno = EFAULT; return nullptr; }
@@ -892,7 +878,9 @@ static ssize_t darwin_readlink(const char* path, char* buf, size_t bufsiz) {
 static int darwin_unlink(const char* path) {
     if (!path) { errno = EFAULT; return -1; }
     std::string hp = resolve_guest_path(path, false);
-    return unlink(hp.c_str());
+    int r = unlink(hp.c_str());
+    if (r < 0 && errno == EISDIR) errno = EPERM;   // Darwin reports EPERM for a directory
+    return r;
 }
 
 static int darwin_remove(const char* path) {
@@ -3248,6 +3236,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = pr;
     } else if (void* tc = darwin_termios_lookup(name)) {
         host_fn = tc;
+    } else if (void* fs = darwin_fs_lookup(name)) {
+        host_fn = fs;
     } else if (void* pt = darwin_pthread_lookup(name)) {
         host_fn = pt;
     } else if (strcmp(name, "___error") == 0) {
