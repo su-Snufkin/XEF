@@ -12,6 +12,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <dirent.h>
 #include <sys/ioctl.h>
 #include <ftw.h>
@@ -20,6 +21,7 @@
 #include <sys/random.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/timerfd.h>
 #include <sched.h>
 #include <pthread.h>
 #include <string.h>
@@ -953,6 +955,8 @@ static char* darwin_getcwd(char* buf, size_t size) {
     return buf;
 }
 
+// posix_spawn: posix_spawnattr_t / posix_spawn_file_actions_t are opaque pointers on Darwin; ours point to
+// these. Signal sets are Darwin sigset_t (uint32, bit n-1 = Darwin signal n).
 struct DarwinSpawnAttr {
     short psa_flags;
     pid_t psa_pgroup;
@@ -962,6 +966,17 @@ struct DarwinSpawnAttr {
     size_t psa_binprefs_count;
     uint32_t* psa_binprefs;
 };
+enum : short {
+    kSpawnResetIds = 0x1, kSpawnSetPgroup = 0x2, kSpawnSetSigDef = 0x4, kSpawnSetSigMask = 0x8,
+    kSpawnSetExec = 0x40, kSpawnStartSuspended = 0x80, kSpawnSetSid = 0x400, kSpawnCloexecDefault = 0x4000,
+};
+struct DarwinSpawnAction {
+    enum Kind { Open, Close, Dup2, Inherit, Chdir, Fchdir } kind;
+    int fd, newfd, oflag;     // oflag: Linux O_* flags
+    mode_t mode;
+    std::string path;         // host path for Open/Chdir
+};
+struct DarwinSpawnActions { std::vector<DarwinSpawnAction> acts; };
 
 static int darwin_posix_spawnattr_init(void** attrp) {
     if (!attrp) return EINVAL;
@@ -1021,46 +1036,152 @@ static int darwin_posix_spawnattr_getbinpref_np(void** attrp, size_t count, uint
 
 static int darwin_posix_spawnattr_setpgroup(void** attrp, pid_t pgroup) {
     if (!attrp || !*attrp) return EINVAL;
-    auto* a = (DarwinSpawnAttr*)*attrp;
-    a->psa_pgroup = pgroup;
+    ((DarwinSpawnAttr*)*attrp)->psa_pgroup = pgroup;
     return 0;
 }
-
-static int darwin_posix_spawnattr_setsigmask(void** attrp, const void*) {
-    if (!attrp || !*attrp) return EINVAL;
+static int darwin_posix_spawnattr_getpgroup(void** attrp, pid_t* pgroup) {
+    if (!attrp || !*attrp || !pgroup) return EINVAL;
+    *pgroup = ((DarwinSpawnAttr*)*attrp)->psa_pgroup;
     return 0;
 }
-
-static int darwin_posix_spawnattr_setsigdefault(void** attrp, const void*) {
-    if (!attrp || !*attrp) return EINVAL;
+static int darwin_posix_spawnattr_setsigmask(void** attrp, const uint32_t* set) {
+    if (!attrp || !*attrp || !set) return EINVAL;
+    ((DarwinSpawnAttr*)*attrp)->psa_sigmask = *set;
+    return 0;
+}
+static int darwin_posix_spawnattr_getsigmask(void** attrp, uint32_t* set) {
+    if (!attrp || !*attrp || !set) return EINVAL;
+    *set = ((DarwinSpawnAttr*)*attrp)->psa_sigmask;
+    return 0;
+}
+static int darwin_posix_spawnattr_setsigdefault(void** attrp, const uint32_t* set) {
+    if (!attrp || !*attrp || !set) return EINVAL;
+    ((DarwinSpawnAttr*)*attrp)->psa_sigdefault = *set;
+    return 0;
+}
+static int darwin_posix_spawnattr_getsigdefault(void** attrp, uint32_t* set) {
+    if (!attrp || !*attrp || !set) return EINVAL;
+    *set = ((DarwinSpawnAttr*)*attrp)->psa_sigdefault;
     return 0;
 }
 
 static int darwin_posix_spawn_file_actions_init(void** actp) {
     if (!actp) return EINVAL;
-    *actp = calloc(1, 64);
+    *actp = new DarwinSpawnActions();
     return 0;
 }
 
 static int darwin_posix_spawn_file_actions_destroy(void** actp) {
-    if (!actp) return EINVAL;
-    if (*actp) free(*actp);
+    if (!actp || !*actp) return EINVAL;
+    delete (DarwinSpawnActions*)*actp;
     *actp = nullptr;
     return 0;
 }
 
-static int darwin_posix_spawn_file_actions_addclose(void**, int) { return 0; }
-static int darwin_posix_spawn_file_actions_adddup2(void**, int, int) { return 0; }
-static int darwin_posix_spawn_file_actions_addopen(void**, int, const char*, int, mode_t) { return 0; }
+static int spawn_add(void** actp, DarwinSpawnAction a) {
+    if (!actp || !*actp) return EINVAL;
+    if (a.fd < 0 && a.kind != DarwinSpawnAction::Chdir) return EBADF;
+    if ((a.kind == DarwinSpawnAction::Dup2) && a.newfd < 0) return EBADF;
+    ((DarwinSpawnActions*)*actp)->acts.push_back(std::move(a));
+    return 0;
+}
+static int darwin_posix_spawn_file_actions_addclose(void** actp, int fd) {
+    return spawn_add(actp, {DarwinSpawnAction::Close, fd, -1, 0, 0, {}});
+}
+static int darwin_posix_spawn_file_actions_adddup2(void** actp, int fd, int newfd) {
+    return spawn_add(actp, {DarwinSpawnAction::Dup2, fd, newfd, 0, 0, {}});
+}
+static int darwin_posix_spawn_file_actions_addinherit_np(void** actp, int fd) {
+    return spawn_add(actp, {DarwinSpawnAction::Inherit, fd, -1, 0, 0, {}});
+}
+static int darwin_posix_spawn_file_actions_addopen(void** actp, int fd, const char* path, int oflag, mode_t mode) {
+    if (!path) return EINVAL;
+    return spawn_add(actp, {DarwinSpawnAction::Open, fd, -1, darwin_open_flags_to_linux(oflag), mode, resolve_guest_path(path)});
+}
+static int darwin_posix_spawn_file_actions_addchdir_np(void** actp, const char* path) {
+    if (!path) return EINVAL;
+    return spawn_add(actp, {DarwinSpawnAction::Chdir, -1, -1, 0, 0, resolve_guest_path(path)});
+}
+static int darwin_posix_spawn_file_actions_addfchdir_np(void** actp, int fd) {
+    return spawn_add(actp, {DarwinSpawnAction::Fchdir, fd, -1, 0, 0, {}});
+}
+
+// Runs in the child between fork and execve (or in-process for POSIX_SPAWN_SETEXEC): only syscalls.
+static int spawn_apply(DarwinSpawnActions* fa, DarwinSpawnAttr* a) {
+    short fl = a ? a->psa_flags : 0;
+    if (fl & kSpawnSetSid) { if (setsid() < 0) return errno; }
+    if (fl & kSpawnSetPgroup) { if (setpgid(0, a->psa_pgroup) < 0) return errno; }
+    if (fl & kSpawnResetIds) { if (setegid(getgid()) < 0 || seteuid(getuid()) < 0) return errno; }
+    if (fl & kSpawnSetSigDef) {
+        for (int d = 1; d <= 31; d++) {
+            int l = darwin_to_linux_sig(d);
+            if (!((a->psa_sigdefault >> (d - 1)) & 1) || l <= 0 || l == SIGKILL || l == SIGSTOP) continue;
+            struct sigaction sa; memset(&sa, 0, sizeof sa); sa.sa_handler = SIG_DFL;
+            sigaction(l, &sa, nullptr);
+        }
+    }
+    // fds the child keeps under POSIX_SPAWN_CLOEXEC_DEFAULT: those the actions produce or inherit
+    uint64_t keep[1024 / 64] = {};
+    auto mark = [&](int fd) { if (fd >= 0 && fd < 1024) keep[fd / 64] |= 1ull << (fd % 64); };
+    if (fa) {
+        for (const DarwinSpawnAction& x : fa->acts) {
+            switch (x.kind) {
+            case DarwinSpawnAction::Open: {
+                int t = open(x.path.c_str(), x.oflag, x.mode);
+                if (t < 0) return errno;
+                if (t != x.fd) {
+                    if (dup2(t, x.fd) < 0) { int e = errno; close(t); return e; }
+                    close(t);
+                }
+                mark(x.fd);
+                break;
+            }
+            case DarwinSpawnAction::Close:
+                if (close(x.fd) < 0 && errno != EBADF) return errno;
+                break;
+            case DarwinSpawnAction::Dup2:
+                if (x.fd == x.newfd) {   // POSIX 2024: dup2 onto itself clears FD_CLOEXEC
+                    int f = fcntl(x.fd, F_GETFD);
+                    if (f < 0 || fcntl(x.fd, F_SETFD, f & ~FD_CLOEXEC) < 0) return errno;
+                } else if (dup2(x.fd, x.newfd) < 0) return errno;
+                mark(x.newfd);
+                break;
+            case DarwinSpawnAction::Inherit: {
+                int f = fcntl(x.fd, F_GETFD);
+                if (f < 0 || fcntl(x.fd, F_SETFD, f & ~FD_CLOEXEC) < 0) return errno;
+                mark(x.fd);
+                break;
+            }
+            case DarwinSpawnAction::Chdir:
+                if (chdir(x.path.c_str()) < 0) return errno;
+                break;
+            case DarwinSpawnAction::Fchdir:
+                if (fchdir(x.fd) < 0) return errno;
+                break;
+            }
+        }
+    }
+    if (fl & kSpawnCloexecDefault) {
+        // guest fds only: XEF's internal fds (>= 1000) are CLOEXEC already
+        for (int fd = 0; fd < 1000; fd++) {
+            if (fd < 1024 && (keep[fd / 64] >> (fd % 64)) & 1) continue;
+            int f = fcntl(fd, F_GETFD);
+            if (f >= 0 && !(f & FD_CLOEXEC)) fcntl(fd, F_SETFD, f | FD_CLOEXEC);
+        }
+    }
+    if (fl & kSpawnSetSigMask) {
+        u64 lm = darwin_mask_to_linux(a->psa_sigmask);
+        syscall(SYS_rt_sigprocmask, SIG_SETMASK, &lm, nullptr, 8);
+    }
+    return 0;
+}
 
 static int darwin_posix_spawn(pid_t* pid, const char* path, void* file_actions, void* attrp, char* const argv[], char* const envp[]) {
     if (!path || !path[0]) return ENOENT;
-    (void)file_actions;
     std::string hp = resolve_guest_path(path);
-    std::string target_path = (access(hp.c_str(), R_OK) == 0) ? hp : path;
-    if (access(target_path.c_str(), R_OK) != 0) {
-        return ENOENT;
-    }
+    std::string target_path = (access(hp.c_str(), F_OK) == 0) ? hp : path;
+    if (access(target_path.c_str(), F_OK) != 0) return ENOENT;
+    if (access(target_path.c_str(), X_OK) != 0) return EACCES;
 
     int fd = open(target_path.c_str(), O_RDONLY | O_CLOEXEC);
     uint8_t hdr[24] = {0};
@@ -1120,23 +1241,44 @@ static int darwin_posix_spawn(pid_t* pid, const char* path, void* file_actions, 
     }
     c_envp.push_back(nullptr);
 
-    // Check POSIX_SPAWN_SETEXEC (0x0040 on macOS)
-    bool setexec = false;
-    if (attrp) {
-        DarwinSpawnAttr* a = *(DarwinSpawnAttr**)attrp;
-        if (a && (a->psa_flags & 0x0040)) setexec = true;
-    }
+    DarwinSpawnAttr* a = attrp ? *(DarwinSpawnAttr**)attrp : nullptr;
+    DarwinSpawnActions* fa = file_actions ? *(DarwinSpawnActions**)file_actions : nullptr;
 
-    if (setexec) {
+    if (a && (a->psa_flags & kSpawnSetExec)) {
+        if (int e = spawn_apply(fa, a)) return e;
         execve(exe_to_run.c_str(), c_argv.data(), c_envp.data());
         return errno;
     }
 
+    // the child reports a failed action / execve through a CLOEXEC pipe (posix_spawn returns it)
+    int ep[2];
+    if (pipe2(ep, O_CLOEXEC) < 0) return errno;
     pid_t child = fork();
-    if (child < 0) return errno;
+    if (child < 0) { int e = errno; close(ep[0]); close(ep[1]); return e; }
     if (child == 0) {
-        execve(exe_to_run.c_str(), c_argv.data(), c_envp.data());
+        close(ep[0]);
+        if (ep[1] < 1000) {   // keep the report pipe out of the way of dup2 targets
+            int hi = fcntl(ep[1], F_DUPFD_CLOEXEC, 1000);
+            if (hi >= 0) { close(ep[1]); ep[1] = hi; }
+        }
+        int e = spawn_apply(fa, a);
+        if (!e) {
+            if (a && (a->psa_flags & kSpawnStartSuspended)) raise(SIGSTOP);
+            execve(exe_to_run.c_str(), c_argv.data(), c_envp.data());
+            e = errno;
+        }
+        ssize_t w = write(ep[1], &e, sizeof e);
+        (void)w;
         _exit(127);
+    }
+    close(ep[1]);
+    int ce = 0;
+    ssize_t r;
+    do r = read(ep[0], &ce, sizeof ce); while (r < 0 && errno == EINTR);
+    close(ep[0]);
+    if (r == (ssize_t)sizeof ce) {
+        waitpid(child, nullptr, 0);
+        return ce;
     }
     if (pid) *pid = child;
     return 0;
@@ -2219,7 +2361,9 @@ static constexpr int16_t  DARWIN_EVFILT_USER = -10;
 // Supported filters: EVFILT_READ, EVFILT_WRITE (one epoll registration per fd, the kevent filters are tracked here, since
 // epoll cannot tell them apart and kqueue reports ident = fd, data, EV_EOF and the per-filter udata) and EVFILT_USER
 // (libuv's uv_async: triggered flag per ident, woken through an eventfd that is part of the epoll set).
-// Other filters (VNODE/PROC/SIGNAL/TIMER) fail with ENOTSUP (reported in the receipt when EV_RECEIPT is set).
+// EVFILT_PROC (NOTE_EXIT[|NOTE_EXITSTATUS] only) through a pidfd and EVFILT_TIMER through a timerfd ("aux" entries,
+// own host fd >= 1000 in the epoll set, tagged with bit 63 in the epoll data).
+// Other filters (VNODE/SIGNAL/...) fail with ENOTSUP (reported in the receipt when EV_RECEIPT is set).
 static constexpr uint16_t DARWIN_EV_ONESHOT  = 0x0010;
 static constexpr uint16_t DARWIN_EV_CLEAR    = 0x0020;
 static constexpr uint16_t DARWIN_EV_DISPATCH = 0x0080;
@@ -2230,11 +2374,88 @@ static constexpr uint32_t DARWIN_NOTE_FFLAGSMASK = 0x00ffffff;
 
 struct KqEntry { void* udata; uint16_t flags; bool disabled; };
 struct KqUser { void* udata; uint16_t flags; uint32_t fflags; bool triggered, disabled; };
+struct KqAux { int16_t filter; uint64_t ident; void* udata; uint16_t flags; uint32_t fflags; int hfd; bool disabled; };
 struct KqState {
     int evfd = -1;                                            // wakes epoll_wait for EVFILT_USER triggers
     std::unordered_map<int, KqEntry> rd, wr;                  // fd -> registration
     std::unordered_map<uint64_t, KqUser> user;
+    std::unordered_map<uint64_t, KqAux> aux;                  // id -> EVFILT_PROC / EVFILT_TIMER registration
+    uint64_t next_aux = 1;
 };
+static constexpr int16_t  DARWIN_EVFILT_PROC  = -5;
+static constexpr int16_t  DARWIN_EVFILT_TIMER = -7;
+static constexpr uint32_t DARWIN_NOTE_EXIT = 0x80000000u, DARWIN_NOTE_EXITSTATUS = 0x04000000u;
+static constexpr uint64_t kKqAuxTag = 1ull << 63;
+
+static void kq_aux_drop(int kq, KqState& st, std::unordered_map<uint64_t, KqAux>::iterator it) {
+    epoll_ctl(kq, EPOLL_CTL_DEL, it->second.hfd, nullptr);
+    close(it->second.hfd);
+    st.aux.erase(it);
+}
+static int kq_hi_fd(int fd) {                                 // keep XEF's fds out of the guest's range
+    if (fd < 0 || fd >= 1000) return fd;
+    int hi = fcntl(fd, F_DUPFD_CLOEXEC, 1000);
+    close(fd);
+    return hi;
+}
+static bool kq_timer_arm(int tfd, const darwin_kevent_t& kev) {
+    // data in NOTE_SECONDS(1) / NOTE_USECONDS(2) / NOTE_NSECONDS(4) / NOTE_MACHTIME(0x100), milliseconds by default;
+    // NOTE_ABSOLUTE(8): absolute deadline (gettimeofday based), fires once
+    int64_t v = kev.data < 0 ? 0 : (int64_t)kev.data, ns;
+    uint32_t f = kev.fflags;
+    if (f & 1) ns = v * 1000000000; else if (f & 2) ns = v * 1000; else if (f & (4 | 0x100)) ns = v; else ns = v * 1000000;
+    struct itimerspec its;
+    memset(&its, 0, sizeof its);
+    if (f & 8) {
+        its.it_value.tv_sec = ns / 1000000000; its.it_value.tv_nsec = ns % 1000000000;
+        if (!its.it_value.tv_sec && !its.it_value.tv_nsec) its.it_value.tv_nsec = 1;
+        return timerfd_settime(tfd, TFD_TIMER_ABSTIME, &its, nullptr) == 0;
+    }
+    if (ns <= 0) ns = 1;
+    its.it_value.tv_sec = ns / 1000000000; its.it_value.tv_nsec = ns % 1000000000;
+    if (!(kev.flags & DARWIN_EV_ONESHOT)) its.it_interval = its.it_value;
+    return timerfd_settime(tfd, 0, &its, nullptr) == 0;
+}
+static int kq_apply_aux(int kq, KqState& st, const darwin_kevent_t& kev) {
+    auto it = st.aux.begin();
+    for (; it != st.aux.end(); ++it)
+        if (it->second.filter == kev.filter && it->second.ident == kev.ident) break;
+    if (kev.flags & DARWIN_EV_DELETE) {
+        if (it == st.aux.end()) return ENOENT;
+        kq_aux_drop(kq, st, it);
+        return 0;
+    }
+    if (kev.flags & DARWIN_EV_ADD) {
+        if (it == st.aux.end()) {
+            int hfd;
+            if (kev.filter == DARWIN_EVFILT_PROC) {
+                if (!(kev.fflags & DARWIN_NOTE_EXIT)) return ENOTSUP;     // FORK/EXEC/SIGNAL tracking is not emulated
+                hfd = (int)syscall(SYS_pidfd_open, (pid_t)kev.ident, 0);
+                if (hfd < 0) return errno == EINVAL ? ESRCH : errno;
+            } else {
+                hfd = timerfd_create((kev.fflags & 8) ? CLOCK_REALTIME : CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+                if (hfd < 0) return errno;
+            }
+            hfd = kq_hi_fd(hfd);
+            if (hfd < 0) return EMFILE;
+            uint64_t id = st.next_aux++;
+            struct epoll_event e;
+            memset(&e, 0, sizeof e);
+            e.events = EPOLLIN;
+            e.data.u64 = kKqAuxTag | id;
+            if (epoll_ctl(kq, EPOLL_CTL_ADD, hfd, &e) < 0) { int er = errno; close(hfd); return er; }
+            it = st.aux.emplace(id, KqAux{kev.filter, (uint64_t)kev.ident, kev.udata, kev.flags, kev.fflags, hfd, false}).first;
+        } else {
+            it->second.udata = kev.udata; it->second.flags = kev.flags; it->second.fflags = kev.fflags;
+        }
+        if (kev.filter == DARWIN_EVFILT_TIMER && !kq_timer_arm(it->second.hfd, kev)) { int er = errno; kq_aux_drop(kq, st, it); return er; }
+    } else if (it == st.aux.end()) {
+        return ENOENT;
+    }
+    if (kev.flags & DARWIN_EV_DISABLE) it->second.disabled = true;
+    if (kev.flags & DARWIN_EV_ENABLE) it->second.disabled = false;
+    return 0;
+}
 static std::mutex g_kq_lock;
 static std::unordered_map<int, KqState> g_kq;
 
@@ -2266,6 +2487,7 @@ static int darwin_kqueue() {
     std::lock_guard<std::mutex> lk(g_kq_lock);
     KqState& st = g_kq[epfd];                                 // (a closed kqueue's state is replaced when its fd number is reused)
     if (st.evfd >= 0) close(st.evfd);
+    for (auto& [id, a] : st.aux) close(a.hfd);
     st = KqState();
     st.evfd = evfd;
     return epfd;
@@ -2288,6 +2510,7 @@ static int kq_apply_change(int kq, KqState& st, const darwin_kevent_t& kev) {   
         }
         return 0;
     }
+    if (kev.filter == DARWIN_EVFILT_PROC || kev.filter == DARWIN_EVFILT_TIMER) return kq_apply_aux(kq, st, kev);
     if (kev.filter != DARWIN_EVFILT_READ && kev.filter != DARWIN_EVFILT_WRITE) return ENOTSUP;
     int fd = (int)kev.ident;
     auto& tab = kev.filter == DARWIN_EVFILT_READ ? st.rd : st.wr;
@@ -2360,6 +2583,32 @@ static int darwin_kevent(int kq, const darwin_kevent_t* changelist, int nchanges
                     emit(id, DARWIN_EVFILT_USER, (uint16_t)(u.flags & ~(DARWIN_EV_ADD | DARWIN_EV_DELETE)), u.fflags, 0, u.udata);
                     if (u.flags & (DARWIN_EV_CLEAR | DARWIN_EV_ONESHOT | DARWIN_EV_DISPATCH)) u.triggered = false;
                 }
+            continue;
+        }
+        if (ep[i].data.u64 & kKqAuxTag) {
+            auto a = st.aux.find(ep[i].data.u64 & ~kKqAuxTag);
+            if (a == st.aux.end() || a->second.disabled) continue;
+            KqAux& x = a->second;
+            uint16_t fl = (uint16_t)(x.flags & ~(DARWIN_EV_ADD | DARWIN_EV_DELETE));
+            if (x.filter == DARWIN_EVFILT_PROC) {
+                // NOTE_EXIT: the knote goes away with the process; data = wait status with NOTE_EXITSTATUS
+                siginfo_t si;
+                memset(&si, 0, sizeof si);
+                int64_t data = 0;
+                if ((x.fflags & DARWIN_NOTE_EXITSTATUS) &&
+                    waitid((idtype_t)3 /*P_PIDFD*/, (id_t)x.hfd, &si, WEXITED | WNOWAIT | WNOHANG) == 0 && si.si_pid) {
+                    int sig = si.si_code == CLD_EXITED ? 0 : linux_to_darwin_sig(si.si_status);
+                    data = si.si_code == CLD_EXITED ? (si.si_status & 0xff) << 8 : (sig | (si.si_code == CLD_DUMPED ? 0x80 : 0));
+                }
+                emit(x.ident, x.filter, fl | DARWIN_EV_EOF, x.fflags & (DARWIN_NOTE_EXIT | DARWIN_NOTE_EXITSTATUS), data, x.udata);
+                kq_aux_drop(kq, st, a);
+                continue;
+            }
+            uint64_t n = 0;
+            if (read(x.hfd, &n, 8) != 8 || !n) continue;
+            emit(x.ident, x.filter, fl, 0, (int64_t)n, x.udata);
+            if (x.flags & DARWIN_EV_ONESHOT) kq_aux_drop(kq, st, a);
+            else if (x.flags & DARWIN_EV_DISPATCH) x.disabled = true;
             continue;
         }
         int fd = (int)ep[i].data.u64;
@@ -2849,6 +3098,18 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_posix_spawn_file_actions_adddup2;
     } else if (strcmp(name, "_posix_spawn_file_actions_addopen") == 0 || strcmp(name, "posix_spawn_file_actions_addopen") == 0) {
         host_fn = (void*)&darwin_posix_spawn_file_actions_addopen;
+    } else if (strcmp(name, "_posix_spawn_file_actions_addinherit_np") == 0) {
+        host_fn = (void*)&darwin_posix_spawn_file_actions_addinherit_np;
+    } else if (strcmp(name, "_posix_spawn_file_actions_addchdir_np") == 0) {
+        host_fn = (void*)&darwin_posix_spawn_file_actions_addchdir_np;
+    } else if (strcmp(name, "_posix_spawn_file_actions_addfchdir_np") == 0) {
+        host_fn = (void*)&darwin_posix_spawn_file_actions_addfchdir_np;
+    } else if (strcmp(name, "_posix_spawnattr_getpgroup") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_getpgroup;
+    } else if (strcmp(name, "_posix_spawnattr_getsigmask") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_getsigmask;
+    } else if (strcmp(name, "_posix_spawnattr_getsigdefault") == 0) {
+        host_fn = (void*)&darwin_posix_spawnattr_getsigdefault;
     } else if (strcmp(name, "_pthread_create") == 0 || strcmp(name, "pthread_create") == 0) {
         host_fn = (void*)&darwin_pthread_create;
     } else if (strcmp(name, "_pthread_join") == 0 || strcmp(name, "pthread_join") == 0) {

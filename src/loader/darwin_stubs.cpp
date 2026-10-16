@@ -455,7 +455,6 @@ static const StubEntry kStubs2[] = {
     {"_mach_vm_remap", (void*)&st_kern_failure},
     {"_os_signpost_enabled", (void*)&st_zero2}, {"__os_signpost_emit_with_name_impl", (void*)&st_noop2},
     {"_notify_register_file_descriptor", (void*)&st_notify_failed}, {"_notify_cancel", (void*)&st_zero2},
-    {"_posix_spawn_file_actions_addinherit_np", (void*)&st_zero2},
     {"_fsctl", (void*)&st_neg_errno_notsup}, {"_getsectdata", (void*)&st_null2}, {"_getsectiondata", (void*)&st_null2},
     {"_SecItemCopyMatching", (void*)&st_secitem_notfound}, {"_SecCertificateCopyData", (void*)&st_null2},
     {"_SecPolicyCopyProperties", (void*)&st_null2}, {"_SecPolicyCreateSSL", (void*)&st_null2},
