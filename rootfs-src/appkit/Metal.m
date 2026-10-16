@@ -1832,6 +1832,67 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
       out[1] = (float)s[1] / 65535.0f;
       break;
     }
+    case MTLVertexFormatShort4: {
+      const int16_t *s = (const int16_t *)ptr;
+      out[0] = (float)s[0]; out[1] = (float)s[1]; out[2] = (float)s[2]; out[3] = (float)s[3];
+      break;
+    }
+    case MTLVertexFormatShort4Normalized: {
+      const int16_t *s = (const int16_t *)ptr;
+      out[0] = xef_clampf((float)s[0] / 32767.0f, -1.0f, 1.0f);
+      out[1] = xef_clampf((float)s[1] / 32767.0f, -1.0f, 1.0f);
+      out[2] = xef_clampf((float)s[2] / 32767.0f, -1.0f, 1.0f);
+      out[3] = xef_clampf((float)s[3] / 32767.0f, -1.0f, 1.0f);
+      break;
+    }
+    case MTLVertexFormatUShort4Normalized: {
+      const uint16_t *s = (const uint16_t *)ptr;
+      out[0] = (float)s[0] / 65535.0f;
+      out[1] = (float)s[1] / 65535.0f;
+      out[2] = (float)s[2] / 65535.0f;
+      out[3] = (float)s[3] / 65535.0f;
+      break;
+    }
+    case MTLVertexFormatInt: {
+      const int32_t *i = (const int32_t *)ptr;
+      out[0] = (float)i[0];
+      break;
+    }
+    case MTLVertexFormatInt2: {
+      const int32_t *i = (const int32_t *)ptr;
+      out[0] = (float)i[0]; out[1] = (float)i[1];
+      break;
+    }
+    case MTLVertexFormatInt3: {
+      const int32_t *i = (const int32_t *)ptr;
+      out[0] = (float)i[0]; out[1] = (float)i[1]; out[2] = (float)i[2];
+      break;
+    }
+    case MTLVertexFormatInt4: {
+      const int32_t *i = (const int32_t *)ptr;
+      out[0] = (float)i[0]; out[1] = (float)i[1]; out[2] = (float)i[2]; out[3] = (float)i[3];
+      break;
+    }
+    case MTLVertexFormatUInt: {
+      const uint32_t *u = (const uint32_t *)ptr;
+      out[0] = (float)u[0];
+      break;
+    }
+    case MTLVertexFormatUInt2: {
+      const uint32_t *u = (const uint32_t *)ptr;
+      out[0] = (float)u[0]; out[1] = (float)u[1];
+      break;
+    }
+    case MTLVertexFormatUInt3: {
+      const uint32_t *u = (const uint32_t *)ptr;
+      out[0] = (float)u[0]; out[1] = (float)u[1]; out[2] = (float)u[2];
+      break;
+    }
+    case MTLVertexFormatUInt4: {
+      const uint32_t *u = (const uint32_t *)ptr;
+      out[0] = (float)u[0]; out[1] = (float)u[1]; out[2] = (float)u[2]; out[3] = (float)u[3];
+      break;
+    }
     default:
       break;
   }
