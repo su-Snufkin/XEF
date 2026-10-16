@@ -4,6 +4,7 @@ without a Mac: formula metadata from formulae.brew.sh, bottles from ghcr.io (bot
 
   tools/fetch_bottle.py --libcxx                # once: /usr/lib/libc++, libc++abi, libunwind (llvm bottle)
   tools/fetch_bottle.py --syslibs [libcurl.4.dylib ...]   # /usr/lib/libcurl, libedit, libffi, ... from bottles
+  tools/fetch_bottle.py --shell                 # /bin/sh, /bin/bash (bash bottle) for popen/system/scripts
   tools/fetch_bottle.py jq ripgrep node         # -> darwin-rootfs/opt/homebrew/{Cellar,opt,bin,lib,...}
   build/xef-osx darwin-rootfs/opt/homebrew/bin/jq --version
 
@@ -218,6 +219,19 @@ def install_syslibs(names=None):
         print('usr/lib/%s -> %s' % (so, os.path.relpath(target, ROOT)))
 
 
+def install_shell():
+    """/bin/sh and /bin/bash -> Homebrew bash (macOS' /bin/sh is bash too): popen()/system() and #! scripts then
+    run a shell under xef-osx that sees the rootfs."""
+    install('bash', set())
+    for n in ('sh', 'bash'):
+        link = os.path.join(ROOT, 'bin', n)
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        if os.path.lexists(link):
+            os.unlink(link)
+        os.symlink('../opt/homebrew/bin/bash', link)
+    print('bin/sh, bin/bash -> opt/homebrew/bin/bash')
+
+
 def set_dylib_id(buf, name):
     ncmds, = struct.unpack_from('<I', buf, 16)
     p = 32
@@ -235,6 +249,9 @@ if __name__ == '__main__':
         raise SystemExit(__doc__)
     if sys.argv[1] == '--libcxx':
         install_libcxx()
+        sys.argv[1:2] = []
+    elif sys.argv[1] == '--shell':
+        install_shell()
         sys.argv[1:2] = []
     elif sys.argv[1] == '--syslibs':
         install_syslibs(sys.argv[2:])
