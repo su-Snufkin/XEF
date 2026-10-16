@@ -459,9 +459,61 @@ static char* st_fflagstostr(unsigned long) { static char empty[] = ""; return em
 static int st_mbr_identifier_translate(int, void*, size_t, int, void*, size_t) { return 0; }
 
 static void st_sys_icache_invalidate(void* start, size_t len) { code_invalidate_range((GuestAddr)(uintptr_t)start, len); }
+// compiler-rt's __clear_cache(start, end) (the host's libgcc version is a no-op on x86): JITs (HotSpot) call it after
+// writing code, so the translations of the old bytes must go
+static void st_clear_cache(char* start, char* end) {
+    if (end > start) code_invalidate_range((GuestAddr)(uintptr_t)start, (size_t)(end - start));
+}
 static void st_srandomdev() { unsigned s; getrandom(&s, sizeof s, 0); srandom(s); }
 static void* st_pthread_override_start() { return (void*)1; }
-static int st_thread_info(uint32_t, int, void* info, uint32_t* cnt) { if (info && cnt) memset(info, 0, *cnt * 4); return 0; }
+// thread_info for thread ports (tid << 8 | 7): THREAD_BASIC_INFO (3, 10 ints: user/system time from /proc, run state,
+// policy) and THREAD_IDENTIFIER_INFO (4, 6 ints: thread id = tid). Writes at most the flavor's size and sets *cnt.
+static bool thread_times(int tid, uint64_t* utime_us, uint64_t* stime_us, char* state) {
+    char path[64], buf[512];
+    snprintf(path, sizeof path, "/proc/self/task/%d/stat", tid);
+    FILE* f = fopen(path, "r");
+    if (!f) return false;
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    char* p = strrchr(buf, ')');
+    if (!p) return false;
+    unsigned long long ut = 0, stt = 0;
+    char st = 'R';
+    // after "comm)": state ppid pgrp session tty tpgid flags minflt cminflt majflt cmajflt utime stime
+    if (sscanf(p + 2, "%c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %llu %llu", &st, &ut, &stt) != 3) return false;
+    long hz = sysconf(_SC_CLK_TCK);
+    *utime_us = ut * 1000000ull / (uint64_t)hz;
+    *stime_us = stt * 1000000ull / (uint64_t)hz;
+    *state = st;
+    return true;
+}
+static int st_thread_info(uint32_t port, int flavor, void* info, uint32_t* cnt) {
+    if (!info || !cnt) return 4;                                          // KERN_INVALID_ARGUMENT
+    if ((port & 0xff) != 0x07) return 4;
+    int tid = (int)(port >> 8);
+    if (flavor == 3) {                                                    // THREAD_BASIC_INFO
+        if (*cnt < 10) return 4;
+        uint64_t ut, stt; char state;
+        if (!thread_times(tid, &ut, &stt, &state)) return 4;
+        int32_t* b = (int32_t*)info;
+        memset(b, 0, 40);
+        b[0] = (int32_t)(ut / 1000000); b[1] = (int32_t)(ut % 1000000);   // user_time {seconds, microseconds}
+        b[2] = (int32_t)(stt / 1000000); b[3] = (int32_t)(stt % 1000000); // system_time
+        b[5] = 1;                                                         // policy POLICY_TIMESHARE
+        b[6] = state == 'R' ? 1 : state == 'T' || state == 't' ? 2 : state == 'D' ? 4 : 3;   // RUNNING/STOPPED/UNINT/WAITING
+        *cnt = 10;
+        return 0;
+    }
+    if (flavor == 4) {                                                    // THREAD_IDENTIFIER_INFO
+        if (*cnt < 6) return 4;
+        uint64_t* b = (uint64_t*)info;
+        b[0] = (uint64_t)tid; b[1] = 0; b[2] = 0;
+        *cnt = 6;
+        return 0;
+    }
+    return 4;
+}
 static int st_neg_errno_notsup() { errno = ENOTSUP; return -1; }
 // Security.framework: no keychain, no trust store (callers fall back to their own CA bundles)
 static int st_secitem_notfound() { return -25300; }   // errSecItemNotFound
@@ -568,7 +620,7 @@ static const StubEntry kStubs2[] = {
     {"_gss_release_name", (void*)&st_gss_release}, {"_gss_release_buffer", (void*)&st_gss_release_buffer},
     {"_gss_display_status", (void*)&st_gss_display_status},
     {"_madvise", (void*)&st_madvise}, {"_posix_madvise", (void*)&st_posix_madvise},
-    {"_sys_icache_invalidate", (void*)&st_sys_icache_invalidate}, {"_sys_dcache_flush", (void*)&st_noop2},
+    {"_sys_icache_invalidate", (void*)&st_sys_icache_invalidate}, {"___clear_cache", (void*)&st_clear_cache}, {"_sys_dcache_flush", (void*)&st_noop2},
     {"_srandomdev", (void*)&st_srandomdev},
     {"_pthread_set_qos_class_self_np", (void*)&st_zero2}, {"_pthread_override_qos_class_start_np", (void*)&st_pthread_override_start},
     {"_pthread_override_qos_class_end_np", (void*)&st_zero2},
