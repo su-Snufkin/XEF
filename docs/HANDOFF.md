@@ -420,6 +420,7 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | rsync 3.5 | działa | lokalna kopia i `-ai --delete` (nakładka rootfs przy `*at` względem dirfd) |
 | redis 8.10 | działa | server + cli (set/get/incr/lists, shutdown) |
 | nginx 1.31 | działa | statyczne pliki, return, 404, 2 workery, zamknięcie SIGTERM |
+| numpy 2.5 (+OpenBLAS) | działa | algebra liniowa (inv/slogdet/eigvalsh/svd), FFT, sort/unique, einsum; wyniki zgodne z Makiem co do wersji bibliotek (Mac ma numpy 2.4.4) |
 | python 3.14 | działa | ssl, sqlite3, asyncio (TCP), hashlib, decimal, lzma, multiprocessing, subprocess, ctypes, https |
 | PostgreSQL 14 | działa | initdb, postgres, psql (socket uniksowy i TCP), pg_ctl stop |
 | ruby 4.0 | działa | json, digest, Thread, fork, Open3, TCP, Fiddle, Net::HTTP https |
