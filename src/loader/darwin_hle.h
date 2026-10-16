@@ -23,7 +23,8 @@ void* darwin_stdio_guest(FILE* host, const char* mode);
 void darwin_stdio_sync(void* guest_file);
 void darwin_stdio_fork_lock(bool take);
 void* darwin_stdio_lookup(const char* name);
-void* darwin_stdio_data_lookup(const char* name);     // guest pthread key destructors of the exiting thread
+void* darwin_stdio_data_lookup(const char* name);
+void* darwin_proc_lookup(const char* name);           // darwin_proc.cpp: libproc     // guest pthread key destructors of the exiting thread
 
 // Dispatches an HLE thunk call (st->x[17] = thunk ID)
 void darwin_hle_dispatch(CpuState* st);

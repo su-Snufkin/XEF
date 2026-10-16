@@ -479,8 +479,19 @@ static uint32_t st_gss_display_status(uint32_t* minor, uint32_t, int, void*, uin
     return 0;
 }
 
+// timingsafe_bcmp: 0 iff equal, time independent of the data
+static int st_timingsafe_bcmp(const void* a, const void* b, size_t n) {
+    const unsigned char *x = (const unsigned char*)a, *y = (const unsigned char*)b;
+    unsigned char d = 0;
+    for (size_t i = 0; i < n; i++) d |= x[i] ^ y[i];
+    return d != 0;
+}
+
 static const StubEntry kStubs2[] = {
-    {"_memset_s", (void*)&st_memset_s},
+    {"_memset_s", (void*)&st_memset_s}, {"_timingsafe_bcmp", (void*)&st_timingsafe_bcmp},
+    {"_task_policy_set", (void*)&st_zero2},   // scheduling role/QoS hint (like pthread_set_qos_class_self_np)
+    {"_gss_get_mic", (void*)&st_gss_unavailable}, {"_gss_verify_mic", (void*)&st_gss_unavailable},
+    {"_gss_release_oid_set", (void*)&st_gss_release},
     {"_ldap_get_option", (void*)&st_ldap_opt_error}, {"_ldap_set_option", (void*)&st_ldap_opt_error},
     {"_ldap_init", (void*)&st_null2}, {"_ldap_open", (void*)&st_null2}, {"_ldap_initialize", (void*)&st_ldap_server_down},
     {"_ldap_simple_bind_s", (void*)&st_ldap_server_down}, {"_ldap_search_s", (void*)&st_ldap_server_down},
@@ -502,7 +513,7 @@ static const StubEntry kStubs2[] = {
     {"_srandomdev", (void*)&st_srandomdev},
     {"_pthread_set_qos_class_self_np", (void*)&st_zero2}, {"_pthread_override_qos_class_start_np", (void*)&st_pthread_override_start},
     {"_pthread_override_qos_class_end_np", (void*)&st_zero2},
-    {"_thread_info", (void*)&st_thread_info}, {"_host_statistics", (void*)&st_kern_failure}, {"_host_processor_info", (void*)&st_kern_failure},
+    {"_thread_info", (void*)&st_thread_info}, 
     {"_mach_vm_remap", (void*)&st_kern_failure},
     {"_os_signpost_enabled", (void*)&st_zero2}, {"__os_signpost_emit_with_name_impl", (void*)&st_noop2},
     {"_notify_register_file_descriptor", (void*)&st_notify_failed}, {"_notify_cancel", (void*)&st_zero2},

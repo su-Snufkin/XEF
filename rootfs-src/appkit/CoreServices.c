@@ -2,6 +2,8 @@
  * The layout data pointer is ignored; keyboardType is irrelevant for ANSI. Dead keys do not exist in this layout. */
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
+#include <stdio.h>
+#include <string.h>
 
 static const char kBase[128] = {
   [0]='a',[11]='b',[8]='c',[2]='d',[14]='e',[3]='f',[5]='g',[4]='h',[34]='i',[38]='j',[40]='k',[37]='l',[46]='m',
@@ -30,3 +32,52 @@ OSStatus UCKeyTranslate(const UCKeyboardLayout *layout, UInt16 vk, UInt16 action
 /* LaunchServices: opening URLs/documents in other applications is not available (SDL_OpenURL reports failure) */
 OSStatus LSOpenCFURLRef(CFURLRef url, CFURLRef *launched) { if (launched) *launched = NULL; return -10814; }   /* kLSApplicationNotFoundErr */
 const CFStringRef kUTTypeFileURL = CFSTR("public.file-url");
+
+/* Locale Utilities: LocaleRefGetPartString(NULL = current locale, ...). The current locale comes from CFLocale
+ * (which follows LC_ALL / LC_MESSAGES / LANG under xef-osx) and is "en_US" when nothing is set. */
+OSStatus LocaleRefGetPartString(LocaleRef ref, LocalePartMask mask, ByteCount max, char *out) {
+  (void)ref;
+  if (!out || max == 0) return paramErr;
+  char id[64] = "en_US";
+  CFLocaleRef loc = CFLocaleCopyCurrent();
+  if (loc) {
+    CFStringRef s = CFLocaleGetIdentifier(loc);
+    char tmp[64];
+    if (s && CFStringGetCString(s, tmp, sizeof tmp, kCFStringEncodingUTF8) && tmp[0]) {
+      char *at = strchr(tmp, '@'); if (at) *at = 0;   /* drop @keywords */
+      if (strcmp(tmp, "en_US_POSIX") && strcmp(tmp, "C") && strcmp(tmp, "POSIX")) snprintf(id, sizeof id, "%s", tmp);
+    }
+    CFRelease(loc);
+  }
+  char lang[32] = "", region[32] = "";
+  sscanf(id, "%31[^_-]%*[_-]%31s", lang, region);
+  char res[64] = "";
+  if (mask & (kLocaleLanguageMask | kLocaleLanguageVariantMask)) strcat(res, lang);
+  if ((mask & (kLocaleRegionMask | kLocaleRegionVariantMask)) && region[0]) { if (res[0]) strcat(res, "_"); strcat(res, region); }
+  if (strlen(res) >= max) return paramErr;
+  strcpy(out, res);
+  return noErr;
+}
+
+/* Text Encoding Conversion Manager: encodings are packed like the real CreateTextEncoding, but no converter exists
+ * (callers such as Vim fall back to iconv when TECCreateConverter reports no conversion path). */
+TextEncoding CreateTextEncoding(TextEncodingBase base, TextEncodingVariant variant, TextEncodingFormat format) {
+  return (base & 0xffff) | ((variant & 0x3ff) << 16) | ((TextEncoding)(format & 0x3f) << 26);
+}
+OSStatus TECCreateConverter(TECObjectRef *conv, TextEncoding from, TextEncoding to) {
+  (void)from; (void)to;
+  if (conv) *conv = NULL;
+  return kTECNoConversionPathErr;
+}
+OSStatus TECConvertText(TECObjectRef c, ConstTextPtr in, ByteCount inlen, ByteCount *inread, TextPtr out, ByteCount outlen, ByteCount *outlenw) {
+  (void)c; (void)in; (void)inlen; (void)out; (void)outlen;
+  if (inread) *inread = 0;
+  if (outlenw) *outlenw = 0;
+  return paramErr;
+}
+OSStatus TECFlushText(TECObjectRef c, TextPtr out, ByteCount outlen, ByteCount *outlenw) {
+  (void)c; (void)out; (void)outlen;
+  if (outlenw) *outlenw = 0;
+  return paramErr;
+}
+OSStatus TECDisposeConverter(TECObjectRef c) { (void)c; return noErr; }

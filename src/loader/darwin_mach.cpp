@@ -16,6 +16,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <stdio.h>
+#include <string>
 
 namespace xef {
 
@@ -274,8 +276,122 @@ static uint32_t mach_thread_self_() { return darwin_thread_port((int)syscall(SYS
 static uint32_t mach_host_self_() { return 0x100; }
 static uint32_t mach_task_self__() { return 0x103; }
 
+// ---- host_statistics / host_statistics64 / host_processor_info from /proc ----------------------------------------
+// Page counts are in Darwin's 16 KiB pages (vm_page_size). Layouts: <mach/vm_statistics.h>, <mach/host_info.h>.
+static std::map<std::string, uint64_t> read_kv(const char* path, bool kb) {
+    std::map<std::string, uint64_t> m;
+    FILE* f = fopen(path, "r");
+    if (!f) return m;
+    char k[128]; unsigned long long v;
+    while (fscanf(f, "%127s %llu%*[^\n]", k, &v) == 2) {
+        std::string key(k);
+        if (!key.empty() && key.back() == ':') key.pop_back();
+        m[key] = kb ? v * 1024 : v;
+    }
+    fclose(f);
+    return m;
+}
+struct VmStat64 {
+    uint32_t free_count, active_count, inactive_count, wire_count;
+    uint64_t zero_fill_count, reactivations, pageins, pageouts, faults, cow_faults, lookups, hits, purges;
+    uint32_t purgeable_count, speculative_count;
+    uint64_t decompressions, compressions, swapins, swapouts;
+    uint32_t compressor_page_count, throttled_count, external_page_count, internal_page_count;
+    uint64_t total_uncompressed_pages_in_compressor;
+    uint64_t pad;   // sizeof == 160 in the SDK (trailing alignment)
+};
+static_assert(offsetof(VmStat64, total_uncompressed_pages_in_compressor) == 144 && sizeof(VmStat64) == 160, "vm_statistics64");
+static void vm_stat64(VmStat64* v) {
+    memset(v, 0, sizeof *v);
+    auto mi = read_kv("/proc/meminfo", true);
+    auto vs = read_kv("/proc/vmstat", false);
+    const uint64_t pg = 16384;
+    uint64_t total = mi["MemTotal"], fr = mi["MemFree"], act = mi["Active"], inact = mi["Inactive"];
+    v->free_count = (uint32_t)(fr / pg);
+    v->active_count = (uint32_t)(act / pg);
+    v->inactive_count = (uint32_t)(inact / pg);
+    uint64_t used = total > fr + act + inact ? total - fr - act - inact : 0;
+    v->wire_count = (uint32_t)(used / pg);
+    v->faults = vs["pgfault"];
+    v->pageins = vs["pgmajfault"];
+    v->pageouts = vs["pswpout"];
+    v->swapins = vs["pswpin"];
+    v->swapouts = vs["pswpout"];
+    v->external_page_count = (uint32_t)((mi["Active(file)"] + mi["Inactive(file)"]) / pg);
+    v->internal_page_count = (uint32_t)((mi["Active(anon)"] + mi["Inactive(anon)"]) / pg);
+}
+static void cpu_ticks(std::vector<uint32_t>& out, bool per_cpu) {   // USER, SYSTEM, IDLE, NICE per entry
+    FILE* f = fopen("/proc/stat", "r");
+    if (!f) return;
+    char line[512];
+    while (fgets(line, sizeof line, f)) {
+        if (strncmp(line, "cpu", 3)) break;
+        bool total = line[3] == ' ';
+        if (total == per_cpu) continue;
+        unsigned long long u = 0, n = 0, sy = 0, id = 0, io = 0, irq = 0, sirq = 0;
+        sscanf(line + (total ? 3 : 4 + strcspn(line + 3, " ")), "%llu %llu %llu %llu %llu %llu %llu", &u, &n, &sy, &id, &io, &irq, &sirq);
+        out.push_back((uint32_t)u); out.push_back((uint32_t)(sy + irq + sirq)); out.push_back((uint32_t)(id + io)); out.push_back((uint32_t)n);
+    }
+    fclose(f);
+}
+static uint32_t host_statistics64_(uint32_t, int flavor, void* info, uint32_t* count) {
+    if (!info || !count) return KERN_INVALID_ARGUMENT_;
+    if (flavor == 4) {   // HOST_VM_INFO64
+        if (*count < 38) return KERN_INVALID_ARGUMENT_;
+        VmStat64 v;
+        vm_stat64(&v);
+        size_t n = std::min<size_t>(*count, 40) * 4;
+        memcpy(info, &v, n);
+        *count = (uint32_t)(n / 4);
+        return KERN_SUCCESS_;
+    }
+    return KERN_INVALID_ARGUMENT_;
+}
+static uint32_t host_statistics_(uint32_t host, int flavor, void* info, uint32_t* count) {
+    if (!info || !count) return KERN_INVALID_ARGUMENT_;
+    if (flavor == 2) {   // HOST_VM_INFO: 32-bit vm_statistics (15 natural_t)
+        if (*count < 15) return KERN_INVALID_ARGUMENT_;
+        VmStat64 v;
+        vm_stat64(&v);
+        uint32_t o[15] = {v.free_count, v.active_count, v.inactive_count, v.wire_count, (uint32_t)v.zero_fill_count,
+                          (uint32_t)v.reactivations, (uint32_t)v.pageins, (uint32_t)v.pageouts, (uint32_t)v.faults,
+                          (uint32_t)v.cow_faults, (uint32_t)v.lookups, (uint32_t)v.hits, v.purgeable_count, (uint32_t)v.purges,
+                          v.speculative_count};
+        memcpy(info, o, sizeof o);
+        *count = 15;
+        return KERN_SUCCESS_;
+    }
+    if (flavor == 3) {   // HOST_CPU_LOAD_INFO
+        if (*count < 4) return KERN_INVALID_ARGUMENT_;
+        std::vector<uint32_t> t;
+        cpu_ticks(t, false);
+        if (t.size() < 4) return KERN_FAILURE_;
+        memcpy(info, t.data(), 16);
+        *count = 4;
+        return KERN_SUCCESS_;
+    }
+    return host_statistics64_(host, flavor, info, count);
+}
+// host_processor_info(host, PROCESSOR_CPU_LOAD_INFO(2), &ncpu, &info, &count): info is vm_allocate'd (freed by vm_deallocate)
+static uint32_t host_processor_info_(uint32_t, int flavor, uint32_t* ncpu, uint64_t* info, uint32_t* count) {
+    if (flavor != 2 || !ncpu || !info || !count) return KERN_INVALID_ARGUMENT_;
+    std::vector<uint32_t> t;
+    cpu_ticks(t, true);
+    if (t.empty()) return KERN_FAILURE_;
+    size_t bytes = (t.size() * 4 + 16383) & ~(size_t)16383;
+    void* p = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) return 3;   // KERN_NO_SPACE
+    memcpy(p, t.data(), t.size() * 4);
+    *ncpu = (uint32_t)(t.size() / 4);
+    *info = (uint64_t)(uintptr_t)p;
+    *count = (uint32_t)t.size();
+    return KERN_SUCCESS_;
+}
+
 struct MachShim { const char* name; void* fn; };
 static const MachShim kMach[] = {
+    {"_host_statistics", (void*)&host_statistics_}, {"_host_statistics64", (void*)&host_statistics64_},
+    {"_host_processor_info", (void*)&host_processor_info_},
     {"_mach_port_allocate", (void*)&mach_port_allocate_}, {"_mach_port_destroy", (void*)&mach_port_destroy_},
     {"_mach_port_deallocate", (void*)&mach_port_deallocate_}, {"_mach_port_insert_right", (void*)&mach_port_insert_right_},
     {"_mach_port_mod_refs", (void*)&mach_port_mod_refs_}, {"_mach_port_type", (void*)&mach_port_type_},

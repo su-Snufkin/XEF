@@ -741,23 +741,6 @@ static int darwin_fpclassifyd(double x) { return darwin_fp_class(std::fpclassify
 static int darwin_fpclassifyf(float x) { return darwin_fp_class(std::fpclassify(x)); }
 static float darwin_exp10f(float x) { return exp10f(x); }
 
-// libproc: path of a process' executable (only our own process is known; others via /proc).
-static int darwin_proc_pidpath(int pid, char* buf, uint32_t size) {
-    if (!buf || size == 0) { errno = EINVAL; return 0; }
-    std::string path;
-    if (pid == 0 || pid == getpid()) {
-        path = g_darwin_exe_path;
-    } else {
-        char tmp[PATH_MAX];
-        ssize_t n = readlink(("/proc/" + std::to_string(pid) + "/exe").c_str(), tmp, sizeof tmp - 1);
-        if (n < 0) return 0;
-        path.assign(tmp, (size_t)n);
-    }
-    size_t n = std::min<size_t>(path.size(), size - 1);
-    memcpy(buf, path.data(), n);
-    buf[n] = 0;
-    return (int)n;
-}
 
 // Darwin struct dirent layout (macOS $INODE64)
 struct darwin_dirent {
@@ -2905,6 +2888,109 @@ static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap) {
     }
 }
 
+// setjmp family as guest arm64 code (a host setjmp would save the host's registers). jmp_buf as in libplatform:
+// x19..x28 @0, fp/lr @0x50, sp @0x60, d8..d15 @0x70, signal mask @0xB0, "mask saved" flag @0xB8. The mask goes
+// through the Darwin sigprocmask shim (an HLE thunk called with BLR).
+static void emit_setjmp_family() {
+    void* spm = darwin_signal_lookup("_sigprocmask");
+    if (!spm) return;
+    uint32_t mask_id = (uint32_t)g_thunks.size();
+    g_thunks.push_back({"__xef_setjmp_sigprocmask", spm});
+    uint32_t* mt = (uint32_t*)(g_thunk_code + g_thunk_code_used);
+    g_thunk_code_used += 16;
+    mt[0] = 0xd2800000u | ((mask_id & 0xffffu) << 5) | 17u;
+    mt[1] = 0xd4400000u | (kThunkHlt << 5);
+    mt[2] = 0xd65f03c0u;
+    mt[3] = 0xd503201fu;
+    uint64_t mask_thunk = (uint64_t)(uintptr_t)mt;
+
+    uint32_t* base = (uint32_t*)(g_thunk_code + g_thunk_code_used);
+    uint32_t* c = base;
+    auto stp = [](int t, int t2, int n, int off) { return 0xA9000000u | ((uint32_t)(off / 8 & 0x7f) << 15) | (t2 << 10) | (n << 5) | t; };
+    auto ldp = [&](int t, int t2, int n, int off) { return stp(t, t2, n, off) | 0x00400000u; };
+    auto stpd = [](int t, int t2, int n, int off) { return 0x6D000000u | ((uint32_t)(off / 8 & 0x7f) << 15) | (t2 << 10) | (n << 5) | t; };
+    auto ldpd = [&](int t, int t2, int n, int off) { return stpd(t, t2, n, off) | 0x00400000u; };
+    auto strx = [](int t, int n, int off) { return 0xF9000000u | ((uint32_t)(off / 8) << 10) | (n << 5) | t; };
+    auto ldrx = [&](int t, int n, int off) { return strx(t, n, off) | 0x00400000u; };
+    auto strw = [](int t, int n, int off) { return 0xB9000000u | ((uint32_t)(off / 4) << 10) | (n << 5) | t; };
+    auto ldrw = [&](int t, int n, int off) { return strw(t, n, off) | 0x00400000u; };
+    auto movx = [](int d, int m) { return 0xAA0003E0u | (m << 16) | d; };
+    auto movz = [](int d, int imm) { return 0xD2800000u | (imm << 5) | d; };
+    auto addi = [](int d, int n, int imm) { return 0x91000000u | (imm << 10) | (n << 5) | d; };
+    const uint32_t kRet = 0xD65F03C0u, kBlr16 = 0xD63F0000u | (16 << 5);
+    std::vector<std::pair<uint32_t*, int>> lits;   // ldr x16, =mask_thunk fixups
+    auto save_regs = [&]() {
+        for (int r = 19, o = 0; r <= 27; r += 2, o += 16) *c++ = stp(r, r + 1, 0, o);
+        *c++ = stp(29, 30, 0, 0x50);
+        *c++ = addi(2, 31, 0);       // mov x2, sp
+        *c++ = strx(2, 0, 0x60);
+        for (int r = 8, o = 0x70; r <= 14; r += 2, o += 16) *c++ = stpd(r, r + 1, 0, o);
+    };
+    auto call_mask = [&]() { lits.push_back({c, 16}); *c++ = 0x58000000u | 16; *c++ = kBlr16; };
+
+    // setjmp(env): registers + current mask
+    uint32_t* p_setjmp = c;
+    save_regs();
+    *c++ = movx(19, 0);
+    *c++ = movz(0, 1);                 // SIG_BLOCK
+    *c++ = movz(1, 0);                 // set = NULL
+    *c++ = addi(2, 19, 0xB0);          // oset = &env[0xB0]
+    call_mask();
+    *c++ = 0x52800021u;                // mov w1, #1
+    *c++ = strw(1, 19, 0xB8);
+    *c++ = movx(0, 19);
+    *c++ = ldrx(19, 0, 0);
+    *c++ = ldrx(30, 0, 0x58);
+    *c++ = movz(0, 0);
+    *c++ = kRet;
+    // _setjmp(env): registers only
+    uint32_t* p__setjmp = c;
+    save_regs();
+    *c++ = strw(31, 0, 0xB8);          // str wzr: no mask saved
+    *c++ = movz(0, 0);
+    *c++ = kRet;
+    // sigsetjmp(env, savemask)
+    uint32_t* p_sigsetjmp = c;
+    *c = 0x34000000u | ((uint32_t)((p__setjmp - c) & 0x7ffff) << 5) | 1;   // cbz w1, _setjmp
+    c++;
+    *c = 0x14000000u | ((uint32_t)(p_setjmp - c) & 0x3ffffff);              // b setjmp
+    c++;
+    // longjmp(env, val) / siglongjmp: restore the mask if setjmp saved it
+    uint32_t* p_longjmp = c;
+    *c++ = ldrw(2, 0, 0xB8);
+    uint32_t* cbz_restore = c++;
+    *c++ = movx(19, 0);
+    *c++ = movx(20, 1);
+    *c++ = movz(0, 3);                 // SIG_SETMASK
+    *c++ = addi(1, 19, 0xB0);
+    *c++ = movz(2, 0);
+    call_mask();
+    *c++ = movx(0, 19);
+    *c++ = movx(1, 20);
+    // _longjmp(env, val)
+    uint32_t* p__longjmp = c;
+    *cbz_restore = 0x34000000u | ((uint32_t)((p__longjmp - cbz_restore) & 0x7ffff) << 5) | 2;   // cbz w2
+    for (int r = 19, o = 0; r <= 27; r += 2, o += 16) *c++ = ldp(r, r + 1, 0, o);
+    *c++ = ldp(29, 30, 0, 0x50);
+    *c++ = ldrx(2, 0, 0x60);
+    *c++ = addi(31, 2, 0);             // mov sp, x2
+    for (int r = 8, o = 0x70; r <= 14; r += 2, o += 16) *c++ = ldpd(r, r + 1, 0, o);
+    *c++ = 0x7100003Fu | (1 << 5);     // cmp w1, #0
+    *c++ = 0x1A800400u | (31u << 16) | (1u << 12) | (1u << 5);   // csinc w0, w1, wzr, ne  (val 0 -> 1)
+    *c++ = kRet;
+    // literal pool (8-byte aligned)
+    if ((uintptr_t)c & 7) *c++ = 0xd503201fu;
+    uint64_t* lit = (uint64_t*)c;
+    *lit = mask_thunk;
+    c += 2;
+    for (auto& [at, reg] : lits) *at = 0x58000000u | ((uint32_t)(((uint32_t*)lit - at) & 0x7ffff) << 5) | (uint32_t)reg;
+    g_thunk_code_used += ((uint8_t*)c - (uint8_t*)base + 15) & ~(size_t)15;
+
+    auto reg = [&](const char* n, uint32_t* at) { g_symbol_cache[n] = (uint64_t)(uintptr_t)at; };
+    reg("_setjmp", p_setjmp); reg("__setjmp", p__setjmp); reg("_sigsetjmp", p_sigsetjmp);
+    reg("_longjmp", p_longjmp); reg("__longjmp", p__longjmp); reg("_siglongjmp", p_longjmp);
+}
+
 void darwin_hle_init() {
     std::lock_guard<std::mutex> lk(g_hle_lock);
     if (g_thunk_code) return;
@@ -2970,6 +3056,7 @@ void darwin_hle_init() {
     uint8_t* sigret = g_thunk_code + g_thunk_code_used;
     g_thunk_code_used += 16;
     darwin_signals_init(sigret);
+    emit_setjmp_family();
 }
 
 uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit_only) {
@@ -3075,6 +3162,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
     void* host_fn = nullptr;
     if (void* sio = darwin_stdio_lookup(name)) {
         host_fn = sio;
+    } else if (void* pr = darwin_proc_lookup(name)) {
+        host_fn = pr;
     } else if (void* pt = darwin_pthread_lookup(name)) {
         host_fn = pt;
     } else if (strcmp(name, "___error") == 0) {
@@ -3141,8 +3230,6 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_NSGetArgv;
     } else if (strcmp(name, "__NSGetEnviron") == 0) {
         host_fn = (void*)&darwin_NSGetEnviron;
-    } else if (strcmp(name, "_proc_pidpath") == 0) {
-        host_fn = (void*)&darwin_proc_pidpath;
     } else if (strcmp(name, "___fpclassifyd") == 0 || strcmp(name, "___fpclassifyl") == 0) {   // long double == double
         host_fn = (void*)&darwin_fpclassifyd;
     } else if (strcmp(name, "___fpclassifyf") == 0) {
