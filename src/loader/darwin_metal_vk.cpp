@@ -171,6 +171,8 @@ struct PipelineKey {
     int stencil_pass_op;
     uint32_t stencil_read_mask;
     uint32_t stencil_write_mask;
+    int cull_mode;
+    int front_face;
 
     bool operator==(const PipelineKey& o) const {
         return blend_enable == o.blend_enable &&
@@ -188,7 +190,9 @@ struct PipelineKey {
                stencil_depth_fail_op == o.stencil_depth_fail_op &&
                stencil_pass_op == o.stencil_pass_op &&
                stencil_read_mask == o.stencil_read_mask &&
-               stencil_write_mask == o.stencil_write_mask;
+               stencil_write_mask == o.stencil_write_mask &&
+               cull_mode == o.cull_mode &&
+               front_face == o.front_face;
     }
 };
 
@@ -206,6 +210,8 @@ struct PipelineKeyHash {
         h ^= std::hash<int>()(k.depth_write_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.depth_compare_op) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.stencil_test_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.cull_mode) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.front_face) + 0x9e3779b9 + (h << 6) + (h >> 2);
         return h;
     }
 };
@@ -529,8 +535,9 @@ static VkPipeline get_or_create_pipeline(const PipelineKey& key, VkRenderPass re
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.cullMode = (key.cull_mode == 1) ? VK_CULL_MODE_FRONT_BIT :
+                          (key.cull_mode == 2) ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+    rasterizer.frontFace = (key.front_face == 1) ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
 
     VkPipelineMultisampleStateCreateInfo multisampling = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
     multisampling.sampleShadingEnable = VK_FALSE;
@@ -1471,6 +1478,8 @@ void draw(int handle,
     key.stencil_pass_op = pipe->stencil_pass_op;
     key.stencil_read_mask = pipe->stencil_read_mask;
     key.stencil_write_mask = pipe->stencil_write_mask;
+    key.cull_mode = pipe->cull_mode;
+    key.front_face = pipe->front_facing_winding;
 
     VkRenderPass pass_for_pipeline = (g_active_render_pass != VK_NULL_HANDLE) ? g_active_render_pass : rt.render_pass_load;
     VkPipeline pipeline = get_or_create_pipeline(key, pass_for_pipeline);

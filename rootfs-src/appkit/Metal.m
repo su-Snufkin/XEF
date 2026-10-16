@@ -2755,6 +2755,9 @@ static void xef_fill_host_metal_pipeline(xef_host_metal_pipeline_t *pipe, XEFMet
       pipe->stencil_ref = enc->_stencilRef;
     }
   }
+
+  pipe->cull_mode = (int)enc->_cullMode;
+  pipe->front_facing_winding = (int)enc->_frontFacingWinding;
 }
 
 static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommandEncoder *enc, XEFMetalTexture *target) {
