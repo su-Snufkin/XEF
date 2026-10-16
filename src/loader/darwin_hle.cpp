@@ -2840,6 +2840,44 @@ static void kq_sync_epoll(int kq, KqState& st, int fd) {      // make the epoll 
     if (epoll_ctl(kq, EPOLL_CTL_MOD, fd, &e) < 0 && errno == ENOENT) epoll_ctl(kq, EPOLL_CTL_ADD, fd, &e);
 }
 
+// A kqueue fd duplicated with dup/F_DUPFD (tokio/mio's Selector::try_clone) names the same kqueue: such fds are
+// recognized as aliases of the fd the state is kept under (kcmp: the same open file description).
+static std::unordered_map<int, int> g_kq_alias;
+static bool same_file(int a, int b) { return syscall(SYS_kcmp, getpid(), getpid(), 0 /*KCMP_FILE*/, a, b) == 0; }
+static std::unordered_map<int, KqState>::iterator kq_lookup(int kq) {   // g_kq_lock held
+    auto it = g_kq.find(kq);
+    if (it != g_kq.end()) return it;
+    auto a = g_kq_alias.find(kq);
+    if (a != g_kq_alias.end()) {
+        it = g_kq.find(a->second);
+        if (it != g_kq.end() && same_file(kq, a->second)) return it;
+        g_kq_alias.erase(a);
+    }
+    struct stat sb;
+    if (fstat(kq, &sb) != 0) return g_kq.end();
+    for (it = g_kq.begin(); it != g_kq.end(); ++it)
+        if (same_file(kq, it->first)) { g_kq_alias[kq] = it->first; return it; }
+    // the fd the state is kept under was closed: find the epoll by the private eventfd registered in it (fdinfo
+    // "tfd:" lines) and keep the state under this fd from now on
+    FILE* f = fopen(("/proc/self/fdinfo/" + std::to_string(kq)).c_str(), "r");
+    if (!f) return g_kq.end();
+    char line[256];
+    std::vector<int> tfds;
+    while (fgets(line, sizeof line, f)) { int t; if (sscanf(line, "tfd: %d", &t) == 1) tfds.push_back(t); }
+    fclose(f);
+    for (it = g_kq.begin(); it != g_kq.end(); ++it) {
+        bool mine = false;
+        for (int t : tfds) mine |= t == it->second.evfd;
+        if (!mine || fcntl(it->first, F_GETFD) >= 0 && same_file(it->first, kq)) continue;
+        KqState moved = std::move(it->second);
+        int old_fd = it->first;
+        g_kq.erase(it);
+        for (auto& a : g_kq_alias) if (a.second == old_fd) a.second = kq;
+        return g_kq.emplace(kq, std::move(moved)).first;
+    }
+    return g_kq.end();
+}
+
 static int darwin_kqueue() {
     int epfd = epoll_create1(EPOLL_CLOEXEC);
     XEF_LOG(2, "darwin_kqueue() = %d", epfd);
@@ -2852,7 +2890,20 @@ static int darwin_kqueue() {
     e.data.u64 = ~0ull;
     epoll_ctl(epfd, EPOLL_CTL_ADD, evfd, &e);
     std::lock_guard<std::mutex> lk(g_kq_lock);
-    KqState& st = g_kq[epfd];                                 // (a closed kqueue's state is replaced when its fd number is reused)
+    // the fd number of a closed kqueue is reused: its state moves to a surviving duplicate, if any, else it is replaced
+    for (auto a = g_kq_alias.begin(); a != g_kq_alias.end();) {
+        if (a->second != epfd) { ++a; continue; }
+        int dup_fd = a->first;
+        a = g_kq_alias.erase(a);
+        auto old = g_kq.find(epfd);
+        if (old != g_kq.end() && fcntl(dup_fd, F_GETFD) >= 0 && !g_kq.count(dup_fd)) {
+            KqState moved = std::move(old->second);
+            g_kq.erase(old);
+            g_kq[dup_fd] = std::move(moved);
+            for (auto& b : g_kq_alias) if (b.second == epfd) b.second = dup_fd;
+        }
+    }
+    KqState& st = g_kq[epfd];
     if (st.evfd >= 0) close(st.evfd);
     for (auto& [id, a] : st.aux) { if (a.sig_slot >= 0) g_kq_sig[a.sig_slot].sig.store(0); close(a.hfd); }
     st = KqState();
@@ -2905,7 +2956,7 @@ static long darwin_kevent(int kq, const darwin_kevent_t* changelist, int nchange
     int out = 0;
     {
         std::lock_guard<std::mutex> lk(g_kq_lock);
-        auto it = g_kq.find(kq);
+        auto it = kq_lookup(kq);
         if (it == g_kq.end()) { errno = EBADF; return -1; }
         KqState& st = it->second;
         for (int i = 0; i < nchanges && changelist; i++) {
@@ -2933,7 +2984,7 @@ static long darwin_kevent(int kq, const darwin_kevent_t* changelist, int nchange
     if (nfds < 0) return -1;
 
     std::lock_guard<std::mutex> lk(g_kq_lock);
-    auto it = g_kq.find(kq);
+    auto it = kq_lookup(kq);
     if (it == g_kq.end()) return 0;
     KqState& st = it->second;
     auto emit = [&](uint64_t ident, int16_t filter, uint16_t flags, uint32_t fflags, int64_t data, void* udata) {
