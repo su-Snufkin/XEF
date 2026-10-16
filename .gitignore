@@ -4,3 +4,4 @@ build*/
 *.core
 CLAUDE.local.md
 mac-out/
+darwin-rootfs/
