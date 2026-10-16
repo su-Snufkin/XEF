@@ -413,9 +413,10 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | curl 8.23 | działa | https z weryfikacją OpenSSL; LDAP/GSS niedostępne (błąd 7 / fallback) |
 | jq, ripgrep, fd, fzf --version, rsync, redis-server, nginx -v | `--version` działa | realne użycie: jq tak; reszta do sprawdzenia |
 | vim 9.2 | działa | ex-mode i interaktywnie (pty) |
+| neovim 0.12 | działa | LuaJIT (`--headless`, lua), edycja interaktywna na pty (`tools/ptyrun.py`) |
 | tmux 3.6 | działa | sesja, powłoka, wyjście |
 | htop 3.4 | działa | lista procesów, uptime; CPU% w 1. klatce zawyżone (próbka startowa htop) |
-| ssh 10.6 | `-V`, ssh-keygen działa | połączenia nie testowane |
+| ssh 10.6 | działa | połączenie z Makiem (klucz, ProxyCommand cloudflared), `scp` w obie strony bajt w bajt |
 | rsync 3.5 | działa | lokalna kopia i `-ai --delete` (nakładka rootfs przy `*at` względem dirfd) |
 | redis 8.10 | działa | server + cli (set/get/incr/lists, shutdown) |
 | nginx 1.31 | działa | statyczne pliki, return, 404, 2 workery, zamknięcie SIGTERM |
