@@ -454,6 +454,78 @@ static char* f_dirname(const char* p) {
     return buf;
 }
 
+// ---- getattrlist family (subset): common NAME / DEVID / FSID / OBJTYPE, volume CAPABILITIES ---------------------
+struct DarwinAttrlist { uint16_t bitmapcount, reserved; uint32_t commonattr, volattr, dirattr, fileattr, forkattr; };
+static uint32_t vtype_of(mode_t m) {
+    switch (m & S_IFMT) {
+        case S_IFREG: return 1; case S_IFDIR: return 2; case S_IFBLK: return 3; case S_IFCHR: return 4;
+        case S_IFLNK: return 5; case S_IFSOCK: return 6; case S_IFIFO: return 7;
+    }
+    return 0;
+}
+static int attrlist_fill(const std::string& host, int fd, const DarwinAttrlist* al, void* buf, size_t size, bool nofollow) {
+    if (!al || al->bitmapcount != 5) { errno = EINVAL; return -1; }
+    const uint32_t kCommon = 0x1 | 0x2 | 0x4 | 0x8, kVol = 0x80000000u | 0x20000;
+    if ((al->commonattr & ~kCommon) || (al->volattr & ~kVol) || al->dirattr || al->fileattr || al->forkattr) { errno = ENOTSUP; return -1; }
+    struct stat st;
+    int r = fd >= 0 ? fstat(fd, &st) : (nofollow ? lstat(host.c_str(), &st) : stat(host.c_str(), &st));
+    if (r < 0) return -1;
+    std::vector<uint8_t> fixed, var;
+    auto put32 = [&](uint32_t v) { fixed.insert(fixed.end(), (uint8_t*)&v, (uint8_t*)&v + 4); };
+    size_t name_ref = (size_t)-1;
+    if (al->volattr & 0x20000) {   // vol_capabilities_attr_t: FORMAT / INTERFACES capabilities and valid masks
+        uint32_t caps[4] = {0x1 | 0x2 | 0x40 | 0x80 | 0x100 | 0x200 | 0x400 | 0x800, 0, 0, 0};
+        uint32_t valid[4] = {0x7ffffff, 0, 0, 0};
+        for (uint32_t c : caps) put32(c);
+        for (uint32_t v : valid) put32(v);
+    } else {
+        if (al->commonattr & 0x1) { name_ref = fixed.size(); put32(0); put32(0); }
+        if (al->commonattr & 0x2) put32((uint32_t)darwin_dev_from_linux(st.st_dev));
+        if (al->commonattr & 0x4) { put32((uint32_t)darwin_dev_from_linux(st.st_dev)); put32(0); }
+        if (al->commonattr & 0x8) put32(vtype_of(st.st_mode));
+        if (name_ref != (size_t)-1) {
+            std::string path = host;
+            char rpbuf[PATH_MAX];
+            if (fd < 0 && !nofollow && realpath(host.c_str(), rpbuf)) path = rpbuf;   // a followed link: the target's name
+            if (fd >= 0) {
+                char t[PATH_MAX];
+                ssize_t n = readlink(("/proc/self/fd/" + std::to_string(fd)).c_str(), t, sizeof t - 1);
+                path = n > 0 ? std::string(t, (size_t)n) : std::string();
+            }
+            while (path.size() > 1 && path.back() == '/') path.pop_back();
+            std::string nm = path == "/" || (!g_rootfs.empty() && path == g_rootfs) ? std::string("/") : path.substr(path.rfind('/') + 1);
+            var.insert(var.end(), nm.begin(), nm.end());
+            var.push_back(0);
+            while (var.size() % 4) var.push_back(0);
+            int32_t off = (int32_t)(fixed.size() - name_ref);   // from the attrreference to the data
+            uint32_t len = (uint32_t)nm.size() + 1;
+            memcpy(&fixed[name_ref], &off, 4);
+            memcpy(&fixed[name_ref + 4], &len, 4);
+        }
+    }
+    uint32_t total = (uint32_t)(4 + fixed.size() + var.size());
+    std::vector<uint8_t> out(4);
+    memcpy(out.data(), &total, 4);
+    out.insert(out.end(), fixed.begin(), fixed.end());
+    out.insert(out.end(), var.begin(), var.end());
+    memcpy(buf, out.data(), std::min(size, out.size()));
+    if (size >= 4 && size < out.size()) memcpy(buf, &total, 4);   // truncated: the length still says what was needed
+    return 0;
+}
+static int f_getattrlist(const char* p, const DarwinAttrlist* al, void* buf, size_t size, uint32_t opt) {
+    return attrlist_fill(rp(p, !(opt & 1)), -1, al, buf, size, opt & 1);
+}
+static int f_fgetattrlist(int fd, const DarwinAttrlist* al, void* buf, size_t size, uint32_t) { return attrlist_fill({}, fd, al, buf, size, false); }
+static int f_getattrlistat(int dfd, const char* p, const DarwinAttrlist* al, void* buf, size_t size, uint64_t opt) {
+    std::string s = at_path(&dfd, p, !(opt & 1));
+    if (dfd != AT_FDCWD && s[0] != '/') {
+        char t[PATH_MAX];
+        ssize_t n = readlink(("/proc/self/fd/" + std::to_string(dfd)).c_str(), t, sizeof t - 1);
+        if (n > 0) s = std::string(t, (size_t)n) + "/" + s;
+    }
+    return attrlist_fill(s, -1, al, buf, size, opt & 1);
+}
+
 // ---- System V IPC: semctl commands are renumbered (Darwin GETNCNT..SETALL = 3..9), IPC_STAT/IPC_SET structs differ
 // (#pragma pack(4) on Darwin). semget/shmget/semop/shmat/shmdt flags and struct sembuf are the same.
 struct DarwinIpcPerm { uint32_t uid, gid, cuid, cgid; uint16_t mode, seq; int32_t key; };
@@ -534,6 +606,8 @@ void* darwin_fs_lookup(const char* name) {
         {"_statfs", (void*)&f_statfs}, {"_statfs$INODE64", (void*)&f_statfs}, {"_statfs64", (void*)&f_statfs},
         {"_fstatfs", (void*)&f_fstatfs}, {"_fstatfs$INODE64", (void*)&f_fstatfs}, {"_fstatfs64", (void*)&f_fstatfs},
         {"_statvfs", (void*)&f_statvfs}, {"_fstatvfs", (void*)&f_fstatvfs},
+        {"_getattrlist", (void*)&f_getattrlist}, {"_fgetattrlist", (void*)&f_fgetattrlist},
+        {"_getattrlistat", (void*)&f_getattrlistat},
         {"_basename", (void*)&f_basename}, {"_dirname", (void*)&f_dirname}, {"_shmctl", (void*)&f_shmctl},
     };
     for (const E& e : k) if (!strcmp(e.n, name)) return e.f;

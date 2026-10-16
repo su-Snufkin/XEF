@@ -13,7 +13,7 @@ share/etc/include links, and the @@HOMEBREW_PREFIX@@ / @@HOMEBREW_CELLAR@@ place
 files and in Mach-O load commands (install names, dependencies, rpaths). Code signatures are left
 stale (xef-osx does not check them). Alternative to tools/pull_homebrew.sh (which copies from the Mac).
 """
-import json, os, struct, sys, tarfile, time, urllib.error, urllib.request
+import json, os, shutil, struct, sys, tarfile, time, urllib.error, urllib.request
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'darwin-rootfs'))
 PREFIX = '/opt/homebrew'
@@ -163,7 +163,9 @@ def install(name, done):
     for alias in {f['name']} | set(f.get('aliases', [])):
         opt = os.path.join(ROOT + PREFIX, 'opt', alias)
         os.makedirs(os.path.dirname(opt), exist_ok=True)
-        if os.path.lexists(opt):
+        if os.path.isdir(opt) and not os.path.islink(opt):
+            shutil.rmtree(opt)   # a directory of links made by pull_homebrew.sh: the keg replaces it
+        elif os.path.lexists(opt):
             os.unlink(opt)
         os.symlink(os.path.relpath(keg, os.path.dirname(opt)), opt)
     if not f.get('keg_only'):

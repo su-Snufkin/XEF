@@ -3315,6 +3315,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = tc;
     } else if (void* fs = darwin_fs_lookup(name)) {
         host_fn = fs;
+    } else if (void* cc = darwin_commoncrypto_lookup(name)) {
+        host_fn = cc;
     } else if (void* pt = darwin_pthread_lookup(name)) {
         host_fn = pt;
     } else if (strcmp(name, "___error") == 0) {
