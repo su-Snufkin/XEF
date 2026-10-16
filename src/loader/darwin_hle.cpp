@@ -3945,8 +3945,9 @@ void darwin_hle_dispatch(CpuState* st) {
     struct HleScope { ~HleScope() { tl_hle_name = nullptr; } } hle_scope;
     tl_hle_name = name;
     tl_hle_lr = st->x[30];
-    XEF_LOG(2, "hle: %s(x0=%#lx, x1=%#lx, x2=%#lx, x3=%#lx)", name,
-            (unsigned long)st->x[0], (unsigned long)st->x[1], (unsigned long)st->x[2], (unsigned long)st->x[3]);
+    XEF_LOG(2, "hle: %s(x0=%#lx, x1=%#lx, x2=%#lx, x3=%#lx) lr=%#lx", name,
+            (unsigned long)st->x[0], (unsigned long)st->x[1], (unsigned long)st->x[2], (unsigned long)st->x[3],
+            (unsigned long)st->x[30]);
     hle_debug_backtrace(st, name);
 
     if (host_fn == (void*)&darwin_start_marker) {
