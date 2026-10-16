@@ -390,4 +390,25 @@ Zrobione:
   `npm --version` (11.3.0), `npm init`, `npm install left-pad`, `npm install esbuild` działają (sieć, TLS).
 - pthread TSD w tablicy gościa za TPIDRRO_EL0 (768 slotów, klucze od 258 jak na macOS), destruktory przy wyjściu wątku, wartość z `pthread_exit`;
   `pthread_t` gościa = osobny blok w `tsd[0]` (mapowany na wątek hosta: join/detach/kill/threadid/stack), `mach_thread_self` per wątek.
-  Go (`esbuild` 0.28, binarka Go) działa: transform i bundle przez node. Test `pthread_tsd.c`. macref 22/22.
+  Go (`esbuild` 0.28, binarka Go) działa: transform i bundle przez node. Test `pthread_tsd.c`.
+- FILE gościa = powłoka `struct __sFILE` Darwina (`darwin_stdio.cpp`; makra `getc_unlocked` itd. czytają pola), `%p` jak BSD (`0x0`).
+- exec*/execvP przez `process_execve`; `fork/vfork` z handlerami `pthread_atfork` i blokadami XEF (glibc fork); `memset_s`; jedno `environ`.
+- LDAP/GSS: uczciwe kody „niedostępne”; `/usr/lib/libcurl.4.dylib` itd. z butelek (`fetch_bottle.py --syslibs`).
+- setjmp/longjmp/sigsetjmp jako kod gościa (`emit_setjmp_family`); libproc (`darwin_proc.cpp`); `host_statistics(64)`,
+  `host_processor_info`, `host_info`, zegary Mach; termios (`darwin_termios.cpp`: struktura, flagi, c_cc, prędkości, TIOC*, openpty/forkpty);
+  tsearch/lfind/qsort_b z callbackami gościa; sysctl KERN_PROC/PROCARGS2/BOOTTIME; `dev_t` Darwina; cmsghdr (SCM_RIGHTS) w sendmsg/recvmsg.
+- `tools/ptyrun.py` — programy interaktywne na pty (wpisywanie klawiszy, wynik bez sekwencji escape).
+- macref 31/31.
+
+Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
+| aplikacja | status | uwagi |
+|---|---|---|
+| node 24.1 | działa | console/fs/http/crypto/worker_threads/child_process; npm 11.3 (`init`, `install` z sieci, esbuild) |
+| esbuild (Go) | działa | binarka Go uruchamiana przez node |
+| git 2.56 | działa | init/add/commit/diff/log/gc, `clone` https (libcurl z butelki) |
+| curl 8.23 | działa | https z weryfikacją OpenSSL; LDAP/GSS niedostępne (błąd 7 / fallback) |
+| jq, ripgrep, fd, fzf --version, rsync, redis-server, nginx -v | `--version` działa | realne użycie: jq tak; reszta do sprawdzenia |
+| vim 9.2 | działa | ex-mode i interaktywnie (pty) |
+| tmux 3.6 | działa | sesja, powłoka, wyjście |
+| htop 3.4 | działa | lista procesów, uptime; CPU% w 1. klatce zawyżone (próbka startowa htop) |
+| ssh 10.6 | `-V` działa | połączenia nie testowane |
