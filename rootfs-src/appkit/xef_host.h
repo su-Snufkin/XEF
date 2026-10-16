@@ -95,6 +95,7 @@ void     xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h
 void     xef_host_metal_tex_destroy(uint32_t tex_id);
 
 void     xef_host_metal_pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, float b, float a);
+void     xef_host_metal_pass_begin_ex(int handle, uint32_t rt_tex_id, uint32_t depth_tex_id, int clear, float r, float g, float b, float a, float clear_depth);
 void     xef_host_metal_pass_end(int handle, uint32_t rt_tex_id);
 
 void     xef_host_metal_draw(int handle,

@@ -158,6 +158,7 @@ struct PipelineKey {
     int write_mask;
     int prim_type;
     VkFormat rt_format;
+    VkFormat depth_format;
     int depth_test_enable;
     int depth_write_enable;
     int depth_compare_op;
@@ -175,6 +176,7 @@ struct PipelineKey {
                src_a == o.src_a && dst_a == o.dst_a && a_op == o.a_op &&
                write_mask == o.write_mask && prim_type == o.prim_type &&
                rt_format == o.rt_format &&
+               depth_format == o.depth_format &&
                depth_test_enable == o.depth_test_enable &&
                depth_write_enable == o.depth_write_enable &&
                depth_compare_op == o.depth_compare_op &&
@@ -197,6 +199,7 @@ struct PipelineKeyHash {
         h ^= std::hash<int>()(k.write_mask) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.prim_type) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()((int)k.rt_format) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()((int)k.depth_format) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.depth_test_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.depth_write_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.depth_compare_op) + 0x9e3779b9 + (h << 6) + (h >> 2);
@@ -204,6 +207,29 @@ struct PipelineKeyHash {
         return h;
     }
 };
+
+struct FramebufferCacheKey {
+    uint32_t color_tex_id;
+    uint32_t depth_tex_id;
+    int clear;
+    bool operator==(const FramebufferCacheKey& o) const {
+        return color_tex_id == o.color_tex_id && depth_tex_id == o.depth_tex_id && clear == o.clear;
+    }
+};
+
+struct FramebufferCacheKeyHash {
+    size_t operator()(const FramebufferCacheKey& k) const {
+        return (std::hash<uint64_t>()(((uint64_t)k.color_tex_id << 32) | k.depth_tex_id)) ^ std::hash<int>()(k.clear);
+    }
+};
+
+struct CachedTarget {
+    VkRenderPass render_pass = VK_NULL_HANDLE;
+    VkFramebuffer framebuffer = VK_NULL_HANDLE;
+};
+
+static std::unordered_map<FramebufferCacheKey, CachedTarget, FramebufferCacheKeyHash> g_fb_cache;
+static VkRenderPass g_active_render_pass = VK_NULL_HANDLE;
 
 static std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> g_pipelines;
 
@@ -385,37 +411,57 @@ static void transition_image_layout(VkCommandBuffer cmd, VkImage image, VkFormat
     vkCmdPipelineBarrier(cmd, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-static VkRenderPass create_render_pass(VkFormat format, bool clear) {
-    VkAttachmentDescription colorAttachment = {};
-    colorAttachment.format = format;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+static VkRenderPass create_render_pass(VkFormat colorFormat, VkFormat depthFormat, bool clearColor, bool clearDepth = true) {
+    VkAttachmentDescription attachments[2] = {};
+    uint32_t attachmentCount = 1;
+
+    attachments[0].format = colorFormat;
+    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp = clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference colorAttachmentRef = {};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentReference depthAttachmentRef = {};
+    bool has_depth = (depthFormat != VK_FORMAT_UNDEFINED);
+    if (has_depth) {
+        attachmentCount = 2;
+        attachments[1].format = depthFormat;
+        attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+        attachments[1].loadOp = clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+        attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        depthAttachmentRef.attachment = 1;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    }
+
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = has_depth ? &depthAttachmentRef : nullptr;
 
     VkSubpassDependency dependency = {};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | (has_depth ? (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT) : 0);
     dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | (has_depth ? (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT) : 0);
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | (has_depth ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : 0);
 
     VkRenderPassCreateInfo renderPassInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.attachmentCount = attachmentCount;
+    renderPassInfo.pAttachments = attachments;
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -880,8 +926,9 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     ici.arrayLayers = 1;
     ici.samples = VK_SAMPLE_COUNT_1_BIT;
     ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    bool is_depth = (t.vk_fmt == VK_FORMAT_D32_SFLOAT || t.vk_fmt == VK_FORMAT_D16_UNORM);
     ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if (t.is_rt) ici.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (t.is_rt) ici.usage |= is_depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -903,7 +950,7 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     ivci.image = t.image;
     ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
     ivci.format = t.vk_fmt;
-    ivci.subresourceRange.aspectMask = (t.vk_fmt == VK_FORMAT_D32_SFLOAT || t.vk_fmt == VK_FORMAT_D16_UNORM) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    ivci.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     ivci.subresourceRange.baseMipLevel = 0;
     ivci.subresourceRange.levelCount = 1;
     ivci.subresourceRange.baseArrayLayer = 0;
@@ -917,14 +964,14 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
 
     // Transition image to initial layout
     VkCommandBuffer cmd = begin_single_time_commands();
-    VkImageLayout target_layout = t.is_rt ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkImageLayout target_layout = t.is_rt ? (is_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     transition_image_layout(cmd, t.image, t.vk_fmt, VK_IMAGE_LAYOUT_UNDEFINED, target_layout);
     end_single_time_commands(cmd);
     t.layout = target_layout;
 
-    if (t.is_rt) {
-        t.render_pass_clear = create_render_pass(t.vk_fmt, true);
-        t.render_pass_load  = create_render_pass(t.vk_fmt, false);
+    if (t.is_rt && !is_depth) {
+        t.render_pass_clear = create_render_pass(t.vk_fmt, VK_FORMAT_UNDEFINED, true);
+        t.render_pass_load  = create_render_pass(t.vk_fmt, VK_FORMAT_UNDEFINED, false);
 
         VkFramebufferCreateInfo fbInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
         fbInfo.attachmentCount = 1;
@@ -1136,15 +1183,28 @@ void tex_destroy(uint32_t tex_id) {
     if (t.image) vkDestroyImage(g_device, t.image, nullptr);
     if (t.memory) vkFreeMemory(g_device, t.memory, nullptr);
 
+    for (auto it_fb = g_fb_cache.begin(); it_fb != g_fb_cache.end(); ) {
+        if (it_fb->first.color_tex_id == tex_id || it_fb->first.depth_tex_id == tex_id) {
+            if (it_fb->second.framebuffer) vkDestroyFramebuffer(g_device, it_fb->second.framebuffer, nullptr);
+            if (it_fb->second.render_pass) vkDestroyRenderPass(g_device, it_fb->second.render_pass, nullptr);
+            it_fb = g_fb_cache.erase(it_fb);
+        } else {
+            ++it_fb;
+        }
+    }
+
     g_textures.erase(it);
 }
 
-void pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, float b, float a) {
+void pass_begin_ex(int handle, uint32_t rt_tex_id, uint32_t depth_tex_id, int clear, float r, float g, float b, float a, float clear_depth) {
     if (!is_available()) return;
     std::lock_guard<std::mutex> lk(g_metal_vk_lock);
     auto it = g_textures.find(rt_tex_id);
     if (it == g_textures.end()) return;
     MetalVkTex& tex = it->second;
+
+    auto it_depth = g_textures.find(depth_tex_id);
+    bool has_depth = (depth_tex_id > 0 && it_depth != g_textures.end());
 
     if (g_active_cmd != VK_NULL_HANDLE) {
         vkCmdEndRenderPass(g_active_cmd);
@@ -1177,17 +1237,65 @@ void pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, flo
         tex.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
 
-    VkClearValue clearColor = {{{ r, g, b, a }}};
+    if (has_depth) {
+        MetalVkTex& dtex = it_depth->second;
+        if (dtex.layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+            transition_image_layout(g_active_cmd, dtex.image, dtex.vk_fmt, dtex.layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+            dtex.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        }
+    }
+
+    VkRenderPass rp = VK_NULL_HANDLE;
+    VkFramebuffer fb = VK_NULL_HANDLE;
+
+    if (!has_depth) {
+        rp = clear ? tex.render_pass_clear : tex.render_pass_load;
+        fb = clear ? tex.framebuffer_clear : tex.framebuffer_load;
+    } else {
+        FramebufferCacheKey fbKey = { rt_tex_id, depth_tex_id, clear };
+        auto it_fb = g_fb_cache.find(fbKey);
+        if (it_fb != g_fb_cache.end()) {
+            rp = it_fb->second.render_pass;
+            fb = it_fb->second.framebuffer;
+        } else {
+            MetalVkTex& dtex = it_depth->second;
+            rp = create_render_pass(tex.vk_fmt, dtex.vk_fmt, clear != 0, clear != 0);
+            VkImageView views[2] = { tex.view, dtex.view };
+            VkFramebufferCreateInfo fbInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+            fbInfo.renderPass = rp;
+            fbInfo.attachmentCount = 2;
+            fbInfo.pAttachments = views;
+            fbInfo.width = tex.w;
+            fbInfo.height = tex.h;
+            fbInfo.layers = 1;
+            vkCreateFramebuffer(g_device, &fbInfo, nullptr, &fb);
+            g_fb_cache[fbKey] = { rp, fb };
+        }
+    }
+
+    VkClearValue clearValues[2] = {};
+    clearValues[0].color.float32[0] = r;
+    clearValues[0].color.float32[1] = g;
+    clearValues[0].color.float32[2] = b;
+    clearValues[0].color.float32[3] = a;
+    clearValues[1].depthStencil.depth = clear_depth;
+    clearValues[1].depthStencil.stencil = 0;
+
     VkRenderPassBeginInfo rpBegin = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
-    rpBegin.renderPass = clear ? tex.render_pass_clear : tex.render_pass_load;
-    rpBegin.framebuffer = clear ? tex.framebuffer_clear : tex.framebuffer_load;
+    rpBegin.renderPass = rp;
+    rpBegin.framebuffer = fb;
     rpBegin.renderArea.offset = { 0, 0 };
     rpBegin.renderArea.extent = { (uint32_t)tex.w, (uint32_t)tex.h };
-    rpBegin.clearValueCount = 1;
-    rpBegin.pClearValues = &clearColor;
+    rpBegin.clearValueCount = has_depth ? 2 : 1;
+    rpBegin.pClearValues = clearValues;
 
     vkCmdBeginRenderPass(g_active_cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
     g_active_rt_id = rt_tex_id;
+    g_active_render_pass = rp;
+}
+
+void pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, float b, float a) {
+    pass_begin_ex(handle, rt_tex_id, 0, clear, r, g, b, a, 1.0f);
 }
 
 void pass_end(int handle, uint32_t rt_tex_id) {
@@ -1213,6 +1321,7 @@ void pass_end(int handle, uint32_t rt_tex_id) {
     vkFreeCommandBuffers(g_device, g_cmd_pool, 1, &g_active_cmd);
     g_active_cmd = VK_NULL_HANDLE;
     g_active_rt_id = 0;
+    g_active_render_pass = VK_NULL_HANDLE;
 }
 
 void draw(int handle,
@@ -1230,9 +1339,12 @@ void draw(int handle,
     MetalVkTex& rt = it_rt->second;
 
     if (g_active_cmd == VK_NULL_HANDLE || g_active_rt_id != pipe->rt_tex_id) {
-        pass_begin(handle, pipe->rt_tex_id, 0, 0, 0, 0, 0);
+        pass_begin_ex(handle, pipe->rt_tex_id, pipe->depth_tex_id, 0, 0, 0, 0, 0, 1.0f);
     }
     if (g_active_cmd == VK_NULL_HANDLE) return;
+
+    auto it_depth = g_textures.find(pipe->depth_tex_id);
+    bool has_depth = (pipe->depth_tex_id > 0 && it_depth != g_textures.end());
 
     PipelineKey key;
     key.blend_enable = pipe->blend_enable;
@@ -1245,6 +1357,7 @@ void draw(int handle,
     key.write_mask = pipe->write_mask;
     key.prim_type = prim_type;
     key.rt_format = rt.vk_fmt;
+    key.depth_format = has_depth ? it_depth->second.vk_fmt : VK_FORMAT_UNDEFINED;
     key.depth_test_enable = pipe->depth_test_enable;
     key.depth_write_enable = pipe->depth_write_enable;
     key.depth_compare_op = pipe->depth_compare_op;
@@ -1256,7 +1369,8 @@ void draw(int handle,
     key.stencil_read_mask = pipe->stencil_read_mask;
     key.stencil_write_mask = pipe->stencil_write_mask;
 
-    VkPipeline pipeline = get_or_create_pipeline(key, rt.render_pass_load);
+    VkRenderPass pass_for_pipeline = (g_active_render_pass != VK_NULL_HANDLE) ? g_active_render_pass : rt.render_pass_load;
+    VkPipeline pipeline = get_or_create_pipeline(key, pass_for_pipeline);
     if (pipeline == VK_NULL_HANDLE) return;
 
     vkCmdBindPipeline(g_active_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);

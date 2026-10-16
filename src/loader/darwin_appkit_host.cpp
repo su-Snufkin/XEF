@@ -914,6 +914,14 @@ void xef_host_metal_pass_begin(int handle, uint32_t rt_tex_id, int clear, float 
     }
 }
 
+void xef_host_metal_pass_begin_ex(int handle, uint32_t rt_tex_id, uint32_t depth_tex_id, int clear, float r, float g, float b, float a, float clear_depth) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::pass_begin_ex(handle, rt_tex_id, depth_tex_id, clear, r, g, b, a, clear_depth);
+        return;
+    }
+    xef_host_metal_pass_begin(handle, rt_tex_id, clear, r, g, b, a);
+}
+
 void xef_host_metal_pass_end(int handle, uint32_t rt_tex_id) {
     if (xef::metal_vk::is_available()) {
         xef::metal_vk::pass_end(handle, rt_tex_id);
@@ -1436,6 +1444,7 @@ const Fn kFns[] = {
     {"_xef_host_metal_tex_readback", (void*)&xef_host_metal_tex_readback},
     {"_xef_host_metal_tex_destroy", (void*)&xef_host_metal_tex_destroy},
     {"_xef_host_metal_pass_begin", (void*)&xef_host_metal_pass_begin},
+    {"_xef_host_metal_pass_begin_ex", (void*)&xef_host_metal_pass_begin_ex},
     {"_xef_host_metal_pass_end", (void*)&xef_host_metal_pass_end},
     {"_xef_host_metal_draw", (void*)&xef_host_metal_draw},
     {"_xef_host_metal_present_gpu", (void*)&xef_host_metal_present_gpu},
@@ -1446,6 +1455,7 @@ const Fn kFns[] = {
     {"xef_host_metal_tex_readback", (void*)&xef_host_metal_tex_readback},
     {"xef_host_metal_tex_destroy", (void*)&xef_host_metal_tex_destroy},
     {"xef_host_metal_pass_begin", (void*)&xef_host_metal_pass_begin},
+    {"xef_host_metal_pass_begin_ex", (void*)&xef_host_metal_pass_begin_ex},
     {"xef_host_metal_pass_end", (void*)&xef_host_metal_pass_end},
     {"xef_host_metal_draw", (void*)&xef_host_metal_draw},
     {"xef_host_metal_present_gpu", (void*)&xef_host_metal_present_gpu},

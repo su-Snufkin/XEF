@@ -1969,6 +1969,11 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
     _passDesc = [desc copy];
     _blendColor[0] = _blendColor[1] = _blendColor[2] = _blendColor[3] = 1.0f;
     if (_passDesc) {
+      MTLRenderPassDepthAttachmentDescriptor *datt = _passDesc.depthAttachment;
+      XEFMetalTexture *dtex = (datt && datt.texture) ? (XEFMetalTexture *)datt.texture : nil;
+      uint32_t hostDepthTexId = dtex ? dtex->_hostTexId : 0;
+      float clearDepth = (datt && datt.loadAction == MTLLoadActionClear) ? (float)datt.clearDepth : 1.0f;
+
       for (int i = 0; i < 8; i++) {
         MTLRenderPassColorAttachmentDescriptor *att = _passDesc.colorAttachments->_attachments[i];
         if (att && att.texture) {
@@ -1979,17 +1984,19 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
           }
           if (att.loadAction == MTLLoadActionClear) {
             if (tex->_hostTexId > 0) {
-              xef_host_metal_pass_begin(0, tex->_hostTexId, 1, (float)att.clearColor.red, (float)att.clearColor.green, (float)att.clearColor.blue, (float)att.clearColor.alpha);
+              xef_host_metal_pass_begin_ex(0, tex->_hostTexId, hostDepthTexId, 1,
+                                          (float)att.clearColor.red, (float)att.clearColor.green,
+                                          (float)att.clearColor.blue, (float)att.clearColor.alpha,
+                                          clearDepth);
             }
             xef_tex_clear(tex, att.clearColor);
           } else if (tex->_hostTexId > 0) {
-            xef_host_metal_pass_begin(0, tex->_hostTexId, 0, 0, 0, 0, 0);
+            xef_host_metal_pass_begin_ex(0, tex->_hostTexId, hostDepthTexId, 0,
+                                        0, 0, 0, 0, clearDepth);
           }
         }
       }
-      MTLRenderPassDepthAttachmentDescriptor *datt = _passDesc.depthAttachment;
       if (datt && datt.texture && datt.loadAction == MTLLoadActionClear) {
-        XEFMetalTexture *dtex = (XEFMetalTexture *)datt.texture;
         if (dtex->_storage && dtex->_storage->_data && dtex->_storage->_bpp >= 4) {
           float cd = (float)datt.clearDepth;
           float *dp = (float *)dtex->_storage->_data;

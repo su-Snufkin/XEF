@@ -20,6 +20,7 @@ void        tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_
 void        tex_destroy(uint32_t tex_id);
 
 void        pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, float b, float a);
+void        pass_begin_ex(int handle, uint32_t rt_tex_id, uint32_t depth_tex_id, int clear, float r, float g, float b, float a, float clear_depth);
 void        pass_end(int handle, uint32_t rt_tex_id);
 
 void        draw(int handle,
