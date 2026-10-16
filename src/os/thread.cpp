@@ -297,9 +297,13 @@ i64 process_fork(CpuState* st, void (*hold)(bool)) {
 extern std::atomic<int> g_darwin_is_threaded;
 
 int darwin_spawn_thread(uint64_t* th_out, void* attr, uint64_t start_routine, uint64_t arg) {
-    (void)attr;
     g_darwin_is_threaded.store(1);
-    const size_t stack_size = 2ull * 1024 * 1024; // 2MB guest stack
+    size_t stack_size = 2ull * 1024 * 1024;   // 2MB guest stack, or what pthread_attr_setstacksize asked for
+    if (attr) {                               // (the Darwin attr holds a glibc pthread_attr_t, darwin_pthread.cpp)
+        size_t want = 0;
+        if (pthread_attr_getstacksize((pthread_attr_t*)attr, &want) == 0 && want > stack_size)
+            stack_size = (want + 0xFFFF) & ~(size_t)0xFFFF;
+    }
     const size_t guard = 64 * 1024;
     void* r = mmap(nullptr, stack_size + guard, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
