@@ -112,6 +112,15 @@ static int f_renameatx_np(int fd1, const char* a, int fd2, const char* b, unsign
     return (int)syscall(SYS_renameat2, fd1, x.c_str(), fd2, y.c_str(), lf);
 }
 static int f_renamex_np(const char* a, const char* b, unsigned fl) { return f_renameatx_np(-2, a, -2, b, fl); }
+// pipe2 / dup3 (macOS 15+): Darwin O_NONBLOCK 0x4, O_CLOEXEC 0x1000000; anything else is EINVAL
+static int f_pipe2(int fds[2], int fl) {
+    if (fl & ~(0x4 | 0x1000000)) { errno = EINVAL; return -1; }
+    return pipe2(fds, ((fl & 0x4) ? O_NONBLOCK : 0) | ((fl & 0x1000000) ? O_CLOEXEC : 0));
+}
+static int f_dup3(int a, int b, int fl) {
+    if (fl & ~0x1000000) { errno = EINVAL; return -1; }
+    return dup3(a, b, (fl & 0x1000000) ? O_CLOEXEC : 0);
+}
 // clonefile family: dst gets the data and the attributes of src (mode, times; the owner too when running as root unless
 // CLONE_NOOWNERCOPY 2). FICLONE shares the blocks where the filesystem can, otherwise the data is copied. Directories
 // (recursive clones, APFS only) give ENOTSUP, as on volumes without clone support. CLONE_NOFOLLOW 1: a link is cloned.
@@ -710,7 +719,7 @@ void* darwin_fs_lookup(const char* name) {
     struct E { const char* n; void* f; };
     static const E k[] = {
         {"_mkdirat", (void*)&f_mkdirat}, {"_mkfifoat", (void*)&f_mkfifoat}, {"_mknodat", (void*)&f_mknodat},
-        {"_unlinkat", (void*)&f_unlinkat}, {"_renameat", (void*)&f_renameat}, {"_renameatx_np", (void*)&f_renameatx_np},
+        {"_unlinkat", (void*)&f_unlinkat}, {"_renameat", (void*)&f_renameat}, {"_renameatx_np", (void*)&f_renameatx_np}, {"_pipe2", (void*)&f_pipe2}, {"_dup3", (void*)&f_dup3},
         {"_clonefile", (void*)&f_clonefile}, {"_clonefileat", (void*)&f_clonefileat}, {"_fclonefileat", (void*)&f_fclonefileat},
         {"_renamex_np", (void*)&f_renamex_np}, {"_readlinkat", (void*)&f_readlinkat}, {"_faccessat", (void*)&f_faccessat},
         {"_fchmodat", (void*)&f_fchmodat}, {"_fchownat", (void*)&f_fchownat}, {"_linkat", (void*)&f_linkat},

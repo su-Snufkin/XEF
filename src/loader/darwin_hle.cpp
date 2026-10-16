@@ -1608,6 +1608,24 @@ static void darwin_dispatch_release(void* obj) {
     (void)obj;
 }
 
+// C library functions glibc has and macOS's libSystem does not: the HLE resolver would find them on the host, but a
+// program probing with dlsym (HotSpot: pthread_condattr_setclock) must see what macOS shows - nothing.
+static bool not_in_libsystem(const char* s) {
+    static const char* const kNames[] = {
+        "pthread_condattr_setclock", "pthread_condattr_getclock", "pthread_getcpuclockid", "pthread_setaffinity_np",
+        "pthread_getaffinity_np", "pthread_tryjoin_np", "pthread_timedjoin_np", "pthread_yield", "clock_nanosleep",
+        "accept4", "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", "epoll_pwait", "eventfd",
+        "signalfd", "timerfd_create", "timerfd_settime", "timerfd_gettime", "inotify_init", "inotify_init1",
+        "inotify_add_watch", "inotify_rm_watch", "prctl", "getauxval", "gettid", "sched_getcpu", "memrchr", "rawmemchr",
+        "mempcpy", "secure_getenv", "get_nprocs", "get_nprocs_conf", "sysinfo", "mallinfo", "mallinfo2", "malloc_trim",
+        "malloc_usable_size", "memfd_create", "copy_file_range", "splice", "tee", "vmsplice", "fallocate", "posix_fallocate",
+        "sync_file_range", "syncfs", "statx", "renameat2", "getrandom", "gnu_get_libc_version", "backtrace_symbols_fd",
+        "__libc_start_main", "dl_iterate_phdr", "open64", "fopen64", "stat64", "lstat64", "fstat64", "lseek64", "mmap64",
+        "pread64", "pwrite64", "ftruncate64", "truncate64", "readdir64", "getrlimit64", "setrlimit64"};
+    for (const char* n : kNames) if (!strcmp(s, n)) return true;
+    return false;
+}
+
 static void* darwin_dlsym(void* handle, const char* symbol) {
     if (!symbol || !symbol[0]) return nullptr;
     std::string prefixed = std::string("_") + symbol;
@@ -1625,8 +1643,10 @@ static void* darwin_dlsym(void* handle, const char* symbol) {
     // so a dlsym / CFBundleGetFunctionPointerForName on that image (GLFW's NSGL getProcAddress) resolves through it.
     if (!addr && is_image && ((MachImage*)handle)->path.find("/OpenGL.framework/") != std::string::npos)
         addr = darwin_hle_resolve_symbol(prefixed.c_str(), true);
-    if (!addr && !is_image) addr = darwin_hle_resolve_symbol(prefixed.c_str(), true);
-    if (!addr && !is_image) addr = darwin_hle_resolve_symbol(symbol, true);
+    if (!addr && !is_image && !not_in_libsystem(symbol)) {
+        addr = darwin_hle_resolve_symbol(prefixed.c_str(), true);
+        if (!addr) addr = darwin_hle_resolve_symbol(symbol, true);
+    }
     XEF_LOG(2, "darwin_dlsym('%s') -> %p", symbol, (void*)addr);
     return (void*)(uintptr_t)addr;
 }
