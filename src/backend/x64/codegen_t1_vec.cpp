@@ -79,7 +79,7 @@ Xmm T1::alloc_x() {
         int score = vi_[o].last + ((vi_[o].vhome >= 0 || I(o).op == Op::VConst) ? 100000 : 0);
         if (score > best_score) { best_score = score; best = i; }
     }
-    if (best < 0) fatal("codegen: out of xmm registers at ir %d", cur_);
+    if (best < 0) fatal("codegen: out of xmm registers at ir %d (block %#lx)", cur_, (unsigned long)b_.start);
     evict_x(best);
     return (Xmm)best;
 }
@@ -1839,8 +1839,12 @@ void T1::emit_vop(Val v) {
         as_.legacy_rr(SHA256RNDS2, cdgh, abef);   // rounds 0, 1: cdgh <- ABEF2 (CDGH2 = ABEF0)
         as_.xop1(PSHUFD, XMM0, w, 0x0E);
         as_.legacy_rr(SHA256RNDS2, abef, cdgh);   // rounds 2, 3: abef <- ABEF4 (CDGH4 = ABEF2)
-        Xmm d = new_x(v);
-        as_.xop(SHUFPS, d, abef, cdgh, in.sub == V_SHA256H ? 0xBB : 0x11);
+        // the result goes into abef itself: with tier 2 pinning XMM6..15 only six temporaries exist, and xmm0, the
+        // three inputs and abef/cdgh already use them all
+        as_.xop(SHUFPS, abef, abef, cdgh, in.sub == V_SHA256H ? 0xBB : 0x11);
+        vi_[v].k = L_XMM;
+        vi_[v].reg = abef;
+        xowner_[abef] = v;
         return;
     }
     case V_SHA256SU0: {   // a[e] + sigma0(next word): sha256msg1
