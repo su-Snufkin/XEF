@@ -263,15 +263,45 @@ static int semaphore_timedwait_(uint32_t n, uint32_t sec, int32_t nsec) {
 }
 
 // ---- vm ----------------------------------------------------------------------------------------------------------
+// vm_allocate & co. work in 16K pages. Without VM_FLAGS_ANYWHERE (1) the range at *addr must be free (KERN_NO_SPACE 3
+// otherwise), never replaced.
 static int mach_vm_allocate_(uint32_t, uint64_t* addr, uint64_t size, int flags) {
-    void* want = (flags & 1) ? nullptr : (void*)(uintptr_t)*addr;
-    void* r = mmap(want, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | ((flags & 1) ? 0 : MAP_FIXED), -1, 0);
+    if (!addr) return 4;                                       // KERN_INVALID_ARGUMENT
+    uint64_t len = (size + 16383) & ~16383ull;
+    if (!len) { *addr = 0; return 0; }
+    void* r;
+    if (flags & 1) {
+        void* res = mmap(nullptr, len + 16384, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (res == MAP_FAILED) return 3;
+        uintptr_t u = (uintptr_t)res, a = (u + 16383) & ~(uintptr_t)16383;
+        if (a > u) munmap(res, a - u);
+        if (u + 16384 > a) munmap((void*)(a + len), u + 16384 - a);
+        r = mmap((void*)a, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+    } else {
+        if (*addr & 16383) return 4;
+        r = mmap((void*)(uintptr_t)*addr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+        if (r != MAP_FAILED && (uint64_t)(uintptr_t)r != *addr) { munmap(r, len); r = MAP_FAILED; }
+    }
     if (r == MAP_FAILED) return 3;
     *addr = (uint64_t)(uintptr_t)r;
     return 0;
 }
-static int mach_vm_deallocate_(uint32_t, uint64_t addr, uint64_t size) { return munmap((void*)(uintptr_t)addr, size) ? 4 : 0; }
-static int mach_vm_protect_(uint32_t, uint64_t addr, uint64_t size, int, int prot) { return mprotect((void*)(uintptr_t)addr, size, prot & 7) ? 4 : 0; }
+static void page_range(uint64_t addr, uint64_t size, uint64_t* a, uint64_t* n) {
+    *a = addr & ~16383ull;
+    *n = ((addr + size + 16383) & ~16383ull) - *a;
+}
+static int mach_vm_deallocate_(uint32_t, uint64_t addr, uint64_t size) {
+    if (!size) return 0;
+    uint64_t a, n;
+    page_range(addr, size, &a, &n);
+    return munmap((void*)(uintptr_t)a, n) ? 4 : 0;
+}
+static int mach_vm_protect_(uint32_t, uint64_t addr, uint64_t size, int, int prot) {
+    if (!size) return 0;
+    uint64_t a, n;
+    page_range(addr, size, &a, &n);
+    return mprotect((void*)(uintptr_t)a, n, prot & 7) ? 2 /*KERN_PROTECTION_FAILURE*/ : 0;
+}
 static uint32_t mach_thread_self_() { return darwin_thread_port((int)syscall(SYS_gettid)); }
 static uint32_t mach_host_self_() { return 0x100; }
 static uint32_t mach_task_self__() { return 0x103; }

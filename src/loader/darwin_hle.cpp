@@ -593,21 +593,29 @@ static void* darwin_mmap(void* addr, size_t length, int prot, int dflags, int fd
         offset = 0;
     }
 
-    if ((lflags & MAP_ANONYMOUS) && !(lflags & MAP_FIXED) && !addr) {
-        size_t alloc_len = (length + 16383) & ~16383ull;
-        void* p = mmap(nullptr, alloc_len + 16384, prot, lflags, fd, offset);
-        if (p != MAP_FAILED) {
-            uintptr_t u = (uintptr_t)p;
-            uintptr_t aligned = (u + 16383) & ~16383ull;
-            size_t lead = aligned - u;
-            size_t trail = (alloc_len + 16384) - lead - alloc_len;
-            if (lead) munmap((void*)u, lead);
-            if (trail) munmap((void*)(aligned + alloc_len), trail);
-            return (void*)aligned;
+    // Darwin pages are 16K: the guest rounds lengths and expects 16K-aligned results, and will munmap/mprotect whole
+    // 16K pages - so every mapping covers whole 16K pages (else a later munmap would hit host memory next to it)
+    size_t len16 = (length + 16383) & ~(size_t)16383;
+    if (!length) { errno = EINVAL; return MAP_FAILED; }
+    void* r;
+    if (lflags & MAP_FIXED) {
+        r = mmap(addr, len16, prot, lflags, fd, offset);
+    } else {
+        r = MAP_FAILED;
+        if (addr) {                                            // a hint: taken when the kernel gives an aligned address
+            r = mmap(addr, len16, prot, lflags, fd, offset);
+            if (r != MAP_FAILED && ((uintptr_t)r & 16383)) { munmap(r, len16); r = MAP_FAILED; }
+        }
+        if (r == MAP_FAILED) {
+            void* res = mmap(nullptr, len16 + 16384, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+            if (res == MAP_FAILED) return MAP_FAILED;
+            uintptr_t u = (uintptr_t)res, aligned = (u + 16383) & ~(uintptr_t)16383;
+            if (aligned > u) munmap(res, aligned - u);
+            if (u + 16384 > aligned) munmap((void*)(aligned + len16), u + 16384 - aligned);
+            r = mmap((void*)aligned, len16, prot, lflags | MAP_FIXED, fd, offset);
+            if (r == MAP_FAILED) { int e = errno; munmap((void*)aligned, len16); errno = e; }
         }
     }
-
-    void* r = mmap(addr, length, prot, lflags, fd, offset);
     XEF_LOG(2, "darwin_mmap(addr=%p, len=%#zx, prot=%#x, dflags=%#x -> lflags=%#x, fd=%d, off=%#lx) = %p (errno=%d)",
             addr, length, prot, dflags, lflags, fd, (unsigned long)offset, r, (r == MAP_FAILED) ? errno : 0);
     return r;
