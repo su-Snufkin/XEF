@@ -19,6 +19,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <sched.h>
 #include <stdio.h>
 #include <string>
 
@@ -327,9 +328,60 @@ static int mach_vm_allocate_(uint32_t, uint64_t* addr, uint64_t size, int flags)
     *addr = (uint64_t)(uintptr_t)r;
     return 0;
 }
+// thread_switch(hint thread, option, time): SWITCH_OPTION_NONE 0 / DEPRESS 1 yield, SWITCH_OPTION_WAIT 2 also blocks
+// for `time` ms (the handoff hint has no Linux counterpart: the scheduler picks the next thread).
+static int thread_switch_(uint32_t, int option, uint32_t time_ms) {
+    if (option < 0 || option > 5) return KERN_INVALID_ARGUMENT_;
+    if (option == 2 && time_ms) {
+        struct timespec ts = {(time_t)(time_ms / 1000), (long)(time_ms % 1000) * 1000000};
+        nanosleep(&ts, nullptr);
+    } else {
+        sched_yield();
+    }
+    return KERN_SUCCESS_;
+}
+// mach_vm_map / vm_map for anonymous memory (object MACH_PORT_NULL): `mask` is the alignment - 1 (at least a 16K
+// page), VM_FLAGS_ANYWHERE 1 or a fixed address that must be free unless VM_FLAGS_OVERWRITE 0x4000. The last three
+// parameters are ints the caller packed into the stack (Apple's arm64 ABI): cur/max protection share the first slot.
+static int mach_vm_map_(uint32_t, uint64_t* addr, uint64_t size, uint64_t mask, int flags, uint32_t object, uint64_t,
+                        int, uint64_t prot_pair, uint64_t) {
+    if (!addr || !size) return 4;                              // KERN_INVALID_ARGUMENT
+    if (object != 0) return 4;                                 // memory entries / shared objects: not supported
+    int prot = (int)(prot_pair & 7);
+    uint64_t len = (size + 16383) & ~16383ull;
+    uint64_t align = (mask | 16383) + 1;
+    if (align & (align - 1)) return 4;
+    void* r;
+    if (flags & 1) {
+        void* res = mmap(nullptr, len + align, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (res == MAP_FAILED) return 3;                       // KERN_NO_SPACE
+        uintptr_t u = (uintptr_t)res, a = (u + align - 1) & ~(uintptr_t)(align - 1);
+        if (a > u) munmap(res, a - u);
+        if (u + len + align > a + len) munmap((void*)(a + len), u + len + align - (a + len));
+        r = mmap((void*)a, len, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED, -1, 0);
+    } else {
+        if (*addr & (align - 1)) return 4;
+        r = mmap((void*)(uintptr_t)*addr, len, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE |
+                 ((flags & 0x4000) ? MAP_FIXED : MAP_FIXED_NOREPLACE), -1, 0);
+        if (r != MAP_FAILED && (uint64_t)(uintptr_t)r != *addr) { munmap(r, len); r = MAP_FAILED; }
+    }
+    if (r == MAP_FAILED) return 3;
+    *addr = (uint64_t)(uintptr_t)r;
+    return 0;
+}
 static void page_range(uint64_t addr, uint64_t size, uint64_t* a, uint64_t* n) {
     *a = addr & ~16383ull;
     *n = ((addr + size + 16383) & ~16383ull) - *a;
+}
+// vm_inherit: VM_INHERIT_COPY 1 / NONE 2 map to MADV_DOFORK / MADV_DONTFORK; SHARE 0 (turning private memory into
+// memory shared with children) has no Linux equivalent.
+static int mach_vm_inherit_(uint32_t, uint64_t addr, uint64_t size, uint32_t inh) {
+    if (!size) return 0;
+    uint64_t a, n;
+    page_range(addr, size, &a, &n);
+    if (inh == 1) return madvise((void*)(uintptr_t)a, n, MADV_DOFORK) ? 1 : 0;      // KERN_INVALID_ADDRESS
+    if (inh == 2) return madvise((void*)(uintptr_t)a, n, MADV_DONTFORK) ? 1 : 0;
+    return 4;
 }
 static int mach_vm_deallocate_(uint32_t, uint64_t addr, uint64_t size) {
     if (!size) return 0;
@@ -574,7 +626,7 @@ static const MachShim kMach[] = {
     {"_semaphore_create", (void*)&semaphore_create_}, {"_semaphore_destroy", (void*)&semaphore_destroy_},
     {"_semaphore_signal", (void*)&semaphore_signal_}, {"_semaphore_signal_all", (void*)&semaphore_signal_all_},
     {"_semaphore_wait", (void*)&semaphore_wait_}, {"_semaphore_timedwait", (void*)&semaphore_timedwait_},
-    {"_mach_vm_allocate", (void*)&mach_vm_allocate_}, {"_mach_vm_deallocate", (void*)&mach_vm_deallocate_},
+    {"_mach_vm_allocate", (void*)&mach_vm_allocate_}, {"_mach_vm_map", (void*)&mach_vm_map_}, {"_vm_map", (void*)&mach_vm_map_}, {"_thread_switch", (void*)&thread_switch_}, {"_vm_inherit", (void*)&mach_vm_inherit_}, {"_mach_vm_inherit", (void*)&mach_vm_inherit_}, {"_mach_vm_deallocate", (void*)&mach_vm_deallocate_},
     {"_mach_vm_protect", (void*)&mach_vm_protect_}, {"_vm_allocate", (void*)&mach_vm_allocate_},
     {"_vm_deallocate", (void*)&mach_vm_deallocate_}, {"_vm_protect", (void*)&mach_vm_protect_},
     {"_mach_thread_self", (void*)&mach_thread_self_}, {"_mach_host_self", (void*)&mach_host_self_},

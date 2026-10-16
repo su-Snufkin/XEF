@@ -249,7 +249,7 @@ static const StubEntry kStubs[] = {
     {"_voucher_copy", (void*)&st_null}, {"_voucher_mach_msg_adopt", (void*)&st_null}, {"_voucher_mach_msg_revert", (void*)&st_noop},
     {"_task_get_special_port", (void*)&st_kern_failure}, {"_thread_suspend", (void*)&st_kern_failure}, {"_thread_resume", (void*)&st_kern_failure},
     {"_vm_purgable_control", (void*)&st_kern_failure}, {"_mach_make_memory_entry_64", (void*)&st_kern_failure},
-    {"_mach_vm_region", (void*)&st_kern_failure}, {"_mach_vm_map", (void*)&st_kern_failure},
+    {"_mach_vm_region", (void*)&st_kern_failure},
     {"_mach_port_space_info", (void*)&st_kern_failure}, {"_mach_port_get_set_status", (void*)&st_kern_failure},
     {"___darwin_check_fd_set_overflow", (void*)&st_one},
     {"_NSStartSearchPathEnumeration", (void*)&st_zero}, {"_NSGetNextSearchPathEnumeration", (void*)&st_zero},
