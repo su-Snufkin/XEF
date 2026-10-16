@@ -16,6 +16,7 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak = false, bool 
 
 // Runs the atexit / __cxa_atexit handlers registered by the guest (reverse order).
 void darwin_run_exit_handlers();
+void darwin_tsd_run_destructors();     // guest pthread key destructors of the exiting thread
 
 // Dispatches an HLE thunk call (st->x[17] = thunk ID)
 void darwin_hle_dispatch(CpuState* st);
@@ -40,6 +41,10 @@ extern size_t g_darwin_tlv_template_size;
 // Creates a guest-callable stub for a host function and returns its guest address.
 uint64_t darwin_hle_register_function(const char* name, void* host_fn);
 
-void darwin_register_thread_stack(pthread_t th, void* stack_top, size_t stack_size);
+uint64_t darwin_new_pthread_handle(void* stack_top, size_t stack_size);   // guest pthread_t (stored in TSD slot 0)
+void darwin_set_pthread_host(uint64_t handle, pthread_t host, int tid);
+int darwin_pthread_host(uint64_t th, pthread_t* host);    // 0 = current thread; ESRCH if not a pthread_t
+uint64_t darwin_pthread_main_handle();
+uint32_t darwin_thread_port(int tid);                     // mach port name of a thread
 
 } // namespace xef

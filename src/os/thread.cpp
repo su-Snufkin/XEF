@@ -68,8 +68,8 @@ static ThreadCtx* thread_reuse(CpuState* parent) {
 // read it directly with MRS. Each guest thread gets its own zeroed block.
 static void darwin_thread_tsd(ThreadCtx* t) {
     if (!g_is_darwin) return;
-    if (!t->tsd) t->tsd = (u64*)calloc(512, 8);
-    else memset(t->tsd, 0, 512 * 8);
+    if (!t->tsd) t->tsd = (u64*)calloc(768, 8);   // libpthread: _INTERNAL_POSIX_THREAD_KEYS_END
+    else memset(t->tsd, 0, 768 * 8);
     t->tsd[0] = (u64)t->tsd;
     t->st->tpidrro_el0 = (u64)t->tsd;
     t->st->tpidr_el0 = (u64)t->tsd;
@@ -290,6 +290,8 @@ int darwin_spawn_thread(uint64_t* th_out, void* attr, uint64_t start_routine, ui
     cs->x[kGuestSP] = sp;
     cs->pc = start_routine;
     cs->eflags = 0x203;
+    uint64_t handle = darwin_new_pthread_handle((void*)((uintptr_t)r + guard + stack_size), stack_size);
+    t->tsd[0] = handle;
 
     ThreadStart ts{t, 0, 0, 0, 0};
     pthread_t th;
@@ -308,10 +310,8 @@ int darwin_spawn_thread(uint64_t* th_out, void* attr, uint64_t start_routine, ui
     while (__atomic_load_n(&ts.tid, __ATOMIC_ACQUIRE) == 0)
         syscall(SYS_futex, &ts.tid, FUTEX_WAIT, 0, nullptr, nullptr, 0);
 
-    void* stack_top = (void*)((uintptr_t)r + guard + stack_size);
-    darwin_register_thread_stack(th, stack_top, stack_size);
-
-    if (th_out) *th_out = (uint64_t)th;
+    darwin_set_pthread_host(handle, th, ts.tid);
+    if (th_out) *th_out = handle;
     return 0;
 }
 

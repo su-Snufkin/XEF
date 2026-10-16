@@ -270,7 +270,7 @@ static int mach_vm_allocate_(uint32_t, uint64_t* addr, uint64_t size, int flags)
 }
 static int mach_vm_deallocate_(uint32_t, uint64_t addr, uint64_t size) { return munmap((void*)(uintptr_t)addr, size) ? 4 : 0; }
 static int mach_vm_protect_(uint32_t, uint64_t addr, uint64_t size, int, int prot) { return mprotect((void*)(uintptr_t)addr, size, prot & 7) ? 4 : 0; }
-static uint32_t mach_thread_self_() { return 0x103; }
+static uint32_t mach_thread_self_() { return darwin_thread_port((int)syscall(SYS_gettid)); }
 static uint32_t mach_host_self_() { return 0x100; }
 static uint32_t mach_task_self__() { return 0x103; }
 

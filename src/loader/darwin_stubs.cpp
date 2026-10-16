@@ -145,8 +145,7 @@ static const char* st_getprogname() {
     return n.c_str();
 }
 static void* st_malloc_create_zone(size_t, unsigned) { return (void*)1; }
-static pthread_t g_main_pthread = pthread_self();
-static uint64_t st_pthread_main_thread_np() { return (uint64_t)g_main_pthread; }
+static uint64_t st_pthread_main_thread_np() { return darwin_pthread_main_handle(); }
 static void* st_getsectbynamefromheader_64(const void* mh, const char* seg, const char* sect) {
     // returns a pointer to a Darwin `struct section_64`
     for (MachImage* im : dyld_images())
@@ -455,6 +454,7 @@ static const StubEntry kStubs2[] = {
     {"_mach_vm_remap", (void*)&st_kern_failure},
     {"_os_signpost_enabled", (void*)&st_zero2}, {"__os_signpost_emit_with_name_impl", (void*)&st_noop2},
     {"_notify_register_file_descriptor", (void*)&st_notify_failed}, {"_notify_cancel", (void*)&st_zero2},
+    {"_notify_is_valid_token", (void*)&st_zero2},   // registrations always fail, so no token is valid
     {"_fsctl", (void*)&st_neg_errno_notsup}, {"_getsectdata", (void*)&st_null2}, {"_getsectiondata", (void*)&st_null2},
     {"_SecItemCopyMatching", (void*)&st_secitem_notfound}, {"_SecCertificateCopyData", (void*)&st_null2},
     {"_SecPolicyCopyProperties", (void*)&st_null2}, {"_SecPolicyCreateSSL", (void*)&st_null2},
@@ -514,6 +514,7 @@ static const StubEntry kStubs2[] = {
     {"_xpc_connection_send_message", (void*)&st_noop2}, {"_xpc_connection_send_message_with_reply", (void*)&st_noop2},
     {"_xpc_connection_send_message_with_reply_sync", (void*)&st_null2}, {"_xpc_connection_set_event_handler", (void*)&st_noop2},
     {"_xpc_dictionary_create_reply", (void*)&st_null2}, {"_xpc_dictionary_get_string", (void*)&st_null2},
+    {"_xpc_date_create_from_current", (void*)&st_null2},   // no XPC; Go calls it once at startup only to load libxpc
     {"_xpc_dictionary_get_uint64", (void*)&st_zero2}, {"_xpc_dictionary_get_value", (void*)&st_null2},
     {"_xpc_dictionary_set_string", (void*)&st_noop2}, {"_xpc_dictionary_set_uint64", (void*)&st_noop2}, {"_xpc_dictionary_set_value", (void*)&st_noop2},
 };

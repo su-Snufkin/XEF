@@ -612,45 +612,68 @@ static long darwin_sysconf(int name) {
     }
 }
 
-// Pthread stack query helpers
-struct DarwinThreadStackInfo {
+// Guest pthread_t: like libpthread's struct _pthread, a per-thread block whose address is pthread_self() and is
+// stored in TSD slot 0 (code reads it with MRS TPIDRRO_EL0). It maps to the host thread for join/detach/kill.
+// Created by darwin_spawn_thread, or lazily for threads XEF did not start that way (the main thread).
+// Freed by pthread_join; a detached thread's block stays (small, and pthread_t values must not be reused while a
+// stale copy could still be compared).
+struct DarwinPthread {
+    uint64_t sig;              // 0x54485244 'THRD'
+    pthread_t host;
+    int tid;
     void* stack_top;
     size_t stack_size;
 };
-static std::mutex g_thread_stacks_lock;
-static std::unordered_map<uint64_t, DarwinThreadStackInfo> g_thread_stacks;
+static DarwinPthread* g_main_pthread_handle;
 
-void darwin_register_thread_stack(pthread_t th, void* stack_top, size_t stack_size) {
-    std::lock_guard<std::mutex> lk(g_thread_stacks_lock);
-    g_thread_stacks[(uint64_t)th] = {stack_top, stack_size};
+uint64_t darwin_new_pthread_handle(void* stack_top, size_t stack_size) {
+    DarwinPthread* p = new DarwinPthread{0x54485244, 0, 0, stack_top, stack_size};
+    return (uint64_t)(uintptr_t)p;
 }
+void darwin_set_pthread_host(uint64_t handle, pthread_t host, int tid) {
+    DarwinPthread* p = (DarwinPthread*)(uintptr_t)handle;
+    p->host = host;
+    p->tid = tid;
+}
+static DarwinPthread* pthread_cur() {
+    ThreadCtx* t = tls_thread;
+    if (!t || !t->tsd) return nullptr;
+    uint64_t v = t->tsd[0];
+    if (v && v != (uint64_t)(uintptr_t)t->tsd) return (DarwinPthread*)(uintptr_t)v;
+    bool main = getpid() == (pid_t)syscall(SYS_gettid);
+    DarwinPthread* p = new DarwinPthread{0x54485244, pthread_self(), (int)syscall(SYS_gettid),
+                                         main ? (void*)(uintptr_t)g_darwin_stack_top : nullptr,
+                                         main ? (size_t)g_darwin_stack_size : 0};
+    if (main && !g_main_pthread_handle) g_main_pthread_handle = p;
+    t->tsd[0] = (uint64_t)(uintptr_t)p;
+    return p;
+}
+static DarwinPthread* pthread_of(uint64_t th) {
+    DarwinPthread* p = th ? (DarwinPthread*)(uintptr_t)th : pthread_cur();
+    if (p && p->sig != 0x54485244) return nullptr;
+    if (p && !p->host && p == pthread_cur()) { p->host = pthread_self(); p->tid = (int)syscall(SYS_gettid); }
+    return p;
+}
+uint64_t darwin_pthread_main_handle() {
+    if (!g_main_pthread_handle && getpid() == (pid_t)syscall(SYS_gettid)) pthread_cur();
+    return (uint64_t)(uintptr_t)g_main_pthread_handle;
+}
+int darwin_pthread_host(uint64_t th, pthread_t* host) {
+    DarwinPthread* p = pthread_of(th);
+    if (!p) return ESRCH;
+    *host = p->host;
+    return 0;
+}
+uint32_t darwin_thread_port(int tid) { return ((uint32_t)tid << 8) | 0x07; }
 
 static void* darwin_pthread_get_stackaddr_np(void* thread) {
-    uint64_t th = thread ? (uint64_t)(uintptr_t)thread : (uint64_t)pthread_self();
-    {
-        std::lock_guard<std::mutex> lk(g_thread_stacks_lock);
-        auto it = g_thread_stacks.find(th);
-        if (it != g_thread_stacks.end()) {
-            XEF_LOG(2, "pthread_get_stackaddr_np(th=%p): returning %p", (void*)th, it->second.stack_top);
-            return it->second.stack_top;
-        }
-    }
-    XEF_LOG(2, "pthread_get_stackaddr_np: returning fallback %p", (void*)g_darwin_stack_top);
-    return (void*)(uintptr_t)g_darwin_stack_top;
+    DarwinPthread* p = pthread_of((uint64_t)(uintptr_t)thread);
+    return p && p->stack_top ? p->stack_top : (void*)(uintptr_t)g_darwin_stack_top;
 }
 
 static size_t darwin_pthread_get_stacksize_np(void* thread) {
-    uint64_t th = thread ? (uint64_t)(uintptr_t)thread : (uint64_t)pthread_self();
-    {
-        std::lock_guard<std::mutex> lk(g_thread_stacks_lock);
-        auto it = g_thread_stacks.find(th);
-        if (it != g_thread_stacks.end()) {
-            XEF_LOG(2, "pthread_get_stacksize_np(th=%p): returning %#zx", (void*)th, it->second.stack_size);
-            return it->second.stack_size;
-        }
-    }
-    XEF_LOG(2, "pthread_get_stacksize_np: returning fallback %#zx", (size_t)g_darwin_stack_size);
-    return (size_t)g_darwin_stack_size;
+    DarwinPthread* p = pthread_of((uint64_t)(uintptr_t)thread);
+    return p && p->stack_size ? p->stack_size : (size_t)g_darwin_stack_size;
 }
 
 // NSGetArg* runtime helpers
@@ -1708,7 +1731,10 @@ static size_t darwin_wcrtomb_l(char* s, wchar_t wc, mbstate_t* ps, void*) { retu
 static size_t darwin_wcsnrtombs_l(char* d, const wchar_t** s, size_t nwc, size_t len, mbstate_t* ps, void*) { return wcsnrtombs(d, s, nwc, len, ps); }
 static int darwin_wctob_l(wint_t c, void*) { return wctob(c); }
 static struct lconv* darwin_localeconv_l(void*) { return localeconv(); }
-static uint32_t darwin_pthread_mach_thread_np(uint64_t th) { return (uint32_t)(th >> 4) & 0xFFFFF | 0x1003; }
+static uint32_t darwin_pthread_mach_thread_np(uint64_t th) {
+    DarwinPthread* p = pthread_of(th);
+    return p ? darwin_thread_port(p->tid) : 0;
+}
 
 // compiler-rt 128-bit division (two registers in, two registers out)
 struct U128Ret { uint64_t lo, hi; };
@@ -2001,16 +2027,21 @@ static int darwin_tlv_atexit(void (*term)(void*), void* obj, void* dso) {
     return 0;
 }
 
-// Darwin Pthread TSD and Mutex emulation
-static constexpr int kMaxTsdKeys = 256;
-static void (*g_destructors[kMaxTsdKeys])(void*) = {};
-static bool g_key_used[kMaxTsdKeys] = {};
-static thread_local void* g_thread_specific[kMaxTsdKeys] = {};
+// Darwin pthread TSD: values live in the guest thread's TSD array behind TPIDRRO_EL0 (os/thread.cpp), like
+// libpthread, so code reading the slots directly (Go's runtime.tlsinit, _pthread_getspecific_direct) sees them.
+// Slots below 256 are libSystem's static keys; pthread_key_create hands out 256..767, and libSystem itself has
+// taken 256 and 257 by the time main runs (the first key a macOS program gets is 258).
+static constexpr int kTsdFirstDynamic = 256, kTsdSlots = 768;
+static uint64_t g_destructors[kTsdSlots] = {};
+static bool g_key_used[kTsdSlots] = {};
 static std::mutex g_tsd_lock;
 
-static int darwin_pthread_key_create(uint64_t* key_out, void (*destructor)(void*)) {
+static uint64_t* tsd_slots() { return tls_thread ? (uint64_t*)tls_thread->tsd : nullptr; }
+
+static int darwin_pthread_key_create(uint64_t* key_out, uint64_t destructor) {
     std::lock_guard<std::mutex> lk(g_tsd_lock);
-    for (int i = 1; i < kMaxTsdKeys; i++) {
+    g_key_used[kTsdFirstDynamic] = g_key_used[kTsdFirstDynamic + 1] = true;
+    for (int i = kTsdFirstDynamic; i < kTsdSlots; i++) {
         if (!g_key_used[i]) {
             g_key_used[i] = true;
             g_destructors[i] = destructor;
@@ -2022,22 +2053,48 @@ static int darwin_pthread_key_create(uint64_t* key_out, void (*destructor)(void*
 }
 
 static int darwin_pthread_setspecific(uint64_t key, const void* value) {
-    if (key == 0 || key >= kMaxTsdKeys) return EINVAL;
-    g_thread_specific[key] = (void*)value;
+    uint64_t* t = tsd_slots();
+    if (key == 0 || key >= kTsdSlots || !t) return EINVAL;
+    t[key] = (uint64_t)(uintptr_t)value;
     return 0;
 }
 
 static void* darwin_pthread_getspecific(uint64_t key) {
-    if (key == 0 || key >= kMaxTsdKeys) return nullptr;
-    return g_thread_specific[key];
+    uint64_t* t = tsd_slots();
+    if (key >= kTsdSlots || !t) return nullptr;
+    return (void*)(uintptr_t)t[key];
 }
 
 static int darwin_pthread_key_delete(uint64_t key) {
     std::lock_guard<std::mutex> lk(g_tsd_lock);
-    if (key == 0 || key >= kMaxTsdKeys) return EINVAL;
+    if (key < kTsdFirstDynamic || key >= kTsdSlots || !g_key_used[key]) return EINVAL;
     g_key_used[key] = false;
-    g_destructors[key] = nullptr;
+    g_destructors[key] = 0;
     return 0;
+}
+
+// thread exit (pthread_exit or return from the start routine): run the key destructors for non-NULL values,
+// up to PTHREAD_DESTRUCTOR_ITERATIONS (4) rounds, clearing each value before its destructor runs
+void darwin_tsd_run_destructors() {
+    uint64_t* t = tsd_slots();
+    if (!t) return;
+    for (int round = 0; round < 4; round++) {
+        bool any = false;
+        for (int k = kTsdFirstDynamic; k < kTsdSlots; k++) {
+            uint64_t v = t[k], d;
+            if (!v) continue;
+            {
+                std::lock_guard<std::mutex> lk(g_tsd_lock);
+                d = g_key_used[k] ? g_destructors[k] : 0;
+            }
+            if (!d) continue;
+            t[k] = 0;
+            u64 a[1] = {v};
+            guest_call(d, 1, a);
+            any = true;
+        }
+        if (!any) break;
+    }
 }
 
 // Darwin pthread_mutex emulation using host recursive_mutex
@@ -2197,19 +2254,26 @@ static int darwin_pthread_create(uint64_t* th_out, void* attr, uint64_t start_ro
 }
 
 static int darwin_pthread_join(uint64_t th, void** val_out) {
-    return pthread_join((pthread_t)th, val_out);
+    DarwinPthread* p = pthread_of(th);
+    if (!p || !th) return ESRCH;
+    if (p == pthread_cur()) return EDEADLK;
+    int r = pthread_join(p->host, val_out);
+    if (r == 0) { p->sig = 0; delete p; }
+    return r;
 }
 
 static int darwin_pthread_detach(uint64_t th) {
-    return pthread_detach((pthread_t)th);
+    DarwinPthread* p = pthread_of(th);
+    return p ? pthread_detach(p->host) : ESRCH;
 }
 
 static uint64_t darwin_pthread_self() {
-    return (uint64_t)pthread_self();
+    return (uint64_t)(uintptr_t)pthread_cur();
 }
 
 static void darwin_pthread_exit(void* val) {
-    (void)val;
+    darwin_tsd_run_destructors();
+    thread_set_retval((u64)(uintptr_t)val);
     ThreadCtx* t = tls_thread;
     thread_exit(t ? t->st : nullptr, 0);
 }
@@ -2221,7 +2285,9 @@ static int darwin_pthread_setname_np(const char* name) {
 
 static int darwin_pthread_threadid_np(uint64_t thread, uint64_t* thread_id) {
     if (!thread_id) return EINVAL;
-    *thread_id = (thread != 0) ? thread : (uint64_t)pthread_self();
+    DarwinPthread* p = pthread_of(thread);
+    if (!p) return ESRCH;
+    *thread_id = (uint64_t)p->tid;
     return 0;
 }
 

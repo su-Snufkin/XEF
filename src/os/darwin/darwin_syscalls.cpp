@@ -6,6 +6,7 @@
 #include "runtime/code_cache.h"
 #include "runtime/dispatch.h"
 #include "loader/elf_loader.h"
+#include "loader/darwin_hle.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -173,10 +174,10 @@ void do_darwin_syscall(CpuState* st) {
             return;
         }
         case DARWIN_MACH_thread_self:
-            set_darwin_success(st, 0x103);
+            set_darwin_success(st, darwin_thread_port((int)syscall(SYS_gettid)));
             return;
         case DARWIN_MACH_task_self:
-            set_darwin_success(st, 0x101);
+            set_darwin_success(st, 0x103);   // = mach_task_self_ (darwin_sys_shims.cpp)
             return;
         case DARWIN_MACH_host_self:
             set_darwin_success(st, 0x100);
@@ -465,6 +466,7 @@ void do_darwin_syscall(CpuState* st) {
     }
 
     case DARWIN_SYS_bsdthread_terminate: {
+        darwin_tsd_run_destructors();
         thread_set_retval(a0);
         thread_exit(st, (int)a0);
         break;

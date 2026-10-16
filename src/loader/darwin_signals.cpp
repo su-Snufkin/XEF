@@ -125,7 +125,9 @@ static int ds_pthread_kill(u64 th, int dsig) {
     if (dsig == 0) return 0;
     int l = darwin_to_linux_sig(dsig);
     if (l <= 0) return EINVAL;
-    return pthread_kill((pthread_t)th, l);
+    pthread_t h;
+    if (int e = darwin_pthread_host(th, &h)) return e;
+    return pthread_kill(h, l);
 }
 
 struct SigShim { const char* name; void* fn; };
