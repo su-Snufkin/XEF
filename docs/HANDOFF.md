@@ -466,3 +466,25 @@ Go i Rust (2026-10-16, cd.):
   gcc-15 (Homebrew) potrzebuje dodatkowo systemowego `as`/`ld` z Command Line Tools.
 - Testy gościa Linux (`tests/guest`): 78 ok / 42 fail — identycznie na buildzie sprzed sesji (ld.so/glibc z Debiana trixie w kontenerze),
   nie regresja tej gałęzi.
+
+macOS GUI / 3D & Metal (2026-10-16):
+- AppKit-lite (`rootfs-src/appkit/AppKit.m`, `src/loader/darwin_appkit_host.cpp`):
+  - Poprawiona synchronizacja współrzędnych kursora myszy przy zmianie rozmiaru okna (`XEF_EV_RESIZE` zapytuje X11 o geometrię przez `XTranslateCoordinates` i aktualizuje `origin.y`, wysyłając `windowDidMove:` oraz `windowDidResize:`).
+  - Wsparcie dla EWMH `_NET_WM_STATE_FULLSCREEN` i pełna obsługa `toggleFullScreen:` z `NSWindowStyleMaskFullScreen` i notyfikacjami przejścia.
+  - Opróżnianie `NSRunLoop` wewnątrz `-[NSApplication nextEventMatchingMask:...]` dla natychmiastowego wykonywania bloków wątku głównego.
+  - Dodane metody `setOneShot:`, `registerForDraggedTypes:`, `unregisterDraggedTypes`, `setMouseConfinementRect:`, `addChildWindow:ordered:`, `removeChildWindow:`.
+  - Dodana kategoria `NSAppleEventManager (AppKitLite)` dla obsługi event handlerów Apple Event.
+- QuartzCore.framework (`rootfs-src/appkit/QuartzCore.m`):
+  - Pełna implementacja `CALayer`, `CAMetalLayer` i `CAMetalDrawable`.
+  - Funkcja `CACurrentMediaTime(void)` oraz funkcje macierzy 3D `CATransform3D` (`CATransform3DIdentity`, `CATransform3DMakeTranslation`, `CATransform3DMakeScale`, `CATransform3DMakeRotation`, `CATransform3DConcat`, itp.).
+  - Klasy animacji (`CAAnimation`, `CAPropertyAnimation`, `CABasicAnimation`, `CAKeyframeAnimation`, `CATransition`, `CAMediaTimingFunction`, `CADisplayLink`) i warstwy pochodne (`CAGradientLayer`, `CAShapeLayer`, `CATextLayer`, `CAOpenGLLayer`).
+  - Podpięcie `[CAMetalDrawable present]` pod wymianę buforów okna X11 (`xef_host_swap`).
+- Metal.framework (`rootfs-src/appkit/Metal.m`):
+  - Kompletna implementacja frameworka Metal w architekturze arm64 Mach-O: `MTLCreateSystemDefaultDevice`, `MTLCopyAllDevices`, `MTLCopyAllDevicesWithObserver`, `MTLRemoveDeviceObserver`.
+  - Wszystkie klasy deskryptorów: `MTLRenderPipelineDescriptor`, `MTLRenderPipelineColorAttachmentDescriptor`, `MTLRenderPassDescriptor`, `MTLTextureDescriptor`, `MTLVertexDescriptor`, `MTLDepthStencilDescriptor`, `MTLSamplerDescriptor`, `MTLCompileOptions`.
+  - Zasoby i bufory: `XEFMetalBuffer` (`contents`, `storageMode`, `cpuCacheMode`), `XEFMetalTexture`, `XEFMetalLibrary`, `XEFMetalFunction`, `XEFMetalRenderPipelineState`, `XEFMetalComputePipelineState`.
+  - Kodery i kolejki: `XEFMetalCommandQueue`, `XEFMetalCommandBuffer`, `XEFMetalRenderCommandEncoder`, `XEFMetalComputeCommandEncoder`, `XEFMetalBlitCommandEncoder` (z kopiowaniem buforów i uploadem tekstur).
+  - Klasa bazowa `XEFMetalObject` z dynamicznym stubowaniem `resolveInstanceMethod:` dla bezpiecznego fallbacku niezaimplementowanych metod.
+- Weryfikacja:
+  - Emulator Nintendo 64 `orbit64` (SDL3 + Metal GPU): pomyślna inicjalizacja urządzenia Metal (`XEFMetalDevice`), eliminacja błędu `No SDL_GPU device: Failed to create Metal device`, poprawne tworzenie potoków, enkoderów blit i renderowania. Okno działa stabilnie na X11/Xwayland.
+  - Wszystkie testy regresji (`tests/darwin/gl_test.sh`: gltri, gltri_core, cocoa_gl, glfw_gl21, glfw_gl32) przechodzą 100% (PASS gl_test).
