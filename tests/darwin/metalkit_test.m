@@ -33,7 +33,65 @@ int main(void) {
 
     NSLog(@"MTKView created with device: %@", v.device.name);
     v.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+    v.depthStencilPixelFormat = MTLPixelFormatDepth32Float;
     v.clearColor = MTLClearColorMake(0.1, 0.2, 0.3, 1.0);
+
+    id<MTLTexture> dt = v.depthStencilTexture;
+    if (!dt || dt.pixelFormat != MTLPixelFormatDepth32Float) {
+      NSLog(@"FAIL: depthStencilTexture invalid or nil");
+      return 4;
+    }
+    NSLog(@"Verified MTKView depthStencilTexture: %lu x %lu", (unsigned long)dt.width, (unsigned long)dt.height);
+
+    MTLRenderPassDescriptor *rpd = v.currentRenderPassDescriptor;
+    if (!rpd || rpd.depthAttachment.texture != dt) {
+      NSLog(@"FAIL: currentRenderPassDescriptor missing depth attachment");
+      return 5;
+    }
+    NSLog(@"Verified MTKView currentRenderPassDescriptor depth attachment attached");
+
+    /* Test MTKTextureLoader */
+    MTKTextureLoader *loader = [[MTKTextureLoader alloc] initWithDevice:d];
+    if (!loader) {
+      NSLog(@"FAIL: could not instantiate MTKTextureLoader");
+      return 6;
+    }
+
+    /* Build a synthetic 4x4 32-bit TGA in memory */
+    uint8_t tgaHeader[18] = {0};
+    tgaHeader[2] = 2; /* uncompressed true-color */
+    tgaHeader[12] = 4; tgaHeader[13] = 0; /* width = 4 */
+    tgaHeader[14] = 4; tgaHeader[15] = 0; /* height = 4 */
+    tgaHeader[16] = 32; /* 32 bits per pixel */
+    tgaHeader[17] = 0x20; /* top-down */
+
+    uint32_t tgaPixels[16];
+    for (int i = 0; i < 16; i++) {
+      tgaPixels[i] = 0xFF00FF00; /* Green with alpha */
+    }
+
+    NSMutableData *tgaData = [NSMutableData dataWithBytes:tgaHeader length:sizeof(tgaHeader)];
+    [tgaData appendBytes:tgaPixels length:sizeof(tgaPixels)];
+
+    NSError *texErr = nil;
+    id<MTLTexture> loadedTex = [loader newTextureWithData:tgaData options:nil error:&texErr];
+    if (!loadedTex || texErr) {
+      NSLog(@"FAIL: MTKTextureLoader failed to load TGA: %@", texErr);
+      return 7;
+    }
+    if (loadedTex.width != 4 || loadedTex.height != 4) {
+      NSLog(@"FAIL: loadedTex dimensions mismatch: %lu x %lu", (unsigned long)loadedTex.width, (unsigned long)loadedTex.height);
+      return 8;
+    }
+
+    uint32_t readback[16] = {0};
+    [loadedTex getBytes:readback bytesPerRow:16 fromRegion:MTLRegionMake2D(0, 0, 4, 4) mipmapLevel:0];
+    if (readback[0] != 0xFF00FF00) {
+      NSLog(@"FAIL: loadedTex pixel mismatch: 0x%08x != 0xFF00FF00", readback[0]);
+      return 9;
+    }
+    NSLog(@"Verified MTKTextureLoader loaded TGA correctly (pixel=0x%08x)", readback[0]);
+    [loader release];
 
     DummyDelegate *del = [[DummyDelegate alloc] init];
     v.delegate = del;

@@ -105,6 +105,12 @@ static VkCommandPool g_cmd_pool = VK_NULL_HANDLE;
 static VkCommandBuffer g_active_cmd = VK_NULL_HANDLE;
 static uint32_t g_active_rt_id = 0;
 
+struct PendingBuffer {
+    VkBuffer buffer;
+    VkDeviceMemory memory;
+};
+static std::vector<PendingBuffer> g_pending_buffers;
+
 static VkDescriptorSetLayout g_desc_layout = VK_NULL_HANDLE;
 static VkDescriptorPool g_desc_pool = VK_NULL_HANDLE;
 static VkPipelineLayout g_pipeline_layout = VK_NULL_HANDLE;
@@ -544,8 +550,11 @@ static VkPipeline get_or_create_pipeline(const PipelineKey& key, VkRenderPass re
     pipelineInfo.subpass = 0;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    if (vkCreateGraphicsPipelines(g_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) == VK_SUCCESS) {
+    VkResult res = vkCreateGraphicsPipelines(g_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
+    if (res == VK_SUCCESS) {
         g_pipelines[key] = pipeline;
+    } else {
+        fprintf(stderr, "[xef-metal] vkCreateGraphicsPipelines failed with rc=%d\n", res);
     }
     return pipeline;
 }
@@ -1145,6 +1154,11 @@ void pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, flo
         si.pCommandBuffers = &g_active_cmd;
         vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE);
         vkQueueWaitIdle(g_queue);
+        for (auto& pb : g_pending_buffers) {
+            vkFreeMemory(g_device, pb.memory, nullptr);
+            vkDestroyBuffer(g_device, pb.buffer, nullptr);
+        }
+        g_pending_buffers.clear();
         vkFreeCommandBuffers(g_device, g_cmd_pool, 1, &g_active_cmd);
         g_active_cmd = VK_NULL_HANDLE;
     }
@@ -1189,6 +1203,12 @@ void pass_end(int handle, uint32_t rt_tex_id) {
 
     vkQueueSubmit(g_queue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(g_queue);
+
+    for (auto& pb : g_pending_buffers) {
+        vkFreeMemory(g_device, pb.memory, nullptr);
+        vkDestroyBuffer(g_device, pb.buffer, nullptr);
+    }
+    g_pending_buffers.clear();
 
     vkFreeCommandBuffers(g_device, g_cmd_pool, 1, &g_active_cmd);
     g_active_cmd = VK_NULL_HANDLE;
@@ -1350,14 +1370,12 @@ void draw(int handle,
         vkCmdBindIndexBuffer(g_active_cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(g_active_cmd, (uint32_t)index_count, 1, 0, 0, 0);
 
-        vkFreeMemory(g_device, indexMemory, nullptr);
-        vkDestroyBuffer(g_device, indexBuffer, nullptr);
+        g_pending_buffers.push_back({ indexBuffer, indexMemory });
     } else {
         vkCmdDraw(g_active_cmd, (uint32_t)vertex_count, 1, 0, 0);
     }
 
-    vkFreeMemory(g_device, vertexMemory, nullptr);
-    vkDestroyBuffer(g_device, vertexBuffer, nullptr);
+    g_pending_buffers.push_back({ vertexBuffer, vertexMemory });
 }
 
 void present(int handle, uint32_t tex_id) {

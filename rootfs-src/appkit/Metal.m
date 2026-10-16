@@ -2171,11 +2171,38 @@ static void xef_init_vertex_fetcher(XEFVertexFetcher *vf, XEFMetalRenderCommandE
         vf->fallback_packed_float2 = YES;
         vf->fallback_fp = (const float *)((const uint8_t *)enc->_vertexBuffers[0]->_data + enc->_vertexBufferOffsets[0]);
       }
-    } else if (usedAttrBuf != 0 && enc->_vertexBuffers[0]) {
-      XEFMetalBuffer *ubuf = enc->_vertexBuffers[0];
-      size_t uoff = enc->_vertexBufferOffsets[0];
-      if (uoff + 64 <= ubuf->_length) {
-        vf->mvp = (const float *)((const uint8_t *)ubuf->_data + uoff);
+    } else {
+      /* Check buffers for 4x4 matrix uniforms (64 bytes) */
+      for (int b = 0; b < 4; b++) {
+        if (b != usedAttrBuf && enc->_vertexBuffers[b]) {
+          XEFMetalBuffer *ubuf = enc->_vertexBuffers[b];
+          size_t uoff = enc->_vertexBufferOffsets[b];
+          if (uoff + 64 <= ubuf->_length) {
+            vf->mvp = (const float *)((const uint8_t *)ubuf->_data + uoff);
+            break;
+          }
+        }
+      }
+    }
+
+    /* Fallback: if no vertex descriptor but vertexBuffers[0] contains struct Vertex { float4 pos; float4 col; } */
+    if (!vf->has_attr && enc->_vertexBuffers[0] && enc->_vertexBuffers[0]->_length >= 32) {
+      vf->has_attr = YES;
+      XEFMetalBuffer *buf = enc->_vertexBuffers[0];
+      vf->attr_base = (const uint8_t *)buf->_data + enc->_vertexBufferOffsets[0];
+      vf->attr_len = buf->_length > enc->_vertexBufferOffsets[0] ? buf->_length - enc->_vertexBufferOffsets[0] : 0;
+      vf->stride = 32;
+      vf->pos_off = 0; vf->pos_fmt = MTLVertexFormatFloat4;
+      vf->col_off = 16; vf->col_fmt = MTLVertexFormatFloat4;
+      for (int b = 1; b < 4; b++) {
+        if (enc->_vertexBuffers[b]) {
+          XEFMetalBuffer *ubuf = enc->_vertexBuffers[b];
+          size_t uoff = enc->_vertexBufferOffsets[b];
+          if (uoff + 64 <= ubuf->_length) {
+            vf->mvp = (const float *)((const uint8_t *)ubuf->_data + uoff);
+            break;
+          }
+        }
       }
     }
   }
@@ -2928,10 +2955,11 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
       vbuf[i].a  = v.col[3];
     }
 
-    int prim = (primitiveType == MTLPrimitiveTypeTriangle) ? 0 :
-               (primitiveType == MTLPrimitiveTypeTriangleStrip) ? 1 :
-               (primitiveType == MTLPrimitiveTypeLine) ? 2 :
-               (primitiveType == MTLPrimitiveTypeLineStrip) ? 3 : 4;
+    int prim = (primitiveType == MTLPrimitiveTypePoint) ? 0 :
+               (primitiveType == MTLPrimitiveTypeLine) ? 1 :
+               (primitiveType == MTLPrimitiveTypeLineStrip) ? 2 :
+               (primitiveType == MTLPrimitiveTypeTriangle) ? 3 :
+               (primitiveType == MTLPrimitiveTypeTriangleStrip) ? 4 : 3;
 
     xef_host_metal_draw(0, &pipe, prim, vbuf, (int)vertexCount, NULL, 0);
 
@@ -3059,10 +3087,11 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
       vbuf[i].a  = v.col[3];
     }
 
-    int prim = (primitiveType == MTLPrimitiveTypeTriangle) ? 0 :
-               (primitiveType == MTLPrimitiveTypeTriangleStrip) ? 1 :
-               (primitiveType == MTLPrimitiveTypeLine) ? 2 :
-               (primitiveType == MTLPrimitiveTypeLineStrip) ? 3 : 4;
+    int prim = (primitiveType == MTLPrimitiveTypePoint) ? 0 :
+               (primitiveType == MTLPrimitiveTypeLine) ? 1 :
+               (primitiveType == MTLPrimitiveTypeLineStrip) ? 2 :
+               (primitiveType == MTLPrimitiveTypeTriangle) ? 3 :
+               (primitiveType == MTLPrimitiveTypeTriangleStrip) ? 4 : 3;
 
     xef_host_metal_draw(0, &pipe, prim, vbuf, (int)indexCount, NULL, 0);
 

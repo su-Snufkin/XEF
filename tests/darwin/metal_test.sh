@@ -43,5 +43,16 @@ if [ -f tests/darwin/compute_test ] && [ -f tests/darwin/add.metallib ]; then
   fi
 fi
 
+if [ -f tests/darwin/cube_test ] && [ -f tests/darwin/cube_shaders.metallib ]; then
+  OUT5=$(timeout 15 $X -L darwin-rootfs tests/darwin/cube_test tests/darwin/cube_shaders.metallib 2>&1)
+  RC5=$?
+  if [ $RC5 -ne 0 ] || ! echo "$OUT5" | grep -q "PASS cube_test"; then
+    echo "FAIL metal_test (cube_test): rc=$RC5"
+    echo "$OUT5"
+    exit 1
+  fi
+fi
+
 echo "PASS metal_test"
 exit 0
+
