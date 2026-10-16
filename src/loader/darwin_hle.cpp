@@ -372,7 +372,20 @@ static std::string darwin_format(const char* format, const uint64_t* ap) {
                 break;
             }
             case 'S': emit(spec + "ls", (const wchar_t*)(uintptr_t)next()); break;
-            case 'p': emit(spec + "p", (void*)(uintptr_t)next()); break;
+            case 'p': {   // BSD: always "0x" + lowercase hex (NULL is "0x0", not glibc's "(nil)")
+                uint64_t v = next();
+                char hx[32];
+                snprintf(hx, sizeof hx, "%llx", (unsigned long long)v);
+                std::string d = (has_prec && prec == "0" && !v) ? std::string() : std::string(hx);
+                if (has_prec && d.size() < (size_t)atoi(prec.c_str())) d.insert(0, atoi(prec.c_str()) - d.size(), '0');
+                size_t w = width.empty() ? 0 : (size_t)atoi(width.c_str());
+                bool left = flags.find('-') != std::string::npos;
+                if (!left && !has_prec && flags.find('0') != std::string::npos && d.size() + 2 < w) d.insert(0, w - 2 - d.size(), '0');
+                d.insert(0, "0x");
+                if (d.size() < w) { if (left) d.append(w - d.size(), ' '); else d.insert(0, w - d.size(), ' '); }
+                out += d;
+                break;
+            }
             case 'n': {
                 void* ptr = (void*)(uintptr_t)next();
                 if (ptr) { if (lng == 0) *(int*)ptr = (int)out.size(); else *(long long*)ptr = (long long)out.size(); }
@@ -396,10 +409,11 @@ static int darwin_vsnprintf(char* str, size_t size, const char* format, const ui
     return (int)r.size();
 }
 
-static int darwin_vfprintf(FILE* stream, const char* format, const uint64_t* ap) {
+static int darwin_vfprintf(FILE* guest_stream, const char* format, const uint64_t* ap) {
+    FILE* stream = darwin_stdio_host(guest_stream);
     if (!stream || !format) return -1;
     std::string r = darwin_format(format, ap);
-    if (!r.empty()) fwrite(r.data(), 1, r.size(), stream);
+    if (!r.empty() && fwrite(r.data(), 1, r.size(), stream) != r.size()) { darwin_stdio_sync(guest_stream); return -1; }
     return (int)r.size();
 }
 
@@ -1625,7 +1639,8 @@ static int darwin_sscanf_l(const char* str, void* loc, const char* format, const
     return darwin_sscanf(str, format, ap);
 }
 typedef int (*fscanf8_t)(FILE*, const char*, void*, void*, void*, void*, void*, void*, void*, void*);
-static int darwin_fscanf(FILE* f, const char* format, const uint64_t* ap) {
+static int darwin_fscanf(FILE* gf, const char* format, const uint64_t* ap) {
+    FILE* f = darwin_stdio_host(gf);
     return ((fscanf8_t)&fscanf)(f, format, (void*)ap[0], (void*)ap[1], (void*)ap[2], (void*)ap[3],
                                 (void*)ap[4], (void*)ap[5], (void*)ap[6], (void*)ap[7]);
 }
@@ -2877,6 +2892,10 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         return it->second;
     }
 
+    if (void* d = darwin_stdio_data_lookup(name)) {
+        g_symbol_cache[name] = (uint64_t)(uintptr_t)d;
+        return (uint64_t)(uintptr_t)d;
+    }
     if (void* d = darwin_stub_data_lookup(name)) {
         g_symbol_cache[name] = (uint64_t)(uintptr_t)d;
         return (uint64_t)(uintptr_t)d;
@@ -2959,7 +2978,9 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
 
     // 2. Check special Darwin wrapper functions
     void* host_fn = nullptr;
-    if (void* pt = darwin_pthread_lookup(name)) {
+    if (void* sio = darwin_stdio_lookup(name)) {
+        host_fn = sio;
+    } else if (void* pt = darwin_pthread_lookup(name)) {
         host_fn = pt;
     } else if (strcmp(name, "___error") == 0) {
         host_fn = (void*)&darwin_error_wrapper;

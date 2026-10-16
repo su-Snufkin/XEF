@@ -16,7 +16,13 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak = false, bool 
 
 // Runs the atexit / __cxa_atexit handlers registered by the guest (reverse order).
 void darwin_run_exit_handlers();
-void darwin_tsd_run_destructors();     // guest pthread key destructors of the exiting thread
+void darwin_tsd_run_destructors();
+// darwin_stdio.cpp: guest FILE* (Darwin struct __sFILE shell) <-> host FILE*
+FILE* darwin_stdio_host(void* guest_file);
+void* darwin_stdio_guest(FILE* host, const char* mode);
+void darwin_stdio_sync(void* guest_file);
+void* darwin_stdio_lookup(const char* name);
+void* darwin_stdio_data_lookup(const char* name);     // guest pthread key destructors of the exiting thread
 
 // Dispatches an HLE thunk call (st->x[17] = thunk ID)
 void darwin_hle_dispatch(CpuState* st);

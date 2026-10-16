@@ -280,8 +280,6 @@ static int st_task_for_pid(uint32_t, int pid, uint32_t* t) {
     if (t) *t = (pid == getpid()) ? 1 : 0;
     return 0;
 }
-static int st_srget(FILE* fp) { return fgetc(fp); }
-static int st_swbuf(int c, FILE* fp) { return fputc(c, fp); }
 static void* st_swift_retain(void* obj) { return obj; }
 static void st_swift_release(void*) {}
 
@@ -502,8 +500,6 @@ static const StubEntry kStubs2[] = {
     {"_mach_vm_write", (void*)&st_mach_vm_write},
     {"_proc_regionfilename", (void*)&st_proc_regionfilename},
     {"_task_for_pid", (void*)&st_task_for_pid},
-    {"___srget", (void*)&st_srget},
-    {"___swbuf", (void*)&st_swbuf},
     {"_swift_retain", (void*)&st_swift_retain},
     {"_swift_release", (void*)&st_swift_release},
     {"_SCDynamicStoreCopyProxies", (void*)&st_null2},

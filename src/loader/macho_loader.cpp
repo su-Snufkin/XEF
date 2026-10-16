@@ -513,9 +513,21 @@ static int open_arm64_slice(const std::string& host_path, uint64_t& slice_offset
 
 static MachImage* load_dependency(MachImage* from, const std::string& name, bool weak);
 
-static std::vector<std::string> expand_candidates(const std::string& name, MachImage* from) {
+// Homebrew bottles not relocated by `brew pour` keep @@HOMEBREW_CELLAR@@ / @@HOMEBREW_PREFIX@@ in load commands
+// (tools/fetch_bottle.py patches only what fits in place); resolve them to the default /opt/homebrew prefix.
+static std::string homebrew_placeholders(std::string s) {
+    static const std::pair<const char*, const char*> kMap[] = {
+        {"@@HOMEBREW_CELLAR@@", "/opt/homebrew/Cellar"}, {"@@HOMEBREW_PREFIX@@", "/opt/homebrew"}};
+    for (const auto& [from, to] : kMap)
+        for (size_t p; (p = s.find(from)) != std::string::npos;) s.replace(p, strlen(from), to);
+    return s;
+}
+
+static std::vector<std::string> expand_candidates(const std::string& name_in, MachImage* from) {
     std::vector<std::string> out;
-    auto subst = [&](const std::string& s, MachImage* ctx) -> std::vector<std::string> {
+    const std::string name = homebrew_placeholders(name_in);
+    auto subst = [&](const std::string& s_in, MachImage* ctx) -> std::vector<std::string> {
+        const std::string s = homebrew_placeholders(s_in);
         std::vector<std::string> res;
         auto add_path = [&](const std::string& dir, const std::string& rel) {
             res.push_back(dir + "/" + rel);
