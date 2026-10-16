@@ -33,5 +33,15 @@ if [ -f tests/darwin/metalkit_test ]; then
   fi
 fi
 
+if [ -f tests/darwin/compute_test ] && [ -f tests/darwin/add.metallib ]; then
+  OUT4=$(timeout 15 $X -L darwin-rootfs tests/darwin/compute_test tests/darwin/add.metallib 2>&1)
+  RC4=$?
+  if [ $RC4 -ne 0 ] || ! echo "$OUT4" | grep -q "PASS compute_test"; then
+    echo "FAIL metal_test (compute_test): rc=$RC4"
+    echo "$OUT4"
+    exit 1
+  fi
+fi
+
 echo "PASS metal_test"
 exit 0

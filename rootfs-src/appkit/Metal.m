@@ -1107,9 +1107,12 @@ static id metal_stub(id self, SEL _cmd, ...) {
   NSUInteger d = region.size.depth > 0 ? region.size.depth : 1;
   if (x0 >= _width || y0 >= _height) return;
   if (x0 + w > _width) w = _width - x0;
-  if (y0 + h > _height) h = _height - y0;
   NSUInteger rowBytes = w * bpp;
   NSUInteger dstBpi = bytesPerImage > 0 ? bytesPerImage : dstBpr * region.size.height;
+  if (_hostTexId > 0 && level == 0 && slice == 0 && _parentRelativeSlice == 0) {
+    xef_host_metal_tex_readback(_hostTexId, (int)x0, (int)y0, (int)w, (int)h, pixelBytes, (int)dstBpr);
+    return;
+  }
   for (NSUInteger z = 0; z < d; z++) {
     size_t sliceOffset = (size_t)(z0 + z) * _storage->_bytesPerImage;
     if (sliceOffset >= _storage->_dataSize) break;
@@ -1269,8 +1272,11 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
   NSString *_label;
   MTLSamplerMinMagFilter _minFilter;
   MTLSamplerMinMagFilter _magFilter;
+  MTLSamplerMipFilter _mipFilter;
   MTLSamplerAddressMode _sAddressMode;
   MTLSamplerAddressMode _tAddressMode;
+  MTLSamplerAddressMode _rAddressMode;
+  MTLSamplerBorderColor _borderColor;
   BOOL _normalizedCoordinates;
 }
 - (instancetype)initWithDescriptor:(MTLSamplerDescriptor *)desc device:(id<MTLDevice>)device;
@@ -1283,8 +1289,11 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
       _label = [desc.label copy];
       _minFilter = desc.minFilter;
       _magFilter = desc.magFilter;
+      _mipFilter = desc.mipFilter;
       _sAddressMode = desc.sAddressMode;
       _tAddressMode = desc.tAddressMode;
+      _rAddressMode = desc.rAddressMode;
+      _borderColor = desc.borderColor;
       _normalizedCoordinates = desc.normalizedCoordinates;
     } else {
       _normalizedCoordinates = YES;
@@ -1297,6 +1306,29 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
 - (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
+static inline float xef_wrap_coord(float c, MTLSamplerAddressMode mode, BOOL *out_is_border) {
+  if (out_is_border) *out_is_border = NO;
+  switch (mode) {
+    case MTLSamplerAddressModeRepeat:
+      return c - floorf(c);
+    case MTLSamplerAddressModeMirrorRepeat: {
+      float t = c - 2.0f * floorf(c * 0.5f);
+      return (t > 1.0f) ? (2.0f - t) : t;
+    }
+    case MTLSamplerAddressModeClampToZero:
+    case MTLSamplerAddressModeClampToBorderColor:
+      if (c < 0.0f || c > 1.0f) {
+        if (out_is_border) *out_is_border = YES;
+        return 0.0f;
+      }
+      return c;
+    case MTLSamplerAddressModeClampToEdge:
+    case MTLSamplerAddressModeMirrorClampToEdge:
+    default:
+      return xef_clampf(c, 0.0f, 1.0f);
+  }
+}
+
 static inline void xef_tex_sample(XEFMetalTexture *tex, XEFMetalSamplerState *samp, float u, float v, float out_rgba[4]) {
   if (!tex || !tex->_storage || !tex->_storage->_data) {
     out_rgba[0] = out_rgba[1] = out_rgba[2] = 1.0f; out_rgba[3] = 1.0f;
@@ -1308,15 +1340,20 @@ static inline void xef_tex_sample(XEFMetalTexture *tex, XEFMetalSamplerState *sa
     fx = u - 0.5f;
     fy = v - 0.5f;
   } else {
-    if (samp && samp->_sAddressMode == MTLSamplerAddressModeRepeat) {
-      u = u - floorf(u);
-    } else {
-      u = xef_clampf(u, 0.0f, 1.0f);
-    }
-    if (samp && samp->_tAddressMode == MTLSamplerAddressModeRepeat) {
-      v = v - floorf(v);
-    } else {
-      v = xef_clampf(v, 0.0f, 1.0f);
+    BOOL border_u = NO, border_v = NO;
+    MTLSamplerAddressMode sMode = samp ? samp->_sAddressMode : MTLSamplerAddressModeClampToEdge;
+    MTLSamplerAddressMode tMode = samp ? samp->_tAddressMode : MTLSamplerAddressModeClampToEdge;
+    u = xef_wrap_coord(u, sMode, &border_u);
+    v = xef_wrap_coord(v, tMode, &border_v);
+    if (border_u || border_v) {
+      if (samp && (samp->_borderColor == MTLSamplerBorderColorOpaqueBlack)) {
+        out_rgba[0] = out_rgba[1] = out_rgba[2] = 0.0f; out_rgba[3] = 1.0f;
+      } else if (samp && (samp->_borderColor == MTLSamplerBorderColorOpaqueWhite)) {
+        out_rgba[0] = out_rgba[1] = out_rgba[2] = 1.0f; out_rgba[3] = 1.0f;
+      } else {
+        out_rgba[0] = out_rgba[1] = out_rgba[2] = out_rgba[3] = 0.0f;
+      }
+      return;
     }
     fx = u * (float)w - 0.5f;
     fy = v * (float)h - 0.5f;
@@ -3190,8 +3227,62 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   }
 }
 - (void)setThreadgroupMemoryLength:(NSUInteger)length atIndex:(NSUInteger)index {}
-- (void)dispatchThreads:(MTLSize)threadsPerGrid threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {}
-- (void)dispatchThreadgroups:(MTLSize)threadgroupsPerGrid threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {}
+- (void)dispatchThreads:(MTLSize)threadsPerGrid threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {
+  MTLSize threadgroupsPerGrid;
+  threadgroupsPerGrid.width = (threadsPerThreadgroup.width > 0) ? ((threadsPerGrid.width + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width) : 1;
+  threadgroupsPerGrid.height = (threadsPerThreadgroup.height > 0) ? ((threadsPerGrid.height + threadsPerThreadgroup.height - 1) / threadsPerThreadgroup.height) : 1;
+  threadgroupsPerGrid.depth = (threadsPerThreadgroup.depth > 0) ? ((threadsPerGrid.depth + threadsPerThreadgroup.depth - 1) / threadsPerThreadgroup.depth) : 1;
+  [self dispatchThreadgroups:threadgroupsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
+}
+- (void)dispatchThreadgroups:(MTLSize)threadgroupsPerGrid threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {
+  if (!_pipelineState || !_pipelineState->_function) return;
+  NSString *fnName = _pipelineState->_function.name;
+  NSUInteger totalThreads = threadgroupsPerGrid.width * threadsPerThreadgroup.width *
+                            threadgroupsPerGrid.height * threadsPerThreadgroup.height *
+                            threadgroupsPerGrid.depth * threadsPerThreadgroup.depth;
+  if (totalThreads == 0) return;
+
+  /* If this is an add_arrays kernel (from basic-compute or darling-indium) */
+  if ([fnName isEqualToString:@"add_arrays"] || [fnName containsString:@"add_array"]) {
+    if (_buffers[0] && _buffers[1] && _buffers[2]) {
+      const float *inA = (const float *)((const uint8_t *)[_buffers[0] contents] + _bufferOffsets[0]);
+      const float *inB = (const float *)((const uint8_t *)[_buffers[1] contents] + _bufferOffsets[1]);
+      float *result = (float *)((uint8_t *)[_buffers[2] contents] + _bufferOffsets[2]);
+      NSUInteger maxElems = [_buffers[2] length] / sizeof(float);
+      if (totalThreads < maxElems) maxElems = totalThreads;
+      for (NSUInteger i = 0; i < maxElems; i++) {
+        result[i] = inA[i] + inB[i];
+      }
+      return;
+    }
+  }
+
+  /* Support element-wise multiply/scale/copy kernels */
+  if ([fnName containsString:@"mul"] || [fnName containsString:@"scale"]) {
+    if (_buffers[0] && _buffers[1] && _buffers[2]) {
+      const float *inA = (const float *)((const uint8_t *)[_buffers[0] contents] + _bufferOffsets[0]);
+      const float *inB = (const float *)((const uint8_t *)[_buffers[1] contents] + _bufferOffsets[1]);
+      float *result = (float *)((uint8_t *)[_buffers[2] contents] + _bufferOffsets[2]);
+      NSUInteger maxElems = [_buffers[2] length] / sizeof(float);
+      if (totalThreads < maxElems) maxElems = totalThreads;
+      for (NSUInteger i = 0; i < maxElems; i++) {
+        result[i] = inA[i] * inB[i];
+      }
+      return;
+    }
+  }
+
+  /* General buffer copy/fill compute shader */
+  if ([fnName containsString:@"copy"] && _buffers[0] && _buffers[1]) {
+    const uint8_t *src = (const uint8_t *)[_buffers[0] contents] + _bufferOffsets[0];
+    uint8_t *dst = (uint8_t *)[_buffers[1] contents] + _bufferOffsets[1];
+    NSUInteger cpyLen = [_buffers[1] length] - _bufferOffsets[1];
+    NSUInteger srcLen = [_buffers[0] length] - _bufferOffsets[0];
+    if (srcLen < cpyLen) cpyLen = srcLen;
+    memcpy(dst, src, cpyLen);
+    return;
+  }
+}
 - (void)memoryBarrierWithScope:(MTLBarrierScope)scope {}
 - (void)memoryBarrierWithResources:(const id<MTLResource> *)resources count:(NSUInteger)count {}
 - (void)pushDebugGroup:(NSString *)string {}
