@@ -335,7 +335,20 @@ static OS_dispatch_queue *global_queue(int qos_idx) {
     return g_global[qos_idx & 7];
 }
 
+// libclosure keeps no-op retain/release hooks for __block/captured objects until someone installs
+// the ObjC ones; on macOS libdispatch's _os_object_init does it.  Without them a copied block does not
+// retain the objects it captured (NSOperation's KVO blocks ran on freed objects).
+typedef struct { size_t size; void (*retain)(const void *); void (*release)(const void *);
+                 void (*destructInstance)(const void *); } xef_block_callbacks_rr;
+extern void _Block_use_RR2(const xef_block_callbacks_rr *);
+extern id objc_retain(id);
+extern void objc_release(id);
+static void block_destruct_instance(const void *obj) { (void)obj; }
+
 __attribute__((constructor)) static void dispatch_lite_init(void) {
+    static const xef_block_callbacks_rr rr = {sizeof rr, (void (*)(const void *))objc_retain,
+                                              (void (*)(const void *))objc_release, block_destruct_instance};
+    _Block_use_RR2(&rr);
     for (int i = 0; i < 8; i++) {
         OS_dispatch_queue *q = (OS_dispatch_queue *)obj_new([OS_dispatch_queue_global class]);
         queue_init_fields(q, "com.apple.root.queue", Q_GLOBAL);
