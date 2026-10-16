@@ -398,7 +398,7 @@ Zrobione:
   `host_processor_info`, `host_info`, zegary Mach; termios (`darwin_termios.cpp`: struktura, flagi, c_cc, prędkości, TIOC*, openpty/forkpty);
   tsearch/lfind/qsort_b z callbackami gościa; sysctl KERN_PROC/PROCARGS2/BOOTTIME; `dev_t` Darwina; cmsghdr (SCM_RIGHTS) w sendmsg/recvmsg.
 - `tools/ptyrun.py` — programy interaktywne na pty (wpisywanie klawiszy, wynik bez sekwencji escape).
-- macref 50/50 (stan po Go/Rust). Dodatkowo: `darwin_fs.cpp` (rodzina `*at` przez nakładkę rootfs względem dirfd, xattr→`user.*`, statfs/statvfs,
+- macref 56/56 (stan po Java). Dodatkowo: `darwin_fs.cpp` (rodzina `*at` przez nakładkę rootfs względem dirfd, xattr→`user.*`, statfs/statvfs,
   pathconf, mkstemp*, getattrlist, SysV IPC), CommonDigest (`darwin_commoncrypto.cpp`), popen/system przez `/bin/sh` rootfs
   (`fetch_bottle.py --shell`), EVFILT_SIGNAL, timeval z 32-bitowym usec, sem_open, kinfo_proc/PROCARGS2, cmsg/SCM_RIGHTS.
 - Rootfs w chmurze: `/bin/sh` = bash z butelki; `/usr/lib/libcurl.4.dylib` itd. (`--syslibs`). Komendy spoza rootfs (np. `ls`, `uname`)
@@ -429,6 +429,7 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | go 1.27 | działa | `go version`, `go build` (zimny cache, compile/asm/link jako procesy potomne), binarka = wynik z Maca (`tests/darwin/go_test.sh`) |
 | rustc 1.99 / cargo | działa | `cargo new`, `cargo build --release`, linkowanie `ld64.lld` (butelka lld) ze stub-SDK `tools/make_darwin_sdk.py`; binarka działa też natywnie na Macu (`tests/darwin/rust_test.sh`) |
 | ld64.lld 23 | działa | linker Mach-O pod xef-osx |
+| OpenJDK 27 | działa | `java -version`, `javac`, programy z wątkami/strumieniami, JIT C1/C2 (`tests/darwin/java_test.sh`) |
 
 Go i Rust (2026-10-16, cd.):
 - Go: lstat/O_NOFOLLOW/O_EXCL/mkdir/rmdir na samym linku (GOROOT), ścieżka hosta w rootfs → ścieżka gościa (argv[0]),
@@ -441,6 +442,12 @@ Go i Rust (2026-10-16, cd.):
 - Linkowanie bez SDK Apple: `tools/make_darwin_sdk.py` generuje `.tbd` (libSystem = nazwy HLE + funkcje libc hosta + obrazy
   implicit) w `darwin-rootfs/opt/xef-sdk`; `SDKROOT=/opt/xef-sdk`, `-C linker=/opt/homebrew/bin/ld64.lld -C linker-flavor=ld64.lld`.
   cargo: `PATH=/opt/homebrew/bin:...` (inaczej znajdzie rustc hosta), `CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER`, `RUSTFLAGS` jak w teście.
+- Java: `<fenv.h>` arm64 (`darwin_fenv.cpp`; fenv_t 16 B — glibc nadpisywał zapisane x23/x24 HotSpota), `thread_info`
+  (BASIC/IDENTIFIER, zapis tylko rozmiaru flavora — wcześniej memset count*4 zerował rekord ramki), porty wyjątków Mach,
+  `__clear_cache` → unieważnienie translacji (JIT), dlsym nie znajduje funkcji tylko-glibc (np. pthread_condattr_setclock),
+  pipe2/dup3 z flagami Darwina, `guest_readable` czyta stronę (mincore akceptował PROT_NONE __PAGEZERO).
+- libdispatch-lite: stan `dispatch_apply` na stercie z refcountem (spóźniony worker pisał w ramkę stosu wołającego;
+  `foundation_threads` padał ~1/5, flaky także przed sesją). Przebudowa: `tools/build_libdispatch_lite.sh`.
 - Odłożone: clang/gcc „hello world” w C wymaga nagłówków SDK (stdio.h itd.) — z SDK Apple nie kopiujemy; do decyzji użytkownika.
 - Testy gościa Linux (`tests/guest`): 78 ok / 42 fail — identycznie na buildzie sprzed sesji (ld.so/glibc z Debiana trixie w kontenerze),
   nie regresja tej gałęzi.
