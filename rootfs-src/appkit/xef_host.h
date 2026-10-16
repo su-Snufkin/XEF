@@ -50,6 +50,7 @@ void xef_host_pointer_warp(int screen_x, int screen_y);
 int  xef_host_mouse_buttons(void);
 int  xef_host_window_get_geometry(int handle, int *rx, int *ry, int *rw, int *rh);
 int  xef_host_file_dialog(const char *title, const char *initial_path, int is_save, int is_dir, int allow_multi, char *out_buf, int out_len);
+void xef_host_present_pixels(int handle, const void *pixels, int w, int h, int format);
 #ifdef __cplusplus
 }
 #endif

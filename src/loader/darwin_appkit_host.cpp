@@ -28,7 +28,7 @@ namespace {
 #define XEF_EV_FOCUS_OUT 1003
 struct HostEvent { int type, keycode, x, y, flags, handle; };
 
-struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0, x = 0, y = 0; unsigned long visid = 0; bool core = false; };
+struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0, x = 0, y = 0; unsigned long visid = 0; bool core = false; unsigned int metal_tex = 0; };
 std::mutex g_lock;
 Display* g_dpy = nullptr;
 Atom g_wm_delete = 0;
@@ -321,6 +321,81 @@ void xef_host_swap(int h) {
     swap(g_dpy, w->win);
 }
 
+void xef_host_present_pixels(int h, const void* pixels, int pw, int ph, int format) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    HWin* w = find(h);
+    if (!w || !g_dpy) return;
+    static auto mc = G<int (*)(Display*, unsigned long, void*)>("glXMakeCurrent");
+    static auto swap = G<void (*)(Display*, unsigned long)>("glXSwapBuffers");
+    if (!pixels || pw <= 0 || ph <= 0) {
+        if (swap) swap(g_dpy, w->win);
+        return;
+    }
+    if (g_cur != h && mc) {
+        if (mc(g_dpy, w->win, w->ctx)) g_cur = h;
+    }
+    static auto glViewport_fn = G<void (*)(int, int, int, int)>("glViewport");
+    static auto glDisable_fn = G<void (*)(unsigned int)>("glDisable");
+    static auto glEnable_fn = G<void (*)(unsigned int)>("glEnable");
+    static auto glGenTextures_fn = G<void (*)(int, unsigned int*)>("glGenTextures");
+    static auto glBindTexture_fn = G<void (*)(unsigned int, unsigned int)>("glBindTexture");
+    static auto glTexParameteri_fn = G<void (*)(unsigned int, unsigned int, int)>("glTexParameteri");
+    static auto glPixelStorei_fn = G<void (*)(unsigned int, int)>("glPixelStorei");
+    static auto glTexImage2D_fn = G<void (*)(unsigned int, int, int, int, int, int, unsigned int, unsigned int, const void*)>("glTexImage2D");
+    static auto glMatrixMode_fn = G<void (*)(unsigned int)>("glMatrixMode");
+    static auto glLoadIdentity_fn = G<void (*)()>("glLoadIdentity");
+    static auto glColor4f_fn = G<void (*)(float, float, float, float)>("glColor4f");
+    static auto glBegin_fn = G<void (*)(unsigned int)>("glBegin");
+    static auto glEnd_fn = G<void (*)()>("glEnd");
+    static auto glTexCoord2f_fn = G<void (*)(float, float)>("glTexCoord2f");
+    static auto glVertex2f_fn = G<void (*)(float, float)>("glVertex2f");
+    static auto glBindProgram_fn = G<void (*)(unsigned int)>("glUseProgram");
+
+    if (glBindProgram_fn) glBindProgram_fn(0);
+    if (glViewport_fn) glViewport_fn(0, 0, w->w > 0 ? w->w : pw, w->h > 0 ? w->h : ph);
+    if (glDisable_fn) {
+        glDisable_fn(0x0B71 /*GL_DEPTH_TEST*/);
+        glDisable_fn(0x0C11 /*GL_SCISSOR_TEST*/);
+        glDisable_fn(0x0B44 /*GL_CULL_FACE*/);
+        glDisable_fn(0x0BE2 /*GL_BLEND*/);
+        glDisable_fn(0x0BC0 /*GL_ALPHA_TEST*/);
+    }
+    if (glEnable_fn) glEnable_fn(0x0DE1 /*GL_TEXTURE_2D*/);
+    if (!w->metal_tex && glGenTextures_fn) glGenTextures_fn(1, &w->metal_tex);
+    if (w->metal_tex && glBindTexture_fn && glTexImage2D_fn) {
+        glBindTexture_fn(0x0DE1 /*GL_TEXTURE_2D*/, w->metal_tex);
+        if (glTexParameteri_fn) {
+            glTexParameteri_fn(0x0DE1, 0x2801 /*GL_TEXTURE_MIN_FILTER*/, 0x2601 /*GL_LINEAR*/);
+            glTexParameteri_fn(0x0DE1, 0x2800 /*GL_TEXTURE_MAG_FILTER*/, 0x2601 /*GL_LINEAR*/);
+            glTexParameteri_fn(0x0DE1, 0x2802 /*GL_TEXTURE_WRAP_S*/, 0x812F /*GL_CLAMP_TO_EDGE*/);
+            glTexParameteri_fn(0x0DE1, 0x2803 /*GL_TEXTURE_WRAP_T*/, 0x812F /*GL_CLAMP_TO_EDGE*/);
+        }
+        if (glPixelStorei_fn) {
+            glPixelStorei_fn(0x0CF5 /*GL_UNPACK_ALIGNMENT*/, 1);
+            glPixelStorei_fn(0x0CF2 /*GL_UNPACK_ROW_LENGTH*/, 0);
+        }
+        unsigned int gl_fmt = (format == 80 || format == 81) ? 0x80E1 /*GL_BGRA*/ : 0x1908 /*GL_RGBA*/;
+        glTexImage2D_fn(0x0DE1 /*GL_TEXTURE_2D*/, 0, 0x1908 /*GL_RGBA*/, pw, ph, 0, gl_fmt, 0x1401 /*GL_UNSIGNED_BYTE*/, pixels);
+    }
+    if (glMatrixMode_fn && glLoadIdentity_fn) {
+        glMatrixMode_fn(0x1701 /*GL_PROJECTION*/);
+        glLoadIdentity_fn();
+        glMatrixMode_fn(0x1700 /*GL_MODELVIEW*/);
+        glLoadIdentity_fn();
+    }
+    if (glColor4f_fn) glColor4f_fn(1.0f, 1.0f, 1.0f, 1.0f);
+    if (glBegin_fn && glEnd_fn && glTexCoord2f_fn && glVertex2f_fn) {
+        glBegin_fn(0x0007 /*GL_QUADS*/);
+        glTexCoord2f_fn(0.0f, 0.0f); glVertex2f_fn(-1.0f,  1.0f);
+        glTexCoord2f_fn(1.0f, 0.0f); glVertex2f_fn( 1.0f,  1.0f);
+        glTexCoord2f_fn(1.0f, 1.0f); glVertex2f_fn( 1.0f, -1.0f);
+        glTexCoord2f_fn(0.0f, 1.0f); glVertex2f_fn(-1.0f, -1.0f);
+        glEnd_fn();
+    }
+    if (glDisable_fn) glDisable_fn(0x0DE1 /*GL_TEXTURE_2D*/);
+    if (swap) swap(g_dpy, w->win);
+}
+
 // ---- profile / screen / frame / pointer ----------------------------------------------------------------
 void xef_host_gl_set_profile(int h, int profile) {
     std::lock_guard<std::mutex> lk(g_lock);
@@ -552,6 +627,7 @@ const Fn kFns[] = {
     {"_xef_host_mouse_buttons", (void*)&xef_host_mouse_buttons},
     {"_xef_host_window_get_geometry", (void*)&xef_host_window_get_geometry},
     {"_xef_host_file_dialog", (void*)&xef_host_file_dialog},
+    {"_xef_host_present_pixels", (void*)&xef_host_present_pixels},
 };
 
 } // namespace

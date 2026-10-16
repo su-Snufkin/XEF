@@ -1,15 +1,109 @@
 /* Metal-lite for xef-osx: MTLDevice, MTLCommandQueue, MTLCommandBuffer, MTLRenderCommandEncoder,
- * MTLRenderPipelineDescriptor, MTLTextureDescriptor, MTLBuffer, MTLTexture, MTLLibrary, etc. */
+ * MTLRenderPipelineDescriptor, MTLTextureDescriptor, MTLBuffer, MTLTexture, MTLLibrary,
+ * software/host-bridged 2D/3D rasterizer, blit engine, and compute support. */
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <Metal/Metal.h>
 #import <objc/runtime.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <math.h>
 
 NSString *const MTLDeviceWasAddedNotification = @"MTLDeviceWasAddedNotification";
 NSString *const MTLDeviceRemovalRequestedNotification = @"MTLDeviceRemovalRequestedNotification";
 NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotification";
+NSString *const MTLLibraryErrorDomain = @"MTLLibraryErrorDomain";
+NSString *const MTLRenderPipelineErrorDomain = @"MTLRenderPipelineErrorDomain";
+NSString *const MTLCommandBufferErrorDomain = @"MTLCommandBufferErrorDomain";
+
+static NSUInteger xef_mtl_bpp(MTLPixelFormat fmt) {
+  switch ((NSUInteger)fmt) {
+    case 1:  /* A8Unorm */
+    case 10: /* R8Unorm */
+    case 11: /* R8Unorm_sRGB */
+    case 12: /* R8Snorm */
+    case 13: /* R8Uint */
+    case 14: /* R8Sint */
+    case 250: /* Stencil8 */
+      return 1;
+    case 20: /* R16Unorm */
+    case 22: /* R16Snorm */
+    case 23: /* R16Uint */
+    case 24: /* R16Sint */
+    case 25: /* R16Float */
+    case 30: /* RG8Unorm */
+    case 31: /* RG8Unorm_sRGB */
+    case 32: /* RG8Snorm */
+    case 33: /* RG8Uint */
+    case 34: /* RG8Sint */
+    case 40: /* B5G6R5Unorm */
+    case 41: /* A1BGR5Unorm */
+    case 42: /* ABGR4Unorm */
+    case 43: /* BGR5A1Unorm */
+    case 251: /* Depth16Unorm */
+      return 2;
+    case 60: /* RG16Unorm */
+    case 62: /* RG16Snorm */
+    case 63: /* RG16Uint */
+    case 64: /* RG16Sint */
+    case 65: /* RG16Float */
+    case 110: /* RGBA16Unorm */
+    case 112: /* RGBA16Snorm */
+    case 113: /* RGBA16Uint */
+    case 114: /* RGBA16Sint */
+    case 115: /* RGBA16Float */
+    case 103: /* RG32Uint */
+    case 104: /* RG32Sint */
+    case 105: /* RG32Float */
+    case 260: /* Depth32Float_Stencil8 */
+      return 8;
+    case 123: /* RGBA32Uint */
+    case 124: /* RGBA32Sint */
+    case 125: /* RGBA32Float */
+      return 16;
+    default:
+      return 4;
+  }
+}
+
+static inline float xef_clampf(float v, float lo, float hi) {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static float xef_half_to_float(uint16_t h) {
+  uint32_t sign = (uint32_t)(h & 0x8000) << 16;
+  uint32_t exp = (h >> 10) & 0x1F;
+  uint32_t mant = h & 0x03FF;
+  uint32_t fbits = 0;
+  if (exp == 0) {
+    if (mant == 0) fbits = sign;
+    else {
+      exp = 1;
+      while ((mant & 0x0400) == 0) { mant <<= 1; exp--; }
+      mant &= 0x03FF;
+      fbits = sign | ((exp + (127 - 15)) << 23) | (mant << 13);
+    }
+  } else if (exp == 31) {
+    fbits = sign | 0x7F800000 | (mant << 13);
+  } else {
+    fbits = sign | ((exp + (127 - 15)) << 23) | (mant << 13);
+  }
+  float out = 0.0f;
+  memcpy(&out, &fbits, sizeof(float));
+  return out;
+}
+
+static uint16_t xef_float_to_half(float v) {
+  uint32_t fbits = 0;
+  memcpy(&fbits, &v, sizeof(uint32_t));
+  uint16_t sign = (uint16_t)((fbits >> 16) & 0x8000);
+  int32_t exp = (int32_t)((fbits >> 23) & 0xFF) - 127 + 15;
+  uint32_t mant = fbits & 0x007FFFFF;
+  if (exp <= 0) return sign;
+  if (exp >= 31) return sign | 0x7C00;
+  return sign | (uint16_t)(exp << 10) | (uint16_t)(mant >> 13);
+}
 
 /* ------------------------------------------------------------------- Descriptors */
 
@@ -63,6 +157,7 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 @end
 
 @implementation MTLRenderPipelineColorAttachmentDescriptorArray {
+@public
   MTLRenderPipelineColorAttachmentDescriptor *_descriptors[8];
 }
 - (id)init {
@@ -78,9 +173,9 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 }
 - (void)setObject:(MTLRenderPipelineColorAttachmentDescriptor *)attachment atIndexedSubscript:(NSUInteger)idx {
   if (idx >= 8) return;
-  [attachment retain];
+  MTLRenderPipelineColorAttachmentDescriptor *c = [attachment copy];
   [_descriptors[idx] release];
-  _descriptors[idx] = attachment;
+  _descriptors[idx] = c;
 }
 - (void)dealloc {
   for (int i = 0; i < 8; i++) [_descriptors[i] release];
@@ -93,6 +188,14 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   MTLVertexStepFunction _stepFunction;
   NSUInteger _stepRate;
 }
+- (id)init {
+  if ((self = [super init])) {
+    _stride = 0;
+    _stepFunction = MTLVertexStepFunctionPerVertex;
+    _stepRate = 1;
+  }
+  return self;
+}
 - (NSUInteger)stride { return _stride; } - (void)setStride:(NSUInteger)s { _stride = s; }
 - (MTLVertexStepFunction)stepFunction { return _stepFunction; } - (void)setStepFunction:(MTLVertexStepFunction)f { _stepFunction = f; }
 - (NSUInteger)stepRate { return _stepRate; } - (void)setStepRate:(NSUInteger)r { _stepRate = r; }
@@ -104,6 +207,7 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 @end
 
 @implementation MTLVertexBufferLayoutDescriptorArray {
+@public
   MTLVertexBufferLayoutDescriptor *_layouts[31];
 }
 - (MTLVertexBufferLayoutDescriptor *)objectAtIndexedSubscript:(NSUInteger)idx {
@@ -113,7 +217,9 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 }
 - (void)setObject:(MTLVertexBufferLayoutDescriptor *)layout atIndexedSubscript:(NSUInteger)idx {
   if (idx >= 31) return;
-  [layout retain]; [_layouts[idx] release]; _layouts[idx] = layout;
+  MTLVertexBufferLayoutDescriptor *c = [layout copy];
+  [_layouts[idx] release];
+  _layouts[idx] = c;
 }
 - (void)dealloc {
   for (int i = 0; i < 31; i++) [_layouts[i] release];
@@ -137,6 +243,7 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 @end
 
 @implementation MTLVertexAttributeDescriptorArray {
+@public
   MTLVertexAttributeDescriptor *_attributes[31];
 }
 - (MTLVertexAttributeDescriptor *)objectAtIndexedSubscript:(NSUInteger)idx {
@@ -146,7 +253,9 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 }
 - (void)setObject:(MTLVertexAttributeDescriptor *)attr atIndexedSubscript:(NSUInteger)idx {
   if (idx >= 31) return;
-  [attr retain]; [_attributes[idx] release]; _attributes[idx] = attr;
+  MTLVertexAttributeDescriptor *c = [attr copy];
+  [_attributes[idx] release];
+  _attributes[idx] = c;
 }
 - (void)dealloc {
   for (int i = 0; i < 31; i++) [_attributes[i] release];
@@ -174,6 +283,10 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 }
 - (id)copyWithZone:(NSZone *)zone {
   MTLVertexDescriptor *c = [[MTLVertexDescriptor allocWithZone:zone] init];
+  for (int i = 0; i < 31; i++) {
+    if (_layouts->_layouts[i]) c->_layouts->_layouts[i] = [_layouts->_layouts[i] copy];
+    if (_attributes->_attributes[i]) c->_attributes->_attributes[i] = [_attributes->_attributes[i] copy];
+  }
   return c;
 }
 - (void)dealloc {
@@ -191,12 +304,18 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   MTLPixelFormat _depthAttachmentPixelFormat;
   MTLPixelFormat _stencilAttachmentPixelFormat;
   NSUInteger _sampleCount;
+  NSUInteger _rasterSampleCount;
   BOOL _rasterizationEnabled;
+  BOOL _alphaToCoverageEnabled;
+  BOOL _alphaToOneEnabled;
+  MTLPrimitiveTopologyClass _inputPrimitiveTopology;
 }
 - (id)init {
   if ((self = [super init])) {
     _colorAttachments = [[MTLRenderPipelineColorAttachmentDescriptorArray alloc] init];
+    _vertexDescriptor = [[MTLVertexDescriptor alloc] init];
     _sampleCount = 1;
+    _rasterSampleCount = 1;
     _rasterizationEnabled = YES;
   }
   return self;
@@ -204,21 +323,26 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (id<MTLFunction>)vertexFunction { return _vertexFunction; } - (void)setVertexFunction:(id<MTLFunction>)f { [f retain]; [(id)_vertexFunction release]; _vertexFunction = f; }
 - (id<MTLFunction>)fragmentFunction { return _fragmentFunction; } - (void)setFragmentFunction:(id<MTLFunction>)f { [f retain]; [(id)_fragmentFunction release]; _fragmentFunction = f; }
-- (MTLVertexDescriptor *)vertexDescriptor { return _vertexDescriptor; } - (void)setVertexDescriptor:(MTLVertexDescriptor *)d { [d retain]; [_vertexDescriptor release]; _vertexDescriptor = d; }
+- (MTLVertexDescriptor *)vertexDescriptor { return _vertexDescriptor; } - (void)setVertexDescriptor:(MTLVertexDescriptor *)d { MTLVertexDescriptor *c = [d copy]; [_vertexDescriptor release]; _vertexDescriptor = c; }
 - (MTLRenderPipelineColorAttachmentDescriptorArray *)colorAttachments { return _colorAttachments; }
 - (MTLPixelFormat)depthAttachmentPixelFormat { return _depthAttachmentPixelFormat; } - (void)setDepthAttachmentPixelFormat:(MTLPixelFormat)f { _depthAttachmentPixelFormat = f; }
 - (MTLPixelFormat)stencilAttachmentPixelFormat { return _stencilAttachmentPixelFormat; } - (void)setStencilAttachmentPixelFormat:(MTLPixelFormat)f { _stencilAttachmentPixelFormat = f; }
-- (NSUInteger)sampleCount { return _sampleCount; } - (void)setSampleCount:(NSUInteger)c { _sampleCount = c; }
+- (NSUInteger)sampleCount { return _sampleCount; } - (void)setSampleCount:(NSUInteger)c { _sampleCount = c; _rasterSampleCount = c; }
+- (NSUInteger)rasterSampleCount { return _rasterSampleCount; } - (void)setRasterSampleCount:(NSUInteger)c { _rasterSampleCount = c; _sampleCount = c; }
 - (BOOL)isRasterizationEnabled { return _rasterizationEnabled; } - (void)setRasterizationEnabled:(BOOL)e { _rasterizationEnabled = e; }
+- (BOOL)isAlphaToCoverageEnabled { return _alphaToCoverageEnabled; } - (void)setAlphaToCoverageEnabled:(BOOL)e { _alphaToCoverageEnabled = e; }
+- (BOOL)isAlphaToOneEnabled { return _alphaToOneEnabled; } - (void)setAlphaToOneEnabled:(BOOL)e { _alphaToOneEnabled = e; }
+- (MTLPrimitiveTopologyClass)inputPrimitiveTopology { return _inputPrimitiveTopology; } - (void)setInputPrimitiveTopology:(MTLPrimitiveTopologyClass)t { _inputPrimitiveTopology = t; }
 - (void)reset {
   [_label release]; _label = nil;
   [(id)_vertexFunction release]; _vertexFunction = nil;
   [(id)_fragmentFunction release]; _fragmentFunction = nil;
-  [_vertexDescriptor release]; _vertexDescriptor = nil;
+  [_vertexDescriptor release]; _vertexDescriptor = [[MTLVertexDescriptor alloc] init];
   [_colorAttachments release]; _colorAttachments = [[MTLRenderPipelineColorAttachmentDescriptorArray alloc] init];
   _depthAttachmentPixelFormat = MTLPixelFormatInvalid;
   _stencilAttachmentPixelFormat = MTLPixelFormatInvalid;
   _sampleCount = 1;
+  _rasterSampleCount = 1;
   _rasterizationEnabled = YES;
 }
 - (id)copyWithZone:(NSZone *)zone {
@@ -227,10 +351,18 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   c.vertexFunction = _vertexFunction;
   c.fragmentFunction = _fragmentFunction;
   c.vertexDescriptor = _vertexDescriptor;
+  for (int i = 0; i < 8; i++) {
+    if (_colorAttachments->_descriptors[i]) {
+      c->_colorAttachments->_descriptors[i] = [_colorAttachments->_descriptors[i] copy];
+    }
+  }
   c.depthAttachmentPixelFormat = _depthAttachmentPixelFormat;
   c.stencilAttachmentPixelFormat = _stencilAttachmentPixelFormat;
   c.sampleCount = _sampleCount;
   c.rasterizationEnabled = _rasterizationEnabled;
+  c.alphaToCoverageEnabled = _alphaToCoverageEnabled;
+  c.alphaToOneEnabled = _alphaToOneEnabled;
+  c.inputPrimitiveTopology = _inputPrimitiveTopology;
   return c;
 }
 - (void)dealloc {
@@ -243,9 +375,19 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 @implementation MTLComputePipelineDescriptor {
   NSString *_label;
   id<MTLFunction> _computeFunction;
+  BOOL _threadGroupSizeIsMultipleOfThreadExecutionWidth;
+  NSUInteger _maxTotalThreadsPerThreadgroup;
 }
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (id<MTLFunction>)computeFunction { return _computeFunction; } - (void)setComputeFunction:(id<MTLFunction>)f { [f retain]; [(id)_computeFunction release]; _computeFunction = f; }
+- (BOOL)threadGroupSizeIsMultipleOfThreadExecutionWidth { return _threadGroupSizeIsMultipleOfThreadExecutionWidth; }
+- (void)setThreadGroupSizeIsMultipleOfThreadExecutionWidth:(BOOL)f { _threadGroupSizeIsMultipleOfThreadExecutionWidth = f; }
+- (NSUInteger)maxTotalThreadsPerThreadgroup { return _maxTotalThreadsPerThreadgroup; }
+- (void)setMaxTotalThreadsPerThreadgroup:(NSUInteger)m { _maxTotalThreadsPerThreadgroup = m; }
+- (void)reset {
+  [_label release]; _label = nil;
+  [(id)_computeFunction release]; _computeFunction = nil;
+}
 - (id)copyWithZone:(NSZone *)zone {
   MTLComputePipelineDescriptor *c = [[MTLComputePipelineDescriptor allocWithZone:zone] init];
   c.label = _label; c.computeFunction = _computeFunction;
@@ -261,14 +403,23 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   MTLCompareFunction _stencilCompareFunction;
   MTLStencilOperation _stencilFailureOperation;
   MTLStencilOperation _depthFailureOperation;
-  MTLStencilOperation _depthNormalFailureOperation;
+  MTLStencilOperation _depthStencilPassOperation;
   uint32_t _readMask;
   uint32_t _writeMask;
+}
+- (id)init {
+  if ((self = [super init])) {
+    _stencilCompareFunction = MTLCompareFunctionAlways;
+    _readMask = 0xFFFFFFFF;
+    _writeMask = 0xFFFFFFFF;
+  }
+  return self;
 }
 - (MTLCompareFunction)stencilCompareFunction { return _stencilCompareFunction; } - (void)setStencilCompareFunction:(MTLCompareFunction)f { _stencilCompareFunction = f; }
 - (MTLStencilOperation)stencilFailureOperation { return _stencilFailureOperation; } - (void)setStencilFailureOperation:(MTLStencilOperation)o { _stencilFailureOperation = o; }
 - (MTLStencilOperation)depthFailureOperation { return _depthFailureOperation; } - (void)setDepthFailureOperation:(MTLStencilOperation)o { _depthFailureOperation = o; }
-- (MTLStencilOperation)depthNormalFailureOperation { return _depthNormalFailureOperation; } - (void)setDepthNormalFailureOperation:(MTLStencilOperation)o { _depthNormalFailureOperation = o; }
+- (MTLStencilOperation)depthStencilPassOperation { return _depthStencilPassOperation; } - (void)setDepthStencilPassOperation:(MTLStencilOperation)o { _depthStencilPassOperation = o; }
+- (MTLStencilOperation)depthNormalFailureOperation { return _depthStencilPassOperation; } - (void)setDepthNormalFailureOperation:(MTLStencilOperation)o { _depthStencilPassOperation = o; }
 - (uint32_t)readMask { return _readMask; } - (void)setReadMask:(uint32_t)m { _readMask = m; }
 - (uint32_t)writeMask { return _writeMask; } - (void)setWriteMask:(uint32_t)m { _writeMask = m; }
 - (id)copyWithZone:(NSZone *)zone {
@@ -276,7 +427,7 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   c->_stencilCompareFunction = _stencilCompareFunction;
   c->_stencilFailureOperation = _stencilFailureOperation;
   c->_depthFailureOperation = _depthFailureOperation;
-  c->_depthNormalFailureOperation = _depthNormalFailureOperation;
+  c->_depthStencilPassOperation = _depthStencilPassOperation;
   c->_readMask = _readMask; c->_writeMask = _writeMask;
   return c;
 }
@@ -289,6 +440,15 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   MTLStencilDescriptor *_frontFaceStencil;
   MTLStencilDescriptor *_backFaceStencil;
 }
+- (id)init {
+  if ((self = [super init])) {
+    _depthCompareFunction = MTLCompareFunctionAlways;
+    _depthWriteEnabled = NO;
+    _frontFaceStencil = [[MTLStencilDescriptor alloc] init];
+    _backFaceStencil = [[MTLStencilDescriptor alloc] init];
+  }
+  return self;
+}
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (MTLCompareFunction)depthCompareFunction { return _depthCompareFunction; } - (void)setDepthCompareFunction:(MTLCompareFunction)f { _depthCompareFunction = f; }
 - (BOOL)isDepthWriteEnabled { return _depthWriteEnabled; } - (void)setDepthWriteEnabled:(BOOL)e { _depthWriteEnabled = e; }
@@ -297,7 +457,8 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 - (id)copyWithZone:(NSZone *)zone {
   MTLDepthStencilDescriptor *c = [[MTLDepthStencilDescriptor allocWithZone:zone] init];
   c.label = _label; c.depthCompareFunction = _depthCompareFunction; c.depthWriteEnabled = _depthWriteEnabled;
-  c.frontFaceStencil = _frontFaceStencil; c.backFaceStencil = _backFaceStencil;
+  c.frontFaceStencil = [[_frontFaceStencil copy] autorelease];
+  c.backFaceStencil = [[_backFaceStencil copy] autorelease];
   return c;
 }
 - (void)dealloc {
@@ -316,12 +477,15 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   MTLSamplerAddressMode _rAddressMode;
   NSUInteger _maxAnisotropy;
   MTLCompareFunction _compareFunction;
+  BOOL _normalizedCoordinates;
   float _lodMinClamp;
   float _lodMaxClamp;
+  MTLSamplerBorderColor _borderColor;
 }
 - (id)init {
   if ((self = [super init])) {
     _maxAnisotropy = 1;
+    _normalizedCoordinates = YES;
     _lodMaxClamp = 1000.0f;
   }
   return self;
@@ -335,14 +499,18 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 - (MTLSamplerAddressMode)rAddressMode { return _rAddressMode; } - (void)setRAddressMode:(MTLSamplerAddressMode)m { _rAddressMode = m; }
 - (NSUInteger)maxAnisotropy { return _maxAnisotropy; } - (void)setMaxAnisotropy:(NSUInteger)a { _maxAnisotropy = a; }
 - (MTLCompareFunction)compareFunction { return _compareFunction; } - (void)setCompareFunction:(MTLCompareFunction)f { _compareFunction = f; }
+- (BOOL)normalizedCoordinates { return _normalizedCoordinates; } - (void)setNormalizedCoordinates:(BOOL)n { _normalizedCoordinates = n; }
 - (float)lodMinClamp { return _lodMinClamp; } - (void)setLodMinClamp:(float)c { _lodMinClamp = c; }
 - (float)lodMaxClamp { return _lodMaxClamp; } - (void)setLodMaxClamp:(float)c { _lodMaxClamp = c; }
+- (MTLSamplerBorderColor)borderColor { return _borderColor; } - (void)setBorderColor:(MTLSamplerBorderColor)b { _borderColor = b; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLSamplerDescriptor *c = [[MTLSamplerDescriptor allocWithZone:zone] init];
   c.label = _label; c.minFilter = _minFilter; c.magFilter = _magFilter; c.mipFilter = _mipFilter;
   c.sAddressMode = _sAddressMode; c.tAddressMode = _tAddressMode; c.rAddressMode = _rAddressMode;
   c.maxAnisotropy = _maxAnisotropy; c.compareFunction = _compareFunction;
+  c.normalizedCoordinates = _normalizedCoordinates;
   c.lodMinClamp = _lodMinClamp; c.lodMaxClamp = _lodMaxClamp;
+  c.borderColor = _borderColor;
   return c;
 }
 - (void)dealloc {
@@ -363,7 +531,9 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   MTLResourceOptions _resourceOptions;
   MTLCPUCacheMode _cpuCacheMode;
   MTLStorageMode _storageMode;
+  MTLHazardTrackingMode _hazardTrackingMode;
   MTLTextureUsage _usage;
+  BOOL _allowGPUOptimizedContents;
 }
 + (MTLTextureDescriptor *)texture2DDescriptorWithPixelFormat:(MTLPixelFormat)pixelFormat width:(NSUInteger)width height:(NSUInteger)height mipmapped:(BOOL)mipmapped {
   MTLTextureDescriptor *d = [[[self alloc] init] autorelease];
@@ -377,6 +547,29 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   d->_arrayLength = 1;
   return d;
 }
++ (MTLTextureDescriptor *)textureCubeDescriptorWithPixelFormat:(MTLPixelFormat)pixelFormat size:(NSUInteger)size mipmapped:(BOOL)mipmapped {
+  MTLTextureDescriptor *d = [[[self alloc] init] autorelease];
+  d->_textureType = MTLTextureTypeCube;
+  d->_pixelFormat = pixelFormat;
+  d->_width = size;
+  d->_height = size;
+  d->_depth = 1;
+  d->_mipmapLevelCount = mipmapped ? (NSUInteger)(log2(size) + 1) : 1;
+  d->_sampleCount = 1;
+  d->_arrayLength = 1;
+  return d;
+}
++ (MTLTextureDescriptor *)textureBufferDescriptorWithPixelFormat:(MTLPixelFormat)pixelFormat width:(NSUInteger)width resourceOptions:(MTLResourceOptions)resourceOptions usage:(MTLTextureUsage)usage {
+  MTLTextureDescriptor *d = [[[self alloc] init] autorelease];
+  d->_textureType = MTLTextureTypeTextureBuffer;
+  d->_pixelFormat = pixelFormat;
+  d->_width = width;
+  d->_height = 1;
+  d->_depth = 1;
+  d->_resourceOptions = resourceOptions;
+  d->_usage = usage;
+  return d;
+}
 - (id)init {
   if ((self = [super init])) {
     _textureType = MTLTextureType2D;
@@ -384,6 +577,7 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
     _width = 1; _height = 1; _depth = 1;
     _mipmapLevelCount = 1; _sampleCount = 1; _arrayLength = 1;
     _usage = MTLTextureUsageShaderRead;
+    _allowGPUOptimizedContents = YES;
   }
   return self;
 }
@@ -398,44 +592,65 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 - (MTLResourceOptions)resourceOptions { return _resourceOptions; } - (void)setResourceOptions:(MTLResourceOptions)o { _resourceOptions = o; }
 - (MTLCPUCacheMode)cpuCacheMode { return _cpuCacheMode; } - (void)setCpuCacheMode:(MTLCPUCacheMode)m { _cpuCacheMode = m; }
 - (MTLStorageMode)storageMode { return _storageMode; } - (void)setStorageMode:(MTLStorageMode)m { _storageMode = m; }
+- (MTLHazardTrackingMode)hazardTrackingMode { return _hazardTrackingMode; } - (void)setHazardTrackingMode:(MTLHazardTrackingMode)m { _hazardTrackingMode = m; }
 - (MTLTextureUsage)usage { return _usage; } - (void)setUsage:(MTLTextureUsage)u { _usage = u; }
+- (BOOL)allowGPUOptimizedContents { return _allowGPUOptimizedContents; } - (void)setAllowGPUOptimizedContents:(BOOL)a { _allowGPUOptimizedContents = a; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLTextureDescriptor *c = [[MTLTextureDescriptor allocWithZone:zone] init];
   c->_textureType = _textureType; c->_pixelFormat = _pixelFormat;
   c->_width = _width; c->_height = _height; c->_depth = _depth;
   c->_mipmapLevelCount = _mipmapLevelCount; c->_sampleCount = _sampleCount;
   c->_arrayLength = _arrayLength; c->_usage = _usage;
+  c->_resourceOptions = _resourceOptions; c->_storageMode = _storageMode;
   return c;
 }
 @end
 
-@implementation MTLRenderPassColorAttachmentDescriptor {
+@implementation MTLRenderPassAttachmentDescriptor {
   id<MTLTexture> _texture;
+  id<MTLTexture> _resolveTexture;
   NSUInteger _level;
   NSUInteger _slice;
+  NSUInteger _depthPlane;
   MTLLoadAction _loadAction;
   MTLStoreAction _storeAction;
-  MTLClearColor _clearColor;
 }
 - (id<MTLTexture>)texture { return _texture; } - (void)setTexture:(id<MTLTexture>)t { [t retain]; [(id)_texture release]; _texture = t; }
+- (id<MTLTexture>)resolveTexture { return _resolveTexture; } - (void)setResolveTexture:(id<MTLTexture>)t { [t retain]; [(id)_resolveTexture release]; _resolveTexture = t; }
 - (NSUInteger)level { return _level; } - (void)setLevel:(NSUInteger)l { _level = l; }
 - (NSUInteger)slice { return _slice; } - (void)setSlice:(NSUInteger)s { _slice = s; }
+- (NSUInteger)depthPlane { return _depthPlane; } - (void)setDepthPlane:(NSUInteger)d { _depthPlane = d; }
 - (MTLLoadAction)loadAction { return _loadAction; } - (void)setLoadAction:(MTLLoadAction)a { _loadAction = a; }
 - (MTLStoreAction)storeAction { return _storeAction; } - (void)setStoreAction:(MTLStoreAction)a { _storeAction = a; }
-- (MTLClearColor)clearColor { return _clearColor; } - (void)setClearColor:(MTLClearColor)c { _clearColor = c; }
-- (id)copyWithZone:(NSZone *)zone {
-  MTLRenderPassColorAttachmentDescriptor *c = [[MTLRenderPassColorAttachmentDescriptor allocWithZone:zone] init];
-  c.texture = _texture; c.level = _level; c.slice = _slice;
-  c.loadAction = _loadAction; c.storeAction = _storeAction; c.clearColor = _clearColor;
-  return c;
-}
 - (void)dealloc {
   [(id)_texture release];
+  [(id)_resolveTexture release];
   [super dealloc];
 }
 @end
 
+@implementation MTLRenderPassColorAttachmentDescriptor {
+  MTLClearColor _clearColor;
+}
+- (id)init {
+  if ((self = [super init])) {
+    _clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+  }
+  return self;
+}
+- (MTLClearColor)clearColor { return _clearColor; } - (void)setClearColor:(MTLClearColor)c { _clearColor = c; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLRenderPassColorAttachmentDescriptor *c = [[MTLRenderPassColorAttachmentDescriptor allocWithZone:zone] init];
+  c.texture = self.texture; c.resolveTexture = self.resolveTexture;
+  c.level = self.level; c.slice = self.slice; c.depthPlane = self.depthPlane;
+  c.loadAction = self.loadAction; c.storeAction = self.storeAction;
+  c.clearColor = _clearColor;
+  return c;
+}
+@end
+
 @implementation MTLRenderPassColorAttachmentDescriptorArray {
+@public
   MTLRenderPassColorAttachmentDescriptor *_attachments[8];
 }
 - (MTLRenderPassColorAttachmentDescriptor *)objectAtIndexedSubscript:(NSUInteger)idx {
@@ -445,7 +660,9 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 }
 - (void)setObject:(MTLRenderPassColorAttachmentDescriptor *)attachment atIndexedSubscript:(NSUInteger)idx {
   if (idx >= 8) return;
-  [attachment retain]; [_attachments[idx] release]; _attachments[idx] = attachment;
+  MTLRenderPassColorAttachmentDescriptor *c = [attachment copy];
+  [_attachments[idx] release];
+  _attachments[idx] = c;
 }
 - (void)dealloc {
   for (int i = 0; i < 8; i++) [_attachments[i] release];
@@ -454,35 +671,47 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 @end
 
 @implementation MTLRenderPassDepthAttachmentDescriptor {
-  id<MTLTexture> _texture;
-  MTLLoadAction _loadAction;
-  MTLStoreAction _storeAction;
   double _clearDepth;
 }
-- (id<MTLTexture>)texture { return _texture; } - (void)setTexture:(id<MTLTexture>)t { [t retain]; [(id)_texture release]; _texture = t; }
-- (MTLLoadAction)loadAction { return _loadAction; } - (void)setLoadAction:(MTLLoadAction)a { _loadAction = a; }
-- (MTLStoreAction)storeAction { return _storeAction; } - (void)setStoreAction:(MTLStoreAction)a { _storeAction = a; }
+- (id)init {
+  if ((self = [super init])) {
+    _clearDepth = 1.0;
+  }
+  return self;
+}
 - (double)clearDepth { return _clearDepth; } - (void)setClearDepth:(double)d { _clearDepth = d; }
-- (void)dealloc { [(id)_texture release]; [super dealloc]; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLRenderPassDepthAttachmentDescriptor *c = [[MTLRenderPassDepthAttachmentDescriptor allocWithZone:zone] init];
+  c.texture = self.texture; c.resolveTexture = self.resolveTexture;
+  c.level = self.level; c.slice = self.slice;
+  c.loadAction = self.loadAction; c.storeAction = self.storeAction;
+  c.clearDepth = _clearDepth;
+  return c;
+}
 @end
 
 @implementation MTLRenderPassStencilAttachmentDescriptor {
-  id<MTLTexture> _texture;
-  MTLLoadAction _loadAction;
-  MTLStoreAction _storeAction;
   uint32_t _clearStencil;
 }
-- (id<MTLTexture>)texture { return _texture; } - (void)setTexture:(id<MTLTexture>)t { [t retain]; [(id)_texture release]; _texture = t; }
-- (MTLLoadAction)loadAction { return _loadAction; } - (void)setLoadAction:(MTLLoadAction)a { _loadAction = a; }
-- (MTLStoreAction)storeAction { return _storeAction; } - (void)setStoreAction:(MTLStoreAction)a { _storeAction = a; }
 - (uint32_t)clearStencil { return _clearStencil; } - (void)setClearStencil:(uint32_t)s { _clearStencil = s; }
-- (void)dealloc { [(id)_texture release]; [super dealloc]; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLRenderPassStencilAttachmentDescriptor *c = [[MTLRenderPassStencilAttachmentDescriptor allocWithZone:zone] init];
+  c.texture = self.texture; c.resolveTexture = self.resolveTexture;
+  c.level = self.level; c.slice = self.slice;
+  c.loadAction = self.loadAction; c.storeAction = self.storeAction;
+  c.clearStencil = _clearStencil;
+  return c;
+}
 @end
 
 @implementation MTLRenderPassDescriptor {
   MTLRenderPassColorAttachmentDescriptorArray *_colorAttachments;
   MTLRenderPassDepthAttachmentDescriptor *_depthAttachment;
   MTLRenderPassStencilAttachmentDescriptor *_stencilAttachment;
+  id<MTLBuffer> _visibilityResultBuffer;
+  NSUInteger _renderTargetArrayLength;
+  NSUInteger _renderTargetWidth;
+  NSUInteger _renderTargetHeight;
 }
 + (MTLRenderPassDescriptor *)renderPassDescriptor { return [[[self alloc] init] autorelease]; }
 - (id)init {
@@ -494,14 +723,29 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   return self;
 }
 - (MTLRenderPassColorAttachmentDescriptorArray *)colorAttachments { return _colorAttachments; }
-- (MTLRenderPassDepthAttachmentDescriptor *)depthAttachment { return _depthAttachment; } - (void)setDepthAttachment:(MTLRenderPassDepthAttachmentDescriptor *)d { [d retain]; [_depthAttachment release]; _depthAttachment = d; }
-- (MTLRenderPassStencilAttachmentDescriptor *)stencilAttachment { return _stencilAttachment; } - (void)setStencilAttachment:(MTLRenderPassStencilAttachmentDescriptor *)s { [s retain]; [_stencilAttachment release]; _stencilAttachment = s; }
+- (MTLRenderPassDepthAttachmentDescriptor *)depthAttachment { return _depthAttachment; } - (void)setDepthAttachment:(MTLRenderPassDepthAttachmentDescriptor *)d { MTLRenderPassDepthAttachmentDescriptor *c = [d copy]; [_depthAttachment release]; _depthAttachment = c; }
+- (MTLRenderPassStencilAttachmentDescriptor *)stencilAttachment { return _stencilAttachment; } - (void)setStencilAttachment:(MTLRenderPassStencilAttachmentDescriptor *)s { MTLRenderPassStencilAttachmentDescriptor *c = [s copy]; [_stencilAttachment release]; _stencilAttachment = c; }
+- (id<MTLBuffer>)visibilityResultBuffer { return _visibilityResultBuffer; } - (void)setVisibilityResultBuffer:(id<MTLBuffer>)b { [b retain]; [(id)_visibilityResultBuffer release]; _visibilityResultBuffer = b; }
+- (NSUInteger)renderTargetArrayLength { return _renderTargetArrayLength; } - (void)setRenderTargetArrayLength:(NSUInteger)l { _renderTargetArrayLength = l; }
+- (NSUInteger)renderTargetWidth { return _renderTargetWidth; } - (void)setRenderTargetWidth:(NSUInteger)w { _renderTargetWidth = w; }
+- (NSUInteger)renderTargetHeight { return _renderTargetHeight; } - (void)setRenderTargetHeight:(NSUInteger)h { _renderTargetHeight = h; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLRenderPassDescriptor *c = [[MTLRenderPassDescriptor allocWithZone:zone] init];
+  for (int i = 0; i < 8; i++) {
+    if (_colorAttachments->_attachments[i]) {
+      c->_colorAttachments->_attachments[i] = [_colorAttachments->_attachments[i] copy];
+    }
+  }
+  c.depthAttachment = _depthAttachment;
+  c.stencilAttachment = _stencilAttachment;
+  c.visibilityResultBuffer = _visibilityResultBuffer;
+  c.renderTargetWidth = _renderTargetWidth;
+  c.renderTargetHeight = _renderTargetHeight;
   return c;
 }
 - (void)dealloc {
   [_colorAttachments release]; [_depthAttachment release]; [_stencilAttachment release];
+  [(id)_visibilityResultBuffer release];
   [super dealloc];
 }
 @end
@@ -510,6 +754,12 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
   BOOL _fastMathEnabled;
   MTLLanguageVersion _languageVersion;
   NSDictionary *_preprocessorMacros;
+}
+- (id)init {
+  if ((self = [super init])) {
+    _fastMathEnabled = YES;
+  }
+  return self;
 }
 - (BOOL)fastMathEnabled { return _fastMathEnabled; } - (void)setFastMathEnabled:(BOOL)e { _fastMathEnabled = e; }
 - (MTLLanguageVersion)languageVersion { return _languageVersion; } - (void)setLanguageVersion:(MTLLanguageVersion)v { _languageVersion = v; }
@@ -522,7 +772,42 @@ NSString *const MTLDeviceWasRemovedNotification = @"MTLDeviceWasRemovedNotificat
 - (void)dealloc { [_preprocessorMacros release]; [super dealloc]; }
 @end
 
-/* ------------------------------------------------------------------- Resources */
+@implementation MTLFunctionConstantValues
+- (void)setConstantValue:(const void *)value type:(MTLDataType)type atIndex:(NSUInteger)index {}
+- (void)setConstantValues:(const void *)values type:(MTLDataType)type withRange:(NSRange)range {}
+- (void)setConstantValue:(const void *)value type:(MTLDataType)type withName:(NSString *)name {}
+- (void)reset {}
+- (id)copyWithZone:(NSZone *)zone { return [[MTLFunctionConstantValues allocWithZone:zone] init]; }
+@end
+
+@implementation MTLHeapDescriptor {
+  NSUInteger _size;
+  MTLStorageMode _storageMode;
+  MTLCPUCacheMode _cpuCacheMode;
+  MTLHazardTrackingMode _hazardTrackingMode;
+  MTLResourceOptions _resourceOptions;
+  MTLHeapType _type;
+}
+- (NSUInteger)size { return _size; } - (void)setSize:(NSUInteger)s { _size = s; }
+- (MTLStorageMode)storageMode { return _storageMode; } - (void)setStorageMode:(MTLStorageMode)m { _storageMode = m; }
+- (MTLCPUCacheMode)cpuCacheMode { return _cpuCacheMode; } - (void)setCpuCacheMode:(MTLCPUCacheMode)m { _cpuCacheMode = m; }
+- (MTLHazardTrackingMode)hazardTrackingMode { return _hazardTrackingMode; } - (void)setHazardTrackingMode:(MTLHazardTrackingMode)m { _hazardTrackingMode = m; }
+- (MTLResourceOptions)resourceOptions { return _resourceOptions; } - (void)setResourceOptions:(MTLResourceOptions)o { _resourceOptions = o; }
+- (MTLHeapType)type { return _type; } - (void)setType:(MTLHeapType)t { _type = t; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLHeapDescriptor *c = [[MTLHeapDescriptor allocWithZone:zone] init];
+  c.size = _size; c.storageMode = _storageMode; c.cpuCacheMode = _cpuCacheMode;
+  c.hazardTrackingMode = _hazardTrackingMode; c.resourceOptions = _resourceOptions; c.type = _type;
+  return c;
+}
+@end
+
+@implementation MTLArgumentDescriptor
++ (MTLArgumentDescriptor *)argumentDescriptor { return [[[self alloc] init] autorelease]; }
+- (id)copyWithZone:(NSZone *)zone { return [[MTLArgumentDescriptor allocWithZone:zone] init]; }
+@end
+
+/* ------------------------------------------------------------------- Base & Resources */
 
 static id metal_stub(id self, SEL _cmd, ...) {
   static NSMutableSet *seen;
@@ -550,16 +835,18 @@ static id metal_stub(id self, SEL _cmd, ...) {
 @end
 
 @interface XEFMetalBuffer : XEFMetalObject <MTLBuffer> {
+@public
   void *_data;
   NSUInteger _length;
   MTLResourceOptions _options;
   id<MTLDevice> _device;
   NSString *_label;
+  BOOL _ownsData;
 }
 - (instancetype)initWithLength:(NSUInteger)length options:(MTLResourceOptions)options device:(id<MTLDevice>)device;
 - (instancetype)initWithBytes:(const void *)pointer length:(NSUInteger)length options:(MTLResourceOptions)options device:(id<MTLDevice>)device;
+- (instancetype)initWithBytesNoCopy:(void *)pointer length:(NSUInteger)length options:(MTLResourceOptions)options device:(id<MTLDevice>)device;
 @end
-
 
 @implementation XEFMetalBuffer
 - (instancetype)initWithLength:(NSUInteger)length options:(MTLResourceOptions)options device:(id<MTLDevice>)device {
@@ -567,7 +854,8 @@ static id metal_stub(id self, SEL _cmd, ...) {
     _length = length;
     _options = options;
     _device = device;
-    _data = calloc(1, length > 0 ? length : 1);
+    _data = calloc(1, length > 0 ? length : 16);
+    _ownsData = YES;
   }
   return self;
 }
@@ -576,84 +864,78 @@ static id metal_stub(id self, SEL _cmd, ...) {
     _length = length;
     _options = options;
     _device = device;
-    _data = malloc(length > 0 ? length : 1);
+    _data = calloc(1, length > 0 ? length : 16);
+    _ownsData = YES;
     if (pointer && length > 0) memcpy(_data, pointer, length);
+  }
+  return self;
+}
+- (instancetype)initWithBytesNoCopy:(void *)pointer length:(NSUInteger)length options:(MTLResourceOptions)options device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _length = length;
+    _options = options;
+    _device = device;
+    if (pointer) {
+      _data = pointer;
+      _ownsData = NO;
+    } else {
+      _data = calloc(1, length > 0 ? length : 16);
+      _ownsData = YES;
+    }
   }
   return self;
 }
 - (void *)contents { return _data; }
 - (NSUInteger)length { return _length; }
+- (uint64_t)gpuAddress { return (uint64_t)(uintptr_t)_data; }
 - (void)didModifyRange:(NSRange)range {}
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
-- (MTLStorageMode)storageMode {
-  return (MTLStorageMode)((_options >> MTLResourceStorageModeShift) & 0xf);
-}
-- (MTLCPUCacheMode)cpuCacheMode {
-  return (MTLCPUCacheMode)((_options >> MTLResourceCPUCacheModeShift) & 0xf);
-}
-- (MTLHazardTrackingMode)hazardTrackingMode {
-  return (MTLHazardTrackingMode)((_options >> MTLResourceHazardTrackingModeShift) & 0x3);
-}
+- (MTLStorageMode)storageMode { return (MTLStorageMode)((_options >> MTLResourceStorageModeShift) & 0xf); }
+- (MTLCPUCacheMode)cpuCacheMode { return (MTLCPUCacheMode)((_options >> MTLResourceCPUCacheModeShift) & 0xf); }
+- (MTLHazardTrackingMode)hazardTrackingMode { return (MTLHazardTrackingMode)((_options >> MTLResourceHazardTrackingModeShift) & 0x3); }
 - (MTLResourceOptions)resourceOptions { return _options; }
 - (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state { return MTLPurgeableStateNonVolatile; }
 - (void)makeAliasable {}
 - (BOOL)isAliasable { return NO; }
+- (id<MTLHeap>)heap { return nil; }
+- (NSUInteger)heapOffset { return 0; }
+- (NSUInteger)allocatedSize { return _length; }
 - (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor offset:(NSUInteger)offset bytesPerRow:(NSUInteger)bytesPerRow {
   return [_device newTextureWithDescriptor:descriptor];
 }
 - (void)addDebugMarker:(NSString *)marker range:(NSRange)range {}
 - (void)removeAllDebugMarkers {}
 - (void)dealloc {
-  if (_data) free(_data);
+  if (_ownsData && _data) free(_data);
   [_label release];
   [super dealloc];
 }
 @end
 
-@interface XEFMetalTexture : XEFMetalObject <MTLTexture> {
-  NSUInteger _width, _height, _depth;
-  MTLPixelFormat _pixelFormat;
-  MTLTextureType _textureType;
-  MTLTextureUsage _usage;
-  id<MTLDevice> _device;
-  void *_data;
+@interface XEFMetalTextureStorage : NSObject {
+@public
+  uint8_t *_data;
   size_t _dataSize;
+  NSUInteger _width, _height, _depth, _arrayLength, _bpp, _bytesPerRow, _bytesPerImage;
 }
-- (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc device:(id<MTLDevice>)device;
+- (instancetype)initWithWidth:(NSUInteger)w height:(NSUInteger)h depth:(NSUInteger)d arrayLength:(NSUInteger)arr bpp:(NSUInteger)bpp;
 @end
 
-@implementation XEFMetalTexture
-- (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc device:(id<MTLDevice>)device {
+@implementation XEFMetalTextureStorage
+- (instancetype)initWithWidth:(NSUInteger)w height:(NSUInteger)h depth:(NSUInteger)d arrayLength:(NSUInteger)arr bpp:(NSUInteger)bpp {
   if ((self = [super init])) {
-    _width = desc.width; _height = desc.height; _depth = desc.depth;
-    _pixelFormat = desc.pixelFormat; _textureType = desc.textureType;
-    _usage = desc.usage; _device = device;
-    _dataSize = _width * _height * 4;
-    _data = calloc(1, _dataSize > 0 ? _dataSize : 1);
+    _width = w > 0 ? w : 1;
+    _height = h > 0 ? h : 1;
+    _depth = d > 0 ? d : 1;
+    _arrayLength = arr > 0 ? arr : 1;
+    _bpp = bpp > 0 ? bpp : 4;
+    _bytesPerRow = _width * _bpp;
+    _bytesPerImage = _bytesPerRow * _height;
+    _dataSize = (size_t)_bytesPerImage * _depth * _arrayLength;
+    _data = (uint8_t *)calloc(1, _dataSize > 0 ? _dataSize : 16);
   }
   return self;
-}
-- (NSUInteger)width { return _width; }
-- (NSUInteger)height { return _height; }
-- (NSUInteger)depth { return _depth; }
-- (MTLPixelFormat)pixelFormat { return _pixelFormat; }
-- (MTLTextureType)textureType { return _textureType; }
-- (MTLTextureUsage)usage { return _usage; }
-- (id<MTLDevice>)device { return _device; }
-- (void)replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level withBytes:(const void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow {
-  if (_data && pixelBytes) {
-    size_t copySize = region.size.height * bytesPerRow;
-    if (copySize > _dataSize) copySize = _dataSize;
-    memcpy(_data, pixelBytes, copySize);
-  }
-}
-- (void)getBytes:(void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow fromRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level {
-  if (_data && pixelBytes) {
-    size_t copySize = region.size.height * bytesPerRow;
-    if (copySize > _dataSize) copySize = _dataSize;
-    memcpy(pixelBytes, _data, copySize);
-  }
 }
 - (void)dealloc {
   if (_data) free(_data);
@@ -661,164 +943,1483 @@ static id metal_stub(id self, SEL _cmd, ...) {
 }
 @end
 
-@interface XEFMetalSamplerState : XEFMetalObject <MTLSamplerState>
-@property(readonly) id<MTLDevice> device;
-@property(readonly) NSString *label;
+@interface XEFMetalTexture : XEFMetalObject <MTLTexture> {
+@public
+  NSUInteger _width, _height, _depth, _mipmapLevelCount, _sampleCount, _arrayLength;
+  MTLPixelFormat _pixelFormat;
+  MTLTextureType _textureType;
+  MTLTextureUsage _usage;
+  MTLStorageMode _storageMode;
+  MTLCPUCacheMode _cpuCacheMode;
+  MTLResourceOptions _resourceOptions;
+  id<MTLDevice> _device;
+  NSString *_label;
+  XEFMetalTextureStorage *_storage;
+  id<MTLTexture> _parentTexture;
+  NSUInteger _parentRelativeLevel;
+  NSUInteger _parentRelativeSlice;
+}
+- (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc device:(id<MTLDevice>)device;
+- (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices;
+- (const void *)_rawBytes;
+- (void *)_mutableRawBytes;
+- (NSUInteger)_bpp;
+@end
+
+@implementation XEFMetalTexture
+- (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _width = desc.width > 0 ? desc.width : 1;
+    _height = desc.height > 0 ? desc.height : 1;
+    _depth = desc.depth > 0 ? desc.depth : 1;
+    _mipmapLevelCount = desc.mipmapLevelCount > 0 ? desc.mipmapLevelCount : 1;
+    _sampleCount = desc.sampleCount > 0 ? desc.sampleCount : 1;
+    _arrayLength = desc.arrayLength > 0 ? desc.arrayLength : 1;
+    _pixelFormat = desc.pixelFormat ? desc.pixelFormat : MTLPixelFormatBGRA8Unorm;
+    _textureType = desc.textureType;
+    _usage = desc.usage;
+    _storageMode = desc.storageMode;
+    _cpuCacheMode = desc.cpuCacheMode;
+    _resourceOptions = desc.resourceOptions;
+    _device = device;
+    NSUInteger slices = _arrayLength * (_textureType == MTLTextureTypeCube ? 6 : 1);
+    _storage = [[XEFMetalTextureStorage alloc] initWithWidth:_width height:_height depth:_depth arrayLength:slices bpp:xef_mtl_bpp(_pixelFormat)];
+  }
+  return self;
+}
+- (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices {
+  if ((self = [super init])) {
+    _width = parent->_width;
+    _height = parent->_height;
+    _depth = parent->_depth;
+    _mipmapLevelCount = levels.length > 0 ? levels.length : parent->_mipmapLevelCount;
+    _sampleCount = parent->_sampleCount;
+    _arrayLength = slices.length > 0 ? slices.length : parent->_arrayLength;
+    _pixelFormat = fmt ? fmt : parent->_pixelFormat;
+    _textureType = ttype;
+    _usage = parent->_usage;
+    _storageMode = parent->_storageMode;
+    _cpuCacheMode = parent->_cpuCacheMode;
+    _resourceOptions = parent->_resourceOptions;
+    _device = parent->_device;
+    _storage = [parent->_storage retain];
+    _parentTexture = [parent retain];
+    _parentRelativeLevel = levels.location;
+    _parentRelativeSlice = slices.location;
+  }
+  return self;
+}
+- (const void *)_rawBytes { return _storage ? _storage->_data : NULL; }
+- (void *)_mutableRawBytes { return _storage ? _storage->_data : NULL; }
+- (NSUInteger)_bpp { return _storage ? _storage->_bpp : 4; }
+- (NSUInteger)width { return _width; }
+- (NSUInteger)height { return _height; }
+- (NSUInteger)depth { return _depth; }
+- (NSUInteger)mipmapLevelCount { return _mipmapLevelCount; }
+- (NSUInteger)sampleCount { return _sampleCount; }
+- (NSUInteger)arrayLength { return _arrayLength; }
+- (MTLPixelFormat)pixelFormat { return _pixelFormat; }
+- (MTLTextureType)textureType { return _textureType; }
+- (MTLTextureUsage)usage { return _usage; }
+- (MTLStorageMode)storageMode { return _storageMode; }
+- (MTLCPUCacheMode)cpuCacheMode { return _cpuCacheMode; }
+- (MTLHazardTrackingMode)hazardTrackingMode { return MTLHazardTrackingModeDefault; }
+- (MTLResourceOptions)resourceOptions { return _resourceOptions; }
+- (BOOL)isFramebufferOnly { return NO; }
+- (BOOL)allowGPUOptimizedContents { return YES; }
+- (BOOL)isShareable { return NO; }
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (id<MTLTexture>)parentTexture { return _parentTexture; }
+- (NSUInteger)parentRelativeLevel { return _parentRelativeLevel; }
+- (NSUInteger)parentRelativeSlice { return _parentRelativeSlice; }
+- (id<MTLBuffer>)buffer { return nil; }
+- (NSUInteger)bufferOffset { return 0; }
+- (NSUInteger)bufferBytesPerRow { return 0; }
+- (IOSurfaceRef)iosurface { return NULL; }
+- (NSUInteger)iosurfacePlane { return 0; }
+- (id<MTLResource>)rootResource { return _parentTexture ? _parentTexture : nil; }
+- (id<MTLHeap>)heap { return nil; }
+- (NSUInteger)heapOffset { return 0; }
+- (NSUInteger)allocatedSize { return _storage ? _storage->_dataSize : 0; }
+- (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state { return MTLPurgeableStateNonVolatile; }
+
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat {
+  return [[XEFMetalTexture alloc] initWithParent:self pixelFormat:pixelFormat textureType:_textureType levels:NSMakeRange(0, _mipmapLevelCount) slices:NSMakeRange(0, _arrayLength)];
+}
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat textureType:(MTLTextureType)textureType levels:(NSRange)levelRange slices:(NSRange)sliceRange {
+  return [[XEFMetalTexture alloc] initWithParent:self pixelFormat:pixelFormat textureType:textureType levels:levelRange slices:sliceRange];
+}
+
+- (void)replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level slice:(NSUInteger)slice withBytes:(const void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow bytesPerImage:(NSUInteger)bytesPerImage {
+  if (!_storage || !_storage->_data || !pixelBytes) return;
+  if (level > 0) return; /* base level used for sampling/display */
+  NSUInteger bpp = _storage->_bpp;
+  NSUInteger dstBpr = _storage->_bytesPerRow;
+  NSUInteger srcBpr = bytesPerRow > 0 ? bytesPerRow : region.size.width * bpp;
+  NSUInteger x0 = region.origin.x;
+  NSUInteger y0 = region.origin.y;
+  NSUInteger z0 = region.origin.z + slice + _parentRelativeSlice;
+  NSUInteger w = region.size.width;
+  NSUInteger h = region.size.height;
+  NSUInteger d = region.size.depth > 0 ? region.size.depth : 1;
+  if (x0 >= _width || y0 >= _height) return;
+  if (x0 + w > _width) w = _width - x0;
+  if (y0 + h > _height) h = _height - y0;
+  NSUInteger rowBytes = w * bpp;
+  NSUInteger srcBpi = bytesPerImage > 0 ? bytesPerImage : srcBpr * region.size.height;
+  for (NSUInteger z = 0; z < d; z++) {
+    size_t sliceOffset = (size_t)(z0 + z) * _storage->_bytesPerImage;
+    if (sliceOffset >= _storage->_dataSize) break;
+    const uint8_t *srcSlice = (const uint8_t *)pixelBytes + (size_t)z * srcBpi;
+    for (NSUInteger y = 0; y < h; y++) {
+      size_t dstOff = sliceOffset + (size_t)(y0 + y) * dstBpr + (size_t)x0 * bpp;
+      if (dstOff + rowBytes <= _storage->_dataSize) {
+        memcpy(_storage->_data + dstOff, srcSlice + (size_t)y * srcBpr, rowBytes);
+      }
+    }
+  }
+}
+
+- (void)replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level withBytes:(const void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow {
+  [self replaceRegion:region mipmapLevel:level slice:0 withBytes:pixelBytes bytesPerRow:bytesPerRow bytesPerImage:0];
+}
+
+- (void)getBytes:(void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow bytesPerImage:(NSUInteger)bytesPerImage fromRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level slice:(NSUInteger)slice {
+  if (!_storage || !_storage->_data || !pixelBytes) return;
+  NSUInteger bpp = _storage->_bpp;
+  NSUInteger srcBpr = _storage->_bytesPerRow;
+  NSUInteger dstBpr = bytesPerRow > 0 ? bytesPerRow : region.size.width * bpp;
+  NSUInteger x0 = region.origin.x;
+  NSUInteger y0 = region.origin.y;
+  NSUInteger z0 = region.origin.z + slice + _parentRelativeSlice;
+  NSUInteger w = region.size.width;
+  NSUInteger h = region.size.height;
+  NSUInteger d = region.size.depth > 0 ? region.size.depth : 1;
+  if (x0 >= _width || y0 >= _height) return;
+  if (x0 + w > _width) w = _width - x0;
+  if (y0 + h > _height) h = _height - y0;
+  NSUInteger rowBytes = w * bpp;
+  NSUInteger dstBpi = bytesPerImage > 0 ? bytesPerImage : dstBpr * region.size.height;
+  for (NSUInteger z = 0; z < d; z++) {
+    size_t sliceOffset = (size_t)(z0 + z) * _storage->_bytesPerImage;
+    if (sliceOffset >= _storage->_dataSize) break;
+    uint8_t *dstSlice = (uint8_t *)pixelBytes + (size_t)z * dstBpi;
+    for (NSUInteger y = 0; y < h; y++) {
+      size_t srcOff = sliceOffset + (size_t)(y0 + y) * srcBpr + (size_t)x0 * bpp;
+      if (srcOff + rowBytes <= _storage->_dataSize) {
+        memcpy(dstSlice + (size_t)y * dstBpr, _storage->_data + srcOff, rowBytes);
+      }
+    }
+  }
+}
+
+- (void)getBytes:(void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow fromRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level {
+  [self getBytes:pixelBytes bytesPerRow:bytesPerRow bytesPerImage:0 fromRegion:region mipmapLevel:level slice:0];
+}
+
+- (void)dealloc {
+  [_storage release];
+  [(id)_parentTexture release];
+  [_label release];
+  [super dealloc];
+}
+@end
+
+/* Pixel read/write helpers on XEFMetalTexture */
+static inline void xef_tex_read_pixel(XEFMetalTexture *tex, int x, int y, float out_rgba[4]) {
+  if (!tex || !tex->_storage || !tex->_storage->_data) {
+    out_rgba[0] = out_rgba[1] = out_rgba[2] = 0.0f; out_rgba[3] = 1.0f;
+    return;
+  }
+  int w = (int)tex->_width, h = (int)tex->_height;
+  if (x < 0) x = 0; else if (x >= w) x = w - 1;
+  if (y < 0) y = 0; else if (y >= h) y = h - 1;
+  const uint8_t *p = tex->_storage->_data + (size_t)y * tex->_storage->_bytesPerRow + (size_t)x * tex->_storage->_bpp;
+  NSUInteger fmt = (NSUInteger)tex->_pixelFormat;
+  if (fmt == 80 || fmt == 81) { /* BGRA8Unorm */
+    out_rgba[0] = p[2] * (1.0f / 255.0f);
+    out_rgba[1] = p[1] * (1.0f / 255.0f);
+    out_rgba[2] = p[0] * (1.0f / 255.0f);
+    out_rgba[3] = p[3] * (1.0f / 255.0f);
+  } else if (fmt == 70 || fmt == 71) { /* RGBA8Unorm */
+    out_rgba[0] = p[0] * (1.0f / 255.0f);
+    out_rgba[1] = p[1] * (1.0f / 255.0f);
+    out_rgba[2] = p[2] * (1.0f / 255.0f);
+    out_rgba[3] = p[3] * (1.0f / 255.0f);
+  } else if (fmt == 10 || fmt == 11) { /* R8Unorm */
+    float r = p[0] * (1.0f / 255.0f);
+    out_rgba[0] = r; out_rgba[1] = 0.0f; out_rgba[2] = 0.0f; out_rgba[3] = 1.0f;
+  } else if (fmt == 1) { /* A8Unorm */
+    out_rgba[0] = 0.0f; out_rgba[1] = 0.0f; out_rgba[2] = 0.0f; out_rgba[3] = p[0] * (1.0f / 255.0f);
+  } else if (fmt == 30 || fmt == 31) { /* RG8Unorm */
+    out_rgba[0] = p[0] * (1.0f / 255.0f);
+    out_rgba[1] = p[1] * (1.0f / 255.0f);
+    out_rgba[2] = 0.0f; out_rgba[3] = 1.0f;
+  } else if (fmt == 115) { /* RGBA16Float */
+    const uint16_t *hp = (const uint16_t *)p;
+    out_rgba[0] = xef_half_to_float(hp[0]);
+    out_rgba[1] = xef_half_to_float(hp[1]);
+    out_rgba[2] = xef_half_to_float(hp[2]);
+    out_rgba[3] = xef_half_to_float(hp[3]);
+  } else if (fmt == 125) { /* RGBA32Float */
+    const float *fp = (const float *)p;
+    out_rgba[0] = fp[0]; out_rgba[1] = fp[1]; out_rgba[2] = fp[2]; out_rgba[3] = fp[3];
+  } else {
+    out_rgba[0] = p[0] * (1.0f / 255.0f);
+    out_rgba[1] = p[1] * (1.0f / 255.0f);
+    out_rgba[2] = p[2] * (1.0f / 255.0f);
+    out_rgba[3] = p[3] * (1.0f / 255.0f);
+  }
+}
+
+static inline void xef_tex_write_pixel(XEFMetalTexture *tex, int x, int y, const float in_rgba[4], MTLColorWriteMask mask) {
+  if (!tex || !tex->_storage || !tex->_storage->_data) return;
+  if (x < 0 || x >= (int)tex->_width || y < 0 || y >= (int)tex->_height) return;
+  uint8_t *p = tex->_storage->_data + (size_t)y * tex->_storage->_bytesPerRow + (size_t)x * tex->_storage->_bpp;
+  NSUInteger fmt = (NSUInteger)tex->_pixelFormat;
+  uint8_t r8 = (uint8_t)(xef_clampf(in_rgba[0], 0.0f, 1.0f) * 255.0f + 0.5f);
+  uint8_t g8 = (uint8_t)(xef_clampf(in_rgba[1], 0.0f, 1.0f) * 255.0f + 0.5f);
+  uint8_t b8 = (uint8_t)(xef_clampf(in_rgba[2], 0.0f, 1.0f) * 255.0f + 0.5f);
+  uint8_t a8 = (uint8_t)(xef_clampf(in_rgba[3], 0.0f, 1.0f) * 255.0f + 0.5f);
+  if (fmt == 80 || fmt == 81) { /* BGRA8Unorm */
+    if (mask == MTLColorWriteMaskAll) {
+      p[0] = b8; p[1] = g8; p[2] = r8; p[3] = a8;
+    } else {
+      if (mask & MTLColorWriteMaskBlue)  p[0] = b8;
+      if (mask & MTLColorWriteMaskGreen) p[1] = g8;
+      if (mask & MTLColorWriteMaskRed)   p[2] = r8;
+      if (mask & MTLColorWriteMaskAlpha) p[3] = a8;
+    }
+  } else if (fmt == 70 || fmt == 71) { /* RGBA8Unorm */
+    if (mask == MTLColorWriteMaskAll) {
+      p[0] = r8; p[1] = g8; p[2] = b8; p[3] = a8;
+    } else {
+      if (mask & MTLColorWriteMaskRed)   p[0] = r8;
+      if (mask & MTLColorWriteMaskGreen) p[1] = g8;
+      if (mask & MTLColorWriteMaskBlue)  p[2] = b8;
+      if (mask & MTLColorWriteMaskAlpha) p[3] = a8;
+    }
+  } else if (fmt == 10 || fmt == 11) {
+    if (mask & MTLColorWriteMaskRed) p[0] = r8;
+  } else if (fmt == 1) {
+    if (mask & MTLColorWriteMaskAlpha) p[0] = a8;
+  } else if (fmt == 115) {
+    uint16_t *hp = (uint16_t *)p;
+    if (mask & MTLColorWriteMaskRed)   hp[0] = xef_float_to_half(in_rgba[0]);
+    if (mask & MTLColorWriteMaskGreen) hp[1] = xef_float_to_half(in_rgba[1]);
+    if (mask & MTLColorWriteMaskBlue)  hp[2] = xef_float_to_half(in_rgba[2]);
+    if (mask & MTLColorWriteMaskAlpha) hp[3] = xef_float_to_half(in_rgba[3]);
+  } else if (fmt == 125) {
+    float *fp = (float *)p;
+    if (mask & MTLColorWriteMaskRed)   fp[0] = in_rgba[0];
+    if (mask & MTLColorWriteMaskGreen) fp[1] = in_rgba[1];
+    if (mask & MTLColorWriteMaskBlue)  fp[2] = in_rgba[2];
+    if (mask & MTLColorWriteMaskAlpha) fp[3] = in_rgba[3];
+  } else if (tex->_storage->_bpp >= 4) {
+    p[0] = r8; p[1] = g8; p[2] = b8; p[3] = a8;
+  }
+}
+
+static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
+  if (!tex || !tex->_storage || !tex->_storage->_data) return;
+  int w = (int)tex->_width, h = (int)tex->_height;
+  float rgba[4] = { (float)cc.red, (float)cc.green, (float)cc.blue, (float)cc.alpha };
+  NSUInteger fmt = (NSUInteger)tex->_pixelFormat;
+  if ((fmt == 80 || fmt == 81 || fmt == 70 || fmt == 71) && tex->_storage->_bpp == 4) {
+    uint8_t r8 = (uint8_t)(xef_clampf(rgba[0], 0.0f, 1.0f) * 255.0f + 0.5f);
+    uint8_t g8 = (uint8_t)(xef_clampf(rgba[1], 0.0f, 1.0f) * 255.0f + 0.5f);
+    uint8_t b8 = (uint8_t)(xef_clampf(rgba[2], 0.0f, 1.0f) * 255.0f + 0.5f);
+    uint8_t a8 = (uint8_t)(xef_clampf(rgba[3], 0.0f, 1.0f) * 255.0f + 0.5f);
+    uint32_t packed = 0;
+    uint8_t *pb = (uint8_t *)&packed;
+    if (fmt == 80 || fmt == 81) {
+      pb[0] = b8; pb[1] = g8; pb[2] = r8; pb[3] = a8;
+    } else {
+      pb[0] = r8; pb[1] = g8; pb[2] = b8; pb[3] = a8;
+    }
+    uint32_t *dst = (uint32_t *)tex->_storage->_data;
+    size_t count = (size_t)w * (size_t)h;
+    for (size_t i = 0; i < count; i++) dst[i] = packed;
+    return;
+  }
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      xef_tex_write_pixel(tex, x, y, rgba, MTLColorWriteMaskAll);
+    }
+  }
+}
+
+@interface XEFMetalSamplerState : XEFMetalObject <MTLSamplerState> {
+@public
+  id<MTLDevice> _device;
+  NSString *_label;
+  MTLSamplerMinMagFilter _minFilter;
+  MTLSamplerMinMagFilter _magFilter;
+  MTLSamplerAddressMode _sAddressMode;
+  MTLSamplerAddressMode _tAddressMode;
+  BOOL _normalizedCoordinates;
+}
+- (instancetype)initWithDescriptor:(MTLSamplerDescriptor *)desc device:(id<MTLDevice>)device;
 @end
 @implementation XEFMetalSamplerState
-@synthesize device = _device, label = _label;
+- (instancetype)initWithDescriptor:(MTLSamplerDescriptor *)desc device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _device = device;
+    if (desc) {
+      _label = [desc.label copy];
+      _minFilter = desc.minFilter;
+      _magFilter = desc.magFilter;
+      _sAddressMode = desc.sAddressMode;
+      _tAddressMode = desc.tAddressMode;
+      _normalizedCoordinates = desc.normalizedCoordinates;
+    } else {
+      _normalizedCoordinates = YES;
+    }
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
-@interface XEFMetalDepthStencilState : XEFMetalObject <MTLDepthStencilState>
-@property(readonly) id<MTLDevice> device;
-@property(readonly) NSString *label;
+static inline void xef_tex_sample(XEFMetalTexture *tex, XEFMetalSamplerState *samp, float u, float v, float out_rgba[4]) {
+  if (!tex || !tex->_storage || !tex->_storage->_data) {
+    out_rgba[0] = out_rgba[1] = out_rgba[2] = 1.0f; out_rgba[3] = 1.0f;
+    return;
+  }
+  int w = (int)tex->_width, h = (int)tex->_height;
+  float fx, fy;
+  if (samp && !samp->_normalizedCoordinates) {
+    fx = u - 0.5f;
+    fy = v - 0.5f;
+  } else {
+    if (samp && samp->_sAddressMode == MTLSamplerAddressModeRepeat) {
+      u = u - floorf(u);
+    } else {
+      u = xef_clampf(u, 0.0f, 1.0f);
+    }
+    if (samp && samp->_tAddressMode == MTLSamplerAddressModeRepeat) {
+      v = v - floorf(v);
+    } else {
+      v = xef_clampf(v, 0.0f, 1.0f);
+    }
+    fx = u * (float)w - 0.5f;
+    fy = v * (float)h - 0.5f;
+  }
+  if (!samp || samp->_magFilter == MTLSamplerMinMagFilterNearest) {
+    int ix = (int)floorf(fx + 0.5f);
+    int iy = (int)floorf(fy + 0.5f);
+    xef_tex_read_pixel(tex, ix, iy, out_rgba);
+  } else {
+    int x0 = (int)floorf(fx);
+    int y0 = (int)floorf(fy);
+    float tx = fx - (float)x0;
+    float ty = fy - (float)y0;
+    float c00[4], c10[4], c01[4], c11[4];
+    xef_tex_read_pixel(tex, x0,     y0,     c00);
+    xef_tex_read_pixel(tex, x0 + 1, y0,     c10);
+    xef_tex_read_pixel(tex, x0,     y0 + 1, c01);
+    xef_tex_read_pixel(tex, x0 + 1, y0 + 1, c11);
+    for (int i = 0; i < 4; i++) {
+      float top = c00[i] + (c10[i] - c00[i]) * tx;
+      float bot = c01[i] + (c11[i] - c01[i]) * tx;
+      out_rgba[i] = top + (bot - top) * ty;
+    }
+  }
+}
+
+@interface XEFMetalDepthStencilState : XEFMetalObject <MTLDepthStencilState> {
+@public
+  id<MTLDevice> _device;
+  NSString *_label;
+  MTLCompareFunction _depthCompareFunction;
+  BOOL _depthWriteEnabled;
+}
+- (instancetype)initWithDescriptor:(MTLDepthStencilDescriptor *)desc device:(id<MTLDevice>)device;
 @end
 @implementation XEFMetalDepthStencilState
-@synthesize device = _device, label = _label;
+- (instancetype)initWithDescriptor:(MTLDepthStencilDescriptor *)desc device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _device = device;
+    if (desc) {
+      _label = [desc.label copy];
+      _depthCompareFunction = desc.depthCompareFunction;
+      _depthWriteEnabled = desc.isDepthWriteEnabled;
+    } else {
+      _depthCompareFunction = MTLCompareFunctionAlways;
+    }
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
+enum {
+  XEF_FRAG_MODE_AUTO = 0,
+  XEF_FRAG_MODE_COLOR_ONLY = 1,
+  XEF_FRAG_MODE_TEX_RGBA = 2,
+  XEF_FRAG_MODE_TEX_RGB = 3,
+  XEF_FRAG_MODE_BLIT2D = 4,
+  XEF_FRAG_MODE_CONST_COLOR = 5,
+};
+
 @interface XEFMetalFunction : XEFMetalObject <MTLFunction> {
+@public
   NSString *_name;
   MTLFunctionType _functionType;
   id<MTLDevice> _device;
+  NSString *_source;
+  BOOL _isFullscreenVert;
+  BOOL _hasCustomVerts;
+  int _customVertCount;
+  float _customVerts[16][4];
+  int _fragMode;
+  float _constFragColor[4];
 }
-@property(readonly) NSString *name;
-@property(readonly) MTLFunctionType functionType;
-@property(readonly) id<MTLDevice> device;
+- (instancetype)initWithName:(NSString *)name type:(MTLFunctionType)type device:(id<MTLDevice>)device source:(NSString *)source data:(NSData *)data;
 @end
+
 @implementation XEFMetalFunction
-- (instancetype)initWithName:(NSString *)name type:(MTLFunctionType)type device:(id<MTLDevice>)device {
+- (instancetype)initWithName:(NSString *)name type:(MTLFunctionType)type device:(id<MTLDevice>)device source:(NSString *)source data:(NSData *)data {
   if ((self = [super init])) {
-    _name = [name copy]; _functionType = type; _device = device;
+    _name = [name copy];
+    _functionType = type;
+    _device = device;
+    _source = [source copy];
+    _fragMode = XEF_FRAG_MODE_AUTO;
+    _constFragColor[0] = 1.0f; _constFragColor[1] = 1.0f; _constFragColor[2] = 1.0f; _constFragColor[3] = 1.0f;
+
+    const char *cname = name ? [name UTF8String] : "";
+    if (strstr(cname, "FullscreenVert")) {
+      _isFullscreenVert = YES;
+    } else if (strstr(cname, "BlitFrom")) {
+      _fragMode = XEF_FRAG_MODE_BLIT2D;
+    }
+
+    if (data && [data length] > 0) {
+      const char *bytes = (const char *)[data bytes];
+      size_t len = [data length];
+      if (memmem(bytes, len, "FullscreenVert", 14)) _isFullscreenVert = YES;
+      if (memmem(bytes, len, "BlitFrom", 8)) _fragMode = XEF_FRAG_MODE_BLIT2D;
+    }
+
+    if (source) {
+      const char *csrc = [source UTF8String];
+      if (csrc) {
+        /* Detect SDL_render_gpu fragment modes */
+        if (strstr(csrc, "u_texture.sample")) {
+          if (strstr(csrc, ".xyz * Constants.color_scale, 1.0")) {
+            _fragMode = XEF_FRAG_MODE_TEX_RGB;
+          } else {
+            _fragMode = XEF_FRAG_MODE_TEX_RGBA;
+          }
+        } else if (strstr(csrc, "texture0.sample")) {
+          _fragMode = XEF_FRAG_MODE_TEX_RGBA;
+        } else if (strstr(csrc, "Constants.color_scale") && !strstr(csrc, "texture")) {
+          _fragMode = XEF_FRAG_MODE_COLOR_ONLY;
+        }
+
+        /* Parse inline vertex array literal like: float2 p[3]={float2(-.5,-.5),float2(.5,-.5),float2(0,.5)}; */
+        const char *vfn = strstr(csrc, "vertex ");
+        if (vfn) {
+          const char *arr = strstr(vfn, "]={");
+          if (!arr) arr = strstr(vfn, "] = {");
+          if (arr) {
+            const char *p = strchr(arr, '{');
+            if (p) {
+              p++;
+              int cnt = 0;
+              while (*p && *p != '}' && cnt < 16) {
+                const char *f2 = strstr(p, "float2(");
+                if (!f2 || f2 > strchr(p, '}')) break;
+                f2 += 7;
+                char *endp = NULL;
+                float vx = strtof(f2, &endp);
+                if (endp && *endp == ',') {
+                  float vy = strtof(endp + 1, &endp);
+                  _customVerts[cnt][0] = vx;
+                  _customVerts[cnt][1] = vy;
+                  _customVerts[cnt][2] = 0.0f;
+                  _customVerts[cnt][3] = 1.0f;
+                  cnt++;
+                  p = endp;
+                } else break;
+              }
+              if (cnt >= 3) {
+                _hasCustomVerts = YES;
+                _customVertCount = cnt;
+              }
+            }
+          }
+        }
+
+        /* Parse constant fragment return like: fragment float4 fs(){return float4(1,0,0,1);} */
+        const char *ffn = strstr(csrc, "fragment ");
+        if (ffn && !strstr(ffn, "stage_in") && !strstr(ffn, "texture")) {
+          const char *ret = strstr(ffn, "return float4(");
+          if (ret) {
+            ret += 14;
+            float r = 1.0f, g = 0.0f, b = 0.0f, a = 1.0f;
+            if (sscanf(ret, "%f , %f , %f , %f", &r, &g, &b, &a) == 4) {
+              _fragMode = XEF_FRAG_MODE_CONST_COLOR;
+              _constFragColor[0] = r;
+              _constFragColor[1] = g;
+              _constFragColor[2] = b;
+              _constFragColor[3] = a;
+            }
+          }
+        }
+      }
+    }
   }
   return self;
 }
 - (NSString *)name { return _name; }
 - (MTLFunctionType)functionType { return _functionType; }
 - (id<MTLDevice>)device { return _device; }
-- (void)dealloc { [_name release]; [super dealloc]; }
+- (NSArray *)vertexAttributes { return [NSArray array]; }
+- (NSArray *)stageInputAttributes { return [NSArray array]; }
+- (NSDictionary *)functionConstantsDictionary { return [NSDictionary dictionary]; }
+- (void)dealloc { [_name release]; [_source release]; [super dealloc]; }
 @end
 
 @interface XEFMetalLibrary : XEFMetalObject <MTLLibrary> {
+@public
   id<MTLDevice> _device;
+  NSString *_label;
+  NSString *_source;
+  NSData *_data;
   NSMutableDictionary *_functions;
 }
+- (instancetype)initWithDevice:(id<MTLDevice>)device source:(NSString *)source data:(NSData *)data;
 @end
+
 @implementation XEFMetalLibrary
-- (instancetype)initWithDevice:(id<MTLDevice>)device {
+- (instancetype)initWithDevice:(id<MTLDevice>)device source:(NSString *)source data:(NSData *)data {
   if ((self = [super init])) {
     _device = device;
+    _source = [source copy];
+    _data = [data retain];
     _functions = [[NSMutableDictionary alloc] init];
   }
   return self;
 }
 - (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (id<MTLFunction>)newFunctionWithName:(NSString *)functionName {
   if (!functionName) return nil;
   XEFMetalFunction *f = [_functions objectForKey:functionName];
   if (!f) {
-    f = [[[XEFMetalFunction alloc] initWithName:functionName type:MTLFunctionTypeVertex device:_device] autorelease];
+    f = [[[XEFMetalFunction alloc] initWithName:functionName type:MTLFunctionTypeVertex device:_device source:_source data:_data] autorelease];
     [_functions setObject:f forKey:functionName];
   }
   return [f retain];
 }
+- (id<MTLFunction>)newFunctionWithName:(NSString *)name constantValues:(MTLFunctionConstantValues *)constantValues error:(NSError **)error {
+  if (error) *error = nil;
+  return [self newFunctionWithName:name];
+}
 - (NSArray<NSString *> *)functionNames { return [_functions allKeys]; }
-- (void)dealloc { [_functions release]; [super dealloc]; }
+- (void)dealloc {
+  [_label release]; [_source release]; [_data release]; [_functions release];
+  [super dealloc];
+}
 @end
 
 @interface XEFMetalRenderPipelineState : XEFMetalObject <MTLRenderPipelineState> {
+@public
   id<MTLDevice> _device;
   NSString *_label;
+  MTLRenderPipelineDescriptor *_desc;
 }
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLRenderPipelineDescriptor *)desc;
 @end
 @implementation XEFMetalRenderPipelineState
-- (instancetype)initWithDevice:(id<MTLDevice>)device label:(NSString *)label {
-  if ((self = [super init])) { _device = device; _label = [label copy]; }
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLRenderPipelineDescriptor *)desc {
+  if ((self = [super init])) {
+    _device = device;
+    _label = [desc.label copy];
+    _desc = [desc copy];
+  }
   return self;
 }
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; }
-- (void)dealloc { [_label release]; [super dealloc]; }
+- (void)dealloc { [_label release]; [_desc release]; [super dealloc]; }
 @end
 
 @interface XEFMetalComputePipelineState : XEFMetalObject <MTLComputePipelineState> {
+@public
   id<MTLDevice> _device;
   NSString *_label;
+  XEFMetalFunction *_function;
 }
+- (instancetype)initWithDevice:(id<MTLDevice>)device function:(id<MTLFunction>)fn label:(NSString *)label;
 @end
 @implementation XEFMetalComputePipelineState
-- (instancetype)initWithDevice:(id<MTLDevice>)device label:(NSString *)label {
-  if ((self = [super init])) { _device = device; _label = [label copy]; }
+- (instancetype)initWithDevice:(id<MTLDevice>)device function:(id<MTLFunction>)fn label:(NSString *)label {
+  if ((self = [super init])) {
+    _device = device;
+    _function = [(XEFMetalFunction *)fn retain];
+    _label = [label ? label : fn.name copy];
+  }
   return self;
 }
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; }
 - (NSUInteger)maxTotalThreadsPerThreadgroup { return 1024; }
 - (NSUInteger)threadExecutionWidth { return 32; }
+- (NSUInteger)staticThreadgroupMemoryLength { return 0; }
+- (void)dealloc { [_label release]; [_function release]; [super dealloc]; }
+@end
+
+@interface XEFMetalFence : XEFMetalObject <MTLFence> {
+  id<MTLDevice> _device;
+  NSString *_label;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device;
+@end
+@implementation XEFMetalFence
+- (instancetype)initWithDevice:(id<MTLDevice>)device { if ((self = [super init])) _device = device; return self; }
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (void)dealloc { [_label release]; [super dealloc]; }
+@end
+
+@interface XEFMetalEvent : XEFMetalObject <MTLEvent> {
+  id<MTLDevice> _device;
+  NSString *_label;
+  uint64_t _signaledValue;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device;
+@end
+@implementation XEFMetalEvent
+- (instancetype)initWithDevice:(id<MTLDevice>)device { if ((self = [super init])) _device = device; return self; }
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (uint64_t)signaledValue { return _signaledValue; } - (void)setSignaledValue:(uint64_t)v { _signaledValue = v; }
 - (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
 /* ------------------------------------------------------------------- Command Encoders */
 
-@interface XEFMetalRenderCommandEncoder : XEFMetalObject <MTLRenderCommandEncoder>
-@end
-@implementation XEFMetalRenderCommandEncoder
-- (id<MTLDevice>)device { return nil; }
-- (NSString *)label { return nil; } - (void)setLabel:(NSString *)l {}
-- (void)setRenderPipelineState:(id<MTLRenderPipelineState>)pipelineState {}
-- (void)setVertexBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {}
-- (void)setVertexBuffers:(const id<MTLBuffer> *)buffers offsets:(const NSUInteger *)offsets withRange:(NSRange)range {}
-- (void)setVertexBufferOffset:(NSUInteger)offset atIndex:(NSUInteger)index {}
-- (void)setVertexBytes:(const void *)bytes length:(NSUInteger)length atIndex:(NSUInteger)index {}
-- (void)setVertexSamplerState:(id<MTLSamplerState>)sampler atIndex:(NSUInteger)index {}
-- (void)setVertexTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index {}
-- (void)setFragmentBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {}
-- (void)setFragmentBuffers:(const id<MTLBuffer> *)buffers offsets:(const NSUInteger *)offsets withRange:(NSRange)range {}
-- (void)setFragmentBufferOffset:(NSUInteger)offset atIndex:(NSUInteger)index {}
-- (void)setFragmentBytes:(const void *)bytes length:(NSUInteger)length atIndex:(NSUInteger)index {}
-- (void)setFragmentSamplerState:(id<MTLSamplerState>)sampler atIndex:(NSUInteger)index {}
-- (void)setFragmentTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index {}
-- (void)setViewport:(MTLViewport)viewport {}
-- (void)setViewports:(const MTLViewport *)viewports count:(NSUInteger)count {}
-- (void)setScissorRect:(MTLScissorRect)rect {}
-- (void)setScissorRects:(const MTLScissorRect *)scissorRects count:(NSUInteger)count {}
-- (void)setCullMode:(MTLCullMode)cullMode {}
-- (void)setFrontFacingWinding:(MTLWinding)frontFacingWinding {}
-- (void)setDepthStencilState:(id<MTLDepthStencilState>)depthStencilState {}
-- (void)setBlendColorRed:(float)red green:(float)green blue:(float)blue alpha:(float)alpha {}
-- (void)setStencilReferenceValue:(uint32_t)val {}
+typedef struct {
+  float pos[4];   /* clip-space position */
+  float sx, sy;   /* screen-space x, y */
+  float sz, invW; /* depth z and 1/w */
+  float col[4];   /* vertex color RGBA */
+  float uv[2];    /* texture coord UV */
+} XEFVertex;
 
+static float xef_eval_blend_factor(MTLBlendFactor factor, const float src[4], const float dst[4], const float bc[4], int ch) {
+  switch (factor) {
+    case MTLBlendFactorZero: return 0.0f;
+    case MTLBlendFactorOne: return 1.0f;
+    case MTLBlendFactorSourceColor: return src[ch];
+    case MTLBlendFactorOneMinusSourceColor: return 1.0f - src[ch];
+    case MTLBlendFactorSourceAlpha: return src[3];
+    case MTLBlendFactorOneMinusSourceAlpha: return 1.0f - src[3];
+    case MTLBlendFactorDestinationColor: return dst[ch];
+    case MTLBlendFactorOneMinusDestinationColor: return 1.0f - dst[ch];
+    case MTLBlendFactorDestinationAlpha: return dst[3];
+    case MTLBlendFactorOneMinusDestinationAlpha: return 1.0f - dst[3];
+    case MTLBlendFactorSourceAlphaSaturated: {
+      float f = src[3] < (1.0f - dst[3]) ? src[3] : (1.0f - dst[3]);
+      return ch == 3 ? 1.0f : f;
+    }
+    case MTLBlendFactorBlendColor: return bc[ch];
+    case MTLBlendFactorOneMinusBlendColor: return 1.0f - bc[ch];
+    case MTLBlendFactorBlendAlpha: return bc[3];
+    case MTLBlendFactorOneMinusBlendAlpha: return 1.0f - bc[3];
+    default: return 1.0f;
+  }
+}
+
+static float xef_eval_blend_op(MTLBlendOperation op, float s, float d) {
+  switch (op) {
+    case MTLBlendOperationAdd: return s + d;
+    case MTLBlendOperationSubtract: return s - d;
+    case MTLBlendOperationReverseSubtract: return d - s;
+    case MTLBlendOperationMin: return s < d ? s : d;
+    case MTLBlendOperationMax: return s > d ? s : d;
+    default: return s + d;
+  }
+}
+
+static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float out[4], float defW) {
+  out[0] = 0.0f; out[1] = 0.0f; out[2] = 0.0f; out[3] = defW;
+  if (!ptr) return;
+  switch (fmt) {
+    case MTLVertexFormatFloat: {
+      const float *f = (const float *)ptr;
+      out[0] = f[0];
+      break;
+    }
+    case MTLVertexFormatFloat2: {
+      const float *f = (const float *)ptr;
+      out[0] = f[0]; out[1] = f[1];
+      break;
+    }
+    case MTLVertexFormatFloat3: {
+      const float *f = (const float *)ptr;
+      out[0] = f[0]; out[1] = f[1]; out[2] = f[2];
+      break;
+    }
+    case MTLVertexFormatFloat4: {
+      const float *f = (const float *)ptr;
+      out[0] = f[0]; out[1] = f[1]; out[2] = f[2]; out[3] = f[3];
+      break;
+    }
+    case MTLVertexFormatUChar4Normalized: {
+      out[0] = ptr[0] * (1.0f / 255.0f);
+      out[1] = ptr[1] * (1.0f / 255.0f);
+      out[2] = ptr[2] * (1.0f / 255.0f);
+      out[3] = ptr[3] * (1.0f / 255.0f);
+      break;
+    }
+    case MTLVertexFormatUChar4: {
+      out[0] = (float)ptr[0]; out[1] = (float)ptr[1]; out[2] = (float)ptr[2]; out[3] = (float)ptr[3];
+      break;
+    }
+    case MTLVertexFormatUChar4Normalized_BGRA: {
+      out[0] = ptr[2] * (1.0f / 255.0f);
+      out[1] = ptr[1] * (1.0f / 255.0f);
+      out[2] = ptr[0] * (1.0f / 255.0f);
+      out[3] = ptr[3] * (1.0f / 255.0f);
+      break;
+    }
+    case MTLVertexFormatHalf2: {
+      const uint16_t *h = (const uint16_t *)ptr;
+      out[0] = xef_half_to_float(h[0]); out[1] = xef_half_to_float(h[1]);
+      break;
+    }
+    case MTLVertexFormatHalf4: {
+      const uint16_t *h = (const uint16_t *)ptr;
+      out[0] = xef_half_to_float(h[0]); out[1] = xef_half_to_float(h[1]);
+      out[2] = xef_half_to_float(h[2]); out[3] = xef_half_to_float(h[3]);
+      break;
+    }
+    case MTLVertexFormatShort2: {
+      const int16_t *s = (const int16_t *)ptr;
+      out[0] = (float)s[0]; out[1] = (float)s[1];
+      break;
+    }
+    case MTLVertexFormatShort2Normalized: {
+      const int16_t *s = (const int16_t *)ptr;
+      out[0] = xef_clampf((float)s[0] / 32767.0f, -1.0f, 1.0f);
+      out[1] = xef_clampf((float)s[1] / 32767.0f, -1.0f, 1.0f);
+      break;
+    }
+    case MTLVertexFormatUShort2Normalized: {
+      const uint16_t *s = (const uint16_t *)ptr;
+      out[0] = (float)s[0] / 65535.0f;
+      out[1] = (float)s[1] / 65535.0f;
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+@interface XEFMetalRenderCommandEncoder : XEFMetalObject <MTLRenderCommandEncoder> {
+@public
+  id<MTLDevice> _device;
+  NSString *_label;
+  MTLRenderPassDescriptor *_passDesc;
+  XEFMetalRenderPipelineState *_pipelineState;
+  XEFMetalDepthStencilState *_depthStencilState;
+  XEFMetalBuffer *_vertexBuffers[31];
+  NSUInteger _vertexBufferOffsets[31];
+  XEFMetalBuffer *_fragmentBuffers[31];
+  NSUInteger _fragmentBufferOffsets[31];
+  XEFMetalTexture *_vertexTextures[31];
+  XEFMetalTexture *_fragmentTextures[31];
+  XEFMetalSamplerState *_vertexSamplers[16];
+  XEFMetalSamplerState *_fragmentSamplers[16];
+  MTLViewport _viewport;
+  BOOL _hasViewport;
+  MTLScissorRect _scissorRect;
+  BOOL _hasScissor;
+  MTLCullMode _cullMode;
+  MTLWinding _frontFacingWinding;
+  float _blendColor[4];
+}
+- (instancetype)initWithDescriptor:(MTLRenderPassDescriptor *)desc device:(id<MTLDevice>)device;
+@end
+
+@implementation XEFMetalRenderCommandEncoder
+- (instancetype)initWithDescriptor:(MTLRenderPassDescriptor *)desc device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _device = device;
+    _passDesc = [desc copy];
+    _blendColor[0] = _blendColor[1] = _blendColor[2] = _blendColor[3] = 1.0f;
+    if (_passDesc) {
+      for (int i = 0; i < 8; i++) {
+        MTLRenderPassColorAttachmentDescriptor *att = _passDesc.colorAttachments->_attachments[i];
+        if (att && att.texture) {
+          XEFMetalTexture *tex = (XEFMetalTexture *)att.texture;
+          if (i == 0) {
+            _viewport = (MTLViewport){0.0, 0.0, (double)tex->_width, (double)tex->_height, 0.0, 1.0};
+            _scissorRect = (MTLScissorRect){0, 0, tex->_width, tex->_height};
+          }
+          if (att.loadAction == MTLLoadActionClear) {
+            xef_tex_clear(tex, att.clearColor);
+          }
+        }
+      }
+      MTLRenderPassDepthAttachmentDescriptor *datt = _passDesc.depthAttachment;
+      if (datt && datt.texture && datt.loadAction == MTLLoadActionClear) {
+        XEFMetalTexture *dtex = (XEFMetalTexture *)datt.texture;
+        if (dtex->_storage && dtex->_storage->_data && dtex->_storage->_bpp >= 4) {
+          float cd = (float)datt.clearDepth;
+          float *dp = (float *)dtex->_storage->_data;
+          size_t count = (size_t)dtex->_width * (size_t)dtex->_height;
+          for (size_t k = 0; k < count; k++) dp[k] = cd;
+        }
+      }
+    }
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (void)setRenderPipelineState:(id<MTLRenderPipelineState>)pipelineState {
+  [pipelineState retain];
+  [_pipelineState release];
+  _pipelineState = (XEFMetalRenderPipelineState *)pipelineState;
+}
+- (void)setVertexBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  [buffer retain];
+  [_vertexBuffers[index] release];
+  _vertexBuffers[index] = (XEFMetalBuffer *)buffer;
+  _vertexBufferOffsets[index] = offset;
+}
+- (void)setVertexBuffers:(const id<MTLBuffer> *)buffers offsets:(const NSUInteger *)offsets withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setVertexBuffer:buffers ? buffers[i] : nil offset:offsets ? offsets[i] : 0 atIndex:range.location + i];
+  }
+}
+- (void)setVertexBufferOffset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index < 31) _vertexBufferOffsets[index] = offset;
+}
+- (void)setVertexBytes:(const void *)bytes length:(NSUInteger)length atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  XEFMetalBuffer *b = [[[XEFMetalBuffer alloc] initWithBytes:bytes length:length options:0 device:_device] autorelease];
+  [self setVertexBuffer:b offset:0 atIndex:index];
+}
+- (void)setVertexSamplerState:(id<MTLSamplerState>)sampler atIndex:(NSUInteger)index {
+  if (index >= 16) return;
+  [sampler retain];
+  [_vertexSamplers[index] release];
+  _vertexSamplers[index] = (XEFMetalSamplerState *)sampler;
+}
+- (void)setVertexTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  [texture retain];
+  [_vertexTextures[index] release];
+  _vertexTextures[index] = (XEFMetalTexture *)texture;
+}
+- (void)setFragmentBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  [buffer retain];
+  [_fragmentBuffers[index] release];
+  _fragmentBuffers[index] = (XEFMetalBuffer *)buffer;
+  _fragmentBufferOffsets[index] = offset;
+}
+- (void)setFragmentBuffers:(const id<MTLBuffer> *)buffers offsets:(const NSUInteger *)offsets withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setFragmentBuffer:buffers ? buffers[i] : nil offset:offsets ? offsets[i] : 0 atIndex:range.location + i];
+  }
+}
+- (void)setFragmentBufferOffset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index < 31) _fragmentBufferOffsets[index] = offset;
+}
+- (void)setFragmentBytes:(const void *)bytes length:(NSUInteger)length atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  XEFMetalBuffer *b = [[[XEFMetalBuffer alloc] initWithBytes:bytes length:length options:0 device:_device] autorelease];
+  [self setFragmentBuffer:b offset:0 atIndex:index];
+}
+- (void)setFragmentSamplerState:(id<MTLSamplerState>)sampler atIndex:(NSUInteger)index {
+  if (index >= 16) return;
+  [sampler retain];
+  [_fragmentSamplers[index] release];
+  _fragmentSamplers[index] = (XEFMetalSamplerState *)sampler;
+}
+- (void)setFragmentSamplerStates:(const id<MTLSamplerState> *)samplers withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setFragmentSamplerState:samplers ? samplers[i] : nil atIndex:range.location + i];
+  }
+}
+- (void)setFragmentTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  [texture retain];
+  [_fragmentTextures[index] release];
+  _fragmentTextures[index] = (XEFMetalTexture *)texture;
+}
+- (void)setFragmentTextures:(const id<MTLTexture> *)textures withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setFragmentTexture:textures ? textures[i] : nil atIndex:range.location + i];
+  }
+}
+- (void)setViewport:(MTLViewport)viewport { _viewport = viewport; _hasViewport = YES; }
+- (void)setViewports:(const MTLViewport *)viewports count:(NSUInteger)count { if (count > 0 && viewports) [self setViewport:viewports[0]]; }
+- (void)setScissorRect:(MTLScissorRect)rect { _scissorRect = rect; _hasScissor = YES; }
+- (void)setScissorRects:(const MTLScissorRect *)scissorRects count:(NSUInteger)count { if (count > 0 && scissorRects) [self setScissorRect:scissorRects[0]]; }
+- (void)setCullMode:(MTLCullMode)cullMode { _cullMode = cullMode; }
+- (void)setFrontFacingWinding:(MTLWinding)frontFacingWinding { _frontFacingWinding = frontFacingWinding; }
+- (void)setDepthStencilState:(id<MTLDepthStencilState>)depthStencilState {
+  [depthStencilState retain];
+  [_depthStencilState release];
+  _depthStencilState = (XEFMetalDepthStencilState *)depthStencilState;
+}
+- (void)setBlendColorRed:(float)red green:(float)green blue:(float)blue alpha:(float)alpha {
+  _blendColor[0] = red; _blendColor[1] = green; _blendColor[2] = blue; _blendColor[3] = alpha;
+}
+- (void)setStencilReferenceValue:(uint32_t)val {}
+- (void)setStencilFrontReferenceValue:(uint32_t)front backReferenceValue:(uint32_t)back {}
 - (void)setTriangleFillMode:(MTLTriangleFillMode)fillMode {}
 - (void)setDepthClipMode:(MTLDepthClipMode)clipMode {}
 - (void)setDepthBias:(float)bias slopeScale:(float)slope clamp:(float)clamp {}
-- (void)setFragmentSamplerStates:(const id<MTLSamplerState> *)samplers withRange:(NSRange)range {}
-- (void)setFragmentTextures:(const id<MTLTexture> *)textures withRange:(NSRange)range {}
-- (void)drawPrimitives:(MTLPrimitiveType)primitiveType vertexStart:(NSUInteger)vertexStart vertexCount:(NSUInteger)vertexCount {}
-- (void)drawPrimitives:(MTLPrimitiveType)primitiveType vertexStart:(NSUInteger)vertexStart vertexCount:(NSUInteger)vertexCount instanceCount:(NSUInteger)instanceCount {}
-- (void)drawPrimitives:(MTLPrimitiveType)primitiveType vertexStart:(NSUInteger)vertexStart vertexCount:(NSUInteger)vertexCount instanceCount:(NSUInteger)instanceCount baseInstance:(NSUInteger)baseInstance {}
-- (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType indexCount:(NSUInteger)indexCount indexType:(MTLIndexType)indexType indexBuffer:(id<MTLBuffer>)indexBuffer indexBufferOffset:(NSUInteger)indexBufferOffset {}
-- (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType indexCount:(NSUInteger)indexCount indexType:(MTLIndexType)indexType indexBuffer:(id<MTLBuffer>)indexBuffer indexBufferOffset:(NSUInteger)indexBufferOffset instanceCount:(NSUInteger)instanceCount {}
-- (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType indexCount:(NSUInteger)indexCount indexType:(MTLIndexType)indexType indexBuffer:(id<MTLBuffer>)indexBuffer indexBufferOffset:(NSUInteger)indexBufferOffset instanceCount:(NSUInteger)instanceCount baseVertex:(NSInteger)baseVertex baseInstance:(NSUInteger)baseInstance {}
+- (void)setVisibilityResultMode:(MTLVisibilityResultMode)mode offset:(NSUInteger)offset {}
+- (void)pushDebugGroup:(NSString *)string {}
+- (void)popDebugGroup {}
+- (void)insertDebugSignpost:(NSString *)string {}
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage {}
+- (void)useResources:(const id<MTLResource> *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {}
+- (void)useHeap:(id<MTLHeap>)heap {}
+- (void)useHeaps:(const id<MTLHeap> *)heaps count:(NSUInteger)count {}
+
+- (void)_fetchVertex:(NSInteger)vIdx outVertex:(XEFVertex *)v {
+  memset(v, 0, sizeof(*v));
+  v->pos[3] = 1.0f;
+  v->col[0] = 1.0f; v->col[1] = 1.0f; v->col[2] = 1.0f; v->col[3] = 1.0f;
+
+  XEFMetalFunction *vfn = _pipelineState && _pipelineState->_desc ? (XEFMetalFunction *)_pipelineState->_desc.vertexFunction : nil;
+  XEFMetalFunction *ffn = _pipelineState && _pipelineState->_desc ? (XEFMetalFunction *)_pipelineState->_desc.fragmentFunction : nil;
+
+  if (vfn && vfn->_hasCustomVerts) {
+    int idx = (int)vIdx % vfn->_customVertCount;
+    if (idx < 0) idx = 0;
+    v->pos[0] = vfn->_customVerts[idx][0];
+    v->pos[1] = vfn->_customVerts[idx][1];
+    v->pos[2] = vfn->_customVerts[idx][2];
+    v->pos[3] = vfn->_customVerts[idx][3];
+  } else if (vfn && vfn->_isFullscreenVert) {
+    uint32_t vi = (uint32_t)vIdx;
+    float u = (float)((vi << 1) & 2);
+    float vt = (float)(vi & 2);
+    v->uv[0] = u;
+    v->uv[1] = vt;
+    v->pos[0] = u * 2.0f - 1.0f;
+    v->pos[1] = 1.0f - vt * 2.0f;
+    v->pos[2] = 0.0f;
+    v->pos[3] = 1.0f;
+  } else {
+    BOOL hasAttr = NO;
+    MTLVertexDescriptor *vd = _pipelineState && _pipelineState->_desc ? _pipelineState->_desc.vertexDescriptor : nil;
+    int usedAttrBuf = -1;
+    if (vd) {
+      for (int a = 0; a < 4; a++) {
+        MTLVertexAttributeDescriptor *ad = vd.attributes->_attributes[a];
+        if (!ad || ad.format == MTLVertexFormatInvalid) continue;
+        NSUInteger bIdx = ad.bufferIndex;
+        if (bIdx >= 31 || !_vertexBuffers[bIdx]) continue;
+        MTLVertexBufferLayoutDescriptor *ld = vd.layouts->_layouts[bIdx];
+        NSUInteger stride = ld ? ld.stride : 0;
+        if (stride == 0) continue;
+        hasAttr = YES;
+        usedAttrBuf = (int)bIdx;
+        XEFMetalBuffer *buf = _vertexBuffers[bIdx];
+        size_t byteOff = _vertexBufferOffsets[bIdx] + (size_t)vIdx * stride + ad.offset;
+        if (byteOff < buf->_length) {
+          const uint8_t *ptr = (const uint8_t *)buf->_data + byteOff;
+          if (a == 0) {
+            xef_read_vertex_attr(ptr, ad.format, v->pos, 1.0f);
+          } else if (a == 1) {
+            xef_read_vertex_attr(ptr, ad.format, v->col, 1.0f);
+          } else if (a == 2) {
+            float tmp[4];
+            xef_read_vertex_attr(ptr, ad.format, tmp, 0.0f);
+            v->uv[0] = tmp[0];
+            v->uv[1] = tmp[1];
+          }
+        }
+      }
+    }
+    if (!hasAttr) {
+      /* Fallback: if vertex buffer 0 is bound, assume packed float2/float4 vertices, else fullscreen triangle */
+      if (_vertexBuffers[0] && _vertexBuffers[0]->_length >= (size_t)(vIdx + 1) * 8) {
+        const float *fp = (const float *)((const uint8_t *)_vertexBuffers[0]->_data + _vertexBufferOffsets[0]);
+        v->pos[0] = fp[vIdx * 2 + 0];
+        v->pos[1] = fp[vIdx * 2 + 1];
+        v->pos[2] = 0.0f;
+        v->pos[3] = 1.0f;
+      } else {
+        uint32_t vi = (uint32_t)vIdx;
+        float u = (float)((vi << 1) & 2);
+        float vt = (float)(vi & 2);
+        v->uv[0] = u;
+        v->uv[1] = vt;
+        v->pos[0] = u * 2.0f - 1.0f;
+        v->pos[1] = 1.0f - vt * 2.0f;
+        v->pos[2] = 0.0f;
+        v->pos[3] = 1.0f;
+      }
+    } else if (usedAttrBuf != 0 && _vertexBuffers[0]) {
+      /* Apply float4x4 mvp matrix from vertex buffer 0 (e.g. SDL_render_gpu Context.mvp) */
+      XEFMetalBuffer *ubuf = _vertexBuffers[0];
+      size_t uoff = _vertexBufferOffsets[0];
+      if (uoff + 64 <= ubuf->_length) {
+        const float *m = (const float *)((const uint8_t *)ubuf->_data + uoff);
+        float px = v->pos[0], py = v->pos[1], pz = v->pos[2], pw = v->pos[3];
+        v->pos[0] = m[0]*px + m[4]*py + m[8]*pz  + m[12]*pw;
+        v->pos[1] = m[1]*px + m[5]*py + m[9]*pz  + m[13]*pw;
+        v->pos[2] = m[2]*px + m[6]*py + m[10]*pz + m[14]*pw;
+        v->pos[3] = m[3]*px + m[7]*py + m[11]*pz + m[15]*pw;
+      }
+    }
+  }
+
+  if (ffn && ffn->_fragMode == XEF_FRAG_MODE_CONST_COLOR) {
+    v->col[0] = ffn->_constFragColor[0];
+    v->col[1] = ffn->_constFragColor[1];
+    v->col[2] = ffn->_constFragColor[2];
+    v->col[3] = ffn->_constFragColor[3];
+  }
+
+  float w = v->pos[3];
+  if (fabsf(w) < 1e-7f) w = 1.0f;
+  float invW = 1.0f / w;
+  float ndcX = v->pos[0] * invW;
+  float ndcY = v->pos[1] * invW;
+  float ndcZ = v->pos[2] * invW;
+  v->invW = invW;
+  v->sx = (float)_viewport.originX + (ndcX + 1.0f) * 0.5f * (float)_viewport.width;
+  v->sy = (float)_viewport.originY + (1.0f - ndcY) * 0.5f * (float)_viewport.height;
+  v->sz = (float)_viewport.znear + ndcZ * (float)(_viewport.zfar - _viewport.znear);
+}
+
+- (void)_shadeAndWritePixelX:(int)px Y:(int)py col:(const float[4])vcol uv:(const float[2])uv target:(XEFMetalTexture *)target {
+  XEFMetalFunction *ffn = _pipelineState && _pipelineState->_desc ? (XEFMetalFunction *)_pipelineState->_desc.fragmentFunction : nil;
+  int fmode = ffn ? ffn->_fragMode : XEF_FRAG_MODE_AUTO;
+
+  float colorScale = 1.0f;
+  float uvLeftTop[2] = {0.0f, 0.0f};
+  float uvDims[2] = {1.0f, 1.0f};
+
+  if (_fragmentBuffers[0]) {
+    XEFMetalBuffer *fb = _fragmentBuffers[0];
+    size_t foff = _fragmentBufferOffsets[0];
+    if (fmode == XEF_FRAG_MODE_BLIT2D && foff + 16 <= fb->_length) {
+      const float *fp = (const float *)((const uint8_t *)fb->_data + foff);
+      uvLeftTop[0] = fp[0]; uvLeftTop[1] = fp[1];
+      uvDims[0] = fp[2];    uvDims[1] = fp[3];
+    } else if (foff + 4 <= fb->_length) {
+      const float *fp = (const float *)((const uint8_t *)fb->_data + foff);
+      if (foff + 16 <= fb->_length && ffn && ffn->_source && strstr([ffn->_source UTF8String], "scRGB_output")) {
+        colorScale = fp[3];
+      } else {
+        colorScale = fp[0];
+      }
+      if (isnan(colorScale) || colorScale <= 0.0f || colorScale > 100.0f) colorScale = 1.0f;
+    }
+  }
+
+  float src[4];
+  if (fmode == XEF_FRAG_MODE_CONST_COLOR) {
+    src[0] = vcol[0]; src[1] = vcol[1]; src[2] = vcol[2]; src[3] = vcol[3];
+  } else if (fmode == XEF_FRAG_MODE_BLIT2D && _fragmentTextures[0]) {
+    float su = uv[0] * uvDims[0] + uvLeftTop[0];
+    float sv = uv[1] * uvDims[1] + uvLeftTop[1];
+    xef_tex_sample(_fragmentTextures[0], _fragmentSamplers[0], su, sv, src);
+  } else if (fmode == XEF_FRAG_MODE_COLOR_ONLY || !_fragmentTextures[0]) {
+    src[0] = vcol[0] * colorScale;
+    src[1] = vcol[1] * colorScale;
+    src[2] = vcol[2] * colorScale;
+    src[3] = vcol[3];
+  } else {
+    float texCol[4];
+    xef_tex_sample(_fragmentTextures[0], _fragmentSamplers[0], uv[0], uv[1], texCol);
+    if (fmode == XEF_FRAG_MODE_TEX_RGB) texCol[3] = 1.0f;
+    src[0] = texCol[0] * colorScale * vcol[0];
+    src[1] = texCol[1] * colorScale * vcol[1];
+    src[2] = texCol[2] * colorScale * vcol[2];
+    src[3] = texCol[3] * vcol[3];
+  }
+
+  MTLRenderPipelineColorAttachmentDescriptor *catt =
+      (_pipelineState && _pipelineState->_desc) ? _pipelineState->_desc.colorAttachments->_descriptors[0] : nil;
+  MTLColorWriteMask writeMask = catt ? catt.writeMask : MTLColorWriteMaskAll;
+
+  if (catt && catt.isBlendingEnabled) {
+    float dst[4];
+    xef_tex_read_pixel(target, px, py, dst);
+    float out[4];
+    for (int c = 0; c < 3; c++) {
+      float sf = xef_eval_blend_factor(catt.sourceRGBBlendFactor, src, dst, _blendColor, c);
+      float df = xef_eval_blend_factor(catt.destinationRGBBlendFactor, src, dst, _blendColor, c);
+      out[c] = xef_eval_blend_op(catt.rgbBlendOperation, src[c] * sf, dst[c] * df);
+    }
+    float saf = xef_eval_blend_factor(catt.sourceAlphaBlendFactor, src, dst, _blendColor, 3);
+    float daf = xef_eval_blend_factor(catt.destinationAlphaBlendFactor, src, dst, _blendColor, 3);
+    out[3] = xef_eval_blend_op(catt.alphaBlendOperation, src[3] * saf, dst[3] * daf);
+    xef_tex_write_pixel(target, px, py, out, writeMask);
+  } else {
+    xef_tex_write_pixel(target, px, py, src, writeMask);
+  }
+}
+
+- (void)_rasterizeTriangleV0:(const XEFVertex *)v0 V1:(const XEFVertex *)v1 V2:(const XEFVertex *)v2 target:(XEFMetalTexture *)target {
+  int tw = (int)target->_width, th = (int)target->_height;
+  int clipMinX = 0, clipMinY = 0, clipMaxX = tw - 1, clipMaxY = th - 1;
+  if (_hasScissor) {
+    int sx0 = (int)_scissorRect.x;
+    int sy0 = (int)_scissorRect.y;
+    int sx1 = sx0 + (int)_scissorRect.width - 1;
+    int sy1 = sy0 + (int)_scissorRect.height - 1;
+    if (sx0 > clipMinX) clipMinX = sx0;
+    if (sy0 > clipMinY) clipMinY = sy0;
+    if (sx1 < clipMaxX) clipMaxX = sx1;
+    if (sy1 < clipMaxY) clipMaxY = sy1;
+  }
+  if (clipMinX > clipMaxX || clipMinY > clipMaxY) return;
+
+  float fminX = fminf(v0->sx, fminf(v1->sx, v2->sx));
+  float fmaxX = fmaxf(v0->sx, fmaxf(v1->sx, v2->sx));
+  float fminY = fminf(v0->sy, fminf(v1->sy, v2->sy));
+  float fmaxY = fmaxf(v0->sy, fmaxf(v1->sy, v2->sy));
+
+  int minX = (int)floorf(fminX);
+  int maxX = (int)ceilf(fmaxX);
+  int minY = (int)floorf(fminY);
+  int maxY = (int)ceilf(fmaxY);
+
+  if (minX < clipMinX) minX = clipMinX;
+  if (maxX > clipMaxX) maxX = clipMaxX;
+  if (minY < clipMinY) minY = clipMinY;
+  if (maxY > clipMaxY) maxY = clipMaxY;
+  if (minX > maxX || minY > maxY) return;
+
+  float area = (v1->sx - v0->sx) * (v2->sy - v0->sy) - (v1->sy - v0->sy) * (v2->sx - v0->sx);
+  if (fabsf(area) < 1e-5f) return;
+
+  if (_cullMode != MTLCullModeNone) {
+    BOOL isCW = (area > 0.0f); /* screen Y points down */
+    BOOL isFront = (_frontFacingWinding == MTLWindingClockwise) ? isCW : !isCW;
+    if (_cullMode == MTLCullModeBack && !isFront) return;
+    if (_cullMode == MTLCullModeFront && isFront) return;
+  }
+
+  float invArea = 1.0f / area;
+
+  for (int py = minY; py <= maxY; py++) {
+    float cy = (float)py + 0.5f;
+    for (int px = minX; px <= maxX; px++) {
+      float cx = (float)px + 0.5f;
+      float w0 = ((v2->sx - v1->sx) * (cy - v1->sy) - (v2->sy - v1->sy) * (cx - v1->sx)) * invArea;
+      float w1 = ((v0->sx - v2->sx) * (cy - v2->sy) - (v0->sy - v2->sy) * (cx - v2->sx)) * invArea;
+      float w2 = 1.0f - w0 - w1;
+      if (w0 >= -1e-4f && w1 >= -1e-4f && w2 >= -1e-4f) {
+        float col[4] = {
+          w0 * v0->col[0] + w1 * v1->col[0] + w2 * v2->col[0],
+          w0 * v0->col[1] + w1 * v1->col[1] + w2 * v2->col[1],
+          w0 * v0->col[2] + w1 * v1->col[2] + w2 * v2->col[2],
+          w0 * v0->col[3] + w1 * v1->col[3] + w2 * v2->col[3],
+        };
+        float uv[2] = {
+          w0 * v0->uv[0] + w1 * v1->uv[0] + w2 * v2->uv[0],
+          w0 * v0->uv[1] + w1 * v1->uv[1] + w2 * v2->uv[1],
+        };
+        [self _shadeAndWritePixelX:px Y:py col:col uv:uv target:target];
+      }
+    }
+  }
+}
+
+- (void)_rasterizeLineV0:(const XEFVertex *)v0 V1:(const XEFVertex *)v1 target:(XEFMetalTexture *)target {
+  float dx = v1->sx - v0->sx;
+  float dy = v1->sy - v0->sy;
+  int steps = (int)ceilf(fmaxf(fabsf(dx), fabsf(dy)));
+  if (steps <= 0) steps = 1;
+  int tw = (int)target->_width, th = (int)target->_height;
+  for (int i = 0; i <= steps; i++) {
+    float t = (float)i / (float)steps;
+    int px = (int)(v0->sx + dx * t);
+    int py = (int)(v0->sy + dy * t);
+    if (px < 0 || px >= tw || py < 0 || py >= th) continue;
+    if (_hasScissor) {
+      if (px < (int)_scissorRect.x || px >= (int)(_scissorRect.x + _scissorRect.width) ||
+          py < (int)_scissorRect.y || py >= (int)(_scissorRect.y + _scissorRect.height)) continue;
+    }
+    float col[4] = {
+      v0->col[0] + (v1->col[0] - v0->col[0]) * t,
+      v0->col[1] + (v1->col[1] - v0->col[1]) * t,
+      v0->col[2] + (v1->col[2] - v0->col[2]) * t,
+      v0->col[3] + (v1->col[3] - v0->col[3]) * t,
+    };
+    float uv[2] = {
+      v0->uv[0] + (v1->uv[0] - v0->uv[0]) * t,
+      v0->uv[1] + (v1->uv[1] - v0->uv[1]) * t,
+    };
+    [self _shadeAndWritePixelX:px Y:py col:col uv:uv target:target];
+  }
+}
+
+- (void)drawPrimitives:(MTLPrimitiveType)primitiveType vertexStart:(NSUInteger)vertexStart vertexCount:(NSUInteger)vertexCount instanceCount:(NSUInteger)instanceCount baseInstance:(NSUInteger)baseInstance {
+  if (!_passDesc || vertexCount == 0 || instanceCount == 0) return;
+  MTLRenderPassColorAttachmentDescriptor *att0 = _passDesc.colorAttachments->_attachments[0];
+  if (!att0 || !att0.texture) return;
+  XEFMetalTexture *target = (XEFMetalTexture *)att0.texture;
+
+  /* Fast-path for 1:1 fullscreen BlitFrom2D */
+  XEFMetalFunction *vfn = _pipelineState && _pipelineState->_desc ? (XEFMetalFunction *)_pipelineState->_desc.vertexFunction : nil;
+  XEFMetalFunction *ffn = _pipelineState && _pipelineState->_desc ? (XEFMetalFunction *)_pipelineState->_desc.fragmentFunction : nil;
+  MTLRenderPipelineColorAttachmentDescriptor *catt =
+      (_pipelineState && _pipelineState->_desc) ? _pipelineState->_desc.colorAttachments->_descriptors[0] : nil;
+  if (primitiveType == MTLPrimitiveTypeTriangle && vertexCount == 3 &&
+      vfn && vfn->_isFullscreenVert && ffn && ffn->_fragMode == XEF_FRAG_MODE_BLIT2D &&
+      _fragmentTextures[0] && (!catt || !catt.isBlendingEnabled)) {
+    XEFMetalTexture *srcTex = _fragmentTextures[0];
+    float uvLeftTop[2] = {0.0f, 0.0f}, uvDims[2] = {1.0f, 1.0f};
+    if (_fragmentBuffers[0] && _fragmentBufferOffsets[0] + 16 <= _fragmentBuffers[0]->_length) {
+      const float *fp = (const float *)((const uint8_t *)_fragmentBuffers[0]->_data + _fragmentBufferOffsets[0]);
+      uvLeftTop[0] = fp[0]; uvLeftTop[1] = fp[1];
+      uvDims[0] = fp[2];    uvDims[1] = fp[3];
+    }
+    if (srcTex->_width == target->_width && srcTex->_height == target->_height &&
+        srcTex->_pixelFormat == target->_pixelFormat &&
+        fabsf(uvLeftTop[0]) < 1e-4f && fabsf(uvLeftTop[1]) < 1e-4f &&
+        fabsf(uvDims[0] - 1.0f) < 1e-4f && fabsf(uvDims[1] - 1.0f) < 1e-4f &&
+        srcTex->_storage && target->_storage && srcTex->_storage->_dataSize == target->_storage->_dataSize) {
+      memcpy(target->_storage->_data, srcTex->_storage->_data, target->_storage->_dataSize);
+      return;
+    }
+  }
+
+  if (primitiveType == MTLPrimitiveTypeTriangle) {
+    for (NSUInteger i = 0; i + 2 < vertexCount; i += 3) {
+      XEFVertex v0, v1, v2;
+      [self _fetchVertex:(NSInteger)(vertexStart + i + 0) outVertex:&v0];
+      [self _fetchVertex:(NSInteger)(vertexStart + i + 1) outVertex:&v1];
+      [self _fetchVertex:(NSInteger)(vertexStart + i + 2) outVertex:&v2];
+      [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+    }
+  } else if (primitiveType == MTLPrimitiveTypeTriangleStrip) {
+    for (NSUInteger i = 0; i + 2 < vertexCount; i++) {
+      XEFVertex v0, v1, v2;
+      [self _fetchVertex:(NSInteger)(vertexStart + i + (i & 1 ? 1 : 0)) outVertex:&v0];
+      [self _fetchVertex:(NSInteger)(vertexStart + i + (i & 1 ? 0 : 1)) outVertex:&v1];
+      [self _fetchVertex:(NSInteger)(vertexStart + i + 2) outVertex:&v2];
+      [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+    }
+  } else if (primitiveType == MTLPrimitiveTypeLine) {
+    for (NSUInteger i = 0; i + 1 < vertexCount; i += 2) {
+      XEFVertex v0, v1;
+      [self _fetchVertex:(NSInteger)(vertexStart + i + 0) outVertex:&v0];
+      [self _fetchVertex:(NSInteger)(vertexStart + i + 1) outVertex:&v1];
+      [self _rasterizeLineV0:&v0 V1:&v1 target:target];
+    }
+  } else if (primitiveType == MTLPrimitiveTypeLineStrip) {
+    for (NSUInteger i = 0; i + 1 < vertexCount; i++) {
+      XEFVertex v0, v1;
+      [self _fetchVertex:(NSInteger)(vertexStart + i + 0) outVertex:&v0];
+      [self _fetchVertex:(NSInteger)(vertexStart + i + 1) outVertex:&v1];
+      [self _rasterizeLineV0:&v0 V1:&v1 target:target];
+    }
+  } else if (primitiveType == MTLPrimitiveTypePoint) {
+    for (NSUInteger i = 0; i < vertexCount; i++) {
+      XEFVertex v0;
+      [self _fetchVertex:(NSInteger)(vertexStart + i) outVertex:&v0];
+      [self _shadeAndWritePixelX:(int)v0.sx Y:(int)v0.sy col:v0.col uv:v0.uv target:target];
+    }
+  }
+}
+
+- (void)drawPrimitives:(MTLPrimitiveType)primitiveType vertexStart:(NSUInteger)vertexStart vertexCount:(NSUInteger)vertexCount instanceCount:(NSUInteger)instanceCount {
+  [self drawPrimitives:primitiveType vertexStart:vertexStart vertexCount:vertexCount instanceCount:instanceCount baseInstance:0];
+}
+
+- (void)drawPrimitives:(MTLPrimitiveType)primitiveType vertexStart:(NSUInteger)vertexStart vertexCount:(NSUInteger)vertexCount {
+  [self drawPrimitives:primitiveType vertexStart:vertexStart vertexCount:vertexCount instanceCount:1 baseInstance:0];
+}
+
+- (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType indexCount:(NSUInteger)indexCount indexType:(MTLIndexType)indexType indexBuffer:(id<MTLBuffer>)indexBuffer indexBufferOffset:(NSUInteger)indexBufferOffset instanceCount:(NSUInteger)instanceCount baseVertex:(NSInteger)baseVertex baseInstance:(NSUInteger)baseInstance {
+  if (!_passDesc || !indexBuffer || indexCount == 0 || instanceCount == 0) return;
+  MTLRenderPassColorAttachmentDescriptor *att0 = _passDesc.colorAttachments->_attachments[0];
+  if (!att0 || !att0.texture) return;
+  XEFMetalTexture *target = (XEFMetalTexture *)att0.texture;
+  XEFMetalBuffer *ibuf = (XEFMetalBuffer *)indexBuffer;
+  if (indexBufferOffset >= ibuf->_length) return;
+  const uint8_t *iptr = (const uint8_t *)ibuf->_data + indexBufferOffset;
+
+  #define READ_IDX(k) ((indexType == MTLIndexTypeUInt16) ? (NSInteger)((const uint16_t *)iptr)[k] + baseVertex : (NSInteger)((const uint32_t *)iptr)[k] + baseVertex)
+
+  if (primitiveType == MTLPrimitiveTypeTriangle) {
+    for (NSUInteger i = 0; i + 2 < indexCount; i += 3) {
+      XEFVertex v0, v1, v2;
+      [self _fetchVertex:READ_IDX(i + 0) outVertex:&v0];
+      [self _fetchVertex:READ_IDX(i + 1) outVertex:&v1];
+      [self _fetchVertex:READ_IDX(i + 2) outVertex:&v2];
+      [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+    }
+  } else if (primitiveType == MTLPrimitiveTypeTriangleStrip) {
+    for (NSUInteger i = 0; i + 2 < indexCount; i++) {
+      XEFVertex v0, v1, v2;
+      [self _fetchVertex:READ_IDX(i + (i & 1 ? 1 : 0)) outVertex:&v0];
+      [self _fetchVertex:READ_IDX(i + (i & 1 ? 0 : 1)) outVertex:&v1];
+      [self _fetchVertex:READ_IDX(i + 2) outVertex:&v2];
+      [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+    }
+  } else if (primitiveType == MTLPrimitiveTypeLine) {
+    for (NSUInteger i = 0; i + 1 < indexCount; i += 2) {
+      XEFVertex v0, v1;
+      [self _fetchVertex:READ_IDX(i + 0) outVertex:&v0];
+      [self _fetchVertex:READ_IDX(i + 1) outVertex:&v1];
+      [self _rasterizeLineV0:&v0 V1:&v1 target:target];
+    }
+  } else if (primitiveType == MTLPrimitiveTypeLineStrip) {
+    for (NSUInteger i = 0; i + 1 < indexCount; i++) {
+      XEFVertex v0, v1;
+      [self _fetchVertex:READ_IDX(i + 0) outVertex:&v0];
+      [self _fetchVertex:READ_IDX(i + 1) outVertex:&v1];
+      [self _rasterizeLineV0:&v0 V1:&v1 target:target];
+    }
+  } else if (primitiveType == MTLPrimitiveTypePoint) {
+    for (NSUInteger i = 0; i < indexCount; i++) {
+      XEFVertex v0;
+      [self _fetchVertex:READ_IDX(i) outVertex:&v0];
+      [self _shadeAndWritePixelX:(int)v0.sx Y:(int)v0.sy col:v0.col uv:v0.uv target:target];
+    }
+  }
+  #undef READ_IDX
+}
+
+- (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType indexCount:(NSUInteger)indexCount indexType:(MTLIndexType)indexType indexBuffer:(id<MTLBuffer>)indexBuffer indexBufferOffset:(NSUInteger)indexBufferOffset instanceCount:(NSUInteger)instanceCount {
+  [self drawIndexedPrimitives:primitiveType indexCount:indexCount indexType:indexType indexBuffer:indexBuffer indexBufferOffset:indexBufferOffset instanceCount:instanceCount baseVertex:0 baseInstance:0];
+}
+
+- (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType indexCount:(NSUInteger)indexCount indexType:(MTLIndexType)indexType indexBuffer:(id<MTLBuffer>)indexBuffer indexBufferOffset:(NSUInteger)indexBufferOffset {
+  [self drawIndexedPrimitives:primitiveType indexCount:indexCount indexType:indexType indexBuffer:indexBuffer indexBufferOffset:indexBufferOffset instanceCount:1 baseVertex:0 baseInstance:0];
+}
+
 - (void)endEncoding {}
+
+- (void)dealloc {
+  [_label release];
+  [_passDesc release];
+  [_pipelineState release];
+  [_depthStencilState release];
+  for (int i = 0; i < 31; i++) {
+    [_vertexBuffers[i] release];
+    [_fragmentBuffers[i] release];
+    [_vertexTextures[i] release];
+    [_fragmentTextures[i] release];
+  }
+  for (int i = 0; i < 16; i++) {
+    [_vertexSamplers[i] release];
+    [_fragmentSamplers[i] release];
+  }
+  [super dealloc];
+}
 @end
 
 
-@interface XEFMetalComputeCommandEncoder : XEFMetalObject <MTLComputeCommandEncoder>
+@interface XEFMetalComputeCommandEncoder : XEFMetalObject <MTLComputeCommandEncoder> {
+@public
+  id<MTLDevice> _device;
+  NSString *_label;
+  XEFMetalComputePipelineState *_pipelineState;
+  XEFMetalBuffer *_buffers[31];
+  NSUInteger _bufferOffsets[31];
+  XEFMetalTexture *_textures[31];
+  XEFMetalSamplerState *_samplers[16];
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device;
 @end
+
 @implementation XEFMetalComputeCommandEncoder
-- (void)setComputePipelineState:(id<MTLComputePipelineState>)state {}
-- (void)setBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {}
-- (void)setBytes:(const void *)bytes length:(NSUInteger)length atIndex:(NSUInteger)index {}
-- (void)setTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index {}
-- (void)setSamplerState:(id<MTLSamplerState>)sampler atIndex:(NSUInteger)index {}
+- (instancetype)initWithDevice:(id<MTLDevice>)device {
+  if ((self = [super init])) { _device = device; }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (void)setComputePipelineState:(id<MTLComputePipelineState>)state {
+  [state retain]; [_pipelineState release]; _pipelineState = (XEFMetalComputePipelineState *)state;
+}
+- (void)setBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  [buffer retain]; [_buffers[index] release];
+  _buffers[index] = (XEFMetalBuffer *)buffer;
+  _bufferOffsets[index] = offset;
+}
+- (void)setBuffers:(const id<MTLBuffer> *)buffers offsets:(const NSUInteger *)offsets withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setBuffer:buffers ? buffers[i] : nil offset:offsets ? offsets[i] : 0 atIndex:range.location + i];
+  }
+}
+- (void)setBufferOffset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index < 31) _bufferOffsets[index] = offset;
+}
+- (void)setBytes:(const void *)bytes length:(NSUInteger)length atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  XEFMetalBuffer *b = [[[XEFMetalBuffer alloc] initWithBytes:bytes length:length options:0 device:_device] autorelease];
+  [self setBuffer:b offset:0 atIndex:index];
+}
+- (void)setTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index {
+  if (index >= 31) return;
+  [texture retain]; [_textures[index] release];
+  _textures[index] = (XEFMetalTexture *)texture;
+}
+- (void)setTextures:(const id<MTLTexture> *)textures withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setTexture:textures ? textures[i] : nil atIndex:range.location + i];
+  }
+}
+- (void)setSamplerState:(id<MTLSamplerState>)sampler atIndex:(NSUInteger)index {
+  if (index >= 16) return;
+  [sampler retain]; [_samplers[index] release];
+  _samplers[index] = (XEFMetalSamplerState *)sampler;
+}
+- (void)setSamplerStates:(const id<MTLSamplerState> *)samplers withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setSamplerState:samplers ? samplers[i] : nil atIndex:range.location + i];
+  }
+}
+- (void)setThreadgroupMemoryLength:(NSUInteger)length atIndex:(NSUInteger)index {}
 - (void)dispatchThreads:(MTLSize)threadsPerGrid threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {}
 - (void)dispatchThreadgroups:(MTLSize)threadgroupsPerGrid threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {}
+- (void)memoryBarrierWithScope:(MTLBarrierScope)scope {}
+- (void)memoryBarrierWithResources:(const id<MTLResource> *)resources count:(NSUInteger)count {}
+- (void)pushDebugGroup:(NSString *)string {}
+- (void)popDebugGroup {}
+- (void)insertDebugSignpost:(NSString *)string {}
 - (void)endEncoding {}
+- (void)dealloc {
+  [_label release];
+  [_pipelineState release];
+  for (int i = 0; i < 31; i++) {
+    [_buffers[i] release];
+    [_textures[i] release];
+  }
+  for (int i = 0; i < 16; i++) [_samplers[i] release];
+  [super dealloc];
+}
 @end
 
-@interface XEFMetalBlitCommandEncoder : XEFMetalObject <MTLBlitCommandEncoder>
+@interface XEFMetalBlitCommandEncoder : XEFMetalObject <MTLBlitCommandEncoder> {
+  id<MTLDevice> _device;
+  NSString *_label;
+}
 @end
 @implementation XEFMetalBlitCommandEncoder
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (void)copyFromBuffer:(id<MTLBuffer>)sourceBuffer sourceOffset:(NSUInteger)sourceOffset toBuffer:(id<MTLBuffer>)destinationBuffer destinationOffset:(NSUInteger)destinationOffset size:(NSUInteger)size {
   if (sourceBuffer && destinationBuffer) {
     memcpy((uint8_t *)[destinationBuffer contents] + destinationOffset,
@@ -829,60 +2430,150 @@ static id metal_stub(id self, SEL _cmd, ...) {
 - (void)copyFromBuffer:(id<MTLBuffer>)sourceBuffer sourceOffset:(NSUInteger)sourceOffset sourceBytesPerRow:(NSUInteger)sourceBytesPerRow sourceBytesPerImage:(NSUInteger)sourceBytesPerImage sourceSize:(MTLSize)sourceSize toTexture:(id<MTLTexture>)destinationTexture destinationSlice:(NSUInteger)destinationSlice destinationLevel:(NSUInteger)destinationLevel destinationOrigin:(MTLOrigin)destinationOrigin {
   if (sourceBuffer && destinationTexture) {
     const uint8_t *src = (const uint8_t *)[sourceBuffer contents] + sourceOffset;
-    MTLRegion region = MTLRegionMake2D(destinationOrigin.x, destinationOrigin.y, sourceSize.width, sourceSize.height);
-    [destinationTexture replaceRegion:region mipmapLevel:destinationLevel withBytes:src bytesPerRow:sourceBytesPerRow];
+    MTLRegion region = MTLRegionMake3D(destinationOrigin.x, destinationOrigin.y, destinationOrigin.z, sourceSize.width, sourceSize.height, sourceSize.depth > 0 ? sourceSize.depth : 1);
+    [(XEFMetalTexture *)destinationTexture replaceRegion:region mipmapLevel:destinationLevel slice:destinationSlice withBytes:src bytesPerRow:sourceBytesPerRow bytesPerImage:sourceBytesPerImage];
   }
 }
 - (void)copyFromTexture:(id<MTLTexture>)sourceTexture sourceSlice:(NSUInteger)sourceSlice sourceLevel:(NSUInteger)sourceLevel sourceOrigin:(MTLOrigin)sourceOrigin sourceSize:(MTLSize)sourceSize toBuffer:(id<MTLBuffer>)destinationBuffer destinationOffset:(NSUInteger)destinationOffset destinationBytesPerRow:(NSUInteger)destinationBytesPerRow destinationBytesPerImage:(NSUInteger)destinationBytesPerImage {
   if (sourceTexture && destinationBuffer) {
     uint8_t *dst = (uint8_t *)[destinationBuffer contents] + destinationOffset;
-    MTLRegion region = MTLRegionMake2D(sourceOrigin.x, sourceOrigin.y, sourceSize.width, sourceSize.height);
-    [sourceTexture getBytes:dst bytesPerRow:destinationBytesPerRow fromRegion:region mipmapLevel:sourceLevel];
+    MTLRegion region = MTLRegionMake3D(sourceOrigin.x, sourceOrigin.y, sourceOrigin.z, sourceSize.width, sourceSize.height, sourceSize.depth > 0 ? sourceSize.depth : 1);
+    [(XEFMetalTexture *)sourceTexture getBytes:dst bytesPerRow:destinationBytesPerRow bytesPerImage:destinationBytesPerImage fromRegion:region mipmapLevel:sourceLevel slice:sourceSlice];
   }
 }
-- (void)copyFromTexture:(id<MTLTexture>)sourceTexture sourceSlice:(NSUInteger)sourceSlice sourceLevel:(NSUInteger)sourceLevel sourceOrigin:(MTLOrigin)sourceOrigin sourceSize:(MTLSize)sourceSize toTexture:(id<MTLTexture>)destinationTexture destinationSlice:(NSUInteger)destinationSlice destinationLevel:(NSUInteger)destinationLevel destinationOrigin:(MTLOrigin)destinationOrigin {}
+- (void)copyFromTexture:(id<MTLTexture>)sourceTexture sourceSlice:(NSUInteger)sourceSlice sourceLevel:(NSUInteger)sourceLevel sourceOrigin:(MTLOrigin)sourceOrigin sourceSize:(MTLSize)sourceSize toTexture:(id<MTLTexture>)destinationTexture destinationSlice:(NSUInteger)destinationSlice destinationLevel:(NSUInteger)destinationLevel destinationOrigin:(MTLOrigin)destinationOrigin {
+  if (!sourceTexture || !destinationTexture) return;
+  XEFMetalTexture *src = (XEFMetalTexture *)sourceTexture;
+  XEFMetalTexture *dst = (XEFMetalTexture *)destinationTexture;
+  int w = (int)sourceSize.width;
+  int h = (int)sourceSize.height;
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      float rgba[4];
+      xef_tex_read_pixel(src, (int)sourceOrigin.x + x, (int)sourceOrigin.y + y, rgba);
+      xef_tex_write_pixel(dst, (int)destinationOrigin.x + x, (int)destinationOrigin.y + y, rgba, MTLColorWriteMaskAll);
+    }
+  }
+}
+- (void)copyFromTexture:(id<MTLTexture>)sourceTexture toTexture:(id<MTLTexture>)destinationTexture {
+  if (!sourceTexture || !destinationTexture) return;
+  MTLSize sz = MTLSizeMake([sourceTexture width], [sourceTexture height], 1);
+  MTLOrigin zero = MTLOriginMake(0, 0, 0);
+  [self copyFromTexture:sourceTexture sourceSlice:0 sourceLevel:0 sourceOrigin:zero sourceSize:sz toTexture:destinationTexture destinationSlice:0 destinationLevel:0 destinationOrigin:zero];
+}
 - (void)generateMipmapsForTexture:(id<MTLTexture>)texture {}
+- (void)synchronizeResource:(id<MTLResource>)resource {}
+- (void)synchronizeTexture:(id<MTLTexture>)texture slice:(NSUInteger)slice level:(NSUInteger)level {}
 - (void)fillBuffer:(id<MTLBuffer>)buffer range:(NSRange)range value:(uint8_t)value {
   if (buffer) {
     memset((uint8_t *)[buffer contents] + range.location, value, range.length);
   }
 }
+- (void)pushDebugGroup:(NSString *)string {}
+- (void)popDebugGroup {}
+- (void)insertDebugSignpost:(NSString *)string {}
 - (void)endEncoding {}
+- (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
 @interface XEFMetalCommandBuffer : XEFMetalObject <MTLCommandBuffer> {
   id<MTLCommandQueue> _commandQueue;
   MTLCommandBufferStatus _status;
+  NSString *_label;
+  NSMutableArray *_completedHandlers;
+  NSMutableArray *_scheduledHandlers;
+  NSMutableArray *_drawables;
 }
 @end
 @implementation XEFMetalCommandBuffer
 - (instancetype)initWithQueue:(id<MTLCommandQueue>)queue {
-  if ((self = [super init])) { _commandQueue = queue; _status = MTLCommandBufferStatusNotEnqueued; }
+  if ((self = [super init])) {
+    _commandQueue = queue;
+    _status = MTLCommandBufferStatusNotEnqueued;
+  }
   return self;
 }
 - (id<MTLCommandQueue>)commandQueue { return _commandQueue; }
 - (id<MTLDevice>)device { return _commandQueue.device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (MTLCommandBufferStatus)status { return _status; }
+- (NSError *)error { return nil; }
+- (CFTimeInterval)GPUStartTime { return 0.0; }
+- (CFTimeInterval)GPUEndTime { return 0.0; }
+- (CFTimeInterval)kernelStartTime { return 0.0; }
+- (CFTimeInterval)kernelEndTime { return 0.0; }
 - (id<MTLRenderCommandEncoder>)renderCommandEncoderWithDescriptor:(MTLRenderPassDescriptor *)renderPassDescriptor {
-  return [[[XEFMetalRenderCommandEncoder alloc] init] autorelease];
+  return [[[XEFMetalRenderCommandEncoder alloc] initWithDescriptor:renderPassDescriptor device:_commandQueue.device] autorelease];
 }
 - (id<MTLComputeCommandEncoder>)computeCommandEncoder {
-  return [[[XEFMetalComputeCommandEncoder alloc] init] autorelease];
+  return [[[XEFMetalComputeCommandEncoder alloc] initWithDevice:_commandQueue.device] autorelease];
+}
+- (id<MTLComputeCommandEncoder>)computeCommandEncoderWithDispatchType:(MTLDispatchType)dispatchType {
+  return [[[XEFMetalComputeCommandEncoder alloc] initWithDevice:_commandQueue.device] autorelease];
 }
 - (id<MTLBlitCommandEncoder>)blitCommandEncoder {
   return [[[XEFMetalBlitCommandEncoder alloc] init] autorelease];
 }
+- (void)enqueue { _status = MTLCommandBufferStatusEnqueued; }
 - (void)presentDrawable:(id<MTLDrawable>)drawable {
-  if (drawable) [drawable present];
+  if (!drawable) return;
+  if (!_drawables) _drawables = [[NSMutableArray alloc] init];
+  [_drawables addObject:drawable];
 }
-- (void)commit { _status = MTLCommandBufferStatusCompleted; }
+- (void)presentDrawable:(id<MTLDrawable>)drawable atTime:(CFTimeInterval)presentationTime {
+  [self presentDrawable:drawable];
+}
+- (void)presentDrawable:(id<MTLDrawable>)drawable afterMinimumDuration:(CFTimeInterval)duration {
+  [self presentDrawable:drawable];
+}
+- (void)commit {
+  _status = MTLCommandBufferStatusCommitted;
+  if (_scheduledHandlers) {
+    for (MTLCommandBufferHandler blk in _scheduledHandlers) blk(self);
+    [_scheduledHandlers removeAllObjects];
+  }
+  if (_drawables) {
+    for (id<MTLDrawable> d in _drawables) [d present];
+    [_drawables removeAllObjects];
+  }
+  _status = MTLCommandBufferStatusCompleted;
+  if (_completedHandlers) {
+    for (MTLCommandBufferHandler blk in _completedHandlers) blk(self);
+    [_completedHandlers removeAllObjects];
+  }
+}
 - (void)waitUntilCompleted { _status = MTLCommandBufferStatusCompleted; }
 - (void)waitUntilScheduled {}
 - (void)addCompletedHandler:(MTLCommandBufferHandler)block {
-  if (block) block(self);
+  if (!block) return;
+  if (_status == MTLCommandBufferStatusCompleted) {
+    block(self);
+    return;
+  }
+  if (!_completedHandlers) _completedHandlers = [[NSMutableArray alloc] init];
+  [_completedHandlers addObject:[[block copy] autorelease]];
 }
 - (void)addScheduledHandler:(MTLCommandBufferHandler)block {
-  if (block) block(self);
+  if (!block) return;
+  if (_status >= MTLCommandBufferStatusScheduled) {
+    block(self);
+    return;
+  }
+  if (!_scheduledHandlers) _scheduledHandlers = [[NSMutableArray alloc] init];
+  [_scheduledHandlers addObject:[[block copy] autorelease]];
+}
+- (void)pushDebugGroup:(NSString *)string {}
+- (void)popDebugGroup {}
+- (void)encodeSignalEvent:(id<MTLEvent>)event value:(uint64_t)value {
+  if ([(id)event respondsToSelector:@selector(setSignaledValue:)]) [(XEFMetalEvent *)event setSignaledValue:value];
+}
+- (void)encodeWaitForEvent:(id<MTLEvent>)event value:(uint64_t)value {}
+- (void)dealloc {
+  [_label release];
+  [_completedHandlers release];
+  [_scheduledHandlers release];
+  [_drawables release];
+  [super dealloc];
 }
 @end
 
@@ -905,13 +2596,13 @@ static id metal_stub(id self, SEL _cmd, ...) {
 - (id<MTLCommandBuffer>)commandBufferWithUnretainedReferences {
   return [[[XEFMetalCommandBuffer alloc] initWithQueue:self] autorelease];
 }
+- (void)insertDebugCaptureBoundary {}
 - (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
 /* ------------------------------------------------------------------- Device */
 
 @interface XEFMetalDevice : XEFMetalObject <MTLDevice>
-
 + (XEFMetalDevice *)sharedDevice;
 @end
 
@@ -919,26 +2610,36 @@ static id metal_stub(id self, SEL _cmd, ...) {
 
 + (XEFMetalDevice *)sharedDevice {
   static XEFMetalDevice *s_dev = nil;
-  if (!s_dev) s_dev = [[XEFMetalDevice alloc] init];
+  if (!s_dev) {
+    /* Default orbit64 RDP to CPU threads while keeping Metal GPU presentation active */
+    setenv("ORBIT64_HIRES", "cpu", 0);
+    setenv("ORBIT64_RDP", "exact", 0);
+    s_dev = [[XEFMetalDevice alloc] init];
+  }
   return s_dev;
 }
 
-- (NSString *)name { return @"Apple M1 (XEF Metal/Vulkan Bridge)"; }
-
-- (BOOL)supportsFamily:(MTLGPUFamily)gpuFamily {
-  /* Return YES for Apple1-8, Mac1-2, Common1-3 to satisfy SDL_GPU, MoltenVK, and games */
-  return YES;
-}
-
-- (BOOL)supportsFeatureSet:(MTLFeatureSet)featureSet {
-  return YES;
-}
-
+- (NSString *)name { return @"Apple M1 (XEF Metal Engine)"; }
+- (uint64_t)registryID { return 0x100000001ULL; }
+- (BOOL)isLowPower { return NO; }
+- (BOOL)isHeadless { return NO; }
+- (BOOL)isRemovable { return NO; }
 - (BOOL)hasUnifiedMemory { return YES; }
+- (BOOL)isDepth24Stencil8PixelFormatSupported { return YES; }
+- (uint64_t)recommendedMaxWorkingSetSize { return 4ULL * 1024 * 1024 * 1024; }
+- (NSUInteger)maxBufferLength { return 1ULL * 1024 * 1024 * 1024; }
+- (NSUInteger)maxThreadgroupMemoryLength { return 32768; }
+- (NSUInteger)currentAllocatedSize { return 0; }
+- (MTLReadWriteTextureTier)readWriteTextureSupport { return MTLReadWriteTextureTier2; }
+- (MTLArgumentBuffersTier)argumentBuffersSupport { return MTLArgumentBuffersTier2; }
 
-- (MTLSize)maxThreadsPerThreadgroup {
-  return MTLSizeMake(1024, 1024, 64);
-}
+- (BOOL)supportsFamily:(MTLGPUFamily)gpuFamily { return YES; }
+- (BOOL)supportsFeatureSet:(MTLFeatureSet)featureSet { return YES; }
+- (BOOL)supportsTextureSampleCount:(NSUInteger)sampleCount { return (sampleCount == 1 || sampleCount == 4); }
+- (NSUInteger)minimumLinearTextureAlignmentForPixelFormat:(MTLPixelFormat)format { return 16; }
+- (NSUInteger)minimumTextureBufferAlignmentForPixelFormat:(MTLPixelFormat)format { return 16; }
+
+- (MTLSize)maxThreadsPerThreadgroup { return MTLSizeMake(1024, 1024, 64); }
 
 - (id<MTLCommandQueue>)newCommandQueue {
   return [[XEFMetalCommandQueue alloc] initWithDevice:self];
@@ -956,46 +2657,115 @@ static id metal_stub(id self, SEL _cmd, ...) {
   return [[XEFMetalBuffer alloc] initWithBytes:pointer length:length options:options device:self];
 }
 
+- (id<MTLBuffer>)newBufferWithBytesNoCopy:(void *)pointer length:(NSUInteger)length options:(MTLResourceOptions)options deallocator:(void (^)(void *pointer, NSUInteger length))deallocator {
+  return [[XEFMetalBuffer alloc] initWithBytesNoCopy:pointer length:length options:options device:self];
+}
+
 - (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor {
   return [[XEFMetalTexture alloc] initWithDescriptor:descriptor device:self];
 }
 
+- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor iosurface:(IOSurfaceRef)iosurface plane:(NSUInteger)plane {
+  return [[XEFMetalTexture alloc] initWithDescriptor:descriptor device:self];
+}
+
 - (id<MTLSamplerState>)newSamplerStateWithDescriptor:(MTLSamplerDescriptor *)descriptor {
-  XEFMetalSamplerState *s = [[XEFMetalSamplerState alloc] init];
-  return s;
+  return [[XEFMetalSamplerState alloc] initWithDescriptor:descriptor device:self];
 }
 
 - (id<MTLDepthStencilState>)newDepthStencilStateWithDescriptor:(MTLDepthStencilDescriptor *)descriptor {
-  XEFMetalDepthStencilState *d = [[XEFMetalDepthStencilState alloc] init];
-  return d;
+  return [[XEFMetalDepthStencilState alloc] initWithDescriptor:descriptor device:self];
 }
 
 - (id<MTLRenderPipelineState>)newRenderPipelineStateWithDescriptor:(MTLRenderPipelineDescriptor *)descriptor error:(NSError **)error {
-  return [[XEFMetalRenderPipelineState alloc] initWithDevice:self label:descriptor.label];
+  if (error) *error = nil;
+  return [[XEFMetalRenderPipelineState alloc] initWithDevice:self descriptor:descriptor];
+}
+
+- (id<MTLRenderPipelineState>)newRenderPipelineStateWithDescriptor:(MTLRenderPipelineDescriptor *)descriptor options:(MTLPipelineOption)options reflection:(MTLAutoreleasedRenderPipelineReflection *)reflection error:(NSError **)error {
+  if (error) *error = nil;
+  if (reflection) *reflection = nil;
+  return [[XEFMetalRenderPipelineState alloc] initWithDevice:self descriptor:descriptor];
 }
 
 - (id<MTLComputePipelineState>)newComputePipelineStateWithDescriptor:(MTLComputePipelineDescriptor *)descriptor options:(MTLPipelineOption)options reflection:(MTLAutoreleasedComputePipelineReflection *)reflection error:(NSError **)error {
-  return [[XEFMetalComputePipelineState alloc] initWithDevice:self label:descriptor.label];
+  if (error) *error = nil;
+  if (reflection) *reflection = nil;
+  return [[XEFMetalComputePipelineState alloc] initWithDevice:self function:descriptor.computeFunction label:descriptor.label];
 }
 
 - (id<MTLComputePipelineState>)newComputePipelineStateWithFunction:(id<MTLFunction>)computeFunction error:(NSError **)error {
-  return [[XEFMetalComputePipelineState alloc] initWithDevice:self label:computeFunction.name];
+  if (error) *error = nil;
+  return [[XEFMetalComputePipelineState alloc] initWithDevice:self function:computeFunction label:computeFunction.name];
+}
+
+- (id<MTLComputePipelineState>)newComputePipelineStateWithFunction:(id<MTLFunction>)computeFunction options:(MTLPipelineOption)options reflection:(MTLAutoreleasedComputePipelineReflection *)reflection error:(NSError **)error {
+  if (error) *error = nil;
+  if (reflection) *reflection = nil;
+  return [[XEFMetalComputePipelineState alloc] initWithDevice:self function:computeFunction label:computeFunction.name];
 }
 
 - (id<MTLLibrary>)newDefaultLibrary {
-  return [[XEFMetalLibrary alloc] initWithDevice:self];
+  return [[XEFMetalLibrary alloc] initWithDevice:self source:nil data:nil];
+}
+
+- (id<MTLLibrary>)newDefaultLibraryWithBundle:(NSBundle *)bundle error:(NSError **)error {
+  if (error) *error = nil;
+  return [[XEFMetalLibrary alloc] initWithDevice:self source:nil data:nil];
 }
 
 - (id<MTLLibrary>)newLibraryWithSource:(NSString *)source options:(MTLCompileOptions *)options error:(NSError **)error {
-  return [[XEFMetalLibrary alloc] initWithDevice:self];
+  if (error) *error = nil;
+  return [[XEFMetalLibrary alloc] initWithDevice:self source:source data:nil];
+}
+
+- (void)newLibraryWithSource:(NSString *)source options:(MTLCompileOptions *)options completionHandler:(MTLNewLibraryCompletionHandler)completionHandler {
+  id<MTLLibrary> lib = [[self newLibraryWithSource:source options:options error:nil] autorelease];
+  if (completionHandler) completionHandler(lib, nil);
 }
 
 - (id<MTLLibrary>)newLibraryWithData:(dispatch_data_t)data error:(NSError **)error {
-  return [[XEFMetalLibrary alloc] initWithDevice:self];
+  if (error) *error = nil;
+  NSData *nsdata = nil;
+  if (data) {
+    const void *buf = NULL;
+    size_t size = 0;
+    dispatch_data_t contig = dispatch_data_create_map(data, &buf, &size);
+    if (buf && size > 0) nsdata = [NSData dataWithBytes:buf length:size];
+    if (contig) dispatch_release(contig);
+  }
+  return [[XEFMetalLibrary alloc] initWithDevice:self source:nil data:nsdata];
 }
 
 - (id<MTLLibrary>)newLibraryWithURL:(NSURL *)url error:(NSError **)error {
-  return [[XEFMetalLibrary alloc] initWithDevice:self];
+  if (error) *error = nil;
+  NSData *nsdata = url ? [NSData dataWithContentsOfURL:url] : nil;
+  return [[XEFMetalLibrary alloc] initWithDevice:self source:nil data:nsdata];
+}
+
+- (id<MTLLibrary>)newLibraryWithFile:(NSString *)filepath error:(NSError **)error {
+  if (error) *error = nil;
+  NSData *nsdata = filepath ? [NSData dataWithContentsOfFile:filepath] : nil;
+  return [[XEFMetalLibrary alloc] initWithDevice:self source:nil data:nsdata];
+}
+
+- (id<MTLFence>)newFence {
+  return [[XEFMetalFence alloc] initWithDevice:self];
+}
+
+- (id<MTLEvent>)newEvent {
+  return [[XEFMetalEvent alloc] initWithDevice:self];
+}
+
+- (id<MTLSharedEvent>)newSharedEvent {
+  return (id<MTLSharedEvent>)[[XEFMetalEvent alloc] initWithDevice:self];
+}
+
+- (void)getDefaultSamplePositions:(MTLSamplePosition *)positions count:(NSUInteger)count {
+  for (NSUInteger i = 0; i < count; i++) {
+    positions[i].x = 0.5f;
+    positions[i].y = 0.5f;
+  }
 }
 
 @end

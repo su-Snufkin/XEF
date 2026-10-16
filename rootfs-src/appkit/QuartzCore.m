@@ -221,58 +221,166 @@ CATransform3D CATransform3DInvert(CATransform3D t) {
 }
 @end
 
+NSString *const kCAFilterLinear = @"linear";
+NSString *const kCAFilterNearest = @"nearest";
+NSString *const kCAFilterTrilinear = @"trilinear";
+NSString *const kCAGravityCenter = @"center";
+NSString *const kCAGravityTop = @"top";
+NSString *const kCAGravityBottom = @"bottom";
+NSString *const kCAGravityLeft = @"left";
+NSString *const kCAGravityRight = @"right";
+NSString *const kCAGravityResize = @"resize";
+NSString *const kCAGravityResizeAspect = @"resizeAspect";
+NSString *const kCAGravityResizeAspectFill = @"resizeAspectFill";
+NSString *const kCATransactionDisableActions = @"disableActions";
+NSString *const kCATransactionAnimationDuration = @"animationDuration";
+NSString *const kCAMediaTimingFunctionLinear = @"linear";
+NSString *const kCAMediaTimingFunctionEaseIn = @"easeIn";
+NSString *const kCAMediaTimingFunctionEaseOut = @"easeOut";
+NSString *const kCAMediaTimingFunctionEaseInEaseOut = @"easeInEaseOut";
+NSString *const kCAMediaTimingFunctionDefault = @"default";
+
 @protocol MTLDevice;
 @protocol MTLTexture;
 @protocol MTLDrawable;
+
+@interface NSObject (XEFMetalTextureRawAccess)
+- (const void *)_rawBytes;
+- (NSUInteger)width;
+- (NSUInteger)height;
+- (NSUInteger)pixelFormat;
+@end
 
 @protocol CAMetalDrawable <NSObject>
 @property(readonly) id<MTLTexture> texture;
 @property(readonly) id layer;
 - (void)present;
 - (void)presentAtTime:(CFTimeInterval)presentationTime;
+- (void)presentAfterMinimumDuration:(CFTimeInterval)duration;
+- (void)addPresentedHandler:(void (^)(id))block;
+- (CFTimeInterval)presentedTime;
+- (NSUInteger)drawableID;
 @end
 
 @interface CAMetalDrawable : NSObject <CAMetalDrawable> {
 @public
   id<MTLTexture> _texture;
   id _layer;
+  NSUInteger _drawableID;
+  NSMutableArray *_handlers;
 }
 @property(readonly) id<MTLTexture> texture;
 @property(readonly) id layer;
 - (void)present;
 - (void)presentAtTime:(CFTimeInterval)presentationTime;
+- (void)presentAfterMinimumDuration:(CFTimeInterval)duration;
+- (void)addPresentedHandler:(void (^)(id))block;
+- (CFTimeInterval)presentedTime;
+- (NSUInteger)drawableID;
 @end
 
 
 @implementation CAMetalDrawable
 - (id<MTLTexture>)texture { return _texture; }
 - (id)layer { return _layer; }
+- (NSUInteger)drawableID { return _drawableID; }
+- (CFTimeInterval)presentedTime { return CACurrentMediaTime(); }
+- (void)addPresentedHandler:(void (^)(id))block {
+  if (!block) return;
+  if (!_handlers) _handlers = [[NSMutableArray alloc] init];
+  [_handlers addObject:[[block copy] autorelease]];
+}
 - (void)present {
   if (_layer) {
-    id delegate = [(CALayer *)_layer delegate];
-    if (delegate && [delegate respondsToSelector:@selector(window)]) {
-      id win = [delegate performSelector:@selector(window)];
-      if (win) {
-        Ivar iv = class_getInstanceVariable([win class], "_handle");
-        if (iv) {
-          ptrdiff_t offset = ivar_getOffset(iv);
-          int handle = *(int *)((uint8_t *)win + offset);
-          if (handle > 0) {
-            extern void xef_host_swap(int handle);
-            xef_host_swap(handle);
+    CALayer *cur = (CALayer *)_layer;
+    id win = nil;
+    while (cur && !win) {
+      id delegate = [cur delegate];
+      if (delegate) {
+        if ([delegate respondsToSelector:@selector(window)]) {
+          win = [delegate performSelector:@selector(window)];
+        }
+        if (!win && [delegate isKindOfClass:NSClassFromString(@"NSWindow")]) {
+          win = delegate;
+        }
+        if (!win && [delegate respondsToSelector:@selector(superview)]) {
+          id sv = [delegate performSelector:@selector(superview)];
+          while (sv && !win) {
+            if ([sv respondsToSelector:@selector(window)]) win = [sv performSelector:@selector(window)];
+            sv = [sv respondsToSelector:@selector(superview)] ? [sv performSelector:@selector(superview)] : nil;
           }
+        }
+      }
+      cur = [cur superlayer];
+    }
+    if (!win) {
+      Class appCls = NSClassFromString(@"NSApplication");
+      if (appCls && [appCls respondsToSelector:@selector(sharedApplication)]) {
+        id app = [appCls performSelector:@selector(sharedApplication)];
+        if (app && [app respondsToSelector:@selector(mainWindow)]) win = [app performSelector:@selector(mainWindow)];
+        if (!win && app && [app respondsToSelector:@selector(keyWindow)]) win = [app performSelector:@selector(keyWindow)];
+      }
+    }
+    if (win) {
+      Ivar iv = class_getInstanceVariable([win class], "_handle");
+      if (iv) {
+        ptrdiff_t offset = ivar_getOffset(iv);
+        int handle = *(int *)((uint8_t *)win + offset);
+        if (handle > 0) {
+          const void *pixels = NULL;
+          int tw = 0, th = 0, tfmt = 80;
+          if (_texture && [(id)_texture respondsToSelector:@selector(_rawBytes)]) {
+            pixels = [(id)_texture _rawBytes];
+            tw = (int)[(id)_texture width];
+            th = (int)[(id)_texture height];
+            tfmt = (int)[(id)_texture pixelFormat];
+          }
+          extern void xef_host_present_pixels(int handle, const void *pixels, int w, int h, int format);
+          xef_host_present_pixels(handle, pixels, tw, th, tfmt);
         }
       }
     }
   }
+  if (_handlers) {
+    for (void (^blk)(id) in _handlers) {
+      blk(self);
+    }
+    [_handlers removeAllObjects];
+  }
 }
 - (void)presentAtTime:(CFTimeInterval)presentationTime { [self present]; }
+- (void)presentAfterMinimumDuration:(CFTimeInterval)duration { [self present]; }
 - (void)dealloc {
   [(id)_texture release];
+  [_handlers release];
   [super dealloc];
 }
 @end
 
+
+static id qc_stub(id self, SEL _cmd, ...) {
+  static NSMutableSet *seen;
+  @synchronized ([NSObject class]) {
+    if (!seen) seen = [[NSMutableSet alloc] init];
+    NSString *k = [NSString stringWithFormat:@"%s %s", class_getName(object_getClass(self)), sel_getName(_cmd)];
+    if (![seen containsObject:k]) {
+      [seen addObject:k];
+      fprintf(stderr, "QUARTZCORE STUB -[%s %s]\n", class_getName(object_getClass(self)), sel_getName(_cmd));
+    }
+  }
+  return nil;
+}
+
+@interface CALayer (XEFStubs)
+@end
+@implementation CALayer (XEFStubs)
++ (BOOL)resolveInstanceMethod:(SEL)sel {
+  const char *n = sel_getName(sel);
+  if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11) || !strncmp(n, "dealloc", 7)) return NO;
+  class_addMethod(self, sel, (IMP)qc_stub, "@@:");
+  return YES;
+}
+@end
 
 @interface CAMetalLayer : CALayer {
 @public
@@ -282,7 +390,14 @@ CATransform3D CATransform3DInvert(CATransform3D t) {
   CGSize _drawableSize;
   BOOL _presentsWithTransaction;
   BOOL _displaySyncEnabled;
+  BOOL _allowsNextDrawableTimeout;
+  BOOL _wantsExtendedDynamicRangeContent;
+  id _EDRMetadata;
+  NSDictionary *_developerHUDProperties;
+  NSUInteger _maximumDrawableCount;
   CGColorSpaceRef _colorspace;
+  id<MTLTexture> _cachedTexture;
+  NSUInteger _nextDrawableID;
 }
 @property(strong) id<MTLDevice> device;
 @property(readonly) id<MTLDevice> preferredDevice;
@@ -292,41 +407,104 @@ CATransform3D CATransform3DInvert(CATransform3D t) {
 @property(readonly) id<CAMetalDrawable> nextDrawable;
 @property BOOL presentsWithTransaction;
 @property BOOL displaySyncEnabled;
+@property BOOL allowsNextDrawableTimeout;
+@property BOOL wantsExtendedDynamicRangeContent;
+@property(strong) id EDRMetadata;
+@property(copy) NSDictionary *developerHUDProperties;
+@property NSUInteger maximumDrawableCount;
 @property CGColorSpaceRef colorspace;
 @end
 
 @implementation CAMetalLayer
-- (id<MTLDevice>)device { return _device; }
+- (id)init {
+  if ((self = [super init])) {
+    _pixelFormat = 80; /* MTLPixelFormatBGRA8Unorm */
+    _framebufferOnly = YES;
+    _displaySyncEnabled = YES;
+    _allowsNextDrawableTimeout = YES;
+    _maximumDrawableCount = 3;
+  }
+  return self;
+}
+- (id<MTLDevice>)device {
+  if (!_device) {
+    Class devCls = NSClassFromString(@"XEFMetalDevice");
+    if (devCls && [devCls respondsToSelector:@selector(sharedDevice)]) {
+      _device = [[devCls performSelector:@selector(sharedDevice)] retain];
+    }
+  }
+  return _device;
+}
 - (void)setDevice:(id<MTLDevice>)d { [d retain]; [(id)_device release]; _device = d; }
-- (id<MTLDevice>)preferredDevice { return _device; }
-- (NSUInteger)pixelFormat { return _pixelFormat; }
-- (void)setPixelFormat:(NSUInteger)pf { _pixelFormat = pf; }
+- (id<MTLDevice>)preferredDevice { return [self device]; }
+- (NSUInteger)pixelFormat { return _pixelFormat ? _pixelFormat : 80; }
+- (void)setPixelFormat:(NSUInteger)pf { _pixelFormat = pf ? pf : 80; }
 - (BOOL)framebufferOnly { return _framebufferOnly; }
 - (void)setFramebufferOnly:(BOOL)f { _framebufferOnly = f; }
-- (CGSize)drawableSize { return _drawableSize; }
+- (void)setFrame:(CGRect)f {
+  [super setFrame:f];
+  if (_drawableSize.width <= 0 || _drawableSize.height <= 0) {
+    _drawableSize = CGSizeMake(f.size.width * _contentsScale, f.size.height * _contentsScale);
+  }
+}
+- (void)setBounds:(CGRect)b {
+  [super setBounds:b];
+  if (_drawableSize.width <= 0 || _drawableSize.height <= 0) {
+    _drawableSize = CGSizeMake(b.size.width * _contentsScale, b.size.height * _contentsScale);
+  }
+}
+- (CGSize)drawableSize {
+  if (_drawableSize.width > 0 && _drawableSize.height > 0) return _drawableSize;
+  if (_bounds.size.width > 0 && _bounds.size.height > 0) return CGSizeMake(_bounds.size.width * _contentsScale, _bounds.size.height * _contentsScale);
+  return CGSizeMake(800, 600);
+}
 - (void)setDrawableSize:(CGSize)s { _drawableSize = s; }
 - (BOOL)presentsWithTransaction { return _presentsWithTransaction; }
 - (void)setPresentsWithTransaction:(BOOL)p { _presentsWithTransaction = p; }
 - (BOOL)displaySyncEnabled { return _displaySyncEnabled; }
 - (void)setDisplaySyncEnabled:(BOOL)e { _displaySyncEnabled = e; }
+- (BOOL)allowsNextDrawableTimeout { return _allowsNextDrawableTimeout; }
+- (void)setAllowsNextDrawableTimeout:(BOOL)a { _allowsNextDrawableTimeout = a; }
+- (BOOL)wantsExtendedDynamicRangeContent { return _wantsExtendedDynamicRangeContent; }
+- (void)setWantsExtendedDynamicRangeContent:(BOOL)w { _wantsExtendedDynamicRangeContent = w; }
+- (id)EDRMetadata { return _EDRMetadata; }
+- (void)setEDRMetadata:(id)m { [m retain]; [_EDRMetadata release]; _EDRMetadata = m; }
+- (NSDictionary *)developerHUDProperties { return _developerHUDProperties; }
+- (void)setDeveloperHUDProperties:(NSDictionary *)p { [p retain]; [_developerHUDProperties release]; _developerHUDProperties = p; }
+- (NSUInteger)maximumDrawableCount { return _maximumDrawableCount; }
+- (void)setMaximumDrawableCount:(NSUInteger)c { _maximumDrawableCount = c; }
 - (CGColorSpaceRef)colorspace { return _colorspace; }
+- (void)setColorspace:(CGColorSpaceRef)cs { _colorspace = cs; }
 - (id<CAMetalDrawable>)nextDrawable {
   CAMetalDrawable *d = [[[CAMetalDrawable alloc] init] autorelease];
   d->_layer = self;
-  if (_device && [_device respondsToSelector:@selector(newTextureWithDescriptor:)]) {
+  d->_drawableID = ++_nextDrawableID;
+  id<MTLDevice> dev = [self device];
+  CGSize ds = [self drawableSize];
+  NSUInteger w = (NSUInteger)(ds.width > 0 ? ds.width : 800);
+  NSUInteger h = (NSUInteger)(ds.height > 0 ? ds.height : 600);
+  NSUInteger pf = [self pixelFormat];
+  if (_cachedTexture &&
+      [(id)_cachedTexture width] == w &&
+      [(id)_cachedTexture height] == h &&
+      [(id)_cachedTexture pixelFormat] == pf) {
+    d->_texture = [_cachedTexture retain];
+  } else if (dev && [dev respondsToSelector:@selector(newTextureWithDescriptor:)]) {
     Class tc = NSClassFromString(@"MTLTextureDescriptor");
     if (tc) {
-      id desc = [tc texture2DDescriptorWithPixelFormat:(_pixelFormat ? _pixelFormat : 80)
-                                                 width:(NSUInteger)(_drawableSize.width > 0 ? _drawableSize.width : 800)
-                                                height:(NSUInteger)(_drawableSize.height > 0 ? _drawableSize.height : 600)
-                                             mipmapped:NO];
+      id desc = [tc texture2DDescriptorWithPixelFormat:pf width:w height:h mipmapped:NO];
       [desc setUsage:5];
-      d->_texture = [(id)_device newTextureWithDescriptor:desc];
+      [(id)_cachedTexture release];
+      _cachedTexture = [(id)dev newTextureWithDescriptor:desc];
+      d->_texture = [_cachedTexture retain];
     }
   }
   return d;
 }
 - (void)dealloc {
+  [_EDRMetadata release];
+  [_developerHUDProperties release];
+  [(id)_cachedTexture release];
   [(id)_device release];
   [super dealloc];
 }

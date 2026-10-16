@@ -247,15 +247,55 @@ static NSUInteger g_guest_buttons = 0;
 @end
 
 /* -------------------------------------------------------------- pasteboard */
+@implementation NSPasteboardItem
+- (id)init { if ((self = [super init])) _data = [[NSMutableDictionary alloc] init]; return self; }
+- (NSArray *)types { return [_data allKeys]; }
+- (BOOL)setString:(NSString *)s forType:(NSString *)t { if (!s || !t) return NO; [_data setObject:[[s copy] autorelease] forKey:t]; return YES; }
+- (NSString *)stringForType:(NSString *)t { id o = [_data objectForKey:t]; return [o isKindOfClass:[NSString class]] ? o : nil; }
+- (BOOL)setData:(NSData *)d forType:(NSString *)t { if (!d || !t) return NO; [_data setObject:[[d copy] autorelease] forKey:t]; return YES; }
+- (NSData *)dataForType:(NSString *)t { id o = [_data objectForKey:t]; return [o isKindOfClass:[NSData class]] ? o : nil; }
+- (void)dealloc { [_data release]; [super dealloc]; }
+@end
+
 /* process-local clipboard (no X selection integration): reads back what this process wrote */
 @implementation NSPasteboard
 + (NSPasteboard *)generalPasteboard { static NSPasteboard *g; if (!g) { g = [[NSPasteboard alloc] init]; g->_types = [[NSMutableArray alloc] init]; g->_data = [[NSMutableDictionary alloc] init]; } return g; }
 - (NSInteger)declareTypes:(NSArray *)types owner:(id)owner { [_types setArray:types]; [_data removeAllObjects]; return ++_change; }
+- (NSInteger)clearContents { [_types removeAllObjects]; [_data removeAllObjects]; return ++_change; }
+- (BOOL)writeObjects:(NSArray *)objects {
+  for (id obj in objects) {
+    if ([obj isKindOfClass:[NSString class]]) [self setString:obj forType:NSPasteboardTypeString];
+    else if ([obj isKindOfClass:[NSPasteboardItem class]]) {
+      NSPasteboardItem *item = (NSPasteboardItem *)obj;
+      for (NSString *t in [item types]) {
+        NSString *s = [item stringForType:t];
+        if (s) [self setString:s forType:t];
+      }
+    }
+  }
+  return YES;
+}
 - (BOOL)setString:(NSString *)s forType:(NSString *)t {
   if (!s || !t) return NO; if (![_types containsObject:t]) [_types addObject:t]; [_data setObject:[[s copy] autorelease] forKey:t]; _change++; return YES; }
 - (NSString *)stringForType:(NSString *)t { id o = [_data objectForKey:t]; return [o isKindOfClass:[NSString class]] ? o : nil; }
 - (NSArray *)types { return _types; }
 - (NSArray *)readObjectsForClasses:(NSArray *)classes options:(NSDictionary *)o { return nil; }
+@end
+
+@implementation NSStatusItem
+- (id)button { return _button; }
+- (id)menu { return _menu; }
+- (void)setMenu:(id)m { [m retain]; [_menu release]; _menu = m; }
+- (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
+- (void)setImage:(id)i { [i retain]; [_image release]; _image = i; }
+- (void)setHighlightMode:(BOOL)f {}
+- (void)dealloc { [_menu release]; [_title release]; [_image release]; [_button release]; [super dealloc]; }
+@end
+
+@implementation NSStatusBar
++ (NSStatusBar *)systemStatusBar { static NSStatusBar *sb; if (!sb) sb = [[NSStatusBar alloc] init]; return sb; }
+- (NSStatusItem *)statusItemWithLength:(CGFloat)length { return [[[NSStatusItem alloc] init] autorelease]; }
+- (void)removeStatusItem:(NSStatusItem *)item {}
 @end
 
 @implementation NSRunningApplication
@@ -342,14 +382,29 @@ static unichar key_char(int kc, int shift) {
 
 /* --------------------------------------------------------------------- view */
 @implementation NSView
++ (Class)layerClass { return NSClassFromString(@"CALayer"); }
+- (id)makeBackingLayer {
+  Class c = [[self class] respondsToSelector:@selector(layerClass)] ? [[self class] layerClass] : nil;
+  if (!c) c = NSClassFromString(@"CALayer");
+  return c ? [c performSelector:@selector(layer)] : nil;
+}
 - (id)initWithFrame:(NSRect)f {
   if ((self = [super init])) { _frame = f; _bounds = NSMakeRect(0, 0, f.size.width, f.size.height); _subviews = [[NSMutableArray alloc] init]; _needsDisplay = YES; }
   return self; }
 - (id)init { return [self initWithFrame:NSMakeRect(0, 0, 0, 0)]; }
 - (NSRect)frame { return _frame; } - (NSRect)bounds { return _bounds; }
-- (void)setFrame:(NSRect)f { _frame = f; _bounds.size = f.size; _needsDisplay = YES; }
+- (void)setFrame:(NSRect)f {
+  _frame = f; _bounds.size = f.size; _needsDisplay = YES;
+  if (_layer) {
+    if ([_layer respondsToSelector:@selector(setFrame:)]) [_layer setFrame:_frame];
+    if ([_layer respondsToSelector:@selector(setBounds:)]) [_layer setBounds:_bounds];
+  }
+}
 - (void)setFrameSize:(NSSize)s { NSRect f = _frame; f.size = s; [self setFrame:f]; }
-- (void)setBounds:(NSRect)b { _bounds = b; }
+- (void)setBounds:(NSRect)b {
+  _bounds = b;
+  if (_layer && [_layer respondsToSelector:@selector(setBounds:)]) [_layer setBounds:_bounds];
+}
 - (NSWindow *)window { return _window; } - (NSView *)superview { return _superview; } - (NSArray *)subviews { return _subviews; }
 /* a view leaving its window stops being the window's first responder (the window does not retain it: SDL2 removes and
  * releases its text-input view while it is first responder, and the next keyDown: went to freed memory) */
@@ -369,8 +424,24 @@ static unichar key_char(int kc, int shift) {
 - (void)setWantsBestResolutionOpenGLSurface:(BOOL)f { _bestRes = f; }
 - (NSRect)convertRectToBacking:(NSRect)r { return r; } - (NSRect)convertRectFromBacking:(NSRect)r { return r; }
 - (NSPoint)convertPoint:(NSPoint)p fromView:(NSView *)v { return p; }
-- (void)setWantsLayer:(BOOL)f { _wantsLayer = f; } - (BOOL)wantsLayer { return _wantsLayer; }
-- (id)layer { return _layer; } - (void)setLayer:(id)l { [l retain]; [_layer release]; _layer = l; if ([l respondsToSelector:@selector(setDelegate:)]) [l setDelegate:self]; }
+- (void)setWantsLayer:(BOOL)f {
+  _wantsLayer = f;
+  if (f && !_layer) {
+    id l = [self makeBackingLayer];
+    if (l) [self setLayer:l];
+  }
+}
+- (BOOL)wantsLayer { return _wantsLayer; }
+- (id)layer {
+  if (_wantsLayer && !_layer) [self setWantsLayer:YES];
+  return _layer;
+}
+- (void)setLayer:(id)l {
+  [l retain]; [_layer release]; _layer = l;
+  if ([l respondsToSelector:@selector(setDelegate:)]) [l setDelegate:self];
+  if ([l respondsToSelector:@selector(setFrame:)]) [l setFrame:_frame];
+  if ([l respondsToSelector:@selector(setBounds:)]) [l setBounds:_bounds];
+}
 - (void)updateTrackingAreas {}
 - (void)addTrackingArea:(NSTrackingArea *)a { if (!_tracking) _tracking = [[NSMutableArray alloc] init]; [_tracking addObject:a]; }
 - (void)removeTrackingArea:(NSTrackingArea *)a { [_tracking removeObject:a]; }

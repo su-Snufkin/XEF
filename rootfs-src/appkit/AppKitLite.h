@@ -104,11 +104,30 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (id)initWithSize:(NSSize)s; - (NSSize)size; - (void)addRepresentation:(id)rep; - (NSArray *)representations;
 @end
 
+@interface NSPasteboardItem : NSObject { @public NSMutableDictionary *_data; }
+- (NSArray *)types;
+- (BOOL)setString:(NSString *)s forType:(NSString *)t;
+- (NSString *)stringForType:(NSString *)t;
+- (BOOL)setData:(NSData *)d forType:(NSString *)t;
+- (NSData *)dataForType:(NSString *)t;
+@end
+
 @interface NSPasteboard : NSObject { @public NSMutableArray *_types; NSMutableDictionary *_data; NSInteger _change; }
 + (NSPasteboard *)generalPasteboard;
 - (NSInteger)declareTypes:(NSArray *)types owner:(id)owner; - (BOOL)setString:(NSString *)s forType:(NSString *)t;
 - (NSString *)stringForType:(NSString *)t; - (NSArray *)types;
 - (NSArray *)readObjectsForClasses:(NSArray *)classes options:(NSDictionary *)o;
+- (NSInteger)clearContents; - (BOOL)writeObjects:(NSArray *)objects;
+@end
+
+@interface NSStatusItem : NSObject { @public id _menu; NSString *_title; id _image; id _button; }
+- (id)button; - (id)menu; - (void)setMenu:(id)m; - (void)setTitle:(NSString *)t; - (void)setImage:(id)i; - (void)setHighlightMode:(BOOL)f;
+@end
+
+@interface NSStatusBar : NSObject
++ (NSStatusBar *)systemStatusBar;
+- (NSStatusItem *)statusItemWithLength:(CGFloat)length;
+- (void)removeStatusItem:(NSStatusItem *)item;
 @end
 
 @interface NSRunningApplication : NSObject
@@ -156,6 +175,8 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
   NSRect _frame, _bounds; NSWindow *_window; NSView *_superview; NSMutableArray *_subviews; BOOL _needsDisplay, _bestRes;
   NSMutableArray *_tracking; id _layer; BOOL _wantsLayer; NSArray *_dragTypes;
 }
++ (Class)layerClass;
+- (id)makeBackingLayer;
 - (id)initWithFrame:(NSRect)f;
 - (NSRect)frame; - (NSRect)bounds; - (void)setFrame:(NSRect)f; - (void)setFrameSize:(NSSize)s; - (void)setBounds:(NSRect)b;
 - (NSWindow *)window; - (NSView *)superview; - (NSArray *)subviews; - (void)addSubview:(NSView *)v; - (void)removeFromSuperview;
