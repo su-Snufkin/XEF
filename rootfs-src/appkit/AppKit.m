@@ -1138,6 +1138,11 @@ static NSGraphicsContext *g_gc;
 void NSRectFill(NSRect r) {}
 void NSBeep(void) {}
 
+@implementation NSAppleEventManager (AppKitLite)
+- (void)setEventHandler:(id)handler andSelector:(SEL)selector forEventClass:(unsigned int)eventClass andEventID:(unsigned int)eventID {}
+- (void)removeEventHandlerForEventClass:(unsigned int)eventClass andEventID:(unsigned int)eventID {}
+@end
+
 
 /* Anything else AppKit has and AppKit-lite does not: windows, views and the application answer unknown selectors with a
  * logged no-op returning 0/nil (setters of cosmetic state such as setOneShot: dominate). Selectors that SDL/GLFW probe
