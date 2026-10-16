@@ -14,6 +14,7 @@
 
 namespace xef {
 
+
 static inline long futex(void* addr, int op, uint32_t val, const struct timespec* ts = nullptr, uint32_t val3 = 0) {
     return syscall(SYS_futex, addr, op, val, ts, nullptr, val3);
 }
@@ -240,6 +241,63 @@ static int darwin_pthread_attr_getguardsize(const pthread_attr_t* a, size_t* gua
     return pthread_attr_getguardsize(a, guardsize);
 }
 
+// ---- scheduling parameters: Darwin SCHED_OTHER 1, SCHED_RR 2, SCHED_FIFO 4; struct sched_param is { int; char[4] };
+// a SCHED_OTHER thread reports macOS's default priority 31 (Linux keeps 0), priorities range 15..47 ----------------------
+struct DarwinSchedParam { int32_t priority; char opaque[4]; };
+static int pol_to_linux(int p) { return p == 1 ? SCHED_OTHER : p == 2 ? SCHED_RR : p == 4 ? SCHED_FIFO : -1; }
+static int pol_to_darwin(int p) { return p == SCHED_RR ? 2 : p == SCHED_FIFO ? 4 : 1; }
+static int darwin_pthread_getschedparam(uint64_t th, int* policy, DarwinSchedParam* prm) {
+    pthread_t h;
+    if (int e = darwin_pthread_host(th, &h)) return e;
+    int lp; struct sched_param sp;
+    if (int e = pthread_getschedparam(h, &lp, &sp)) return e;
+    if (policy) *policy = pol_to_darwin(lp);
+    if (prm) { memset(prm, 0, sizeof *prm); prm->priority = lp == SCHED_OTHER ? 31 : sp.sched_priority; }
+    return 0;
+}
+static int darwin_pthread_setschedparam(uint64_t th, int policy, const DarwinSchedParam* prm) {
+    pthread_t h;
+    if (int e = darwin_pthread_host(th, &h)) return e;
+    int lp = pol_to_linux(policy);
+    if (lp < 0 || !prm) return EINVAL;
+    if (prm->priority < 0 || prm->priority > 63) return EINVAL;
+    struct sched_param sp;
+    sp.sched_priority = lp == SCHED_OTHER ? 0 : prm->priority < 1 ? 1 : prm->priority;   // Linux: 0 for OTHER, 1..99 RT
+    return pthread_setschedparam(h, lp, &sp);
+}
+static int darwin_sched_get_priority_min(int) { return 15; }   // (macOS answers the same for any policy number)
+static int darwin_sched_get_priority_max(int) { return 47; }
+static int darwin_pthread_attr_setschedpolicy(pthread_attr_t* a, int policy) {
+    int lp = pol_to_linux(policy);
+    if (!a || lp < 0) return EINVAL;
+    return pthread_attr_setschedpolicy(a, lp);
+}
+static int darwin_pthread_attr_getschedpolicy(const pthread_attr_t* a, int* policy) {
+    int lp;
+    if (!a || !policy) return EINVAL;
+    if (int e = pthread_attr_getschedpolicy(a, &lp)) return e;
+    *policy = pol_to_darwin(lp);
+    return 0;
+}
+static int darwin_pthread_attr_setschedparam(pthread_attr_t* a, const DarwinSchedParam* prm) {
+    if (!a || !prm) return EINVAL;
+    int lp = SCHED_OTHER;
+    pthread_attr_getschedpolicy(a, &lp);
+    struct sched_param sp;
+    sp.sched_priority = lp == SCHED_OTHER ? 0 : prm->priority;
+    return pthread_attr_setschedparam(a, &sp);
+}
+static int darwin_pthread_attr_getschedparam(const pthread_attr_t* a, DarwinSchedParam* prm) {
+    if (!a || !prm) return EINVAL;
+    int lp = SCHED_OTHER;
+    struct sched_param sp;
+    pthread_attr_getschedpolicy(a, &lp);
+    if (int e = pthread_attr_getschedparam(a, &sp)) return e;
+    memset(prm, 0, sizeof *prm);
+    prm->priority = lp == SCHED_OTHER ? 31 : sp.sched_priority;
+    return 0;
+}
+
 struct PtShim { const char* name; void* fn; };
 static const PtShim kPt[] = {
     {"_pthread_mutex_init", (void*)&mutex_init}, {"_pthread_mutex_destroy", (void*)&mutex_destroy},
@@ -263,6 +321,12 @@ static const PtShim kPt[] = {
     {"_pthread_rwlockattr_init", (void*)&rwattr_init}, {"_pthread_rwlockattr_destroy", (void*)&rwattr_destroy},
     {"_pthread_rwlockattr_setpshared", (void*)&mattr_nop},
     {"_pthread_attr_init", (void*)&darwin_pthread_attr_init},
+    {"_pthread_getschedparam", (void*)&darwin_pthread_getschedparam}, {"_pthread_setschedparam", (void*)&darwin_pthread_setschedparam},
+    {"_sched_get_priority_min", (void*)&darwin_sched_get_priority_min}, {"_sched_get_priority_max", (void*)&darwin_sched_get_priority_max},
+    {"_pthread_attr_setschedpolicy", (void*)&darwin_pthread_attr_setschedpolicy},
+    {"_pthread_attr_getschedpolicy", (void*)&darwin_pthread_attr_getschedpolicy},
+    {"_pthread_attr_setschedparam", (void*)&darwin_pthread_attr_setschedparam},
+    {"_pthread_attr_getschedparam", (void*)&darwin_pthread_attr_getschedparam},
     {"_pthread_attr_destroy", (void*)&darwin_pthread_attr_destroy},
     {"_pthread_attr_setdetachstate", (void*)&darwin_pthread_attr_setdetachstate},
     {"_pthread_attr_getdetachstate", (void*)&darwin_pthread_attr_getdetachstate},
