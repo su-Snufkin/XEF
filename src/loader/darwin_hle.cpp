@@ -3095,6 +3095,34 @@ static int darwin_fcntl(int fd, int cmd, uint64_t arg) {
     return res;
 }
 
+// kevent64: struct kevent64_s { u64 ident; i16 filter; u16 flags; u32 fflags; i64 data; u64 udata; u64 ext[2]; }.
+// KEVENT_FLAG_IMMEDIATE (1) polls; KEVENT_FLAG_ERROR_EVENTS (2) reports change errors only (as EV_RECEIPT does).
+struct darwin_kevent64_t { uint64_t ident; int16_t filter; uint16_t flags; uint32_t fflags; int64_t data; uint64_t udata; uint64_t ext[2]; };
+static long darwin_kevent64(int kq, const darwin_kevent64_t* changelist, int nchanges, darwin_kevent64_t* eventlist,
+                            int nevents, unsigned flags, const struct timespec* timeout) {
+    if (nchanges < 0 || nevents < 0) { errno = EINVAL; return -1; }
+    std::vector<darwin_kevent_t> ch((size_t)nchanges), ev((size_t)nevents);
+    for (int i = 0; i < nchanges; i++) {
+        const darwin_kevent64_t& c = changelist[i];
+        ch[i].ident = c.ident; ch[i].filter = c.filter;
+        ch[i].flags = (uint16_t)(c.flags | ((flags & 2) ? DARWIN_EV_RECEIPT : 0));
+        ch[i].fflags = c.fflags; ch[i].data = c.data; ch[i].udata = (void*)(uintptr_t)c.udata;
+    }
+    struct timespec zero = {0, 0};
+    long n = darwin_kevent(kq, nchanges ? ch.data() : nullptr, nchanges, nevents ? ev.data() : nullptr, nevents,
+                           (flags & 1) ? &zero : timeout);
+    if (n <= 0) return n;
+    int out = 0;
+    for (long i = 0; i < n; i++) {
+        if ((flags & 2) && (!(ev[i].flags & DARWIN_EV_ERROR) || ev[i].data == 0)) continue;   // only failed changes
+        darwin_kevent64_t& e = eventlist[out++];
+        memset(&e, 0, sizeof e);
+        e.ident = ev[i].ident; e.filter = ev[i].filter; e.flags = ev[i].flags; e.fflags = ev[i].fflags;
+        e.data = ev[i].data; e.udata = (uint64_t)(uintptr_t)ev[i].udata;
+    }
+    return out;
+}
+
 // ---- variadic fcntl / open / ioctl (Darwin passes the extra argument on the stack) ----------------------------
 static int linux_flags_to_darwin_fl(int lf) {
     int d = lf & 3;                 // O_RDONLY/O_WRONLY/O_RDWR are 0/1/2 on both
@@ -3352,6 +3380,13 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
     // Host OpenGL (`_gl[A-Z]*`) and the window shim: before g_hle_lock (registration takes it) and before
     // the host-libc dlsym fallback, so libc names never reach glX
     if (uint64_t g = darwin_gl_resolve(name)) return g;
+
+    // name$NOCANCEL: the same call without being a cancellation point - the base name's implementation (the host
+    // fallback would get Darwin flags/ABI: openat$NOCANCEL with O_CREAT 0x200 and the mode on the stack)
+    if (const char* nc = strstr(name, "$NOCANCEL")) {
+        std::string base = std::string(name, nc - name) + (nc + 9);
+        return darwin_hle_resolve_symbol(base.c_str(), is_weak, explicit_only);
+    }
 
     std::lock_guard<std::mutex> lk(g_hle_lock);
     auto it = g_symbol_cache.find(name);
@@ -3742,6 +3777,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_Unwind_Backtrace;
     } else if (strcmp(name, "_kqueue") == 0 || strcmp(name, "kqueue") == 0) {
         host_fn = (void*)&darwin_kqueue;
+    } else if (strcmp(name, "_kevent64") == 0) {
+        host_fn = (void*)&darwin_kevent64;
     } else if (strcmp(name, "_kevent") == 0 || strcmp(name, "kevent") == 0) {
         host_fn = (void*)&darwin_kevent;
     } else if (strcmp(name, "_fcntl") == 0 || strcmp(name, "fcntl") == 0) {
