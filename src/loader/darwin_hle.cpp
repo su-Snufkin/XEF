@@ -672,6 +672,7 @@ struct DarwinPthread {
     int tid;
     void* stack_top;
     size_t stack_size;
+    char name[64];             // pthread_setname_np (MAXTHREADNAMESIZE); Linux keeps only 15 characters
 };
 static DarwinPthread* g_main_pthread_handle;
 
@@ -2552,8 +2553,23 @@ static void darwin_pthread_exit(void* val) {
     thread_exit(t ? t->st : nullptr, 0);
 }
 
+// Darwin: pthread_setname_np names the calling thread (up to 63 bytes); the host thread gets the first 15
 static int darwin_pthread_setname_np(const char* name) {
-    pthread_setname_np(pthread_self(), name);
+    if (!name) return EINVAL;
+    size_t n = strlen(name);
+    if (n >= sizeof(DarwinPthread::name)) { errno = ENAMETOOLONG; return -1; }   // (as Apple's: -1, not the code)
+    DarwinPthread* p = pthread_of(0);
+    if (!p) return ESRCH;
+    memcpy(p->name, name, n + 1);
+    char host[16];
+    snprintf(host, sizeof host, "%s", name);
+    pthread_setname_np(pthread_self(), host);
+    return 0;
+}
+static int darwin_pthread_getname_np(uint64_t thread, char* buf, size_t len) {
+    DarwinPthread* p = pthread_of(thread);
+    if (!p) return ESRCH;
+    if (buf && len) snprintf(buf, len, "%s", p->name);
     return 0;
 }
 
@@ -2561,6 +2577,8 @@ static int darwin_pthread_threadid_np(uint64_t thread, uint64_t* thread_id) {
     if (!thread_id) return EINVAL;
     DarwinPthread* p = pthread_of(thread);
     if (!p) return ESRCH;
+    // the calling thread asks the kernel: after fork the child's thread has a new id
+    if (p == pthread_of(0)) p->tid = (int)syscall(SYS_gettid);
     *thread_id = (uint64_t)p->tid;
     return 0;
 }
@@ -3744,6 +3762,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_pthread_threadid_np;
     } else if (strcmp(name, "_pthread_exit") == 0 || strcmp(name, "pthread_exit") == 0) {
         host_fn = (void*)&darwin_pthread_exit;
+    } else if (strcmp(name, "_pthread_getname_np") == 0) {
+        host_fn = (void*)&darwin_pthread_getname_np;
     } else if (strcmp(name, "_pthread_setname_np") == 0 || strcmp(name, "pthread_setname_np") == 0) {
         host_fn = (void*)&darwin_pthread_setname_np;
     } else if (strcmp(name, "_sched_yield") == 0 || strcmp(name, "sched_yield") == 0 ||
