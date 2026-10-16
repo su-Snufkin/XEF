@@ -115,7 +115,10 @@ def main():
         cnt = tbd(install_name(dylib), syms, os.path.join(lib, stem + '.tbd'))
         print('%s.tbd: %d symbols (%s)' % (stem, cnt, base))
     with open(os.path.join(SDK, 'SDKSettings.json'), 'w') as f:
-        f.write('{"CanonicalName": "macosx15.0", "Version": "15.0", "DisplayName": "xef-osx stub SDK"}\n')
+        f.write('{"CanonicalName": "macosx15.0", "Version": "15.0", "MaximumDeploymentTarget": "15.99", '
+                '"DisplayName": "macOS 15.0", "DefaultProperties": {"PLATFORM_NAME": "macosx"}, '
+                '"SupportedTargets": {"macosx": {"Archs": ["arm64"], "DefaultDeploymentTarget": "15.0", '
+                '"LLVMTargetTripleVendor": "apple", "LLVMTargetTripleSys": "macos", "PlatformFamilyName": "macOS"}}}\n')
     print('SDK at', SDK, '(guest path /opt/xef-sdk)')
 
 
