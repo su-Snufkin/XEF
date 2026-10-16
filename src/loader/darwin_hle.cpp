@@ -2103,7 +2103,7 @@ static D2Ret darwin_sincos_stret(double x) { return {sin(x), cos(x)}; }
 struct ShimEntry { const char* name; void* fn; int variadic_fixed; };   // variadic_fixed: >=0 -> args from stack
 static int darwin_open_v(const char* path, int dflags, const uint64_t* ap);
 static int darwin_openat_v(int dfd, const char* path, int dflags, const uint64_t* ap);
-static int darwin_fcntl_v(int fd, int cmd, const uint64_t* ap);
+static long darwin_fcntl_v(int fd, int cmd, const uint64_t* ap);
 static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap);
 void* st_sem_open_entry(const char* name, int oflag, const uint64_t* ap);
 int darwin_semctl_v(int id, int num, int cmd, const uint64_t* ap);   // darwin_fs.cpp
@@ -2870,7 +2870,7 @@ static int kq_apply_change(int kq, KqState& st, const darwin_kevent_t& kev) {   
     return 0;
 }
 
-static int darwin_kevent(int kq, const darwin_kevent_t* changelist, int nchanges,
+static long darwin_kevent(int kq, const darwin_kevent_t* changelist, int nchanges,
                          darwin_kevent_t* eventlist, int nevents, const struct timespec* timeout) {
     XEF_LOG(2, "darwin_kevent(kq=%d, nchanges=%d, nevents=%d, timeout=%p)", kq, nchanges, nevents, timeout);
     int out = 0;
@@ -3003,7 +3003,7 @@ static int linux_flags_to_darwin_fl(int lf) {
     return d;
 }
 struct DarwinFlock { int64_t l_start; int64_t l_len; int32_t l_pid; int16_t l_type; int16_t l_whence; };
-static int darwin_fcntl_v(int fd, int cmd, const uint64_t* ap) {
+static long darwin_fcntl_v(int fd, int cmd, const uint64_t* ap) {
     uint64_t arg = ap ? ap[0] : 0;
     switch (cmd) {
         case 0: return fcntl(fd, F_DUPFD, (int)arg);
