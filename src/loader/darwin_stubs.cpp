@@ -452,8 +452,51 @@ static int st_memset_s(void* s, size_t smax, int c, size_t n) {
     return n > smax ? 84 : 0;
 }
 
+// LDAP.framework (OpenLDAP API) and GSS.framework (Heimdal GSS-API) are not provided: every entry point fails the
+// way the real library reports "no server / mechanism unavailable", so callers (curl's LDAP and SPNEGO/Kerberos code)
+// take their error paths instead of crashing.
+static int st_ldap_opt_error() { return -1; }                 // LDAP_OPT_ERROR
+static int st_ldap_server_down() { return -1; }               // LDAP_SERVER_DOWN
+static int st_ldap_url_err() { return 1; }                    // LDAP_URL_ERR_MEM
+static const char* st_ldap_err2string(int e) {
+    switch (e) {
+        case 0: return "Success";
+        case -1: return "Can't contact LDAP server";
+        case -2: return "Local error";
+        default: return "LDAP is not available";
+    }
+}
+static constexpr uint32_t kGssUnavailable = 16u << 16;        // GSS_S_UNAVAILABLE
+static uint32_t st_gss_unavailable(uint32_t* minor) { if (minor) *minor = 0; return kGssUnavailable; }
+static uint32_t st_gss_release(uint32_t* minor, void** obj) { if (minor) *minor = 0; if (obj) *obj = nullptr; return 0; }
+struct GssBuffer { size_t length; void* value; };
+static uint32_t st_gss_release_buffer(uint32_t* minor, GssBuffer* b) { if (minor) *minor = 0; if (b) { b->length = 0; b->value = nullptr; } return 0; }
+static uint32_t st_gss_display_status(uint32_t* minor, uint32_t, int, void*, uint32_t* ctx, GssBuffer* out) {
+    static const char msg[] = "GSS-API is not available";
+    if (minor) *minor = 0;
+    if (ctx) *ctx = 0;
+    if (out) { out->length = sizeof msg - 1; out->value = (void*)msg; }
+    return 0;
+}
+
 static const StubEntry kStubs2[] = {
     {"_memset_s", (void*)&st_memset_s},
+    {"_ldap_get_option", (void*)&st_ldap_opt_error}, {"_ldap_set_option", (void*)&st_ldap_opt_error},
+    {"_ldap_init", (void*)&st_null2}, {"_ldap_open", (void*)&st_null2}, {"_ldap_initialize", (void*)&st_ldap_server_down},
+    {"_ldap_simple_bind_s", (void*)&st_ldap_server_down}, {"_ldap_search_s", (void*)&st_ldap_server_down},
+    {"_ldap_search_ext_s", (void*)&st_ldap_server_down}, {"_ldap_unbind_s", (void*)&st_zero2},
+    {"_ldap_err2string", (void*)&st_ldap_err2string}, {"_ldap_url_parse", (void*)&st_ldap_url_err},
+    {"_ldap_free_urldesc", (void*)&st_noop2}, {"_ldap_first_entry", (void*)&st_null2}, {"_ldap_next_entry", (void*)&st_null2},
+    {"_ldap_first_attribute", (void*)&st_null2}, {"_ldap_next_attribute", (void*)&st_null2}, {"_ldap_get_dn", (void*)&st_null2},
+    {"_ldap_get_values_len", (void*)&st_null2}, {"_ldap_value_free_len", (void*)&st_noop2}, {"_ldap_memfree", (void*)&st_noop2},
+    {"_ldap_msgfree", (void*)&st_zero2}, {"_ber_free", (void*)&st_noop2}, {"_ber_memvfree", (void*)&st_noop2},
+    {"_gss_acquire_cred", (void*)&st_gss_unavailable}, {"_gss_init_sec_context", (void*)&st_gss_unavailable},
+    {"_gss_import_name", (void*)&st_gss_unavailable}, {"_gss_display_name", (void*)&st_gss_unavailable},
+    {"_gss_indicate_mechs", (void*)&st_gss_unavailable}, {"_gss_inquire_context", (void*)&st_gss_unavailable},
+    {"_gss_wrap", (void*)&st_gss_unavailable}, {"_gss_unwrap", (void*)&st_gss_unavailable},
+    {"_gss_delete_sec_context", (void*)&st_gss_release}, {"_gss_release_cred", (void*)&st_gss_release},
+    {"_gss_release_name", (void*)&st_gss_release}, {"_gss_release_buffer", (void*)&st_gss_release_buffer},
+    {"_gss_display_status", (void*)&st_gss_display_status},
     {"_madvise", (void*)&st_madvise}, {"_posix_madvise", (void*)&st_posix_madvise},
     {"_sys_icache_invalidate", (void*)&st_sys_icache_invalidate}, {"_sys_dcache_flush", (void*)&st_noop2},
     {"_srandomdev", (void*)&st_srandomdev},
@@ -565,6 +608,12 @@ void* darwin_stub_data_lookup(const char* name) {
     if (!strcmp(name, "__os_log_default")) { static uint64_t dummy[8] = {}; return dummy; }
     if (!strcmp(name, "___NSDictionary0__struct")) { static uint64_t dummy[16] = {}; return dummy; }
     if (!strcmp(name, "___mb_cur_max")) { static int v = 1; return &v; }
+    if (!strcmp(name, "_GSS_C_NT_HOSTBASED_SERVICE")) {   // gss_OID: 1.2.840.113554.1.2.1.4
+        struct Oid { uint32_t length; const void* elements; };
+        static const Oid oid = {10, "\x2a\x86\x48\x86\xf7\x12\x01\x02\x01\x04"};
+        static const Oid* p = &oid;
+        return &p;
+    }
     if (!strcmp(name, "___mb_sb_limit")) { static int v = 128; return &v; }
     if (!strcmp(name, "_sys_nerr")) { static int v = 107; return &v; }
     if (!strcmp(name, "_vm_page_size") || !strcmp(name, "vm_page_size")) { static uint64_t ps = 16384; return &ps; }
