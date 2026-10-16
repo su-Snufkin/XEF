@@ -28,7 +28,7 @@ namespace {
 #define XEF_EV_FOCUS_OUT 1003
 struct HostEvent { int type, keycode, x, y, flags, handle; };
 
-struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0, x = 0, y = 0; unsigned long visid = 0; bool core = false; unsigned int metal_tex = 0; };
+struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0, x = 0, y = 0; unsigned long visid = 0; bool core = false; unsigned int metal_tex = 0; int metal_tex_w = 0, metal_tex_h = 0; };
 std::mutex g_lock;
 Display* g_dpy = nullptr;
 Atom g_wm_delete = 0;
@@ -342,6 +342,7 @@ void xef_host_present_pixels(int h, const void* pixels, int pw, int ph, int form
     static auto glTexParameteri_fn = G<void (*)(unsigned int, unsigned int, int)>("glTexParameteri");
     static auto glPixelStorei_fn = G<void (*)(unsigned int, int)>("glPixelStorei");
     static auto glTexImage2D_fn = G<void (*)(unsigned int, int, int, int, int, int, unsigned int, unsigned int, const void*)>("glTexImage2D");
+    static auto glTexSubImage2D_fn = G<void (*)(unsigned int, int, int, int, int, int, unsigned int, unsigned int, const void*)>("glTexSubImage2D");
     static auto glMatrixMode_fn = G<void (*)(unsigned int)>("glMatrixMode");
     static auto glLoadIdentity_fn = G<void (*)()>("glLoadIdentity");
     static auto glColor4f_fn = G<void (*)(float, float, float, float)>("glColor4f");
@@ -362,21 +363,30 @@ void xef_host_present_pixels(int h, const void* pixels, int pw, int ph, int form
     }
     if (glEnable_fn) glEnable_fn(0x0DE1 /*GL_TEXTURE_2D*/);
     if (!w->metal_tex && glGenTextures_fn) glGenTextures_fn(1, &w->metal_tex);
-    if (w->metal_tex && glBindTexture_fn && glTexImage2D_fn) {
+    if (w->metal_tex && glBindTexture_fn) {
         glBindTexture_fn(0x0DE1 /*GL_TEXTURE_2D*/, w->metal_tex);
-        if (glTexParameteri_fn) {
-            glTexParameteri_fn(0x0DE1, 0x2801 /*GL_TEXTURE_MIN_FILTER*/, 0x2601 /*GL_LINEAR*/);
-            glTexParameteri_fn(0x0DE1, 0x2800 /*GL_TEXTURE_MAG_FILTER*/, 0x2601 /*GL_LINEAR*/);
-            glTexParameteri_fn(0x0DE1, 0x2802 /*GL_TEXTURE_WRAP_S*/, 0x812F /*GL_CLAMP_TO_EDGE*/);
-            glTexParameteri_fn(0x0DE1, 0x2803 /*GL_TEXTURE_WRAP_T*/, 0x812F /*GL_CLAMP_TO_EDGE*/);
-        }
         if (glPixelStorei_fn) {
             glPixelStorei_fn(0x0CF5 /*GL_UNPACK_ALIGNMENT*/, 1);
             glPixelStorei_fn(0x0CF2 /*GL_UNPACK_ROW_LENGTH*/, 0);
         }
         unsigned int gl_fmt = (format == 80 || format == 81) ? 0x80E1 /*GL_BGRA*/ : 0x1908 /*GL_RGBA*/;
-        glTexImage2D_fn(0x0DE1 /*GL_TEXTURE_2D*/, 0, 0x1908 /*GL_RGBA*/, pw, ph, 0, gl_fmt, 0x1401 /*GL_UNSIGNED_BYTE*/, pixels);
+        if (w->metal_tex_w != pw || w->metal_tex_h != ph) {
+            if (glTexParameteri_fn) {
+                glTexParameteri_fn(0x0DE1, 0x2801 /*GL_TEXTURE_MIN_FILTER*/, 0x2601 /*GL_LINEAR*/);
+                glTexParameteri_fn(0x0DE1, 0x2800 /*GL_TEXTURE_MAG_FILTER*/, 0x2601 /*GL_LINEAR*/);
+                glTexParameteri_fn(0x0DE1, 0x2802 /*GL_TEXTURE_WRAP_S*/, 0x812F /*GL_CLAMP_TO_EDGE*/);
+                glTexParameteri_fn(0x0DE1, 0x2803 /*GL_TEXTURE_WRAP_T*/, 0x812F /*GL_CLAMP_TO_EDGE*/);
+            }
+            if (glTexImage2D_fn) {
+                glTexImage2D_fn(0x0DE1 /*GL_TEXTURE_2D*/, 0, 0x1908 /*GL_RGBA*/, pw, ph, 0, gl_fmt, 0x1401 /*GL_UNSIGNED_BYTE*/, pixels);
+            }
+            w->metal_tex_w = pw;
+            w->metal_tex_h = ph;
+        } else if (glTexSubImage2D_fn) {
+            glTexSubImage2D_fn(0x0DE1 /*GL_TEXTURE_2D*/, 0, 0, 0, pw, ph, gl_fmt, 0x1401 /*GL_UNSIGNED_BYTE*/, pixels);
+        }
     }
+
     if (glMatrixMode_fn && glLoadIdentity_fn) {
         glMatrixMode_fn(0x1701 /*GL_PROJECTION*/);
         glLoadIdentity_fn();
@@ -508,8 +518,17 @@ int xef_host_mouse_buttons() {
 int xef_host_window_get_geometry(int h, int* rx, int* ry, int* rw, int* rh) {
     std::lock_guard<std::mutex> lk(g_lock);
     HWin* hw = find(h);
-    if (!hw || !g_dpy) return 0;
+    if (!hw) return 0;
+    if (hw->w > 0 && hw->h > 0) {
+        if (rx) *rx = hw->x;
+        if (ry) *ry = hw->y;
+        if (rw) *rw = hw->w;
+        if (rh) *rh = hw->h;
+        return 1;
+    }
+    if (!g_dpy) return 0;
     int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
+
     ::Window root = X<::Window (*)(Display*, int)>("XRootWindow")(g_dpy, scr);
     ::Window child = 0;
     int x = 0, y = 0;

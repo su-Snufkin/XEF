@@ -485,9 +485,16 @@ macOS GUI / 3D & Metal (2026-10-16):
   - Zasoby i bufory: `XEFMetalBuffer` (`contents`, `storageMode`, `cpuCacheMode`), `XEFMetalTexture` (z buforami pikseli, `XEFMetalTextureStorage` współdzielonym przez `newTextureViewWithPixelFormat:`, oraz pełną obsługą 4- i 6-argumentowego `replaceRegion:` i `getBytes:`), `XEFMetalLibrary`, `XEFMetalFunction`, `XEFMetalRenderPipelineState`, `XEFMetalComputePipelineState`.
   - Kodery i potoki renderujące: `XEFMetalCommandQueue`, `XEFMetalCommandBuffer`, `XEFMetalRenderCommandEncoder` (dekodowanie `MTLVertexDescriptor`, obsługa shaderów MSL z dynamicznym parsowaniem lub wbudowanymi literalami, uniform MVP, fast-path dla 2D blit `FullscreenVert`/`BlitFrom2D`, rasteryzator trójkątów/linii/punktów z interpolacją perspektywiczną, scissor test i alpha blending), `XEFMetalComputeCommandEncoder`, `XEFMetalBlitCommandEncoder`.
   - Prezentacja pikseli na hoście: `xef_host_present_pixels` w `src/loader/darwin_appkit_host.cpp` rysujący teksturę klatki na buforze okna X11 z odwróceniem osi Y i podmianą buforów (`CAMetalDrawable present`).
+  - Optymalizacja wydajności rasteryzatora Metal i prezentacji na hoście:
+    - Wyeliminowano dynamiczny dispatch `objc_msgSend` w pętli pikseli (spadek z ~1 mln wywołań na klatkę do 0; czas w `libobjc.A.dylib` spadł z 18% do 2.3%).
+    - Wdrożono `xef_rasterize_triangle_fast` z inkrementalnymi równaniami krawędzi (zaledwie 2 dodawania na piksel), bezpośrednim próbkowaniem tekstur i szybkim stałoprzecinkowym blendingiem alfa (`xef_blend_over_bgra`, `xef_blend_premul_bgra`). Udział regionów Tier-2 JIT wzrósł z 41% do 85.5%.
+    - `xef_host_present_pixels` używa `glTexSubImage2D` przy stałym rozmiarze, unikając reallokacji tekstury sterownika GPU co klatkę.
+    - `xef_host_window_get_geometry` natychmiast zwraca zapamiętaną geometrię okna `hw`, eliminując po 2 blokujące zapytania X11 (`XTranslateCoordinates` i `XGetGeometry`) na każde wywołanie `[window frame]`.
+    - Rezultat: eliminacja przycięć launchera i interfejsu ImGui w `orbit64` — czas renderowania klatki GUI spadł z ~800 ms do ~1.4 ms.
   - Klasa bazowa `XEFMetalObject` z dynamicznym stubowaniem `resolveInstanceMethod:` dla bezpiecznego fallbacku niezaimplementowanych metod.
 - Weryfikacja:
   - `cand4_metal` (`tests/darwin/cand4_metal`): program testowy Metal 3D z potokiem wierzchołków MSL i renderpass offscreen przechodzi 300 klatek w teście automatycznym `tests/darwin/metal_test.sh` (`PASS metal_test`).
-  - Emulator Nintendo 64 `orbit64` (SDL3 + Metal GPU): pomyślna inicjalizacja urządzenia Metal (`XEFMetalDevice`), eliminacja czarnego ekranu poprzez implementację warstw `NSView` (`+layerClass`, `-makeBackingLayer`, `setWantsLayer:YES`), podpięcie `CAMetalDrawable` i transfer pikseli swapchaina SDL3. Pełny interfejs GUI, okładki, przyciski i emulacja gry (`Mario Kart 64`) działają stabilnie w 60 FPS (11.3 ms/klatkę).
+  - Emulator Nintendo 64 `orbit64` (SDL3 + Metal GPU): pomyślna inicjalizacja urządzenia Metal (`XEFMetalDevice`), eliminacja czarnego ekranu poprzez implementację warstw `NSView` (`+layerClass`, `-makeBackingLayer`, `setWantsLayer:YES`), podpięcie `CAMetalDrawable` i transfer pikseli swapchaina SDL3. Pełny interfejs GUI, okładki, przyciski i emulacja gry (`Mario Kart 64`) działają płynnie i stabilnie w 60 FPS (11.3 ms/klatkę).
   - Wszystkie testy regresji (`tests/darwin/gl_test.sh`: gltri, gltri_core, cocoa_gl, glfw_gl21, glfw_gl32 oraz `tests/darwin/metal_test.sh`) przechodzą w 100% (PASS gl_test, PASS metal_test).
+
 

@@ -2074,19 +2074,129 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   }
 }
 
-- (void)_rasterizeTriangleV0:(const XEFVertex *)v0 V1:(const XEFVertex *)v1 V2:(const XEFVertex *)v2 target:(XEFMetalTexture *)target {
-  int tw = (int)target->_width, th = (int)target->_height;
-  int clipMinX = 0, clipMinY = 0, clipMaxX = tw - 1, clipMaxY = th - 1;
-  if (_hasScissor) {
-    int sx0 = (int)_scissorRect.x;
-    int sy0 = (int)_scissorRect.y;
-    int sx1 = sx0 + (int)_scissorRect.width - 1;
-    int sy1 = sy0 + (int)_scissorRect.height - 1;
-    if (sx0 > clipMinX) clipMinX = sx0;
-    if (sy0 > clipMinY) clipMinY = sy0;
-    if (sx1 < clipMaxX) clipMaxX = sx1;
-    if (sy1 < clipMaxY) clipMaxY = sy1;
+typedef struct XEFRasterContext {
+  uint32_t *target_u32;
+  uint8_t  *target_raw;
+  int target_w, target_h, target_stride;
+  int target_bpp;
+  int target_is_bgra;
+  int clip_min_x, clip_min_y, clip_max_x, clip_max_y;
+
+  const uint32_t *tex_u32;
+  int tex_w, tex_h;
+  int tex_is_bgra;
+  BOOL has_tex;
+
+  int frag_mode;
+  float color_scale;
+  float uv_left_top[2];
+  float uv_dims[2];
+
+  BOOL blending;
+  BOOL is_standard_alpha;
+  BOOL is_premul_alpha;
+  MTLBlendFactor src_rgb_factor;
+  MTLBlendFactor dst_rgb_factor;
+  MTLBlendOperation rgb_op;
+  MTLBlendFactor src_a_factor;
+  MTLBlendFactor dst_a_factor;
+  MTLBlendOperation a_op;
+  float blend_col[4];
+  MTLColorWriteMask write_mask;
+  MTLCullMode cull_mode;
+  MTLWinding front_facing_winding;
+} XEFRasterContext;
+
+static inline void xef_blend_over_bgra(uint32_t *dst, uint32_t src) {
+  uint32_t a = (src >> 24) & 0xff;
+  if (a == 0) return;
+  if (a == 255) { *dst = src; return; }
+  uint32_t d = *dst;
+  uint32_t inv_a = 255 - a;
+  uint32_t rb = (((src & 0x00ff00ff) * a + (d & 0x00ff00ff) * inv_a + 0x00800080) >> 8) & 0x00ff00ff;
+  uint32_t g  = (((src & 0x0000ff00) * a + (d & 0x0000ff00) * inv_a + 0x00008000) >> 8) & 0x0000ff00;
+  *dst = rb | g | 0xff000000;
+}
+
+static inline void xef_blend_premul_bgra(uint32_t *dst, uint32_t src) {
+  uint32_t a = (src >> 24) & 0xff;
+  if (a == 0) return;
+  uint32_t d = *dst;
+  uint32_t inv_a = 255 - a;
+  uint32_t rb = (src & 0x00ff00ff) + (((d & 0x00ff00ff) * inv_a + 0x00800080) >> 8);
+  uint32_t g  = (src & 0x0000ff00) + (((d & 0x0000ff00) * inv_a + 0x00008000) >> 8);
+  if (rb & 0x01000000) rb = (rb & 0x000000ff) | 0x00ff0000;
+  if (rb & 0x00000100) rb = (rb & 0x00ff0000) | 0x000000ff;
+  if (g  & 0x00010000) g  = 0x0000ff00;
+  *dst = (rb & 0x00ff00ff) | (g & 0x0000ff00) | 0xff000000;
+}
+
+static inline uint32_t xef_sample_tex_fast(const XEFRasterContext *ctx, float u, float v) {
+  if (!ctx->has_tex) return 0xffffffff;
+  int tx = (int)(u * (float)ctx->tex_w);
+  int ty = (int)(v * (float)ctx->tex_h);
+  if (tx < 0) tx = 0; else if (tx >= ctx->tex_w) tx = ctx->tex_w - 1;
+  if (ty < 0) ty = 0; else if (ty >= ctx->tex_h) ty = ctx->tex_h - 1;
+  uint32_t pix = ctx->tex_u32[ty * ctx->tex_w + tx];
+  if (ctx->tex_is_bgra != ctx->target_is_bgra) {
+    pix = (pix & 0xff00ff00) | ((pix & 0xff) << 16) | ((pix >> 16) & 0xff);
   }
+  return pix;
+}
+
+static inline void xef_write_shaded_pixel(const XEFRasterContext *ctx, int px, int py, float r, float g, float b, float a, float u, float v) {
+  if (!ctx->target_u32) return;
+  uint32_t *dst = ctx->target_u32 + py * ctx->target_stride + px;
+  uint32_t src_col;
+  if (!ctx->has_tex || ctx->frag_mode == XEF_FRAG_MODE_COLOR_ONLY) {
+    uint32_t ur = (uint32_t)(r * ctx->color_scale * 255.0f); if (ur > 255) ur = 255;
+    uint32_t ug = (uint32_t)(g * ctx->color_scale * 255.0f); if (ug > 255) ug = 255;
+    uint32_t ub = (uint32_t)(b * ctx->color_scale * 255.0f); if (ub > 255) ub = 255;
+    uint32_t ua = (uint32_t)(a * 255.0f); if (ua > 255) ua = 255;
+    if (ctx->target_is_bgra) {
+      src_col = (ua << 24) | (ur << 16) | (ug << 8) | ub;
+    } else {
+      src_col = (ua << 24) | (ub << 16) | (ug << 8) | ur;
+    }
+  } else {
+    float su = u, sv = v;
+    if (ctx->frag_mode == XEF_FRAG_MODE_BLIT2D) {
+      su = u * ctx->uv_dims[0] + ctx->uv_left_top[0];
+      sv = v * ctx->uv_dims[1] + ctx->uv_left_top[1];
+    }
+    uint32_t tpix = xef_sample_tex_fast(ctx, su, sv);
+    uint32_t tb = (tpix & 0xff);
+    uint32_t tg = (tpix >> 8) & 0xff;
+    uint32_t tr = (tpix >> 16) & 0xff;
+    uint32_t ta = (tpix >> 24) & 0xff;
+    if (ctx->frag_mode == XEF_FRAG_MODE_TEX_RGB) ta = 255;
+    float scR = (ctx->target_is_bgra ? r : b) * ctx->color_scale;
+    float scG = g * ctx->color_scale;
+    float scB = (ctx->target_is_bgra ? b : r) * ctx->color_scale;
+    uint32_t ob = (uint32_t)(tb * scB); if (ob > 255) ob = 255;
+    uint32_t og = (uint32_t)(tg * scG); if (og > 255) og = 255;
+    uint32_t or_ = (uint32_t)(tr * scR); if (or_ > 255) or_ = 255;
+    uint32_t oa = (uint32_t)(ta * a); if (oa > 255) oa = 255;
+    src_col = (oa << 24) | (or_ << 16) | (og << 8) | ob;
+  }
+
+  if (ctx->is_standard_alpha) {
+    xef_blend_over_bgra(dst, src_col);
+  } else if (ctx->is_premul_alpha) {
+    xef_blend_premul_bgra(dst, src_col);
+  } else if (!ctx->blending) {
+    *dst = src_col;
+  } else {
+    xef_blend_over_bgra(dst, src_col);
+  }
+}
+
+static void xef_rasterize_triangle_fast(const XEFRasterContext *ctx, const XEFVertex *v0, const XEFVertex *v1, const XEFVertex *v2) {
+  int clipMinX = ctx->clip_min_x;
+  int clipMinY = ctx->clip_min_y;
+  int clipMaxX = ctx->clip_max_x;
+  int clipMaxY = ctx->clip_max_y;
+
   if (clipMinX > clipMaxX || clipMinY > clipMaxY) return;
 
   float fminX = fminf(v0->sx, fminf(v1->sx, v2->sx));
@@ -2108,34 +2218,192 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   float area = (v1->sx - v0->sx) * (v2->sy - v0->sy) - (v1->sy - v0->sy) * (v2->sx - v0->sx);
   if (fabsf(area) < 1e-5f) return;
 
-  if (_cullMode != MTLCullModeNone) {
-    BOOL isCW = (area > 0.0f); /* screen Y points down */
-    BOOL isFront = (_frontFacingWinding == MTLWindingClockwise) ? isCW : !isCW;
-    if (_cullMode == MTLCullModeBack && !isFront) return;
-    if (_cullMode == MTLCullModeFront && isFront) return;
+  if (ctx->cull_mode != MTLCullModeNone) {
+    BOOL isCW = (area > 0.0f);
+    BOOL isFront = (ctx->front_facing_winding == MTLWindingClockwise) ? isCW : !isCW;
+    if (ctx->cull_mode == MTLCullModeBack && !isFront) return;
+    if (ctx->cull_mode == MTLCullModeFront && isFront) return;
   }
 
   float invArea = 1.0f / area;
 
+  float cy0 = (float)minY + 0.5f;
+  float cx0 = (float)minX + 0.5f;
+
+  float dw0_dx = -(v2->sy - v1->sy) * invArea;
+  float dw0_dy =  (v2->sx - v1->sx) * invArea;
+
+  float dw1_dx = -(v0->sy - v2->sy) * invArea;
+  float dw1_dy =  (v0->sx - v2->sx) * invArea;
+
+  float w0_row = ((v2->sx - v1->sx) * (cy0 - v1->sy) - (v2->sy - v1->sy) * (cx0 - v1->sx)) * invArea;
+  float w1_row = ((v0->sx - v2->sx) * (cy0 - v2->sy) - (v0->sy - v2->sy) * (cx0 - v2->sx)) * invArea;
+
   for (int py = minY; py <= maxY; py++) {
-    float cy = (float)py + 0.5f;
+    float w0 = w0_row;
+    float w1 = w1_row;
     for (int px = minX; px <= maxX; px++) {
-      float cx = (float)px + 0.5f;
-      float w0 = ((v2->sx - v1->sx) * (cy - v1->sy) - (v2->sy - v1->sy) * (cx - v1->sx)) * invArea;
-      float w1 = ((v0->sx - v2->sx) * (cy - v2->sy) - (v0->sy - v2->sy) * (cx - v2->sx)) * invArea;
       float w2 = 1.0f - w0 - w1;
       if (w0 >= -1e-4f && w1 >= -1e-4f && w2 >= -1e-4f) {
-        float col[4] = {
-          w0 * v0->col[0] + w1 * v1->col[0] + w2 * v2->col[0],
-          w0 * v0->col[1] + w1 * v1->col[1] + w2 * v2->col[1],
-          w0 * v0->col[2] + w1 * v1->col[2] + w2 * v2->col[2],
-          w0 * v0->col[3] + w1 * v1->col[3] + w2 * v2->col[3],
-        };
-        float uv[2] = {
-          w0 * v0->uv[0] + w1 * v1->uv[0] + w2 * v2->uv[0],
-          w0 * v0->uv[1] + w1 * v1->uv[1] + w2 * v2->uv[1],
-        };
-        [self _shadeAndWritePixelX:px Y:py col:col uv:uv target:target];
+        float r = w0 * v0->col[0] + w1 * v1->col[0] + w2 * v2->col[0];
+        float g = w0 * v0->col[1] + w1 * v1->col[1] + w2 * v2->col[1];
+        float b = w0 * v0->col[2] + w1 * v1->col[2] + w2 * v2->col[2];
+        float a = w0 * v0->col[3] + w1 * v1->col[3] + w2 * v2->col[3];
+
+        float u = w0 * v0->uv[0] + w1 * v1->uv[0] + w2 * v2->uv[0];
+        float v = w0 * v0->uv[1] + w1 * v1->uv[1] + w2 * v2->uv[1];
+
+        xef_write_shaded_pixel(ctx, px, py, r, g, b, a, u, v);
+      }
+      w0 += dw0_dx;
+      w1 += dw1_dx;
+    }
+    w0_row += dw0_dy;
+    w1_row += dw1_dy;
+  }
+}
+
+static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommandEncoder *enc, XEFMetalTexture *target) {
+  memset(ctx, 0, sizeof(*ctx));
+  if (!target || !target->_storage || !target->_storage->_data) return;
+
+  ctx->target_raw = (uint8_t *)target->_storage->_data;
+  ctx->target_w = (int)target->_width;
+  ctx->target_h = (int)target->_height;
+  ctx->target_stride = (int)target->_width;
+  ctx->target_bpp = (int)target->_storage->_bpp;
+  if (ctx->target_bpp == 4) {
+    ctx->target_u32 = (uint32_t *)ctx->target_raw;
+  }
+  ctx->target_is_bgra = (target->_pixelFormat == MTLPixelFormatBGRA8Unorm ||
+                         target->_pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB);
+
+  ctx->clip_min_x = 0; ctx->clip_min_y = 0;
+  ctx->clip_max_x = ctx->target_w - 1; ctx->clip_max_y = ctx->target_h - 1;
+  if (enc->_hasScissor) {
+    int sx0 = (int)enc->_scissorRect.x, sy0 = (int)enc->_scissorRect.y;
+    int sx1 = sx0 + (int)enc->_scissorRect.width - 1, sy1 = sy0 + (int)enc->_scissorRect.height - 1;
+    if (sx0 > ctx->clip_min_x) ctx->clip_min_x = sx0;
+    if (sy0 > ctx->clip_min_y) ctx->clip_min_y = sy0;
+    if (sx1 < ctx->clip_max_x) ctx->clip_max_x = sx1;
+    if (sy1 < ctx->clip_max_y) ctx->clip_max_y = sy1;
+  }
+
+  XEFMetalFunction *ffn = enc->_pipelineState && enc->_pipelineState->_desc ? (XEFMetalFunction *)enc->_pipelineState->_desc.fragmentFunction : nil;
+  ctx->frag_mode = ffn ? ffn->_fragMode : XEF_FRAG_MODE_AUTO;
+  ctx->color_scale = 1.0f;
+  ctx->uv_left_top[0] = 0.0f; ctx->uv_left_top[1] = 0.0f;
+  ctx->uv_dims[0] = 1.0f;     ctx->uv_dims[1] = 1.0f;
+
+  if (enc->_fragmentBuffers[0]) {
+    XEFMetalBuffer *fb = enc->_fragmentBuffers[0];
+    size_t foff = enc->_fragmentBufferOffsets[0];
+    if (ctx->frag_mode == XEF_FRAG_MODE_BLIT2D && foff + 16 <= fb->_length) {
+      const float *fp = (const float *)((const uint8_t *)fb->_data + foff);
+      ctx->uv_left_top[0] = fp[0]; ctx->uv_left_top[1] = fp[1];
+      ctx->uv_dims[0] = fp[2];    ctx->uv_dims[1] = fp[3];
+    } else if (foff + 4 <= fb->_length) {
+      const float *fp = (const float *)((const uint8_t *)fb->_data + foff);
+      if (foff + 16 <= fb->_length && ffn && ffn->_source && strstr([ffn->_source UTF8String], "scRGB_output")) {
+        ctx->color_scale = fp[3];
+      } else {
+        ctx->color_scale = fp[0];
+      }
+      if (isnan(ctx->color_scale) || ctx->color_scale <= 0.0f || ctx->color_scale > 100.0f) ctx->color_scale = 1.0f;
+    }
+  }
+
+  if (enc->_fragmentTextures[0] && enc->_fragmentTextures[0]->_storage && enc->_fragmentTextures[0]->_storage->_data &&
+      enc->_fragmentTextures[0]->_storage->_bpp == 4) {
+    ctx->has_tex = YES;
+    ctx->tex_u32 = (const uint32_t *)enc->_fragmentTextures[0]->_storage->_data;
+    ctx->tex_w = (int)enc->_fragmentTextures[0]->_width;
+    ctx->tex_h = (int)enc->_fragmentTextures[0]->_height;
+    ctx->tex_is_bgra = (enc->_fragmentTextures[0]->_pixelFormat == MTLPixelFormatBGRA8Unorm ||
+                        enc->_fragmentTextures[0]->_pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB);
+  }
+
+  MTLRenderPipelineColorAttachmentDescriptor *catt =
+      (enc->_pipelineState && enc->_pipelineState->_desc) ? enc->_pipelineState->_desc.colorAttachments->_descriptors[0] : nil;
+  ctx->write_mask = catt ? catt.writeMask : MTLColorWriteMaskAll;
+  ctx->cull_mode = enc->_cullMode;
+  ctx->front_facing_winding = enc->_frontFacingWinding;
+
+  if (catt && catt.isBlendingEnabled) {
+    ctx->blending = YES;
+    ctx->src_rgb_factor = catt.sourceRGBBlendFactor;
+    ctx->dst_rgb_factor = catt.destinationRGBBlendFactor;
+    ctx->rgb_op = catt.rgbBlendOperation;
+    ctx->src_a_factor = catt.sourceAlphaBlendFactor;
+    ctx->dst_a_factor = catt.destinationAlphaBlendFactor;
+    ctx->a_op = catt.alphaBlendOperation;
+    ctx->is_standard_alpha = (ctx->src_rgb_factor == MTLBlendFactorSourceAlpha &&
+                             ctx->dst_rgb_factor == MTLBlendFactorOneMinusSourceAlpha &&
+                             ctx->rgb_op == MTLBlendOperationAdd);
+    ctx->is_premul_alpha   = (ctx->src_rgb_factor == MTLBlendFactorOne &&
+                             ctx->dst_rgb_factor == MTLBlendFactorOneMinusSourceAlpha &&
+                             ctx->rgb_op == MTLBlendOperationAdd);
+  }
+}
+
+- (void)_rasterizeTriangleV0:(const XEFVertex *)v0 V1:(const XEFVertex *)v1 V2:(const XEFVertex *)v2 target:(XEFMetalTexture *)target {
+  XEFRasterContext ctx;
+  xef_init_raster_context(&ctx, self, target);
+  if (ctx.target_u32) {
+    xef_rasterize_triangle_fast(&ctx, v0, v1, v2);
+  } else {
+    int tw = (int)target->_width, th = (int)target->_height;
+    int clipMinX = 0, clipMinY = 0, clipMaxX = tw - 1, clipMaxY = th - 1;
+    if (_hasScissor) {
+      int sx0 = (int)_scissorRect.x, sy0 = (int)_scissorRect.y;
+      int sx1 = sx0 + (int)_scissorRect.width - 1, sy1 = sy0 + (int)_scissorRect.height - 1;
+      if (sx0 > clipMinX) clipMinX = sx0;
+      if (sy0 > clipMinY) clipMinY = sy0;
+      if (sx1 < clipMaxX) clipMaxX = sx1;
+      if (sy1 < clipMaxY) clipMaxY = sy1;
+    }
+    if (clipMinX > clipMaxX || clipMinY > clipMaxY) return;
+
+    float fminX = fminf(v0->sx, fminf(v1->sx, v2->sx));
+    float fmaxX = fmaxf(v0->sx, fmaxf(v1->sx, v2->sx));
+    float fminY = fminf(v0->sy, fminf(v1->sy, v2->sy));
+    float fmaxY = fmaxf(v0->sy, fmaxf(v1->sy, v2->sy));
+
+    int minX = (int)floorf(fminX);
+    int maxX = (int)ceilf(fmaxX);
+    int minY = (int)floorf(fminY);
+    int maxY = (int)ceilf(fmaxY);
+
+    if (minX < clipMinX) minX = clipMinX;
+    if (maxX > clipMaxX) maxX = clipMaxX;
+    if (minY < clipMinY) minY = clipMinY;
+    if (maxY > clipMaxY) maxY = clipMaxY;
+    if (minX > maxX || minY > maxY) return;
+
+    float area = (v1->sx - v0->sx) * (v2->sy - v0->sy) - (v1->sy - v0->sy) * (v2->sx - v0->sx);
+    if (fabsf(area) < 1e-5f) return;
+
+    float invArea = 1.0f / area;
+    for (int py = minY; py <= maxY; py++) {
+      float cy = (float)py + 0.5f;
+      for (int px = minX; px <= maxX; px++) {
+        float cx = (float)px + 0.5f;
+        float w0 = ((v2->sx - v1->sx) * (cy - v1->sy) - (v2->sy - v1->sy) * (cx - v1->sx)) * invArea;
+        float w1 = ((v0->sx - v2->sx) * (cy - v2->sy) - (v0->sy - v2->sy) * (cx - v2->sx)) * invArea;
+        float w2 = 1.0f - w0 - w1;
+        if (w0 >= -1e-4f && w1 >= -1e-4f && w2 >= -1e-4f) {
+          float col[4] = {
+            w0 * v0->col[0] + w1 * v1->col[0] + w2 * v2->col[0],
+            w0 * v0->col[1] + w1 * v1->col[1] + w2 * v2->col[1],
+            w0 * v0->col[2] + w1 * v1->col[2] + w2 * v2->col[2],
+            w0 * v0->col[3] + w1 * v1->col[3] + w2 * v2->col[3],
+          };
+          float uv[2] = {
+            w0 * v0->uv[0] + w1 * v1->uv[0] + w2 * v2->uv[0],
+            w0 * v0->uv[1] + w1 * v1->uv[1] + w2 * v2->uv[1],
+          };
+          [self _shadeAndWritePixelX:px Y:py col:col uv:uv target:target];
+        }
       }
     }
   }
@@ -2201,13 +2469,20 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
     }
   }
 
+  XEFRasterContext ctx;
+  xef_init_raster_context(&ctx, self, target);
+
   if (primitiveType == MTLPrimitiveTypeTriangle) {
     for (NSUInteger i = 0; i + 2 < vertexCount; i += 3) {
       XEFVertex v0, v1, v2;
       [self _fetchVertex:(NSInteger)(vertexStart + i + 0) outVertex:&v0];
       [self _fetchVertex:(NSInteger)(vertexStart + i + 1) outVertex:&v1];
       [self _fetchVertex:(NSInteger)(vertexStart + i + 2) outVertex:&v2];
-      [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+      if (ctx.target_u32) {
+        xef_rasterize_triangle_fast(&ctx, &v0, &v1, &v2);
+      } else {
+        [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+      }
     }
   } else if (primitiveType == MTLPrimitiveTypeTriangleStrip) {
     for (NSUInteger i = 0; i + 2 < vertexCount; i++) {
@@ -2215,7 +2490,11 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
       [self _fetchVertex:(NSInteger)(vertexStart + i + (i & 1 ? 1 : 0)) outVertex:&v0];
       [self _fetchVertex:(NSInteger)(vertexStart + i + (i & 1 ? 0 : 1)) outVertex:&v1];
       [self _fetchVertex:(NSInteger)(vertexStart + i + 2) outVertex:&v2];
-      [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+      if (ctx.target_u32) {
+        xef_rasterize_triangle_fast(&ctx, &v0, &v1, &v2);
+      } else {
+        [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+      }
     }
   } else if (primitiveType == MTLPrimitiveTypeLine) {
     for (NSUInteger i = 0; i + 1 < vertexCount; i += 2) {
@@ -2259,13 +2538,20 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
 
   #define READ_IDX(k) ((indexType == MTLIndexTypeUInt16) ? (NSInteger)((const uint16_t *)iptr)[k] + baseVertex : (NSInteger)((const uint32_t *)iptr)[k] + baseVertex)
 
+  XEFRasterContext ctx;
+  xef_init_raster_context(&ctx, self, target);
+
   if (primitiveType == MTLPrimitiveTypeTriangle) {
     for (NSUInteger i = 0; i + 2 < indexCount; i += 3) {
       XEFVertex v0, v1, v2;
       [self _fetchVertex:READ_IDX(i + 0) outVertex:&v0];
       [self _fetchVertex:READ_IDX(i + 1) outVertex:&v1];
       [self _fetchVertex:READ_IDX(i + 2) outVertex:&v2];
-      [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+      if (ctx.target_u32) {
+        xef_rasterize_triangle_fast(&ctx, &v0, &v1, &v2);
+      } else {
+        [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+      }
     }
   } else if (primitiveType == MTLPrimitiveTypeTriangleStrip) {
     for (NSUInteger i = 0; i + 2 < indexCount; i++) {
@@ -2273,7 +2559,11 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
       [self _fetchVertex:READ_IDX(i + (i & 1 ? 1 : 0)) outVertex:&v0];
       [self _fetchVertex:READ_IDX(i + (i & 1 ? 0 : 1)) outVertex:&v1];
       [self _fetchVertex:READ_IDX(i + 2) outVertex:&v2];
-      [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+      if (ctx.target_u32) {
+        xef_rasterize_triangle_fast(&ctx, &v0, &v1, &v2);
+      } else {
+        [self _rasterizeTriangleV0:&v0 V1:&v1 V2:&v2 target:target];
+      }
     }
   } else if (primitiveType == MTLPrimitiveTypeLine) {
     for (NSUInteger i = 0; i + 1 < indexCount; i += 2) {
@@ -2298,6 +2588,7 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   }
   #undef READ_IDX
 }
+
 
 - (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType indexCount:(NSUInteger)indexCount indexType:(MTLIndexType)indexType indexBuffer:(id<MTLBuffer>)indexBuffer indexBufferOffset:(NSUInteger)indexBufferOffset instanceCount:(NSUInteger)instanceCount {
   [self drawIndexedPrimitives:primitiveType indexCount:indexCount indexType:indexType indexBuffer:indexBuffer indexBufferOffset:indexBufferOffset instanceCount:instanceCount baseVertex:0 baseInstance:0];
