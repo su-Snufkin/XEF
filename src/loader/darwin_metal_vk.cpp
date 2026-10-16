@@ -119,6 +119,8 @@ static VkShaderModule g_vs_module = VK_NULL_HANDLE;
 static VkShaderModule g_fs_module = VK_NULL_HANDLE;
 static VkSampler g_sampler_linear = VK_NULL_HANDLE;
 static VkSampler g_sampler_nearest = VK_NULL_HANDLE;
+static VkSampler g_sampler_linear_repeat = VK_NULL_HANDLE;
+static VkSampler g_sampler_nearest_repeat = VK_NULL_HANDLE;
 
 struct PushConstants {
     float u_target_size[2];
@@ -146,6 +148,8 @@ struct MetalVkTex {
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkDescriptorSet desc_set_linear = VK_NULL_HANDLE;
     VkDescriptorSet desc_set_nearest = VK_NULL_HANDLE;
+    VkDescriptorSet desc_set_linear_repeat = VK_NULL_HANDLE;
+    VkDescriptorSet desc_set_nearest_repeat = VK_NULL_HANDLE;
 };
 
 static std::unordered_map<uint32_t, MetalVkTex> g_textures;
@@ -858,6 +862,17 @@ bool init() {
     sci.minFilter = VK_FILTER_NEAREST;
     vkCreateSampler(g_device, &sci, nullptr, &g_sampler_nearest);
 
+    sci.magFilter = VK_FILTER_LINEAR;
+    sci.minFilter = VK_FILTER_LINEAR;
+    sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sci.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    vkCreateSampler(g_device, &sci, nullptr, &g_sampler_linear_repeat);
+
+    sci.magFilter = VK_FILTER_NEAREST;
+    sci.minFilter = VK_FILTER_NEAREST;
+    vkCreateSampler(g_device, &sci, nullptr, &g_sampler_nearest_repeat);
+
     // Create a 1x1 white dummy texture for color-only draws
     g_white_tex_id = tex_create(1, 1, 70 /*RGBA8*/, 0);
     uint32_t white_pixel = 0xFFFFFFFF;
@@ -890,6 +905,8 @@ void finit() {
 
     if (g_sampler_linear) vkDestroySampler(g_device, g_sampler_linear, nullptr);
     if (g_sampler_nearest) vkDestroySampler(g_device, g_sampler_nearest, nullptr);
+    if (g_sampler_linear_repeat) vkDestroySampler(g_device, g_sampler_linear_repeat, nullptr);
+    if (g_sampler_nearest_repeat) vkDestroySampler(g_device, g_sampler_nearest_repeat, nullptr);
     if (g_vs_module) vkDestroyShaderModule(g_device, g_vs_module, nullptr);
     if (g_fs_module) vkDestroyShaderModule(g_device, g_fs_module, nullptr);
     if (g_pipeline_layout) vkDestroyPipelineLayout(g_device, g_pipeline_layout, nullptr);
@@ -1008,6 +1025,8 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
 
     update_texture_descriptor(t, g_sampler_linear, t.desc_set_linear);
     update_texture_descriptor(t, g_sampler_nearest, t.desc_set_nearest);
+    update_texture_descriptor(t, g_sampler_linear_repeat, t.desc_set_linear_repeat);
+    update_texture_descriptor(t, g_sampler_nearest_repeat, t.desc_set_nearest_repeat);
 
     g_textures[id] = t;
     return id;
@@ -1564,7 +1583,12 @@ void draw(int handle,
     uint32_t sample_tex_id = (pipe->tex_id != 0) ? pipe->tex_id : g_white_tex_id;
     auto it_sample = g_textures.find(sample_tex_id);
     if (it_sample != g_textures.end()) {
-        VkDescriptorSet dset = pipe->filter_linear ? it_sample->second.desc_set_linear : it_sample->second.desc_set_nearest;
+        VkDescriptorSet dset = VK_NULL_HANDLE;
+        if (pipe->clamp_to_edge) {
+            dset = pipe->filter_linear ? it_sample->second.desc_set_linear : it_sample->second.desc_set_nearest;
+        } else {
+            dset = pipe->filter_linear ? it_sample->second.desc_set_linear_repeat : it_sample->second.desc_set_nearest_repeat;
+        }
         vkCmdBindDescriptorSets(g_active_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline_layout, 0, 1, &dset, 0, nullptr);
     }
 
