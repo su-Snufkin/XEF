@@ -370,7 +370,7 @@ static unichar key_char(int kc, int shift) {
 - (NSRect)convertRectToBacking:(NSRect)r { return r; } - (NSRect)convertRectFromBacking:(NSRect)r { return r; }
 - (NSPoint)convertPoint:(NSPoint)p fromView:(NSView *)v { return p; }
 - (void)setWantsLayer:(BOOL)f { _wantsLayer = f; } - (BOOL)wantsLayer { return _wantsLayer; }
-- (id)layer { return _layer; } - (void)setLayer:(id)l { [l retain]; [_layer release]; _layer = l; }
+- (id)layer { return _layer; } - (void)setLayer:(id)l { [l retain]; [_layer release]; _layer = l; if ([l respondsToSelector:@selector(setDelegate:)]) [l setDelegate:self]; }
 - (void)updateTrackingAreas {}
 - (void)addTrackingArea:(NSTrackingArea *)a { if (!_tracking) _tracking = [[NSMutableArray alloc] init]; [_tracking addObject:a]; }
 - (void)removeTrackingArea:(NSTrackingArea *)a { [_tracking removeObject:a]; }

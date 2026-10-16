@@ -1,6 +1,7 @@
 /* QuartzCore-lite for xef-osx: CALayer, CAMetalLayer, CATransaction, CATransform3D, CACurrentMediaTime. */
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <objc/runtime.h>
 #import <time.h>
 #import <math.h>
 #import <string.h>
@@ -232,6 +233,7 @@ CATransform3D CATransform3DInvert(CATransform3D t) {
 @end
 
 @interface CAMetalDrawable : NSObject <CAMetalDrawable> {
+@public
   id<MTLTexture> _texture;
   id _layer;
 }
@@ -241,16 +243,36 @@ CATransform3D CATransform3DInvert(CATransform3D t) {
 - (void)presentAtTime:(CFTimeInterval)presentationTime;
 @end
 
+
 @implementation CAMetalDrawable
 - (id<MTLTexture>)texture { return _texture; }
 - (id)layer { return _layer; }
-- (void)present {}
-- (void)presentAtTime:(CFTimeInterval)presentationTime {}
+- (void)present {
+  if (_layer) {
+    id delegate = [(CALayer *)_layer delegate];
+    if (delegate && [delegate respondsToSelector:@selector(window)]) {
+      id win = [delegate performSelector:@selector(window)];
+      if (win) {
+        Ivar iv = class_getInstanceVariable([win class], "_handle");
+        if (iv) {
+          ptrdiff_t offset = ivar_getOffset(iv);
+          int handle = *(int *)((uint8_t *)win + offset);
+          if (handle > 0) {
+            extern void xef_host_swap(int handle);
+            xef_host_swap(handle);
+          }
+        }
+      }
+    }
+  }
+}
+- (void)presentAtTime:(CFTimeInterval)presentationTime { [self present]; }
 - (void)dealloc {
   [(id)_texture release];
   [super dealloc];
 }
 @end
+
 
 @interface CAMetalLayer : CALayer {
 @public
@@ -288,13 +310,28 @@ CATransform3D CATransform3DInvert(CATransform3D t) {
 - (BOOL)displaySyncEnabled { return _displaySyncEnabled; }
 - (void)setDisplaySyncEnabled:(BOOL)e { _displaySyncEnabled = e; }
 - (CGColorSpaceRef)colorspace { return _colorspace; }
-- (void)setColorspace:(CGColorSpaceRef)cs { _colorspace = cs; }
-- (id<CAMetalDrawable>)nextDrawable { return [[[CAMetalDrawable alloc] init] autorelease]; }
+- (id<CAMetalDrawable>)nextDrawable {
+  CAMetalDrawable *d = [[[CAMetalDrawable alloc] init] autorelease];
+  d->_layer = self;
+  if (_device && [_device respondsToSelector:@selector(newTextureWithDescriptor:)]) {
+    Class tc = NSClassFromString(@"MTLTextureDescriptor");
+    if (tc) {
+      id desc = [tc texture2DDescriptorWithPixelFormat:(_pixelFormat ? _pixelFormat : 80)
+                                                 width:(NSUInteger)(_drawableSize.width > 0 ? _drawableSize.width : 800)
+                                                height:(NSUInteger)(_drawableSize.height > 0 ? _drawableSize.height : 600)
+                                             mipmapped:NO];
+      [desc setUsage:5];
+      d->_texture = [(id)_device newTextureWithDescriptor:desc];
+    }
+  }
+  return d;
+}
 - (void)dealloc {
   [(id)_device release];
   [super dealloc];
 }
 @end
+
 
 @interface CATransaction : NSObject
 + (void)begin;
