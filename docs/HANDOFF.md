@@ -430,6 +430,7 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | go 1.27 | działa | `go version`, `go build` (zimny cache, compile/asm/link jako procesy potomne), binarka = wynik z Maca (`tests/darwin/go_test.sh`) |
 | rustc 1.99 / cargo | działa | `cargo new`, `cargo build --release`, linkowanie `ld64.lld` (butelka lld) ze stub-SDK `tools/make_darwin_sdk.py`; binarka działa też natywnie na Macu (`tests/darwin/rust_test.sh`) |
 | ld64.lld 23 | działa | linker Mach-O pod xef-osx |
+| clang 23 (butelka llvm) | działa (bez nagłówków SDK) | `clang -isysroot /opt/xef-sdk --ld-path=/opt/homebrew/bin/ld64.lld`: program C bez `#include` kompiluje się i linkuje, binarka działa też na Macu (`tests/darwin/clang_test.sh`); `#include <stdio.h>` wymaga nagłówków SDK Apple |
 | Deno 2.9 | działa | TypeScript (swc), WebCrypto, pliki, Deno.serve + fetch, Deno.Command (`tests/darwin/deno_test.sh`) |
 | Bun 1.4 | działa | TypeScript, Bun.write/file, Bun.serve + fetch, spawnSync, node:fs (`tests/darwin/bun_test.sh`) |
 | OpenJDK 27 | działa | `java -version`, `javac`, programy z wątkami/strumieniami, JIT C1/C2 (`tests/darwin/java_test.sh`) |
@@ -460,6 +461,7 @@ Go i Rust (2026-10-16, cd.):
   SIGTRAP z adresem w siginfo.
 - libdispatch-lite: stan `dispatch_apply` na stercie z refcountem (spóźniony worker pisał w ramkę stosu wołającego;
   `foundation_threads` padał ~1/5, flaky także przed sesją). Przebudowa: `tools/build_libdispatch_lite.sh`.
-- Odłożone: clang/gcc „hello world” w C wymaga nagłówków SDK (stdio.h itd.) — z SDK Apple nie kopiujemy; do decyzji użytkownika.
+- Odłożone: clang/gcc z `#include <stdio.h>` wymaga nagłówków SDK Apple — nie kopiujemy ich; do decyzji użytkownika.
+  gcc-15 (Homebrew) potrzebuje dodatkowo systemowego `as`/`ld` z Command Line Tools.
 - Testy gościa Linux (`tests/guest`): 78 ok / 42 fail — identycznie na buildzie sprzed sesji (ld.so/glibc z Debiana trixie w kontenerze),
   nie regresja tej gałęzi.
