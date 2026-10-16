@@ -52,4 +52,11 @@ echo "$list" | while IFS=$'\t' read -r p real; do
   if [ "$p" != "$real" ] && [ "$(realpath -m "darwin-rootfs$p")" != "$(realpath -m "darwin-rootfs$real")" ]; then
     mkdir -p "darwin-rootfs$(dirname "$p")"; ln -srfn "darwin-rootfs$real" "darwin-rootfs$p" 2>/dev/null || true; fi
 done
+# opt/<formula> -> ../Cellar/<formula>/<version>, as brew links it (programs locate themselves through it:
+# python's sys.executable is /opt/homebrew/opt/python@3.14/bin/python3.14); an existing opt/<formula> is left alone
+echo "$list" | cut -f2 | sed -n 's|^/opt/homebrew/Cellar/\([^/]*\)/\([^/]*\)/.*|\1 \2|p' | sort -u | while read -r f v; do
+  [ -e "darwin-rootfs/opt/homebrew/opt/$f" ] || [ -L "darwin-rootfs/opt/homebrew/opt/$f" ] && continue
+  mkdir -p darwin-rootfs/opt/homebrew/opt
+  ln -s "../Cellar/$f/$v" "darwin-rootfs/opt/homebrew/opt/$f"
+done
 echo "$list" | wc -l | xargs echo "files copied:"
