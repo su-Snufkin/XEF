@@ -1087,38 +1087,38 @@ GuestAddr setup_darwin_stack(const LoadedImage& img, int argc, char** argv, char
     u8* top = (u8*)r + guard + stack_size;
     u8* sp = top;
 
-    auto push_str = [&](const char* s) -> GuestAddr {
-        size_t n = strlen(s) + 1;
-        sp -= n;
-        memcpy(sp, s, n);
-        return (GuestAddr)(uintptr_t)sp;
-    };
-
     // Prepare Apple auxiliary strings
     std::string exec_path_str = "executable_path=" + img.exe_path;
     std::vector<std::string> apple_strs;
     apple_strs.push_back(exec_path_str);
     apple_strs.push_back("pf=Darwin");
 
-    // Copy apple strings
-    std::vector<GuestAddr> apple_addrs;
-    for (const auto& as : apple_strs) {
-        apple_addrs.push_back(push_str(as.c_str()));
-    }
+    // Strings go in ascending order like XNU lays them out: argv, then envp, then the apple strings,
+    // contiguous (libuv's uv_set_process_title reuses argv[0]..argv[argc-1] as one buffer).
+    size_t total = 0;
+    for (int j = 0; j < argc; j++) total += strlen(argv[j]) + 1;
+    for (int j = 0; envp && envp[j]; j++) total += strlen(envp[j]) + 1;
+    for (const auto& as : apple_strs) total += as.size() + 1;
+    sp -= (total + 15) & ~(size_t)15;
+    u8* wp = sp;
+    auto put_str = [&](const char* s) -> GuestAddr {
+        size_t n = strlen(s) + 1;
+        memcpy(wp, s, n);
+        GuestAddr r = (GuestAddr)(uintptr_t)wp;
+        wp += n;
+        return r;
+    };
 
-    // Copy environment strings
-    std::vector<GuestAddr> envp_addrs;
-    for (int j = 0; envp && envp[j]; j++) {
-        envp_addrs.push_back(push_str(envp[j]));
-    }
-
-    // Copy argument strings
     std::vector<GuestAddr> argv_addrs;
     for (int j = 0; j < argc; j++) {
-        GuestAddr a = push_str(argv[j]);
-        XEF_LOG(2, "setup_darwin_stack: argv[%d] = '%s' pushed at %#lx", j, argv[j], (unsigned long)a);
+        GuestAddr a = put_str(argv[j]);
+        XEF_LOG(2, "setup_darwin_stack: argv[%d] = '%s' at %#lx", j, argv[j], (unsigned long)a);
         argv_addrs.push_back(a);
     }
+    std::vector<GuestAddr> envp_addrs;
+    for (int j = 0; envp && envp[j]; j++) envp_addrs.push_back(put_str(envp[j]));
+    std::vector<GuestAddr> apple_addrs;
+    for (const auto& as : apple_strs) apple_addrs.push_back(put_str(as.c_str()));
 
     // Align stack to 16 bytes before writing pointer tables
     sp = (u8*)((uintptr_t)sp & ~15ull);
