@@ -90,6 +90,32 @@ int main(int argc, char** argv, char** envp) {
     g_main_argc_xef = i;
     g_xef_argv = argv;
 
+    // A Mach-O program named by its host path inside the rootfs (darwin-rootfs/opt/homebrew/bin/go) runs under its guest
+    // path (/opt/homebrew/bin/go), as on macOS: argv[0], executable_path and _NSGetExecutablePath must make sense to the
+    // guest (Go finds GOROOT from it, realpath() of it must work).
+    std::string guest_prog;
+    if (!g_rootfs.empty() && i < argc) {
+        bool fat0, arm0;
+        std::string a = argv[i];
+        if (a.find('/') != std::string::npos) {
+            if (a[0] != '/') { char cwd[PATH_MAX]; if (getcwd(cwd, sizeof cwd)) a = std::string(cwd) + "/" + a; }
+            std::vector<std::string> parts;   // lexical normalization (symlinks stay: they are the guest's to follow)
+            for (size_t b = 0, e; b <= a.size(); b = e + 1) {
+                e = a.find('/', b); if (e == std::string::npos) e = a.size();
+                std::string c = a.substr(b, e - b);
+                if (c.empty() || c == ".") continue;
+                if (c == "..") { if (!parts.empty()) parts.pop_back(); continue; }
+                parts.push_back(c);
+            }
+            std::string n;
+            for (auto& c : parts) n += "/" + c;
+            if (n.rfind(g_rootfs + "/", 0) == 0) {
+                std::string g = n.substr(g_rootfs.size());
+                if (is_macho_binary(resolve_guest_path(g.c_str()).c_str(), fat0, arm0)) { guest_prog = g; argv[i] = (char*)guest_prog.c_str(); }
+            }
+        }
+    }
+
     detect_host_features();
 
     // scripts: "#!interp [arg]" -> run the (guest) interpreter, like execve does
