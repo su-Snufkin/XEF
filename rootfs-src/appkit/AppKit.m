@@ -503,6 +503,10 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)setCollectionBehavior:(NSUInteger)b { _collection = b; } - (NSUInteger)collectionBehavior { return _collection; }
 - (void)setFrameAutosaveName:(NSString *)n {} - (void)setHasShadow:(BOOL)f { _shadow = f; } - (void)setRestorable:(BOOL)f {}
 - (void)setTabbingMode:(NSInteger)m {} - (void)setIgnoresMouseEvents:(BOOL)f { _ignoresMouse = f; }
+- (void)setOneShot:(BOOL)f {}
+- (void)registerForDraggedTypes:(NSArray *)types {} - (void)unregisterDraggedTypes {}
+- (void)setMouseConfinementRect:(NSRect)r {} - (NSRect)mouseConfinementRect { return NSZeroRect; }
+- (void)addChildWindow:(NSWindow *)child ordered:(NSInteger)place {} - (void)removeChildWindow:(NSWindow *)child {}
 - (void)setContentMinSize:(NSSize)s { _minSize = s; } - (void)setContentMaxSize:(NSSize)s { _maxSize = s; }
 - (void)setContentAspectRatio:(NSSize)s { _aspect = s; } - (void)setResizeIncrements:(NSSize)s {}
 - (void)setMiniwindowTitle:(NSString *)t { [t retain]; [_miniTitle release]; _miniTitle = t; }
@@ -1133,6 +1137,7 @@ static NSGraphicsContext *g_gc;
 
 void NSRectFill(NSRect r) {}
 void NSBeep(void) {}
+
 
 /* Anything else AppKit has and AppKit-lite does not: windows, views and the application answer unknown selectors with a
  * logged no-op returning 0/nil (setters of cosmetic state such as setOneShot: dominate). Selectors that SDL/GLFW probe

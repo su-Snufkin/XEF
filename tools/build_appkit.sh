@@ -62,13 +62,22 @@ clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/Cocoa.framewo
   -Wl,-compatibility_version,1 -Wl,-current_version,24 -Wl,-not_for_dyld_shared_cache \
   -Wl,-reexport_library,$F/AppKit.framework/Versions/C/AppKit -Wl,-reexport_library,$F/Foundation.framework/Versions/C/Foundation \
   $O/Cocoa.o -Wl,-undefined,dynamic_lookup -o $F/Cocoa.framework/Versions/A/Cocoa
+# QuartzCore
+mk QuartzCore A
+clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/QuartzCore.m -o $O/QuartzCore.o
+clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore \
+  -Wl,-compatibility_version,1.2 -Wl,-current_version,1.11 -Wl,-not_for_dyld_shared_cache \
+  $O/QuartzCore.o $LIBS $F/CoreGraphics.framework/Versions/A/CoreGraphics -Wl,-undefined,dynamic_lookup -o $F/QuartzCore.framework/Versions/A/QuartzCore
 # symlinks + ad-hoc signature
 ln -sfn C $F/AppKit.framework/Versions/Current; ln -sfn C $F/AppKit.framework/Versions/A
 ln -sfn Versions/Current/AppKit $F/AppKit.framework/AppKit
-for p in AppKit.framework/Versions/C/AppKit OpenGL.framework/Versions/A/OpenGL Cocoa.framework/Versions/A/Cocoa; do codesign -f -s - $F/$p; done
+ln -sfn A $F/QuartzCore.framework/Versions/Current
+ln -sfn Versions/Current/QuartzCore $F/QuartzCore.framework/QuartzCore
+for p in AppKit.framework/Versions/C/AppKit QuartzCore.framework/Versions/A/QuartzCore OpenGL.framework/Versions/A/OpenGL Cocoa.framework/Versions/A/Cocoa; do codesign -f -s - $F/$p; done
 ln -sfn A $F/OpenGL.framework/Versions/Current; ln -sfn Versions/Current/OpenGL $F/OpenGL.framework/OpenGL
 ln -sfn A $F/Cocoa.framework/Versions/Current; ln -sfn Versions/Current/Cocoa $F/Cocoa.framework/Cocoa
-ls -la $F/AppKit.framework/Versions/C/AppKit $F/OpenGL.framework/Versions/A/OpenGL $F/Cocoa.framework/Versions/A/Cocoa
+ls -la $F/AppKit.framework/Versions/C/AppKit $F/QuartzCore.framework/Versions/A/QuartzCore $F/OpenGL.framework/Versions/A/OpenGL $F/Cocoa.framework/Versions/A/Cocoa
 REMOTE
-for f in AppKit Cocoa OpenGL CoreGraphics IOKit CoreServices Carbon CoreVideo AudioToolbox; do rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/$f.framework darwin-rootfs/System/Library/Frameworks/; done
+for f in AppKit Cocoa OpenGL CoreGraphics IOKit CoreServices Carbon CoreVideo AudioToolbox QuartzCore; do rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/$f.framework darwin-rootfs/System/Library/Frameworks/; done
 echo "installed into darwin-rootfs/System/Library/Frameworks"
+
