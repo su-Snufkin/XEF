@@ -105,6 +105,12 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
         n = snprintf(buf, sizeof buf, "xef:   host rsp %p, JIT stack %p..%p\n", (void*)uc->uc_mcontext.gregs[REG_RSP],
                      (void*)tls_thread->jit_stack, (void*)(tls_thread->jit_stack + 4096 + tls_thread->jit_stack_size));
         write(2, buf, n);
+        if (g_is_darwin && !g_cache.contains(rip)) {   // in the runtime: the guest state is the last committed one
+            std::string pd = dyld_describe(tls_thread->st->pc), ld = dyld_describe(tls_thread->st->x[30]);
+            n = snprintf(buf, sizeof buf, "xef:   guest pc %#lx %s, lr %#lx %s\n", (unsigned long)tls_thread->st->pc, pd.c_str(),
+                         (unsigned long)tls_thread->st->x[30], ld.c_str());
+            write(2, buf, n);
+        }
     }
     if (g_is_darwin) {
         const char* hn; u64 hlr;

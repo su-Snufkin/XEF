@@ -1,4 +1,5 @@
 // XEF — AArch64 base (integer / branch / load-store / system) translation.
+#include <sys/uio.h>
 #include "frontend/a64/translate.h"
 
 #include <stdlib.h>
@@ -909,8 +910,10 @@ bool guest_readable(GuestAddr pc) {
         memset(ok_pages, 0, sizeof ok_pages);
         ok_epoch = ep;
     } else if (slot == (page | 1)) return true;
-    unsigned char v;
-    if (mincore((void*)page, 4096, &v) != 0) return false;
+    // mapped and readable (mincore alone accepts PROT_NONE reservations, e.g. a Mach-O __PAGEZERO at 0)
+    u32 probe;
+    struct iovec l{&probe, 4}, r{(void*)page, 4};
+    if (process_vm_readv(getpid(), &l, 1, &r, 1, 0) != 4) return false;
     slot = page | 1;
     return true;
 }
