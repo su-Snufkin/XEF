@@ -424,7 +424,7 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | PostgreSQL 14 | działa | initdb, postgres, psql (socket uniksowy i TCP), pg_ctl stop |
 | ruby 4.0 | działa | json, digest, Thread, fork, Open3, TCP, Fiddle, Net::HTTP https |
 | php 8.5 | działa | PDO sqlite, intl, preg, mb, https, stream sockets, shell_exec |
-| cmake 4.3 | `-P`/`-E` działa | konfiguracja projektów wymaga kompilatora w rootfs (brak) |
+| cmake 4.3 + ninja | działa | konfiguracja i budowa projektu C z clang + ld64.lld (`SDKROOT=/opt/xef-sdk`, `tests/darwin/cmake_test.sh`); brak `vm_stat` (narzędzie Apple) tylko w logu |
 | ffmpeg 8.1 | działa | x264+AAC bitexact identyczne z Makiem (`tests/darwin/ffmpeg_test.sh`), VP9/Opus |
 | ImageMagick 7 | działa | `magick` generacja, resize, identify, PNG/JPEG/WebP |
 | go 1.27 | działa | `go version`, `go build` (zimny cache, compile/asm/link jako procesy potomne), binarka = wynik z Maca (`tests/darwin/go_test.sh`) |
