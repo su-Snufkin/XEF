@@ -23,6 +23,8 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <semaphore.h>
 
 namespace xef {
 
@@ -525,8 +527,19 @@ static int st_timingsafe_bcmp(const void* a, const void* b, size_t n) {
     return d != 0;
 }
 
+// POSIX named semaphores: Darwin O_CREAT/O_EXCL are 0x200/0x800 and SEM_FAILED is (sem_t*)-1 (glibc: NULL).
+// sem_init/sem_destroy are not implemented on macOS (ENOSYS), and a Darwin sem_t is 4 bytes: glibc's would overflow.
+int darwin_open_flags_to_linux(int df);
+static void* st_sem_open(const char* name, int oflag, const uint64_t* ap) {
+    int lf = darwin_open_flags_to_linux(oflag) & (O_CREAT | O_EXCL);
+    sem_t* s = (lf & O_CREAT) ? sem_open(name, lf, (mode_t)(ap ? ap[0] : 0600), (unsigned)(ap ? ap[1] : 0)) : sem_open(name, lf);
+    return s == SEM_FAILED ? (void*)-1 : (void*)s;
+}
+static int st_sem_enosys() { errno = ENOSYS; return -1; }
+void* st_sem_open_entry(const char* name, int oflag, const uint64_t* ap) { return st_sem_open(name, oflag, ap); }
+
 static const StubEntry kStubs2[] = {
-    {"_memset_s", (void*)&st_memset_s}, {"_timingsafe_bcmp", (void*)&st_timingsafe_bcmp},
+    {"_memset_s", (void*)&st_memset_s}, {"_sem_init", (void*)&st_sem_enosys}, {"_sem_destroy", (void*)&st_sem_enosys}, {"_timingsafe_bcmp", (void*)&st_timingsafe_bcmp},
     {"_task_policy_set", (void*)&st_zero2},   // scheduling role/QoS hint (like pthread_set_qos_class_self_np)
     {"_gss_get_mic", (void*)&st_gss_unavailable}, {"_gss_verify_mic", (void*)&st_gss_unavailable},
     {"_gss_release_oid_set", (void*)&st_gss_release},

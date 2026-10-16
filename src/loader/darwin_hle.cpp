@@ -2047,9 +2047,12 @@ static int darwin_open_v(const char* path, int dflags, const uint64_t* ap);
 static int darwin_openat_v(int dfd, const char* path, int dflags, const uint64_t* ap);
 static int darwin_fcntl_v(int fd, int cmd, const uint64_t* ap);
 static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap);
+void* st_sem_open_entry(const char* name, int oflag, const uint64_t* ap);
+static void* darwin_sem_open_v(const char* name, int oflag, const uint64_t* ap) { return st_sem_open_entry(name, oflag, ap); }
 static const ShimEntry kShims[] = {
     {"__xef_open", (void*)&darwin_open_v, 2}, {"__xef_openat", (void*)&darwin_openat_v, 3}, {"__xef_fcntl", (void*)&darwin_fcntl_v, 2},
     {"__xef_ioctl", (void*)&darwin_ioctl_v, 2},
+    {"_sem_open", (void*)&darwin_sem_open_v, 2},
     {"_execl", (void*)&darwin_execl, 2}, {"_execlp", (void*)&darwin_execlp, 2}, {"_execle", (void*)&darwin_execle, 2},
     {"_execve", (void*)&darwin_execve, -1}, {"_execv", (void*)&darwin_execv, -1}, {"_execvp", (void*)&darwin_execvp, -1},
     {"_execvP", (void*)&darwin_execvP, -1},
