@@ -3723,6 +3723,126 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 
 @end
 
+/* ------------------------------------------------------------------- MTLCaptureManager */
+
+NSString * const MTLCaptureErrorDomain = @"MTLCaptureErrorDomain";
+
+@interface XEFCaptureScope : XEFMetalObject <MTLCaptureScope> {
+  id<MTLDevice> _device;
+  id<MTLCommandQueue> _commandQueue;
+  NSString *_label;
+}
+@end
+
+@implementation XEFCaptureScope
+- (instancetype)initWithDevice:(id<MTLDevice>)device queue:(id<MTLCommandQueue>)queue {
+  if ((self = [super init])) {
+    _device = [device retain];
+    _commandQueue = [queue retain];
+  }
+  return self;
+}
+- (void)beginScope {}
+- (void)endScope {}
+- (id<MTLDevice>)device { return _device; }
+- (id<MTLCommandQueue>)commandQueue { return _commandQueue; }
+- (NSString *)label { return _label; }
+- (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (void)dealloc {
+  [_device release];
+  [_commandQueue release];
+  [_label release];
+  [super dealloc];
+}
+@end
+
+@interface MTLCaptureDescriptor ()
+@end
+@implementation MTLCaptureDescriptor
+- (id)copyWithZone:(NSZone *)zone {
+  MTLCaptureDescriptor *d = [[MTLCaptureDescriptor allocWithZone:zone] init];
+  d.captureObject = self.captureObject;
+  d.destination = self.destination;
+  d.outputURL = self.outputURL;
+  return d;
+}
+- (void)dealloc {
+  [_captureObject release];
+  [_outputURL release];
+  [super dealloc];
+}
+@end
+
+@interface MTLCaptureManager () {
+  id<MTLCaptureScope> _defaultCaptureScope;
+  BOOL _isCapturing;
+}
+@end
+
+@implementation MTLCaptureManager
+
++ (MTLCaptureManager *)sharedCaptureManager {
+  static MTLCaptureManager *s_manager = nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    s_manager = [[MTLCaptureManager alloc] init];
+  });
+  return s_manager;
+}
+
+- (id<MTLCaptureScope>)newCaptureScopeWithDevice:(id<MTLDevice>)device {
+  return [[XEFCaptureScope alloc] initWithDevice:device queue:nil];
+}
+
+- (id<MTLCaptureScope>)newCaptureScopeWithCommandQueue:(id<MTLCommandQueue>)commandQueue {
+  return [[XEFCaptureScope alloc] initWithDevice:commandQueue.device queue:commandQueue];
+}
+
+- (BOOL)supportsDestination:(MTLCaptureDestination)destination {
+  return NO;
+}
+
+- (BOOL)startCaptureWithDescriptor:(MTLCaptureDescriptor *)descriptor error:(NSError **)error {
+  if (_isCapturing) {
+    if (error) *error = [NSError errorWithDomain:MTLCaptureErrorDomain code:2 userInfo:nil];
+    return NO;
+  }
+  _isCapturing = YES;
+  return YES;
+}
+
+- (void)startCaptureWithDevice:(id<MTLDevice>)device {
+  _isCapturing = YES;
+}
+
+- (void)startCaptureWithCommandQueue:(id<MTLCommandQueue>)commandQueue {
+  _isCapturing = YES;
+}
+
+- (void)startCaptureWithScope:(id<MTLCaptureScope>)captureScope {
+  _isCapturing = YES;
+}
+
+- (void)stopCapture {
+  _isCapturing = NO;
+}
+
+- (id<MTLCaptureScope>)defaultCaptureScope { return _defaultCaptureScope; }
+- (void)setDefaultCaptureScope:(id<MTLCaptureScope>)s {
+  [s retain];
+  [_defaultCaptureScope release];
+  _defaultCaptureScope = s;
+}
+
+- (BOOL)isCapturing { return _isCapturing; }
+
+- (void)dealloc {
+  [(id)_defaultCaptureScope release];
+  [super dealloc];
+}
+
+@end
+
 /* ------------------------------------------------------------------- Public C API */
 
 id<MTLDevice> MTLCreateSystemDefaultDevice(void) {
