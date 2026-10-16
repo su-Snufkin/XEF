@@ -10,6 +10,11 @@ if [ ! -f "$XEF_OSX" ]; then
     exit 1
 fi
 
+if ! command -v ld64.lld >/dev/null 2>&1 && [ -d /usr/lib64/rocm/llvm/bin ]; then
+    export PATH="$PATH:/usr/lib64/rocm/llvm/bin"
+fi
+
+
 echo "=== Building Darwin ARM64 test binaries ==="
 
 # 1. Hello Darwin
@@ -54,4 +59,8 @@ echo "--- Test 4: C program with arguments ---"
 echo "--- Test 5: OpenGL cube (Xvfb, gltri) ---"
 "$DIR/gl_test.sh"
 
+echo "--- Test 6: Metal render pipeline (cand4_metal offscreen) ---"
+"$DIR/metal_test.sh"
+
 echo "=== ALL TESTS COMPLETED SUCCESSFULLY! ==="
+
