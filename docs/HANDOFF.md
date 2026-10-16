@@ -398,7 +398,7 @@ Zrobione:
   `host_processor_info`, `host_info`, zegary Mach; termios (`darwin_termios.cpp`: struktura, flagi, c_cc, prędkości, TIOC*, openpty/forkpty);
   tsearch/lfind/qsort_b z callbackami gościa; sysctl KERN_PROC/PROCARGS2/BOOTTIME; `dev_t` Darwina; cmsghdr (SCM_RIGHTS) w sendmsg/recvmsg.
 - `tools/ptyrun.py` — programy interaktywne na pty (wpisywanie klawiszy, wynik bez sekwencji escape).
-- macref 37/37. Dodatkowo: `darwin_fs.cpp` (rodzina `*at` przez nakładkę rootfs względem dirfd, xattr→`user.*`, statfs/statvfs,
+- macref 50/50 (stan po Go/Rust). Dodatkowo: `darwin_fs.cpp` (rodzina `*at` przez nakładkę rootfs względem dirfd, xattr→`user.*`, statfs/statvfs,
   pathconf, mkstemp*, getattrlist, SysV IPC), CommonDigest (`darwin_commoncrypto.cpp`), popen/system przez `/bin/sh` rootfs
   (`fetch_bottle.py --shell`), EVFILT_SIGNAL, timeval z 32-bitowym usec, sem_open, kinfo_proc/PROCARGS2, cmsg/SCM_RIGHTS.
 - Rootfs w chmurze: `/bin/sh` = bash z butelki; `/usr/lib/libcurl.4.dylib` itd. (`--syslibs`). Komendy spoza rootfs (np. `ls`, `uname`)
@@ -424,3 +424,23 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | ruby 4.0 | działa | json, digest, Thread, fork, Open3, TCP, Fiddle, Net::HTTP https |
 | php 8.5 | działa | PDO sqlite, intl, preg, mb, https, stream sockets, shell_exec |
 | cmake 4.3 | `-P`/`-E` działa | konfiguracja projektów wymaga kompilatora w rootfs (brak) |
+| ffmpeg 8.1 | działa | x264+AAC bitexact identyczne z Makiem (`tests/darwin/ffmpeg_test.sh`), VP9/Opus |
+| ImageMagick 7 | działa | `magick` generacja, resize, identify, PNG/JPEG/WebP |
+| go 1.27 | działa | `go version`, `go build` (zimny cache, compile/asm/link jako procesy potomne), binarka = wynik z Maca (`tests/darwin/go_test.sh`) |
+| rustc 1.99 / cargo | działa | `cargo new`, `cargo build --release`, linkowanie `ld64.lld` (butelka lld) ze stub-SDK `tools/make_darwin_sdk.py`; binarka działa też natywnie na Macu (`tests/darwin/rust_test.sh`) |
+| ld64.lld 23 | działa | linker Mach-O pod xef-osx |
+
+Go i Rust (2026-10-16, cd.):
+- Go: lstat/O_NOFOLLOW/O_EXCL/mkdir/rmdir na samym linku (GOROOT), ścieżka hosta w rootfs → ścieżka gościa (argv[0]),
+  ścisłe NZCV dla binarek Go (`__go_buildinfo`: kompilator Go zostawia flagi żywe przez BR tablic skoków),
+  SHA256H/H2 w miejscu abef (brak xmm w tier 2), `kevent`/`fcntl` zwracają 64-bitowe -1 (Go porównuje 64 bity — netpoll padał),
+  uchwyt `pthread_t` zna wątek hosta zanim gość go rozda (pthread_kill(0) przy wywłaszczaniu Go zabijał `go build`).
+- Rust: rejestr stref malloc (jemalloc), `pthread_attr_setstacksize` respektowany, clonefile/fclonefileat, setattrlist/fsetattrlist,
+  mmap/vm_allocate w całych stronach 16K (wcześniej munmap gościa zdejmował pamięć hosta obok — crash w ld.so),
+  vm_allocate bez ANYWHERE nie nadpisuje mapowania (KERN_NO_SPACE), kopia argumentów stosowych HLE nie czyta za końcem stosu.
+- Linkowanie bez SDK Apple: `tools/make_darwin_sdk.py` generuje `.tbd` (libSystem = nazwy HLE + funkcje libc hosta + obrazy
+  implicit) w `darwin-rootfs/opt/xef-sdk`; `SDKROOT=/opt/xef-sdk`, `-C linker=/opt/homebrew/bin/ld64.lld -C linker-flavor=ld64.lld`.
+  cargo: `PATH=/opt/homebrew/bin:...` (inaczej znajdzie rustc hosta), `CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER`, `RUSTFLAGS` jak w teście.
+- Odłożone: clang/gcc „hello world” w C wymaga nagłówków SDK (stdio.h itd.) — z SDK Apple nie kopiujemy; do decyzji użytkownika.
+- Testy gościa Linux (`tests/guest`): 78 ok / 42 fail — identycznie na buildzie sprzed sesji (ld.so/glibc z Debiana trixie w kontenerze),
+  nie regresja tej gałęzi.
