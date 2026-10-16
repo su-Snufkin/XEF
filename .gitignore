@@ -5,3 +5,4 @@ build*/
 CLAUDE.local.md
 mac-out/
 darwin-rootfs/
+tools/__pycache__/

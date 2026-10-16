@@ -240,7 +240,9 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - **Bez stopki** `Co-Authored-By` w commitach.
 - **Gałąź:** `XEF-OSX` (`git push origin XEF-OSX`).
 - **Zdalny Apple Silicon Mac M1 (macOS 27, 16K pages):**
-  - Dostęp przez `ssh mac` (`HostName 192.168.0.208`, user `kacperwrona`, klucz `~/.ssh/xef_mac`, hasło do sudo: `2137`).
+  - Dostęp przez `ssh mac` (user `kacperwrona`, klucz `~/.ssh/xef_mac`). Adres się zmienia: LAN `192.168.0.208`, ngrok TCP (nie działa
+    z chmury: proxy przepuszcza tylko HTTP(S)), tunel Cloudflare: `ProxyCommand cloudflared access ssh --hostname <x>.trycloudflare.com`
+    (`pip install pycloudflared` daje binarkę `cloudflared`). Hasło do sudo: `2137`.
   - Narzędzie do synchronizacji pakietów z Maca do rootfs: `tools/pull_homebrew.sh <nazwa>`.
 
 ### 2. Architektura i kluczowe wdrożenia (2026-10-15)
@@ -370,3 +372,22 @@ zaszumiona, więc licz się z dużą wariancją i używaj minimum z wielu przebi
 - AppKit-lite: widok opuszczający okno (lub zwalniany) przestaje być jego first responderem — SDL2 usuwa i zwalnia `fieldEdit` będąc
   first responderem, a następny `keyDown:` (Enter w intro) / `resignFirstResponder` szedł do zwolnionej pamięci (vtable obiektu OSG jako „klasa”).
 - `tests/darwin/macref.sh`: 18/18 po scaleniu z 6b51080; `foundation_file` sporadycznie SIGSEGV (~1/20 przebiegów, także na samym 6b51080) — do zbadania.
+
+### 8. Sesja nocna 2026-10-16 (kolejka aplikacji)
+Świeży kontener: `darwin-rootfs` = `rsync mac:xef-remote/out/rootfs/` + `tools/setup_darwin_rootfs_data.sh` + `tools/pull_homebrew.sh <app>`.
+Bez Maca: `tools/fetch_bottle.py [--libcxx] <formuła...>` — butelki arm64 z ghcr.io (zależności z formulae.brew.sh, placeholdery
+`@@HOMEBREW_*@@` w load commands/tekstach, linki opt/ i bin/ jak `brew pour`); `--libcxx` kładzie libc++/abi/unwind z butelki llvm do `/usr/lib`.
+Na Macu brakuje wielu aplikacji z kolejki (git, curl, jq, rg, fd, go, rust, ...): te bierzemy przez fetch_bottle.py.
+
+Zrobione:
+- `foundation_file` flaky (~10%): libdispatch-lite nie wołał `_Block_use_RR2`, więc `Block_copy` nie zatrzymywał przechwyconych obiektów
+  ObjC (bloki KVO NSOperation działały na zwolnionej pamięci). Test `block_capture.m`. 0/80 po poprawce.
+- Zrzut fatalnego sygnału podaje obraz+offset `lr`.
+- `posix_spawn`: był stubem (ignorował file actions, maskę sygnałów, SETSID, CLOEXEC_DEFAULT). Teraz pełna semantyka, błąd exec przez potok,
+  `addinherit_np/addchdir_np/addfchdir_np`, gettery. kqueue: `EVFILT_PROC` (NOTE_EXIT/EXITSTATUS, pidfd) i `EVFILT_TIMER` (timerfd).
+  Node `child_process` działa (execSync/spawnSync/exec/sygnał). Test `spawn_kqueue.c`.
+- argv/envp/apple: łańcuchy rosnąco i ciągiem jak XNU (libuv `uv_set_process_title`; npm padał w `bzero`). Test `argv_layout.c`.
+  `npm --version` (11.3.0), `npm init`, `npm install left-pad`, `npm install esbuild` działają (sieć, TLS).
+- pthread TSD w tablicy gościa za TPIDRRO_EL0 (768 slotów, klucze od 258 jak na macOS), destruktory przy wyjściu wątku, wartość z `pthread_exit`;
+  `pthread_t` gościa = osobny blok w `tsd[0]` (mapowany na wątek hosta: join/detach/kill/threadid/stack), `mach_thread_self` per wątek.
+  Go (`esbuild` 0.28, binarka Go) działa: transform i bundle przez node. Test `pthread_tsd.c`. macref 22/22.
