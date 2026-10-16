@@ -5,6 +5,10 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <algorithm>
+#include <sys/stat.h>
+#include <sys/uio.h>
+#include <sys/sendfile.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -211,7 +215,14 @@ static int d_socket(int dom, int type, int proto) {
     return socket(l, type, proto);
 }
 static int d_socketpair(int dom, int type, int proto, int* sv) { return socketpair(af_to_linux(dom), type, proto, sv); }
+// Darwin has no abstract AF_UNIX namespace: an empty path or one starting with NUL names no file (ENOENT), where Linux
+// would autobind / use the abstract namespace
+static bool unix_no_path(const void* a, socklen_t len) {
+    const uint8_t* b = (const uint8_t*)a;
+    return a && len >= 2 && b[1] == 1 && (len == 2 || b[2] == 0);
+}
 static int d_bind(int fd, const void* a, socklen_t len) {
+    if (unix_no_path(a, len)) { errno = ENOENT; return -1; }
     sockaddr_storage ss; socklen_t ll = sa_to_linux(a, len, &ss);
     return bind(fd, (sockaddr*)&ss, ll);
 }
@@ -228,6 +239,7 @@ static int d_connectx(int fd, const void* endpoints, uint32_t, uint32_t, const v
 static int d_sendmsg_x() { errno = ENOSYS; return -1; }
 
 static int d_connect(int fd, const void* a, socklen_t len) {
+    if (unix_no_path(a, len)) { errno = ENOENT; return -1; }
     sockaddr_storage ss; socklen_t ll = sa_to_linux(a, len, &ss);
     return connect(fd, (sockaddr*)&ss, ll);
 }
@@ -421,12 +433,52 @@ static int d_inet_pton(int af, const char* src, void* dst) {
 }
 
 struct NetShim { const char* name; void* fn; };
+// sendfile(fd, s, offset, *len, hdtr, flags): file fd from `offset` to socket s; *len = bytes to send (0: to the end of
+// the file) and, on return, bytes sent (headers and trailers included); struct sf_hdtr { iovec* headers; int hdr_cnt;
+// iovec* trailers; int trl_cnt; }. A non-blocking socket gives EAGAIN with the partial count in *len.
+struct DarwinSfHdtr { struct iovec* headers; int hdr_cnt; struct iovec* trailers; int trl_cnt; };
+static int d_sendfile(int fd, int s, int64_t offset, int64_t* len, const DarwinSfHdtr* hdtr, int flags) {
+    if (flags != 0 || offset < 0) { errno = EINVAL; return -1; }
+    struct stat st;
+    if (fstat(fd, &st) < 0) return -1;
+    if (!S_ISREG(st.st_mode)) { errno = ENOTSUP; return -1; }
+    struct stat ss;
+    if (fstat(s, &ss) < 0) return -1;
+    if (!S_ISSOCK(ss.st_mode)) { errno = ENOTSOCK; return -1; }   // (Linux would also copy into a file)
+    int64_t want = len ? *len : 0, sent = 0;
+    auto finish = [&](int r) { if (len) *len = sent; return r; };
+    if (hdtr && hdtr->headers && hdtr->hdr_cnt > 0) {
+        ssize_t n = writev(s, hdtr->headers, hdtr->hdr_cnt);
+        if (n < 0) return finish(-1);
+        sent += n;
+        size_t hlen = 0;
+        for (int k = 0; k < hdtr->hdr_cnt; k++) hlen += hdtr->headers[k].iov_len;
+        if ((size_t)n < hlen) { errno = EAGAIN; return finish(-1); }
+    }
+    // *len counts the headers too (not the trailers): what is left of it after them is the file's part
+    int64_t to_eof = st.st_size > offset ? st.st_size - offset : 0;
+    int64_t body = want == 0 ? to_eof : std::min<int64_t>(to_eof, want > sent ? want - sent : 0);
+    off_t off = offset;
+    while (body > 0) {
+        ssize_t n = sendfile(s, fd, &off, (size_t)std::min<int64_t>(body, 1 << 30));
+        if (n < 0) return finish(-1);
+        if (n == 0) break;
+        sent += n; body -= n;
+    }
+    if (hdtr && hdtr->trailers && hdtr->trl_cnt > 0) {
+        ssize_t n = writev(s, hdtr->trailers, hdtr->trl_cnt);
+        if (n < 0) return finish(-1);
+        sent += n;
+    }
+    return finish(0);
+}
+
 static const NetShim kNet[] = {
     {"_socket", (void*)&d_socket}, {"_socketpair", (void*)&d_socketpair}, {"_bind", (void*)&d_bind}, {"_connect", (void*)&d_connect},
     {"_connectx", (void*)&d_connectx}, {"_sendmsg_x", (void*)&d_sendmsg_x}, {"_recvmsg_x", (void*)&d_sendmsg_x},
     {"_accept", (void*)&d_accept}, {"_listen", (void*)&listen}, {"_getsockname", (void*)&d_getsockname}, {"_getpeername", (void*)&d_getpeername},
     {"_setsockopt", (void*)&d_setsockopt}, {"_getsockopt", (void*)&d_getsockopt}, {"_send", (void*)&d_send}, {"_recv", (void*)&d_recv},
-    {"_sendto", (void*)&d_sendto}, {"_recvfrom", (void*)&d_recvfrom}, {"_sendmsg", (void*)&d_sendmsg}, {"_recvmsg", (void*)&d_recvmsg},
+    {"_sendfile", (void*)&d_sendfile}, {"_sendto", (void*)&d_sendto}, {"_recvfrom", (void*)&d_recvfrom}, {"_sendmsg", (void*)&d_sendmsg}, {"_recvmsg", (void*)&d_recvmsg},
     {"_shutdown", (void*)&d_shutdown}, {"_select", (void*)&d_select}, {"_select$DARWIN_EXTSN", (void*)&d_select},
     {"_select$1050", (void*)&d_select}, {"_pselect", (void*)&d_pselect}, {"_pselect$DARWIN_EXTSN", (void*)&d_pselect},
     {"_getaddrinfo", (void*)&d_getaddrinfo}, {"_freeaddrinfo", (void*)&d_freeaddrinfo}, {"_getnameinfo", (void*)&d_getnameinfo},
