@@ -151,6 +151,44 @@ static ssize_t f_getdirentries64(int fd, char* buf, size_t size, int64_t* basep)
     }
 }
 
+// chflags family: UF_NODUMP 1 / UF_IMMUTABLE 2 / UF_APPEND 4 map to the inode flags FS_NODUMP / FS_IMMUTABLE /
+// FS_APPEND (FS_IOC_SETFLAGS); other flags give ENOTSUP. No flags on a symbolic link itself (lchflags): only 0.
+static int flags_to_fs(uint32_t f, unsigned* out) {
+    if (f & ~7u) { errno = ENOTSUP; return -1; }
+    *out = ((f & 1) ? FS_NODUMP_FL : 0) | ((f & 2) ? FS_IMMUTABLE_FL : 0) | ((f & 4) ? FS_APPEND_FL : 0);
+    return 0;
+}
+static int fd_setflags(int fd, uint32_t f) {
+    unsigned want, cur = 0;
+    if (flags_to_fs(f, &want) < 0) return -1;
+    const unsigned mask = FS_NODUMP_FL | FS_IMMUTABLE_FL | FS_APPEND_FL;
+    if (ioctl(fd, FS_IOC_GETFLAGS, &cur) < 0) { if (!want) return 0; errno = ENOTSUP; return -1; }
+    unsigned nf = (cur & ~mask) | want;
+    if (nf == cur) return 0;
+    return ioctl(fd, FS_IOC_SETFLAGS, &nf);
+}
+static int f_fchflags(int fd, uint32_t f) {
+    struct stat st;
+    if (fstat(fd, &st) < 0) return -1;
+    return fd_setflags(fd, f);
+}
+static int path_chflags(const char* p, uint32_t f, bool follow) {
+    if (!p) { errno = EFAULT; return -1; }
+    std::string h = resolve_guest_path(p, follow);
+    struct stat st;
+    if ((follow ? stat(h.c_str(), &st) : lstat(h.c_str(), &st)) < 0) return -1;
+    if (S_ISLNK(st.st_mode)) { if (f) { errno = ENOTSUP; return -1; } return 0; }
+    int fd = open(h.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC | (follow ? 0 : O_NOFOLLOW));
+    if (fd < 0) return -1;
+    int r = fd_setflags(fd, f);
+    int e = errno;
+    close(fd);
+    errno = e;
+    return r;
+}
+static int f_chflags(const char* p, uint32_t f) { return path_chflags(p, f, true); }
+static int f_lchflags(const char* p, uint32_t f) { return path_chflags(p, f, false); }
+
 // pipe2 / dup3 (macOS 15+): Darwin O_NONBLOCK 0x4, O_CLOEXEC 0x1000000; anything else is EINVAL
 static int f_pipe2(int fds[2], int fl) {
     if (fl & ~(0x4 | 0x1000000)) { errno = EINVAL; return -1; }
@@ -758,7 +796,7 @@ void* darwin_fs_lookup(const char* name) {
     struct E { const char* n; void* f; };
     static const E k[] = {
         {"_mkdirat", (void*)&f_mkdirat}, {"_mkfifoat", (void*)&f_mkfifoat}, {"_mknodat", (void*)&f_mknodat},
-        {"_unlinkat", (void*)&f_unlinkat}, {"_renameat", (void*)&f_renameat}, {"_renameatx_np", (void*)&f_renameatx_np}, {"_pipe2", (void*)&f_pipe2}, {"___getdirentries64", (void*)&f_getdirentries64}, {"_dup3", (void*)&f_dup3},
+        {"_unlinkat", (void*)&f_unlinkat}, {"_renameat", (void*)&f_renameat}, {"_renameatx_np", (void*)&f_renameatx_np}, {"_pipe2", (void*)&f_pipe2}, {"_chflags", (void*)&f_chflags}, {"_lchflags", (void*)&f_lchflags}, {"_fchflags", (void*)&f_fchflags}, {"___getdirentries64", (void*)&f_getdirentries64}, {"_dup3", (void*)&f_dup3},
         {"_clonefile", (void*)&f_clonefile}, {"_clonefileat", (void*)&f_clonefileat}, {"_fclonefileat", (void*)&f_fclonefileat},
         {"_renamex_np", (void*)&f_renamex_np}, {"_readlinkat", (void*)&f_readlinkat}, {"_faccessat", (void*)&f_faccessat},
         {"_fchmodat", (void*)&f_fchmodat}, {"_fchownat", (void*)&f_fchownat}, {"_linkat", (void*)&f_linkat},

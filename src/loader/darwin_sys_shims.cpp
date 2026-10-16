@@ -9,6 +9,7 @@
 #include "common/common.h"
 
 #include <errno.h>
+#include <dirent.h>
 #include <malloc.h>
 #include <string.h>
 #include <stdio.h>
@@ -102,7 +103,33 @@ static int sh_vm_remap(uint32_t, uint64_t* target, uint64_t size, uint64_t, int 
     if (max) *max = 7;
     return 0;
 }
-static int sh_task_threads(uint32_t, void** list, uint32_t* count) { *list = nullptr; *count = 0; return 0; }
+// task_threads(mach_task_self()): the guest's threads as thread ports (XEF's own helper threads are not listed), in
+// an array the caller vm_deallocates. Other tasks are not inspectable here.
+static int sh_task_threads(uint32_t task, uint32_t** list, uint32_t* count) {
+    if (!list || !count) return 4;                          // KERN_INVALID_ARGUMENT
+    if (task != 0x103) return 4;
+    std::vector<uint32_t> ports;
+    if (DIR* d = opendir("/proc/self/task")) {
+        while (dirent* e = readdir(d)) {
+            int tid = atoi(e->d_name);
+            if (tid > 0 && is_guest_tid(tid)) ports.push_back(darwin_thread_port(tid));
+        }
+        closedir(d);
+    }
+    size_t bytes = (ports.size() * 4 + 16383) & ~(size_t)16383;
+    if (!bytes) bytes = 16384;
+    // 16K-aligned like vm_allocate's memory (vm_deallocate frees whole 16K pages)
+    void* res = mmap(nullptr, bytes + 16384, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (res == MAP_FAILED) return 6;                        // KERN_RESOURCE_SHORTAGE
+    uintptr_t u = (uintptr_t)res, a = (u + 16383) & ~(uintptr_t)16383;
+    if (a > u) munmap(res, a - u);
+    if (u + 16384 > a) munmap((void*)(a + bytes), u + 16384 - a);
+    void* m = (void*)a;
+    if (!ports.empty()) memcpy(m, ports.data(), ports.size() * 4);
+    *list = (uint32_t*)m;
+    *count = (uint32_t)ports.size();
+    return 0;
+}
 static int sh_thread_get_state(uint32_t, int, void*, uint32_t*) { return 5; }   // KERN_INVALID_ARGUMENT
 
 // ---- malloc / pthread -----------------------------------------------------------------------------

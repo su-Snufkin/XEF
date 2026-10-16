@@ -300,7 +300,6 @@ static char* st_ctermid_r(char* s) {
     strcpy(s, "/dev/tty");
     return s;
 }
-static int st_lchflags(const char*, uint32_t) { return 0; }
 static void st_os_log_impl(void*, void*, uint8_t, const char*, uint8_t*, uint32_t) {}
 static bool st_os_log_type_enabled(void*, uint8_t) { return false; }
 static void* st_os_log_create(const char*, const char*) { return (void*)1; }
@@ -317,9 +316,13 @@ static int st_proc_regionfilename(int, uint64_t, void* buffer, uint32_t buffersi
     if (buffer && buffersize) *(char*)buffer = 0;
     return 0;
 }
+// task_for_pid: the own task's port (mach_task_self's name); other processes' tasks are not available (KERN_FAILURE,
+// as for an unentitled caller on macOS)
 static int st_task_for_pid(uint32_t, int pid, uint32_t* t) {
-    if (t) *t = (pid == getpid()) ? 1 : 0;
-    return 0;
+    if (!t) return 4;
+    if (pid == getpid()) { *t = 0x103; return 0; }
+    *t = 0;
+    return 5;
 }
 static void* st_swift_retain(void* obj) { return obj; }
 static void st_swift_release(void*) {}
@@ -693,7 +696,7 @@ static const StubEntry kStubs2[] = {
     {"_getsegbyname", (void*)&st_getsegbyname}, {"_memset_pattern4", (void*)&st_memset_pattern4}, {"_vm_copy", (void*)&st_vm_copy},
     {"_task_info", (void*)&st_task_info},
     {"_ctermid_r", (void*)&st_ctermid_r},
-    {"_lchflags", (void*)&st_lchflags},
+
     {"__os_log_impl", (void*)&st_os_log_impl},
     {"_os_log_type_enabled", (void*)&st_os_log_type_enabled},
     {"_os_log_create", (void*)&st_os_log_create},

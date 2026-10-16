@@ -12,6 +12,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#include <sys/sysmacros.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <search.h>
@@ -646,19 +647,150 @@ static int darwin_munmap(void* addr, size_t length) {
     return r;
 }
 
+// sysconf with Darwin's _SC_* numbering (different from glibc's). Machine resources come from the host (processors,
+// memory in Darwin's 16K pages, open files, processes); everything else is what macOS reports for that name (feature
+// levels, limits of the Darwin environment: page size, pthread keys, name lengths). Unknown names: -1/EINVAL.
 static long darwin_sysconf(int name) {
-    switch (name) {
-    case 29: // Darwin _SC_PAGESIZE / _SC_PAGE_SIZE
-        return 16384;
-    case 57: // Darwin _SC_NPROCESSORS_CONF
-        return sysconf(_SC_NPROCESSORS_CONF);
-    case 58: // Darwin _SC_NPROCESSORS_ONLN
-        return sysconf(_SC_NPROCESSORS_ONLN);
-    case 50: // Darwin _SC_PHYS_PAGES
-        return sysconf(_SC_PHYS_PAGES);
-    default:
-        return sysconf(name);
+    struct Sc { int darwin; bool host; int linux_name; long value; };
+    static const Sc kSc[] = {
+        {1, true, _SC_ARG_MAX, 0},   // ARG_MAX: the host's
+        {2, true, _SC_CHILD_MAX, 0},   // CHILD_MAX: the host's
+        {3, false, 0, 100L},   // CLK_TCK
+        {4, false, 0, 16L},   // NGROUPS_MAX
+        {5, true, _SC_OPEN_MAX, 0},   // OPEN_MAX: the host's
+        {6, false, 0, 200112L},   // JOB_CONTROL
+        {7, false, 0, 1L},   // SAVED_IDS
+        {8, false, 0, 200112L},   // VERSION
+        {9, false, 0, 99L},   // BC_BASE_MAX
+        {10, false, 0, 2048L},   // BC_DIM_MAX
+        {11, false, 0, 99L},   // BC_SCALE_MAX
+        {12, false, 0, 1000L},   // BC_STRING_MAX
+        {13, false, 0, 2L},   // COLL_WEIGHTS_MAX
+        {14, false, 0, 32L},   // EXPR_NEST_MAX
+        {15, false, 0, 2048L},   // LINE_MAX
+        {16, false, 0, 255L},   // RE_DUP_MAX
+        {17, false, 0, 200112L},   // 2_VERSION
+        {18, false, 0, 200112L},   // 2_C_BIND
+        {19, false, 0, 200112L},   // 2_C_DEV
+        {20, false, 0, 200112L},   // 2_CHAR_TERM
+        {21, false, 0, -1L},   // 2_FORT_DEV
+        {22, false, 0, 200112L},   // 2_FORT_RUN
+        {23, false, 0, 200112L},   // 2_LOCALEDEF
+        {24, false, 0, 200112L},   // 2_SW_DEV
+        {25, false, 0, 200112L},   // 2_UPE
+        {26, true, _SC_STREAM_MAX, 0},   // STREAM_MAX: the host's
+        {27, false, 0, 255L},   // TZNAME_MAX
+        {28, false, 0, -1L},   // ASYNCHRONOUS_IO
+        {29, false, 0, 16384L},   // PAGESIZE
+        {29, false, 0, 16384L},   // PAGE_SIZE
+        {30, false, 0, -1L},   // MEMLOCK
+        {31, false, 0, -1L},   // MEMLOCK_RANGE
+        {32, false, 0, 200112L},   // MEMORY_PROTECTION
+        {33, false, 0, -1L},   // MESSAGE_PASSING
+        {34, false, 0, -1L},   // PRIORITIZED_IO
+        {35, false, 0, -1L},   // PRIORITY_SCHEDULING
+        {36, false, 0, -1L},   // REALTIME_SIGNALS
+        {37, false, 0, -1L},   // SEMAPHORES
+        {38, false, 0, 200112L},   // FSYNC
+        {39, false, 0, -1L},   // SHARED_MEMORY_OBJECTS
+        {40, false, 0, -1L},   // SYNCHRONIZED_IO
+        {41, false, 0, -1L},   // TIMERS
+        {42, false, 0, 1024L},   // AIO_LISTIO_MAX
+        {43, false, 0, 1024L},   // AIO_MAX
+        {44, false, 0, -1L},   // AIO_PRIO_DELTA_MAX
+        {45, false, 0, -1L},   // DELAYTIMER_MAX
+        {46, false, 0, -1L},   // MQ_OPEN_MAX
+        {47, false, 0, 200112L},   // MAPPED_FILES
+        {48, false, 0, -1L},   // RTSIG_MAX
+        {49, false, 0, 87381L},   // SEM_NSEMS_MAX
+        {50, false, 0, 32767L},   // SEM_VALUE_MAX
+        {51, false, 0, -1L},   // SIGQUEUE_MAX
+        {52, false, 0, -1L},   // TIMER_MAX
+        {56, false, 0, 1024L},   // IOV_MAX
+        {57, true, _SC_NPROCESSORS_CONF, 0},   // NPROCESSORS_CONF: the host's
+        {58, true, _SC_NPROCESSORS_ONLN, 0},   // NPROCESSORS_ONLN: the host's
+        {59, false, 0, -1L},   // 2_PBS
+        {60, false, 0, -1L},   // 2_PBS_ACCOUNTING
+        {61, false, 0, -1L},   // 2_PBS_CHECKPOINT
+        {62, false, 0, -1L},   // 2_PBS_LOCATE
+        {63, false, 0, -1L},   // 2_PBS_MESSAGE
+        {64, false, 0, -1L},   // 2_PBS_TRACK
+        {65, false, 0, -1L},   // ADVISORY_INFO
+        {66, false, 0, -1L},   // BARRIERS
+        {67, false, 0, -1L},   // CLOCK_SELECTION
+        {68, false, 0, -1L},   // CPUTIME
+        {69, false, 0, 4096L},   // FILE_LOCKING
+        {70, false, 0, 4096L},   // GETGR_R_SIZE_MAX
+        {71, false, 0, 4096L},   // GETPW_R_SIZE_MAX
+        {72, false, 0, 255L},   // HOST_NAME_MAX
+        {73, false, 0, 255L},   // LOGIN_NAME_MAX
+        {74, false, 0, -1L},   // MONOTONIC_CLOCK
+        {75, false, 0, -1L},   // MQ_PRIO_MAX
+        {76, false, 0, 200112L},   // READER_WRITER_LOCKS
+        {77, false, 0, 200112L},   // REGEXP
+        {78, false, 0, 200112L},   // SHELL
+        {79, false, 0, 200112L},   // SPAWN
+        {80, false, 0, -1L},   // SPIN_LOCKS
+        {81, false, 0, -1L},   // SPORADIC_SERVER
+        {82, false, 0, 200112L},   // THREAD_ATTR_STACKADDR
+        {83, false, 0, 200112L},   // THREAD_ATTR_STACKSIZE
+        {84, false, 0, -1L},   // THREAD_CPUTIME
+        {85, false, 0, 4L},   // THREAD_DESTRUCTOR_ITERATIONS
+        {86, false, 0, 512L},   // THREAD_KEYS_MAX
+        {87, false, 0, -1L},   // THREAD_PRIO_INHERIT
+        {88, false, 0, -1L},   // THREAD_PRIO_PROTECT
+        {89, false, 0, -1L},   // THREAD_PRIORITY_SCHEDULING
+        {90, false, 0, 200112L},   // THREAD_PROCESS_SHARED
+        {91, false, 0, 200112L},   // THREAD_SAFE_FUNCTIONS
+        {92, false, 0, -1L},   // THREAD_SPORADIC_SERVER
+        {93, false, 0, 16384L},   // THREAD_STACK_MIN
+        {94, false, 0, -1L},   // THREAD_THREADS_MAX
+        {95, false, 0, -1L},   // TIMEOUTS
+        {96, false, 0, 200112L},   // THREADS
+        {97, false, 0, -1L},   // TRACE
+        {98, false, 0, -1L},   // TRACE_EVENT_FILTER
+        {99, false, 0, -1L},   // TRACE_INHERIT
+        {100, false, 0, -1L},   // TRACE_LOG
+        {101, false, 0, 255L},   // TTY_NAME_MAX
+        {102, false, 0, -1L},   // TYPED_MEMORY_OBJECTS
+        {103, false, 0, -1L},   // V6_ILP32_OFF32
+        {104, false, 0, -1L},   // V6_ILP32_OFFBIG
+        {105, false, 0, 1L},   // V6_LP64_OFF64
+        {106, false, 0, 1L},   // V6_LPBIG_OFFBIG
+        {107, false, 0, 2147483647L},   // ATEXIT_MAX
+        {108, false, 0, 1L},   // XOPEN_CRYPT
+        {109, false, 0, 1L},   // XOPEN_ENH_I18N
+        {110, false, 0, -1L},   // XOPEN_LEGACY
+        {111, false, 0, -1L},   // XOPEN_REALTIME
+        {112, false, 0, -1L},   // XOPEN_REALTIME_THREADS
+        {113, false, 0, 1L},   // XOPEN_SHM
+        {114, false, 0, -1L},   // XOPEN_STREAMS
+        {115, false, 0, 1L},   // XOPEN_UNIX
+        {116, false, 0, 600L},   // XOPEN_VERSION
+        {118, false, 0, 200112L},   // IPV6
+        {119, false, 0, -1L},   // RAW_SOCKETS
+        {120, false, 0, 32L},   // SYMLOOP_MAX
+        {121, false, 0, 4L},   // XOPEN_XCU_VERSION
+        {122, false, 0, -1L},   // XBS5_ILP32_OFF32
+        {123, false, 0, -1L},   // XBS5_ILP32_OFFBIG
+        {124, false, 0, 1L},   // XBS5_LP64_OFF64
+        {125, false, 0, 1L},   // XBS5_LPBIG_OFFBIG
+        {126, false, 0, 4L},   // SS_REPL_MAX
+        {127, false, 0, 30L},   // TRACE_EVENT_NAME_MAX
+        {128, false, 0, 8L},   // TRACE_NAME_MAX
+        {129, false, 0, 8L},   // TRACE_SYS_MAX
+        {130, false, 0, 32L},   // TRACE_USER_EVENT_MAX
+        {131, false, 0, 128L},   // PASS_MAX
+        {200, true, -1, 0},   // PHYS_PAGES: the host's memory in 16K pages
+    };
+    for (const Sc& e : kSc) {
+        if (e.darwin != name) continue;
+        if (!e.host) return e.value;
+        if (e.linux_name < 0) return (long)((uint64_t)sysconf(_SC_PHYS_PAGES) * (uint64_t)sysconf(_SC_PAGESIZE) / 16384);
+        return sysconf(e.linux_name);
     }
+    errno = EINVAL;
+    return -1;
 }
 
 // Guest pthread_t: like libpthread's struct _pthread, a per-thread block whose address is pthread_self() and is
@@ -824,33 +956,50 @@ static void convert_stat_to_darwin(const struct stat& src, darwin_stat64* dst) {
     dst->st_gen           = 0;
 }
 
+// stat family through statx: the birth time (where the filesystem keeps one; else the change time) and the file
+// flags Linux has an equivalent for (UF_NODUMP 1, UF_IMMUTABLE 2, UF_APPEND 4) in st_flags
+static int stat_darwin_at(int dfd, const char* path, int lflags, darwin_stat64* dst) {
+    struct statx sx;
+    if (statx(dfd, path, lflags | AT_STATX_SYNC_AS_STAT, STATX_BASIC_STATS | STATX_BTIME, &sx) < 0) return -1;
+    memset(dst, 0, sizeof *dst);
+    dst->st_dev = darwin_dev_from_linux(makedev(sx.stx_dev_major, sx.stx_dev_minor));
+    dst->st_mode = (uint16_t)sx.stx_mode;
+    dst->st_nlink = (uint16_t)sx.stx_nlink;
+    dst->st_ino = sx.stx_ino;
+    dst->st_uid = sx.stx_uid;
+    dst->st_gid = sx.stx_gid;
+    dst->st_rdev = darwin_dev_from_linux(makedev(sx.stx_rdev_major, sx.stx_rdev_minor));
+    dst->st_atime_sec = sx.stx_atime.tv_sec; dst->st_atime_nsec = sx.stx_atime.tv_nsec;
+    dst->st_mtime_sec = sx.stx_mtime.tv_sec; dst->st_mtime_nsec = sx.stx_mtime.tv_nsec;
+    dst->st_ctime_sec = sx.stx_ctime.tv_sec; dst->st_ctime_nsec = sx.stx_ctime.tv_nsec;
+    const struct statx_timestamp& b = (sx.stx_mask & STATX_BTIME) ? sx.stx_btime : sx.stx_ctime;
+    dst->st_birthtime_sec = b.tv_sec; dst->st_birthtime_nsec = b.tv_nsec;
+    dst->st_size = (int64_t)sx.stx_size;
+    dst->st_blocks = (int64_t)sx.stx_blocks;
+    dst->st_blksize = (int32_t)sx.stx_blksize;
+    uint32_t f = 0;
+    if (sx.stx_attributes & STATX_ATTR_NODUMP) f |= 1;
+    if (sx.stx_attributes & STATX_ATTR_IMMUTABLE) f |= 2;
+    if (sx.stx_attributes & STATX_ATTR_APPEND) f |= 4;
+    dst->st_flags = f;
+    return 0;
+}
+
 static int darwin_stat_fn(const char* path, darwin_stat64* dst) {
     if (!path || !dst) { errno = EFAULT; return -1; }
     std::string hp = resolve_guest_path(path);
-    struct stat host_st;
-    int r = stat(hp.c_str(), &host_st);
-    if (r < 0) return -1;
-    convert_stat_to_darwin(host_st, dst);
-    return 0;
+    return stat_darwin_at(AT_FDCWD, hp.c_str(), 0, dst);
 }
 
 static int darwin_lstat_fn(const char* path, darwin_stat64* dst) {
     if (!path || !dst) { errno = EFAULT; return -1; }
     std::string hp = resolve_guest_path(path, false);   // the link itself
-    struct stat host_st;
-    int r = lstat(hp.c_str(), &host_st);
-    if (r < 0) return -1;
-    convert_stat_to_darwin(host_st, dst);
-    return 0;
+    return stat_darwin_at(AT_FDCWD, hp.c_str(), AT_SYMLINK_NOFOLLOW, dst);
 }
 
 static int darwin_fstat_fn(int fd, darwin_stat64* dst) {
     if (!dst) { errno = EFAULT; return -1; }
-    struct stat host_st;
-    int r = fstat(fd, &host_st);
-    if (r < 0) return -1;
-    convert_stat_to_darwin(host_st, dst);
-    return 0;
+    return stat_darwin_at(fd, "", AT_EMPTY_PATH, dst);
 }
 
 static inline int darwin_dfd_to_linux(int dfd) { return (dfd == -2) ? AT_FDCWD : dfd; }
@@ -860,11 +1009,7 @@ static int darwin_fstatat_fn(int dfd, const char* path, darwin_stat64* dst, int 
     if (!path || !dst) { errno = EFAULT; return -1; }
     int lflags;
     std::string hp = darwin_fstatat_path(&dfd, path, flag, &lflags);
-    struct stat host_st;
-    int r = fstatat(dfd, hp.c_str(), &host_st, lflags);
-    if (r < 0) return -1;
-    convert_stat_to_darwin(host_st, dst);
-    return 0;
+    return stat_darwin_at(dfd, hp.c_str(), lflags, dst);
 }
 
 int darwin_open_flags_to_linux(int df) {
