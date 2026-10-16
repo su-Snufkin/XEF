@@ -398,7 +398,11 @@ Zrobione:
   `host_processor_info`, `host_info`, zegary Mach; termios (`darwin_termios.cpp`: struktura, flagi, c_cc, prędkości, TIOC*, openpty/forkpty);
   tsearch/lfind/qsort_b z callbackami gościa; sysctl KERN_PROC/PROCARGS2/BOOTTIME; `dev_t` Darwina; cmsghdr (SCM_RIGHTS) w sendmsg/recvmsg.
 - `tools/ptyrun.py` — programy interaktywne na pty (wpisywanie klawiszy, wynik bez sekwencji escape).
-- macref 31/31.
+- macref 37/37. Dodatkowo: `darwin_fs.cpp` (rodzina `*at` przez nakładkę rootfs względem dirfd, xattr→`user.*`, statfs/statvfs,
+  pathconf, mkstemp*, getattrlist, SysV IPC), CommonDigest (`darwin_commoncrypto.cpp`), popen/system przez `/bin/sh` rootfs
+  (`fetch_bottle.py --shell`), EVFILT_SIGNAL, timeval z 32-bitowym usec, sem_open, kinfo_proc/PROCARGS2, cmsg/SCM_RIGHTS.
+- Rootfs w chmurze: `/bin/sh` = bash z butelki; `/usr/lib/libcurl.4.dylib` itd. (`--syslibs`). Komendy spoza rootfs (np. `ls`, `uname`)
+  wykonują się natywnie na hoście (x86-64) i widzą system plików hosta, nie rootfs.
 
 Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | aplikacja | status | uwagi |
@@ -411,4 +415,12 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | vim 9.2 | działa | ex-mode i interaktywnie (pty) |
 | tmux 3.6 | działa | sesja, powłoka, wyjście |
 | htop 3.4 | działa | lista procesów, uptime; CPU% w 1. klatce zawyżone (próbka startowa htop) |
-| ssh 10.6 | `-V` działa | połączenia nie testowane |
+| ssh 10.6 | `-V`, ssh-keygen działa | połączenia nie testowane |
+| rsync 3.5 | działa | lokalna kopia i `-ai --delete` (nakładka rootfs przy `*at` względem dirfd) |
+| redis 8.10 | działa | server + cli (set/get/incr/lists, shutdown) |
+| nginx 1.31 | działa | statyczne pliki, return, 404, 2 workery, zamknięcie SIGTERM |
+| python 3.14 | działa | ssl, sqlite3, asyncio (TCP), hashlib, decimal, lzma, multiprocessing, subprocess, ctypes, https |
+| PostgreSQL 14 | działa | initdb, postgres, psql (socket uniksowy i TCP), pg_ctl stop |
+| ruby 4.0 | działa | json, digest, Thread, fork, Open3, TCP, Fiddle, Net::HTTP https |
+| php 8.5 | działa | PDO sqlite, intl, preg, mb, https, stream sockets, shell_exec |
+| cmake 4.3 | `-P`/`-E` działa | konfiguracja projektów wymaga kompilatora w rootfs (brak) |
