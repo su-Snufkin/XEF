@@ -147,6 +147,9 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
         buf[n++] = '\n';
         write(2, buf, n);
         if (g_is_darwin) {
+            x64::Reg hl = block_host_reg(b, 30);
+            std::string ld = dyld_describe(hl != x64::NOREG ? (u64)uc->uc_mcontext.gregs[host_greg_index(hl)] : st->x[30]);
+            if (!ld.empty()) { n = snprintf(buf, sizeof buf, "xef:   lr in %s\n", ld.c_str()); write(2, buf, n); }
             u64 fp = (block_host_reg(b, 29) != x64::NOREG) ? (u64)uc->uc_mcontext.gregs[host_greg_index(block_host_reg(b, 29))] : st->x[29];
             for (int depth = 0; depth < 16 && fp && !(fp & 7); depth++) {
                 u64 lr = ((u64*)fp)[1];
