@@ -65,14 +65,21 @@ calling guest thread (nested JIT run, return via `hlt #0x5847`). Limits: the
 GBM/Wayland EGL platforms are not supported; X errors on the host connection are ignored instead
 of reaching the guest's handler.
 
-## macOS arm64 (Mach-O) OpenGL
+## macOS arm64 (Mach-O) OpenGL & Metal
 
 `build/xef-osx -L darwin-rootfs tests/darwin/gltri out.ppm` runs a macOS arm64 binary that calls OpenGL.framework
 (`_gl*`) and creates a window through the loader's X11/GLX shim; the GL calls run on the host's libGL (Mesa llvmpipe here)
 in the same process. Needs `DISPLAY` (e.g. `Xvfb :99 -screen 0 640x480x24`) and, for software rendering,
 `LIBGL_ALWAYS_SOFTWARE=1`. `tests/darwin/gl_test.sh` is the regression test (300 frames, two runs, screenshot check with
 `tools/imgcheck.py`). The same cube rendered on the real Mac (`tests/darwin/mac_gl/ref.ppm`) matches at SSIM 0.996.
-Cocoa/AppKit apps (NSOpenGLView, GLFW) are not supported yet, see `docs/MACOS_3D_PLAN.md`.
+
+Cocoa/AppKit OpenGL (`NSOpenGLView`, `NSOpenGLContext`), GLFW (`glfw_gl21`, `glfw_gl32`), and Cocoa Metal (`CAMetalLayer`, `MTLDevice`) are fully supported:
+- **`AppKit.framework`**: Windows, menus, runloop, layer-backed views (`setWantsLayer:YES`, `-makeBackingLayer`, `+layerClass`), event routing, drag & drop, file dialogs.
+- **`QuartzCore.framework`**: `CAMetalLayer` and `CAMetalDrawable` presenting Metal drawables directly onto host GLX/X11 windows via `xef_host_present_pixels`.
+- **`Metal.framework`**: Complete implementation of `MTLDevice`, `MTLCommandQueue`, `MTLCommandBuffer`, blit and render command encoders (`MTLRenderCommandEncoder`), texture uploads (row-by-row 4- and 6-argument `replaceRegion:`), texture views (`newTextureViewWithPixelFormat:`), MSL shader parsing, and 2D/3D rasterizer with alpha blending, perspective interpolation, and scissor clipping.
+- **Verified Apps**:
+  - `cand4_metal` (`tests/darwin/metal_test.sh`): offscreen Metal 3D triangle pipeline passing 300 frames without errors.
+  - `orbit64` (Nintendo 64 emulator): runs under SDL3 with Metal backend (`SDL_gpu_metal`) on X11 at a stable 60 FPS (11.3 ms/frame) with full UI, menus, boxart browser, and in-game emulation (`Mario Kart 64`).
 
 ## Setup
 
