@@ -1392,6 +1392,7 @@ enum {
   float _customVerts[16][4];
   int _fragMode;
   float _constFragColor[4];
+  NSData *_bitcodeData;
 }
 - (instancetype)initWithName:(NSString *)name type:(MTLFunctionType)type device:(id<MTLDevice>)device source:(NSString *)source data:(NSData *)data;
 @end
@@ -1497,7 +1498,7 @@ enum {
 - (NSArray *)vertexAttributes { return [NSArray array]; }
 - (NSArray *)stageInputAttributes { return [NSArray array]; }
 - (NSDictionary *)functionConstantsDictionary { return [NSDictionary dictionary]; }
-- (void)dealloc { [_name release]; [_source release]; [super dealloc]; }
+- (void)dealloc { [_name release]; [_source release]; [_bitcodeData release]; [super dealloc]; }
 @end
 
 @interface XEFMetalLibrary : XEFMetalObject <MTLLibrary> {
@@ -1509,6 +1510,7 @@ enum {
   NSMutableDictionary *_functions;
 }
 - (instancetype)initWithDevice:(id<MTLDevice>)device source:(NSString *)source data:(NSData *)data;
+- (void)_parseMetallib:(NSData *)data;
 @end
 
 @implementation XEFMetalLibrary
@@ -1518,9 +1520,102 @@ enum {
     _source = [source copy];
     _data = [data retain];
     _functions = [[NSMutableDictionary alloc] init];
+
+    if (_data && [_data length] >= 88) {
+      [self _parseMetallib:_data];
+    }
   }
   return self;
 }
+
+- (void)_parseMetallib:(NSData *)data {
+  const uint8_t *bytes = (const uint8_t *)[data bytes];
+  size_t len = [data length];
+  if (len < 88 || memcmp(bytes, "MTLB", 4) != 0) return;
+
+  uint64_t fnListOff = 0, fnListSz = 0, bcOff = 0, bcSz = 0;
+  memcpy(&fnListOff, bytes + 24, sizeof(uint64_t));
+  memcpy(&fnListSz,  bytes + 32, sizeof(uint64_t));
+  memcpy(&bcOff,      bytes + 72, sizeof(uint64_t));
+  memcpy(&bcSz,       bytes + 80, sizeof(uint64_t));
+
+  if (fnListOff + 4 > len) return;
+
+  uint32_t fnCount = 0;
+  memcpy(&fnCount, bytes + fnListOff, sizeof(uint32_t));
+
+  size_t pos = fnListOff + 4;
+  for (uint32_t i = 0; i < fnCount && pos + 4 <= len; i++) {
+    uint32_t entrySize = 0;
+    memcpy(&entrySize, bytes + pos, sizeof(uint32_t));
+    if (entrySize < 4 || pos + entrySize > len) break;
+
+    const uint8_t *entryBytes = bytes + pos + 4;
+    size_t entryRemaining = entrySize - 4;
+    pos += entrySize;
+
+    NSString *fnName = nil;
+    MTLFunctionType fnType = MTLFunctionTypeVertex;
+    uint64_t fnBcOffset = 0;
+    uint64_t fnBcSize = 0;
+
+    size_t tagPos = 0;
+    while (tagPos + 4 <= entryRemaining) {
+      char tagName[5] = {0};
+      memcpy(tagName, entryBytes + tagPos, 4);
+      tagPos += 4;
+
+      if (!strcmp(tagName, "ENDT")) break;
+      if (tagPos + 2 > entryRemaining) break;
+
+      uint16_t tagSize = 0;
+      memcpy(&tagSize, entryBytes + tagPos, sizeof(uint16_t));
+      tagPos += 2;
+
+      if (tagPos + tagSize > entryRemaining) break;
+      const uint8_t *payload = entryBytes + tagPos;
+
+      if (!strcmp(tagName, "NAME")) {
+        if (tagSize > 0) {
+          /* Null-terminated or Pascal-string format */
+          if (payload[tagSize - 1] == 0) {
+            fnName = [NSString stringWithUTF8String:(const char *)payload];
+          } else {
+            fnName = [[[NSString alloc] initWithBytes:payload length:tagSize encoding:NSUTF8StringEncoding] autorelease];
+          }
+        }
+      } else if (!strcmp(tagName, "TYPE")) {
+        if (tagSize >= 1) {
+          uint8_t t = payload[0];
+          if (t == 0) fnType = MTLFunctionTypeVertex;
+          else if (t == 1) fnType = MTLFunctionTypeFragment;
+          else if (t == 2) fnType = MTLFunctionTypeKernel;
+        }
+      } else if (!strcmp(tagName, "MDSZ")) {
+        if (tagSize >= sizeof(uint64_t)) {
+          memcpy(&fnBcSize, payload, sizeof(uint64_t));
+        }
+      } else if (!strcmp(tagName, "OFFT")) {
+        if (tagSize >= 24) {
+          /* publicMetaOffset (8), privateMetaOffset (8), bitcodeOffset (8) */
+          memcpy(&fnBcOffset, payload + 16, sizeof(uint64_t));
+        }
+      }
+      tagPos += tagSize;
+    }
+
+    if (fnName && [fnName length] > 0) {
+      NSData *bcSlice = nil;
+      if (bcOff + fnBcOffset + fnBcSize <= len && fnBcSize > 0) {
+        bcSlice = [NSData dataWithBytes:bytes + bcOff + fnBcOffset length:(NSUInteger)fnBcSize];
+      }
+      XEFMetalFunction *f = [[[XEFMetalFunction alloc] initWithName:fnName type:fnType device:_device source:_source data:bcSlice ? bcSlice : _data] autorelease];
+      if (bcSlice) f->_bitcodeData = [bcSlice retain];
+      [_functions setObject:f forKey:fnName];
+    }
+  }
+}
+
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (id<MTLFunction>)newFunctionWithName:(NSString *)functionName {
@@ -3330,11 +3425,19 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 }
 
 - (id<MTLLibrary>)newDefaultLibrary {
-  return [[XEFMetalLibrary alloc] initWithDevice:self source:nil data:nil];
+  return [self newDefaultLibraryWithBundle:[NSBundle mainBundle] error:nil];
 }
 
 - (id<MTLLibrary>)newDefaultLibraryWithBundle:(NSBundle *)bundle error:(NSError **)error {
   if (error) *error = nil;
+  NSURL *url = [bundle URLForResource:@"default" withExtension:@"metallib"];
+  if (url) {
+    return [self newLibraryWithURL:url error:error];
+  }
+  NSString *p = [bundle pathForResource:@"default" ofType:@"metallib"];
+  if (p) {
+    return [self newLibraryWithFile:p error:error];
+  }
   return [[XEFMetalLibrary alloc] initWithDevice:self source:nil data:nil];
 }
 

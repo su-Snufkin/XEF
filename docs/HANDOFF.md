@@ -509,10 +509,14 @@ Implementacja MetalVK (Natywny backend Vulkan dla Metal) pod XEF-OSX (2026-10-17
   - Potoki graficzne i shadery: wbudowane shadery SPIR-V vertex i fragment dla operacji 2D/3D i blitów Metal, dynamiczny viewport i scissor, pełne mapowanie operacji i współczynników blendingu alfa (`VkPipelineColorBlendAttachmentState`).
   - Rysowanie i prezentacja: nagrywanie komend rysowania (`vkCmdDraw`, `vkCmdDrawIndexed`), synchronizacja kolejki `VkQueue` i transfer do prezentacji okna.
   - Elastyczny wybór backendu: automatyczna detekcja Vulkan z bezpiecznym fallbackiem do OpenGL (`XEF_METAL_BACKEND=vulkan|gl`).
-- **Warstwa Mach-O (`rootfs-src/appkit/Metal.m`, `rootfs-src/appkit/xef_host.h`)**:
-  - Funkcja `xef_host_metal_backend_name()` przekazująca nazwę akceleratora hosta.
-  - `-name` w `XEFMetalDevice` zwraca nazwę fizycznego GPU Vulkan: `Apple M1 (MetalVK: NVIDIA GeForce RTX 4050 Laptop GPU)`.
-  - Przebudowano `Metal.framework` na maszynie Mac i zsynchronizowano do `darwin-rootfs`.
-  - Weryfikacja: `cand4_metal` pomyślnie inicjalizuje backend MetalVK na NVIDIA RTX 4050 i przechodzi 300 klatek offscreen (`PASS metal_test`).
+- **MetalLibraryArchive (`MTLB`) & Prekompilowane Shadery Metal**:
+  - Zaimplementowano w `Metal.framework` (`rootfs-src/appkit/Metal.m`) natywny parser binarnego formatu archiwów `MTLB` (`MetalLibraryArchive`):
+    - Odczyt nagłówka `MTLB` (platformID, wersja formatu, offsety listy funkcji i bitcode'u).
+    - Dekodowanie wpisów funkcji (`NAME`, `TYPE` dla vertex/fragment/kernel, `MDSZ`, `OFFT` z offsetami segmentów metadanych i bitcode'u).
+    - Automatyczne wyciąganie bloków LLVM Bitcode (AIR) dla każdej funkcji w bibliotece.
+    - Automatyczna lokalizacja zasobów `default.metallib` w `[NSBundle mainBundle]` przy wywołaniu `newDefaultLibrary` / `newDefaultLibraryWithBundle:`.
+  - Dodano test integracyjny `tests/darwin/metallib_test.m` ładujący binarny plik `AAPLShaders.metallib`:
+    - Weryfikuje prawidłowe odczytanie wszystkich funkcji (`vertexShader`, `fragmentShader`), ich typów oraz utworzenie stanu potoku `MTLRenderPipelineState`.
+    - Rozszerzono `tests/darwin/metal_test.sh` o weryfikację archiwów metallib (`PASS metal_test`).
 
 
