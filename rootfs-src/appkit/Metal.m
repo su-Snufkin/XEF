@@ -3390,7 +3390,14 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   MTLOrigin zero = MTLOriginMake(0, 0, 0);
   [self copyFromTexture:sourceTexture sourceSlice:0 sourceLevel:0 sourceOrigin:zero sourceSize:sz toTexture:destinationTexture destinationSlice:0 destinationLevel:0 destinationOrigin:zero];
 }
-- (void)generateMipmapsForTexture:(id<MTLTexture>)texture {}
+- (void)generateMipmapsForTexture:(id<MTLTexture>)texture {
+  if (texture && [texture isKindOfClass:[XEFMetalTexture class]]) {
+    XEFMetalTexture *tex = (XEFMetalTexture *)texture;
+    if (tex->_hostTexId > 0) {
+      xef_host_metal_tex_generate_mipmaps(tex->_hostTexId);
+    }
+  }
+}
 - (void)synchronizeResource:(id<MTLResource>)resource {}
 - (void)synchronizeTexture:(id<MTLTexture>)texture slice:(NSUInteger)slice level:(NSUInteger)level {}
 - (void)fillBuffer:(id<MTLBuffer>)buffer range:(NSRange)range value:(uint8_t)value {

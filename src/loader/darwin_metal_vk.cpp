@@ -81,6 +81,7 @@ static PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier = nullptr;
 static PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage = nullptr;
 static PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer = nullptr;
 static PFN_vkCmdCopyImage vkCmdCopyImage = nullptr;
+static PFN_vkCmdBlitImage vkCmdBlitImage = nullptr;
 static PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout = nullptr;
 static PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout = nullptr;
 static PFN_vkCreateDescriptorPool vkCreateDescriptorPool = nullptr;
@@ -132,6 +133,7 @@ struct MetalVkTex {
     uint32_t id = 0;
     int w = 0, h = 0;
     int fmt = 0;
+    int mip_levels = 1;
     bool is_rt = false;
     VkFormat vk_fmt = VK_FORMAT_B8G8R8A8_UNORM;
     VkImage image = VK_NULL_HANDLE;
@@ -776,6 +778,7 @@ bool init() {
     LOAD_VK_DEV(vkCmdCopyBufferToImage);
     LOAD_VK_DEV(vkCmdCopyImageToBuffer);
     LOAD_VK_DEV(vkCmdCopyImage);
+    LOAD_VK_DEV(vkCmdBlitImage);
     LOAD_VK_DEV(vkCreateDescriptorSetLayout);
     LOAD_VK_DEV(vkDestroyDescriptorSetLayout);
     LOAD_VK_DEV(vkCreateDescriptorPool);
@@ -922,11 +925,20 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     ici.extent.width = t.w;
     ici.extent.height = t.h;
     ici.extent.depth = 1;
-    ici.mipLevels = 1;
+    bool is_depth = (t.vk_fmt == VK_FORMAT_D32_SFLOAT || t.vk_fmt == VK_FORMAT_D16_UNORM);
+    int mipLevels = 1;
+    if (!is_depth && t.w > 1 && t.h > 1) {
+        int maxDim = std::max(t.w, t.h);
+        while (maxDim > 1) {
+            maxDim >>= 1;
+            mipLevels++;
+        }
+    }
+    t.mip_levels = mipLevels;
+    ici.mipLevels = mipLevels;
     ici.arrayLayers = 1;
     ici.samples = VK_SAMPLE_COUNT_1_BIT;
     ici.tiling = VK_IMAGE_TILING_OPTIMAL;
-    bool is_depth = (t.vk_fmt == VK_FORMAT_D32_SFLOAT || t.vk_fmt == VK_FORMAT_D16_UNORM);
     ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if (t.is_rt) ici.usage |= is_depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -952,7 +964,7 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     ivci.format = t.vk_fmt;
     ivci.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     ivci.subresourceRange.baseMipLevel = 0;
-    ivci.subresourceRange.levelCount = 1;
+    ivci.subresourceRange.levelCount = mipLevels;
     ivci.subresourceRange.baseArrayLayer = 0;
     ivci.subresourceRange.layerCount = 1;
 
@@ -1165,6 +1177,97 @@ void tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, i
 
     vkFreeMemory(g_device, stagingMemory, nullptr);
     vkDestroyBuffer(g_device, stagingBuffer, nullptr);
+}
+
+void tex_generate_mipmaps(uint32_t tex_id) {
+    if (!is_available() || tex_id == 0) return;
+    std::lock_guard<std::mutex> lk(g_metal_vk_lock);
+    auto it = g_textures.find(tex_id);
+    if (it == g_textures.end()) return;
+    MetalVkTex& tex = it->second;
+    if (tex.mip_levels <= 1) return;
+
+    VkCommandBuffer cmd = begin_single_time_commands();
+
+    // 1. Transition all mip levels to TRANSFER_DST_OPTIMAL
+    VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = tex.image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = tex.mip_levels;
+    barrier.oldLayout = tex.layout;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    int32_t mipWidth = tex.w;
+    int32_t mipHeight = tex.h;
+
+    barrier.subresourceRange.levelCount = 1;
+
+    for (int i = 1; i < tex.mip_levels; ++i) {
+        // Transition mip (i - 1) from DST to SRC
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        int32_t nextWidth = (mipWidth > 1) ? (mipWidth / 2) : 1;
+        int32_t nextHeight = (mipHeight > 1) ? (mipHeight / 2) : 1;
+
+        VkImageBlit blit = {};
+        blit.srcOffsets[0] = { 0, 0, 0 };
+        blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = (uint32_t)(i - 1);
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = 1;
+
+        blit.dstOffsets[0] = { 0, 0, 0 };
+        blit.dstOffsets[1] = { nextWidth, nextHeight, 1 };
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = (uint32_t)i;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = 1;
+
+        vkCmdBlitImage(cmd, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            1, &blit, VK_FILTER_LINEAR);
+
+        // Transition mip (i - 1) to final layout
+        VkImageLayout final_layout = tex.is_rt ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = final_layout;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        mipWidth = nextWidth;
+        mipHeight = nextHeight;
+    }
+
+    // Transition last mip level to final layout
+    VkImageLayout final_layout = tex.is_rt ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.subresourceRange.baseMipLevel = tex.mip_levels - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = final_layout;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    end_single_time_commands(cmd);
+    tex.layout = final_layout;
 }
 
 void tex_destroy(uint32_t tex_id) {

@@ -91,6 +91,21 @@ int main(void) {
       return 9;
     }
     NSLog(@"Verified MTKTextureLoader loaded TGA correctly (pixel=0x%08x)", readback[0]);
+
+    /* Test blit encoder mipmap generation */
+    id<MTLCommandQueue> queue = [d newCommandQueue];
+    id<MTLCommandBuffer> cmdBuf = [queue commandBuffer];
+    id<MTLBlitCommandEncoder> blit = [cmdBuf blitCommandEncoder];
+    if (!blit) {
+      NSLog(@"FAIL: could not create blitCommandEncoder");
+      return 10;
+    }
+    [blit generateMipmapsForTexture:loadedTex];
+    [blit endEncoding];
+    [cmdBuf commit];
+    [cmdBuf waitUntilCompleted];
+    NSLog(@"Verified hardware blit generateMipmapsForTexture execution");
+    [queue release];
     [loader release];
 
     DummyDelegate *del = [[DummyDelegate alloc] init];

@@ -17,6 +17,7 @@ uint32_t    tex_create(int w, int h, int fmt, int is_render_target);
 void        tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch);
 void        tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy);
 void        tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, int pitch);
+void        tex_generate_mipmaps(uint32_t tex_id);
 void        tex_destroy(uint32_t tex_id);
 
 void        pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, float b, float a);

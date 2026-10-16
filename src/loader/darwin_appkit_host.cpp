@@ -862,6 +862,13 @@ void xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, vo
     }
 }
 
+void xef_host_metal_tex_generate_mipmaps(uint32_t tex_id) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::tex_generate_mipmaps(tex_id);
+        return;
+    }
+}
+
 void xef_host_metal_tex_destroy(uint32_t tex_id) {
     if (xef::metal_vk::is_available()) {
         xef::metal_vk::tex_destroy(tex_id);
@@ -1442,6 +1449,7 @@ const Fn kFns[] = {
     {"_xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
     {"_xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
     {"_xef_host_metal_tex_readback", (void*)&xef_host_metal_tex_readback},
+    {"_xef_host_metal_tex_generate_mipmaps", (void*)&xef_host_metal_tex_generate_mipmaps},
     {"_xef_host_metal_tex_destroy", (void*)&xef_host_metal_tex_destroy},
     {"_xef_host_metal_pass_begin", (void*)&xef_host_metal_pass_begin},
     {"_xef_host_metal_pass_begin_ex", (void*)&xef_host_metal_pass_begin_ex},
@@ -1453,6 +1461,7 @@ const Fn kFns[] = {
     {"xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
     {"xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
     {"xef_host_metal_tex_readback", (void*)&xef_host_metal_tex_readback},
+    {"xef_host_metal_tex_generate_mipmaps", (void*)&xef_host_metal_tex_generate_mipmaps},
     {"xef_host_metal_tex_destroy", (void*)&xef_host_metal_tex_destroy},
     {"xef_host_metal_pass_begin", (void*)&xef_host_metal_pass_begin},
     {"xef_host_metal_pass_begin_ex", (void*)&xef_host_metal_pass_begin_ex},
