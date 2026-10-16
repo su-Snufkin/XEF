@@ -32,6 +32,7 @@ void signals_fork_lock(bool lock);   // hold the sigaction table across fork (no
 // Darwin guests: signal numbers/masks, sigaction and the xnu-style signal frame (see signals.cpp)
 int linux_to_darwin_sig(int l);
 int darwin_to_linux_sig(int d);
+extern void (*g_signal_observer)(int linux_sig, int si_code);   // called from the host handler of guest signals
 u64 linux_mask_to_darwin(u64 m);
 u64 darwin_mask_to_linux(u64 dm);
 void sig_darwin_set_tramp(u64 tramp);            // guest stub: add x0, sp, #ucontext_offset; mov x16, #184; svc #0x80

@@ -239,7 +239,10 @@ u64 nzcv_to_eflags(u32 nzcv) {
     return e;
 }
 
+void (*g_signal_observer)(int sig, int code) = nullptr;   // async-signal-safe hook (Darwin kqueue EVFILT_SIGNAL)
+
 static void async_handler(int sig, siginfo_t* si, void* ctx) {
+    if (g_signal_observer) g_signal_observer(sig, si ? si->si_code : 0);
     ThreadCtx* t = tls_thread;
     if (!t) return;
     t->pending_info[sig] = *si;

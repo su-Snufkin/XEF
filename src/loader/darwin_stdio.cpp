@@ -15,6 +15,8 @@
 #include <stdio_ext.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <wchar.h>
 #include <mutex>
@@ -149,7 +151,25 @@ static void* s_freopen(const char* path, const char* mode, void* g) {
     g_by_host[n] = d;
     return d;
 }
-static void* s_popen(const char* cmd, const char* mode) { return darwin_stdio_guest(popen(cmd, mode), mode); }
+// popen through darwin_spawn_shell (the guest's /bin/sh); the child's pid is kept for pclose
+pid_t darwin_spawn_shell(const char* cmd, int child_in, int child_out);
+static std::mutex g_popen_lock;
+static std::unordered_map<FILE*, pid_t> g_popen_pids;
+static void* s_popen(const char* cmd, const char* mode) {
+    if (!cmd || !mode || (mode[0] != 'r' && mode[0] != 'w')) { errno = EINVAL; return nullptr; }
+    bool rd = mode[0] == 'r';
+    int p[2];
+    if (pipe2(p, O_CLOEXEC) < 0) return nullptr;
+    pid_t pid = rd ? darwin_spawn_shell(cmd, -1, p[1]) : darwin_spawn_shell(cmd, p[0], -1);
+    int keep = rd ? p[0] : p[1];
+    close(rd ? p[1] : p[0]);
+    if (pid < 0) { int e = errno; close(keep); errno = e; return nullptr; }
+    if (!strchr(mode, 'e')) fcntl(keep, F_SETFD, 0);   // popen streams are not close-on-exec unless "e"
+    FILE* h = fdopen(keep, rd ? "r" : "w");
+    if (!h) { close(keep); return nullptr; }
+    { std::lock_guard<std::mutex> lk(g_popen_lock); g_popen_pids[h] = pid; }
+    return darwin_stdio_guest(h, rd ? "r" : "w");
+}
 static void* s_tmpfile() { return darwin_stdio_guest(tmpfile(), "w+"); }
 static void* s_fmemopen(void* buf, size_t size, const char* mode) { return darwin_stdio_guest(fmemopen(buf, size, mode), mode); }
 static void* s_open_memstream(char** p, size_t* s) { return darwin_stdio_guest(open_memstream(p, s), "w"); }
@@ -163,9 +183,18 @@ static int s_fclose(void* g) {
 static int s_pclose(void* g) {
     FILE* h = H(g);
     if (!h) { errno = EFAULT; return -1; }
-    int r = pclose(h);
+    pid_t pid = -1;
+    {
+        std::lock_guard<std::mutex> lk(g_popen_lock);
+        auto it = g_popen_pids.find(h);
+        if (it != g_popen_pids.end()) { pid = it->second; g_popen_pids.erase(it); }
+    }
+    if (pid < 0) { errno = ECHILD; return -1; }
+    fclose(h);
     forget((DarwinFILE*)g);
-    return r;
+    int st;
+    while (waitpid(pid, &st, 0) < 0) if (errno != EINTR) return -1;
+    return st;
 }
 
 // funopen(cookie, readfn, writefn, seekfn, closefn): guest callbacks behind a host fopencookie stream

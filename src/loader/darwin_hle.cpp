@@ -1362,6 +1362,28 @@ static int darwin_execle(const char* path, const char* arg0, const uint64_t* ap)
     return darwin_execve(path, av.data(), (char* const*)(uintptr_t)*rest);
 }
 
+// sh -c for popen/system: the rootfs' /bin/sh when there is one (a Mach-O shell under XEF sees guest paths and
+// execs guest programs), else the host's. child_in/child_out become the child's stdin/stdout (-1: inherited).
+pid_t darwin_spawn_shell(const char* cmd, int child_in, int child_out) {
+    DarwinSpawnActions fa;
+    if (child_in >= 0) fa.acts.push_back({DarwinSpawnAction::Dup2, child_in, 0, 0, 0, {}});
+    if (child_out >= 0) fa.acts.push_back({DarwinSpawnAction::Dup2, child_out, 1, 0, 0, {}});
+    DarwinSpawnActions* fap = &fa;
+    char* argv[] = {(char*)"sh", (char*)"-c", (char*)cmd, nullptr};
+    pid_t pid;
+    int e = darwin_posix_spawn(&pid, "/bin/sh", &fap, nullptr, argv, environ);
+    if (e) { errno = e; return -1; }
+    return pid;
+}
+static int darwin_system(const char* cmd) {
+    if (!cmd) return 1;   // a shell is available
+    pid_t p = darwin_spawn_shell(cmd, -1, -1);
+    if (p < 0) return -1;
+    int st;
+    while (waitpid(p, &st, 0) < 0) if (errno != EINTR) return -1;
+    return st;
+}
+
 static int darwin_posix_spawnp(pid_t* pid, const char* file, void* file_actions, void* attrp, char* const argv[], char* const envp[]) {
     if (!file || !file[0]) return ENOENT;
     if (strchr(file, '/')) {
@@ -2048,11 +2070,12 @@ static int darwin_openat_v(int dfd, const char* path, int dflags, const uint64_t
 static int darwin_fcntl_v(int fd, int cmd, const uint64_t* ap);
 static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap);
 void* st_sem_open_entry(const char* name, int oflag, const uint64_t* ap);
+int darwin_semctl_v(int id, int num, int cmd, const uint64_t* ap);   // darwin_fs.cpp
 static void* darwin_sem_open_v(const char* name, int oflag, const uint64_t* ap) { return st_sem_open_entry(name, oflag, ap); }
 static const ShimEntry kShims[] = {
     {"__xef_open", (void*)&darwin_open_v, 2}, {"__xef_openat", (void*)&darwin_openat_v, 3}, {"__xef_fcntl", (void*)&darwin_fcntl_v, 2},
     {"__xef_ioctl", (void*)&darwin_ioctl_v, 2},
-    {"_sem_open", (void*)&darwin_sem_open_v, 2},
+    {"_sem_open", (void*)&darwin_sem_open_v, 2}, {"_semctl", (void*)&darwin_semctl_v, 3}, {"_system", (void*)&darwin_system, -1},
     {"_execl", (void*)&darwin_execl, 2}, {"_execlp", (void*)&darwin_execlp, 2}, {"_execle", (void*)&darwin_execle, 2},
     {"_execve", (void*)&darwin_execve, -1}, {"_execv", (void*)&darwin_execv, -1}, {"_execvp", (void*)&darwin_execvp, -1},
     {"_execvP", (void*)&darwin_execvP, -1},
@@ -2612,7 +2635,7 @@ static constexpr int16_t  DARWIN_EVFILT_USER = -10;
 // Supported filters: EVFILT_READ, EVFILT_WRITE (one epoll registration per fd, the kevent filters are tracked here, since
 // epoll cannot tell them apart and kqueue reports ident = fd, data, EV_EOF and the per-filter udata) and EVFILT_USER
 // (libuv's uv_async: triggered flag per ident, woken through an eventfd that is part of the epoll set).
-// EVFILT_PROC (NOTE_EXIT[|NOTE_EXITSTATUS] only) through a pidfd and EVFILT_TIMER through a timerfd ("aux" entries,
+// EVFILT_PROC (NOTE_EXIT[|NOTE_EXITSTATUS] only) through a pidfd, EVFILT_TIMER through a timerfd, EVFILT_SIGNAL ("aux" entries,
 // own host fd >= 1000 in the epoll set, tagged with bit 63 in the epoll data).
 // Other filters (VNODE/SIGNAL/...) fail with ENOTSUP (reported in the receipt when EV_RECEIPT is set).
 static constexpr uint16_t DARWIN_EV_ONESHOT  = 0x0010;
@@ -2625,7 +2648,7 @@ static constexpr uint32_t DARWIN_NOTE_FFLAGSMASK = 0x00ffffff;
 
 struct KqEntry { void* udata; uint16_t flags; bool disabled; };
 struct KqUser { void* udata; uint16_t flags; uint32_t fflags; bool triggered, disabled; };
-struct KqAux { int16_t filter; uint64_t ident; void* udata; uint16_t flags; uint32_t fflags; int hfd; bool disabled; };
+struct KqAux { int16_t filter; uint64_t ident; void* udata; uint16_t flags; uint32_t fflags; int hfd; bool disabled; int sig_slot; };
 struct KqState {
     int evfd = -1;                                            // wakes epoll_wait for EVFILT_USER triggers
     std::unordered_map<int, KqEntry> rd, wr;                  // fd -> registration
@@ -2634,11 +2657,26 @@ struct KqState {
     uint64_t next_aux = 1;
 };
 static constexpr int16_t  DARWIN_EVFILT_PROC  = -5;
+static constexpr int16_t  DARWIN_EVFILT_SIGNAL = -6;
+// EVFILT_SIGNAL: the host signal handler counts deliveries in these slots and pokes the registration's eventfd
+// (async-signal-safe: atomics and write). Signals the guest ignores never reach the handler and are not counted.
+struct KqSigSlot { std::atomic<int> sig{0}; int evfd = -1; std::atomic<uint64_t> count{0}; };
+static KqSigSlot g_kq_sig[64];
+static void kq_signal_observer(int sig, int code) {
+    if (code == SI_TKILL) return;   // as on macOS: thread-directed signals (raise, pthread_kill) are not counted
+    for (KqSigSlot& s : g_kq_sig) {
+        if (s.sig.load(std::memory_order_acquire) != sig) continue;
+        s.count.fetch_add(1);
+        uint64_t one = 1;
+        if (write(s.evfd, &one, 8) < 0) {}
+    }
+}
 static constexpr int16_t  DARWIN_EVFILT_TIMER = -7;
 static constexpr uint32_t DARWIN_NOTE_EXIT = 0x80000000u, DARWIN_NOTE_EXITSTATUS = 0x04000000u;
 static constexpr uint64_t kKqAuxTag = 1ull << 63;
 
 static void kq_aux_drop(int kq, KqState& st, std::unordered_map<uint64_t, KqAux>::iterator it) {
+    if (it->second.sig_slot >= 0) g_kq_sig[it->second.sig_slot].sig.store(0, std::memory_order_release);
     epoll_ctl(kq, EPOLL_CTL_DEL, it->second.hfd, nullptr);
     close(it->second.hfd);
     st.aux.erase(it);
@@ -2679,10 +2717,23 @@ static int kq_apply_aux(int kq, KqState& st, const darwin_kevent_t& kev) {
     if (kev.flags & DARWIN_EV_ADD) {
         if (it == st.aux.end()) {
             int hfd;
+            int slot = -1;
             if (kev.filter == DARWIN_EVFILT_PROC) {
                 if (!(kev.fflags & DARWIN_NOTE_EXIT)) return ENOTSUP;     // FORK/EXEC/SIGNAL tracking is not emulated
                 hfd = (int)syscall(SYS_pidfd_open, (pid_t)kev.ident, 0);
                 if (hfd < 0) return errno == EINVAL ? ESRCH : errno;
+            } else if (kev.filter == DARWIN_EVFILT_SIGNAL) {
+                int lsig = darwin_to_linux_sig((int)kev.ident);
+                if (lsig <= 0 || lsig >= 64) return EINVAL;
+                hfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+                if (hfd < 0) return errno;
+                hfd = kq_hi_fd(hfd);
+                for (int i = 0; i < 64; i++) if (g_kq_sig[i].sig.load() == 0) { slot = i; break; }
+                if (slot < 0) { close(hfd); return ENOMEM; }
+                g_signal_observer = kq_signal_observer;
+                g_kq_sig[slot].evfd = hfd;
+                g_kq_sig[slot].count.store(0);
+                g_kq_sig[slot].sig.store(lsig, std::memory_order_release);
             } else {
                 hfd = timerfd_create((kev.fflags & 8) ? CLOCK_REALTIME : CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
                 if (hfd < 0) return errno;
@@ -2695,7 +2746,7 @@ static int kq_apply_aux(int kq, KqState& st, const darwin_kevent_t& kev) {
             e.events = EPOLLIN;
             e.data.u64 = kKqAuxTag | id;
             if (epoll_ctl(kq, EPOLL_CTL_ADD, hfd, &e) < 0) { int er = errno; close(hfd); return er; }
-            it = st.aux.emplace(id, KqAux{kev.filter, (uint64_t)kev.ident, kev.udata, kev.flags, kev.fflags, hfd, false}).first;
+            it = st.aux.emplace(id, KqAux{kev.filter, (uint64_t)kev.ident, kev.udata, kev.flags, kev.fflags, hfd, false, slot}).first;
         } else {
             it->second.udata = kev.udata; it->second.flags = kev.flags; it->second.fflags = kev.fflags;
         }
@@ -2737,7 +2788,7 @@ static int darwin_kqueue() {
     std::lock_guard<std::mutex> lk(g_kq_lock);
     KqState& st = g_kq[epfd];                                 // (a closed kqueue's state is replaced when its fd number is reused)
     if (st.evfd >= 0) close(st.evfd);
-    for (auto& [id, a] : st.aux) close(a.hfd);
+    for (auto& [id, a] : st.aux) { if (a.sig_slot >= 0) g_kq_sig[a.sig_slot].sig.store(0); close(a.hfd); }
     st = KqState();
     st.evfd = evfd;
     return epfd;
@@ -2760,7 +2811,8 @@ static int kq_apply_change(int kq, KqState& st, const darwin_kevent_t& kev) {   
         }
         return 0;
     }
-    if (kev.filter == DARWIN_EVFILT_PROC || kev.filter == DARWIN_EVFILT_TIMER) return kq_apply_aux(kq, st, kev);
+    if (kev.filter == DARWIN_EVFILT_PROC || kev.filter == DARWIN_EVFILT_TIMER || kev.filter == DARWIN_EVFILT_SIGNAL)
+        return kq_apply_aux(kq, st, kev);
     if (kev.filter != DARWIN_EVFILT_READ && kev.filter != DARWIN_EVFILT_WRITE) return ENOTSUP;
     int fd = (int)kev.ident;
     auto& tab = kev.filter == DARWIN_EVFILT_READ ? st.rd : st.wr;
@@ -2856,6 +2908,8 @@ static int darwin_kevent(int kq, const darwin_kevent_t* changelist, int nchanges
             }
             uint64_t n = 0;
             if (read(x.hfd, &n, 8) != 8 || !n) continue;
+            if (x.filter == DARWIN_EVFILT_SIGNAL) n = g_kq_sig[x.sig_slot].count.exchange(0);   // deliveries since last
+            if (!n) continue;
             emit(x.ident, x.filter, fl, 0, (int64_t)n, x.udata);
             if (x.flags & DARWIN_EV_ONESHOT) kq_aux_drop(kq, st, a);
             else if (x.flags & DARWIN_EV_DISPATCH) x.disabled = true;

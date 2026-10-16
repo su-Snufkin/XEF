@@ -292,8 +292,11 @@ i64 process_fork(CpuState* st, void (*hold)(bool)) {
     return r;
 }
 
+extern std::atomic<int> g_darwin_is_threaded;
+
 int darwin_spawn_thread(uint64_t* th_out, void* attr, uint64_t start_routine, uint64_t arg) {
     (void)attr;
+    g_darwin_is_threaded.store(1);
     const size_t stack_size = 2ull * 1024 * 1024; // 2MB guest stack
     const size_t guard = 64 * 1024;
     void* r = mmap(nullptr, stack_size + guard, PROT_READ | PROT_WRITE,

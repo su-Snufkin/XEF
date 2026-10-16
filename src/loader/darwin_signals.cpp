@@ -111,7 +111,14 @@ static int ds_sigaltstack(const DarwinSigaltstack* ss, DarwinSigaltstack* oss) {
 static int ds_kill(int pid, int dsig) {
     int l = dsig == 0 ? 0 : darwin_to_linux_sig(dsig);
     if (dsig != 0 && l <= 0) return err(EINVAL);
-    if (pid == (int)getpid() || pid == 0) return (int)syscall(SYS_tgkill, getpid(), syscall(SYS_gettid), l) == 0 ? 0 : -1;
+    if (pid == (int)getpid()) {
+        // to this thread (XEF's own threads must not get it) but as a process-directed signal: si_code SI_USER
+        if (l == 0) return 0;
+        siginfo_t si;
+        memset(&si, 0, sizeof si);
+        si.si_signo = l; si.si_code = SI_USER; si.si_pid = getpid(); si.si_uid = getuid();
+        return syscall(SYS_rt_tgsigqueueinfo, getpid(), syscall(SYS_gettid), l, &si) == 0 ? 0 : -1;
+    }
     return kill(pid, l);
 }
 static int ds_killpg(int pgrp, int dsig) { int l = darwin_to_linux_sig(dsig); return kill(-pgrp, l); }

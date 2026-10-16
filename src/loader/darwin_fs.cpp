@@ -18,6 +18,9 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/statvfs.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <sys/shm.h>
 #include <sys/time.h>
 #include <sys/xattr.h>
 #include <sys/syscall.h>
@@ -451,6 +454,63 @@ static char* f_dirname(const char* p) {
     return buf;
 }
 
+// ---- System V IPC: semctl commands are renumbered (Darwin GETNCNT..SETALL = 3..9), IPC_STAT/IPC_SET structs differ
+// (#pragma pack(4) on Darwin). semget/shmget/semop/shmat/shmdt flags and struct sembuf are the same.
+struct DarwinIpcPerm { uint32_t uid, gid, cuid, cgid; uint16_t mode, seq; int32_t key; };
+struct __attribute__((packed, aligned(4))) DarwinShmidDs {
+    DarwinIpcPerm perm; uint64_t segsz; int32_t lpid, cpid; uint16_t nattch; uint16_t pad;
+    int64_t atime, dtime, ctime; uint64_t internal;
+};
+struct __attribute__((packed, aligned(4))) DarwinSemidDs {
+    DarwinIpcPerm perm; int32_t base; uint16_t nsems; uint16_t pad0; int64_t otime; int32_t pad1; int64_t ctime; int32_t pad2, pad3[4];
+};
+static_assert(sizeof(DarwinShmidDs) == 76 && offsetof(DarwinShmidDs, atime) == 44, "Darwin shmid_ds");
+static_assert(sizeof(DarwinSemidDs) == 72 && offsetof(DarwinSemidDs, ctime) == 44, "Darwin semid_ds");
+static void perm_out(const struct ipc_perm& l, DarwinIpcPerm* d) {
+    d->uid = l.uid; d->gid = l.gid; d->cuid = l.cuid; d->cgid = l.cgid; d->mode = (uint16_t)l.mode; d->seq = (uint16_t)l.__seq; d->key = l.__key;
+}
+static int f_semctl(int id, int num, int cmd, const uint64_t* ap) {
+    static const int kCmd[10] = {IPC_RMID, IPC_SET, IPC_STAT, GETNCNT, GETPID, GETVAL, GETALL, GETZCNT, SETVAL, SETALL};
+    if (cmd < 0 || cmd > 9) { errno = EINVAL; return -1; }
+    uint64_t arg = ap ? ap[0] : 0;
+    int lc = kCmd[cmd];
+    if (lc == IPC_STAT || lc == IPC_SET) {
+        DarwinSemidDs* d = (DarwinSemidDs*)(uintptr_t)arg;
+        struct semid_ds l;
+        memset(&l, 0, sizeof l);
+        if (lc == IPC_SET) {
+            if (semctl(id, 0, IPC_STAT, &l) < 0) return -1;
+            l.sem_perm.uid = d->perm.uid; l.sem_perm.gid = d->perm.gid; l.sem_perm.mode = d->perm.mode & 0777;
+            return semctl(id, 0, IPC_SET, &l);
+        }
+        if (semctl(id, 0, IPC_STAT, &l) < 0) return -1;
+        memset(d, 0, sizeof *d);
+        perm_out(l.sem_perm, &d->perm);
+        d->nsems = (uint16_t)l.sem_nsems; d->otime = l.sem_otime; d->ctime = l.sem_ctime;
+        return 0;
+    }
+    if (lc == SETVAL) return semctl(id, num, SETVAL, (int)arg);
+    if (lc == GETALL || lc == SETALL) return semctl(id, num, lc, (unsigned short*)(uintptr_t)arg);
+    return semctl(id, num, lc);
+}
+static int f_shmctl(int id, int cmd, void* buf) {
+    if (cmd == IPC_RMID) return shmctl(id, IPC_RMID, nullptr);
+    if (cmd != IPC_STAT && cmd != IPC_SET) { errno = EINVAL; return -1; }
+    DarwinShmidDs* d = (DarwinShmidDs*)buf;
+    struct shmid_ds l;
+    if (shmctl(id, IPC_STAT, &l) < 0) return -1;
+    if (cmd == IPC_SET) {
+        l.shm_perm.uid = d->perm.uid; l.shm_perm.gid = d->perm.gid; l.shm_perm.mode = d->perm.mode & 0777;
+        return shmctl(id, IPC_SET, &l);
+    }
+    memset(d, 0, sizeof *d);
+    perm_out(l.shm_perm, &d->perm);
+    d->segsz = l.shm_segsz; d->lpid = l.shm_lpid; d->cpid = l.shm_cpid; d->nattch = (uint16_t)l.shm_nattch;
+    d->atime = l.shm_atime; d->dtime = l.shm_dtime; d->ctime = l.shm_ctime;
+    return 0;
+}
+int darwin_semctl_v(int id, int num, int cmd, const uint64_t* ap) { return f_semctl(id, num, cmd, ap); }
+
 void* darwin_fs_lookup(const char* name) {
     struct E { const char* n; void* f; };
     static const E k[] = {
@@ -474,7 +534,7 @@ void* darwin_fs_lookup(const char* name) {
         {"_statfs", (void*)&f_statfs}, {"_statfs$INODE64", (void*)&f_statfs}, {"_statfs64", (void*)&f_statfs},
         {"_fstatfs", (void*)&f_fstatfs}, {"_fstatfs$INODE64", (void*)&f_fstatfs}, {"_fstatfs64", (void*)&f_fstatfs},
         {"_statvfs", (void*)&f_statvfs}, {"_fstatvfs", (void*)&f_fstatvfs},
-        {"_basename", (void*)&f_basename}, {"_dirname", (void*)&f_dirname},
+        {"_basename", (void*)&f_basename}, {"_dirname", (void*)&f_dirname}, {"_shmctl", (void*)&f_shmctl},
     };
     for (const E& e : k) if (!strcmp(e.n, name)) return e.f;
     return nullptr;

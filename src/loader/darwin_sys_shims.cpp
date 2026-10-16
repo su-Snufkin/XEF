@@ -162,7 +162,9 @@ static void* sh_malloc_zone_memalign(void*, size_t a, size_t n) { return aligned
 static void sh_malloc_zone_free(void*, void* p) { free(p); }
 static void* sh_malloc_zone_from_ptr(const void* p) { return p ? (void*)1 : nullptr; }
 static size_t sh_malloc_good_size(size_t n) { return (n + 15) & ~15ull; }
-static int sh_pthread_is_threaded_np() { return 1; }
+// libpthread's __is_threaded: set once the process creates a second thread (darwin_spawn_thread), never cleared
+std::atomic<int> g_darwin_is_threaded{0};
+static int sh_pthread_is_threaded_np() { return g_darwin_is_threaded.load(); }
 static int sh_pthread_key_init_np(int, void (*)(void*)) { return 0; }
 
 // ---- os_unfair_lock extras ------------------------------------------------------------------------------

@@ -538,8 +538,11 @@ static void* st_sem_open(const char* name, int oflag, const uint64_t* ap) {
 static int st_sem_enosys() { errno = ENOSYS; return -1; }
 void* st_sem_open_entry(const char* name, int oflag, const uint64_t* ap) { return st_sem_open(name, oflag, ap); }
 
+// Kerberos.framework CCAPI: no credentials-cache server; MIT krb5 (Homebrew) then finds no API: ccache
+static int st_cc_initialize(void** ctx, int, int*, const char**) { if (ctx) *ctx = nullptr; return 223; }   // ccErrServerUnavailable
+
 static const StubEntry kStubs2[] = {
-    {"_memset_s", (void*)&st_memset_s}, {"_sem_init", (void*)&st_sem_enosys}, {"_sem_destroy", (void*)&st_sem_enosys}, {"_timingsafe_bcmp", (void*)&st_timingsafe_bcmp},
+    {"_memset_s", (void*)&st_memset_s}, {"_cc_initialize", (void*)&st_cc_initialize}, {"_sem_init", (void*)&st_sem_enosys}, {"_sem_destroy", (void*)&st_sem_enosys}, {"_timingsafe_bcmp", (void*)&st_timingsafe_bcmp},
     {"_task_policy_set", (void*)&st_zero2},   // scheduling role/QoS hint (like pthread_set_qos_class_self_np)
     {"_gss_get_mic", (void*)&st_gss_unavailable}, {"_gss_verify_mic", (void*)&st_gss_unavailable},
     {"_gss_release_oid_set", (void*)&st_gss_release},
