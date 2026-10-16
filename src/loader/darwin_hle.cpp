@@ -741,6 +741,17 @@ static int darwin_fp_class(int c) {
     }
 }
 static int darwin_fpclassifyd(double x) { return darwin_fp_class(std::fpclassify(x)); }
+// libm's out-of-line classification helpers behind <math.h>'s isfinite/isinf/isnan/isnormal/signbit (long double == double)
+static int darwin_isfinited(double x) { return std::isfinite(x); }
+static int darwin_isfinitef(float x) { return std::isfinite(x); }
+static int darwin_isinfd(double x) { return std::isinf(x); }
+static int darwin_isinff(float x) { return std::isinf(x); }
+static int darwin_isnand(double x) { return std::isnan(x); }
+static int darwin_isnanf(float x) { return std::isnan(x); }
+static int darwin_isnormald(double x) { return std::isnormal(x); }
+static int darwin_isnormalf(float x) { return std::isnormal(x); }
+static int darwin_signbitd(double x) { return std::signbit(x); }
+static int darwin_signbitf(float x) { return std::signbit(x); }
 static int darwin_fpclassifyf(float x) { return darwin_fp_class(std::fpclassify(x)); }
 static float darwin_exp10f(float x) { return exp10f(x); }
 
@@ -3383,6 +3394,26 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_NSGetArgv;
     } else if (strcmp(name, "__NSGetEnviron") == 0) {
         host_fn = (void*)&darwin_NSGetEnviron;
+    } else if (strcmp(name, "___isfinited") == 0 || strcmp(name, "___isfinitel") == 0) {
+        host_fn = (void*)&darwin_isfinited;
+    } else if (strcmp(name, "___isfinitef") == 0) {
+        host_fn = (void*)&darwin_isfinitef;
+    } else if (strcmp(name, "___isinfd") == 0 || strcmp(name, "___isinfl") == 0) {
+        host_fn = (void*)&darwin_isinfd;
+    } else if (strcmp(name, "___isinff") == 0) {
+        host_fn = (void*)&darwin_isinff;
+    } else if (strcmp(name, "___isnand") == 0 || strcmp(name, "___isnanl") == 0) {
+        host_fn = (void*)&darwin_isnand;
+    } else if (strcmp(name, "___isnanf") == 0) {
+        host_fn = (void*)&darwin_isnanf;
+    } else if (strcmp(name, "___isnormald") == 0 || strcmp(name, "___isnormall") == 0) {
+        host_fn = (void*)&darwin_isnormald;
+    } else if (strcmp(name, "___isnormalf") == 0) {
+        host_fn = (void*)&darwin_isnormalf;
+    } else if (strcmp(name, "___signbitd") == 0 || strcmp(name, "___signbitl") == 0) {
+        host_fn = (void*)&darwin_signbitd;
+    } else if (strcmp(name, "___signbitf") == 0) {
+        host_fn = (void*)&darwin_signbitf;
     } else if (strcmp(name, "___fpclassifyd") == 0 || strcmp(name, "___fpclassifyl") == 0) {   // long double == double
         host_fn = (void*)&darwin_fpclassifyd;
     } else if (strcmp(name, "___fpclassifyf") == 0) {

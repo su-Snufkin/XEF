@@ -372,9 +372,13 @@ static void run_guest(ThreadCtx* t, bool nested) {
                 break;
             }
             if (g_opt.trace) trace_dump();
-            if (st->exit_reason == EXIT_UNDEF)
+            if (st->exit_reason == EXIT_UNDEF) {
+                if (g_is_darwin)
+                    fprintf(stderr, "xef: unsupported instruction in %s (lr in %s)\n", dyld_describe(st->pc).c_str(),
+                            dyld_describe(st->x[30]).c_str());
                 fatal("unsupported instruction at %#lx (lr=%#lx, sp=%#lx): %08x",
                       (unsigned long)st->pc, (unsigned long)st->x[30], (unsigned long)st->x[kGuestSP], (u32)st->exit_info);
+            }
             {
                 std::string d = g_is_darwin ? dyld_describe(st->pc) : std::string();
                 if (g_is_darwin) {   // frame-pointer walk (Darwin code always keeps frame records)

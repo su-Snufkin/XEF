@@ -702,6 +702,20 @@ static bool simd_two_misc(Translator& t, u32 i, bool scalar) {
     }
 }
 
+// Advanced SIMD two-register miscellaneous (FP16): only FABS/FNEG, which are sign-bit operations on 16-bit lanes
+// (exact, no FP16 arithmetic needed). Apple's compiler emits FNEG .8h to materialize constants (libvpx).
+static bool simd_fp16_two_misc(Translator& t, u32 i, bool scalar) {
+    if (scalar) return false;
+    S s(t);
+    bool q = bit(i, 30), u = bit(i, 29), a = bit(i, 23);
+    int opcode = bits(i, 16, 12), rd = bits(i, 4, 0), rn = bits(i, 9, 5);
+    if (!(a && opcode == 0xf)) return false;
+    Val m = s.vconst(0x8000800080008000ull, q ? 0x8000800080008000ull : 0);
+    u8 fl = q ? 0 : F_HALF;
+    s.setV(rd, u ? s.vop(V_EOR, 16, fl, s.V(rn), m) : s.vop(V_BIC, 16, fl, s.V(rn), m));
+    return true;
+}
+
 static bool simd_across(Translator& t, u32 i) {
     S s(t);
     bool q = bit(i, 30), u = bit(i, 29);
@@ -1184,6 +1198,7 @@ bool Translator::simd_fp(u32 i) {
             if (b1110 == 2) {
                 u32 b2017 = bits(i, 20, 17);
                 if (b2017 == 0) return simd_two_misc(*this, i, scalar);
+                if (b2017 == 0xc) return simd_fp16_two_misc(*this, i, scalar);
                 if (b2017 == 8) {
                     if (scalar) {
                         // scalar pairwise: ADDP d, FADDP, FMAXP, ...
