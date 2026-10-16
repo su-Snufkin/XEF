@@ -700,7 +700,7 @@ uint64_t darwin_pthread_main_handle() {
 }
 int darwin_pthread_host(uint64_t th, pthread_t* host) {
     DarwinPthread* p = pthread_of(th);
-    if (!p) return ESRCH;
+    if (!p || !p->host) return ESRCH;
     *host = p->host;
     return 0;
 }

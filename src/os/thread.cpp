@@ -205,6 +205,8 @@ static void* thread_trampoline(void* arg) {
     if (ts->flags & kCloneParentSettid) *(u32*)ts->ptid = (u32)tid;
     if (ts->flags & kCloneChildSettid) *(u32*)ts->ctid = (u32)tid;
     if (ts->flags & kCloneChildCleartid) t->clear_child_tid = ts->ctid;
+    // Darwin: the pthread handle knows its host thread before guest code can hand it out (pthread_kill)
+    if (g_is_darwin && t->tsd && t->tsd[0] != (u64)t->tsd) darwin_set_pthread_host(t->tsd[0], pthread_self(), tid);
     __atomic_store_n(&ts->tid, tid, __ATOMIC_RELEASE);
     syscall(SYS_futex, &ts->tid, FUTEX_WAKE, 1, nullptr, nullptr, 0);
     // ts is owned by the parent's stack from here on: don't touch it
