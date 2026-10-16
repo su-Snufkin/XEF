@@ -302,6 +302,56 @@ static int mach_vm_protect_(uint32_t, uint64_t addr, uint64_t size, int, int pro
     page_range(addr, size, &a, &n);
     return mprotect((void*)(uintptr_t)a, n, prot & 7) ? 2 /*KERN_PROTECTION_FAILURE*/ : 0;
 }
+// Exception ports: registrations are kept per exception type and reported by the getters, but no Mach exception
+// message is ever sent - faults reach the guest as Unix signals, which is what programs that clear these ports
+// (HotSpot: EXC_MASK_BAD_ACCESS etc. -> MACH_PORT_NULL) arrange for on macOS.
+struct ExcPort { uint32_t port; int32_t behavior, flavor; };
+static std::mutex g_exc_lock;
+static ExcPort g_task_exc[32];
+static int set_exc_ports(ExcPort* tab, uint32_t mask, uint32_t port, int behavior, int flavor) {
+    if (mask & ~0x7FFEu) return 4;                             // KERN_INVALID_ARGUMENT: EXC_* are 1..14
+    std::lock_guard<std::mutex> lk(g_exc_lock);
+    for (int e = 1; e < 15; e++) if (mask & (1u << e)) tab[e] = ExcPort{port, behavior, flavor};
+    return 0;
+}
+static int get_exc_ports(ExcPort* tab, uint32_t mask, uint32_t* masks, uint32_t* count, uint32_t* ports, int32_t* behaviors,
+                         int32_t* flavors) {
+    if (!count) return 4;
+    std::lock_guard<std::mutex> lk(g_exc_lock);
+    uint32_t n = 0;
+    for (int e = 1; e < 15; e++) {
+        if (!(mask & (1u << e))) continue;
+        uint32_t i = 0;                                        // types with the same registration share one entry
+        for (; i < n; i++)
+            if (ports[i] == tab[e].port && behaviors[i] == tab[e].behavior && flavors[i] == tab[e].flavor) break;
+        if (i < n) { masks[i] |= 1u << e; continue; }
+        if (n >= *count) break;
+        masks[n] = 1u << e; ports[n] = tab[e].port; behaviors[n] = tab[e].behavior; flavors[n] = tab[e].flavor;
+        n++;
+    }
+    *count = n;
+    return 0;
+}
+static int task_set_exception_ports_(uint32_t, uint32_t mask, uint32_t port, int behavior, int flavor) {
+    return set_exc_ports(g_task_exc, mask, port, behavior, flavor);
+}
+static int task_get_exception_ports_(uint32_t, uint32_t mask, uint32_t* masks, uint32_t* count, uint32_t* ports,
+                                     int32_t* behaviors, int32_t* flavors) {
+    return get_exc_ports(g_task_exc, mask, masks, count, ports, behaviors, flavors);
+}
+static int task_swap_exception_ports_(uint32_t t, uint32_t mask, uint32_t port, int behavior, int flavor, uint32_t* masks,
+                                      uint32_t* count, uint32_t* ports, int32_t* behaviors, int32_t* flavors) {
+    int r = get_exc_ports(g_task_exc, mask, masks, count, ports, behaviors, flavors);
+    return r ? r : task_set_exception_ports_(t, mask, port, behavior, flavor);
+}
+static thread_local ExcPort t_thread_exc[32];
+static int thread_set_exception_ports_(uint32_t, uint32_t mask, uint32_t port, int behavior, int flavor) {
+    return set_exc_ports(t_thread_exc, mask, port, behavior, flavor);   // (the calling thread's own port only)
+}
+static int thread_get_exception_ports_(uint32_t, uint32_t mask, uint32_t* masks, uint32_t* count, uint32_t* ports,
+                                       int32_t* behaviors, int32_t* flavors) {
+    return get_exc_ports(t_thread_exc, mask, masks, count, ports, behaviors, flavors);
+}
 static uint32_t mach_thread_self_() { return darwin_thread_port((int)syscall(SYS_gettid)); }
 static uint32_t mach_host_self_() { return 0x100; }
 static uint32_t mach_task_self__() { return 0x103; }
@@ -487,6 +537,9 @@ static const MachShim kMach[] = {
     {"_vm_deallocate", (void*)&mach_vm_deallocate_}, {"_vm_protect", (void*)&mach_vm_protect_},
     {"_mach_thread_self", (void*)&mach_thread_self_}, {"_mach_host_self", (void*)&mach_host_self_},
     {"_mach_task_self", (void*)&mach_task_self__},
+    {"_task_set_exception_ports", (void*)&task_set_exception_ports_}, {"_task_get_exception_ports", (void*)&task_get_exception_ports_},
+    {"_task_swap_exception_ports", (void*)&task_swap_exception_ports_},
+    {"_thread_set_exception_ports", (void*)&thread_set_exception_ports_}, {"_thread_get_exception_ports", (void*)&thread_get_exception_ports_},
 };
 
 void* darwin_mach_lookup(const char* name) {
