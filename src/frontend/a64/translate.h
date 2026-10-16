@@ -26,6 +26,8 @@ bool nzcv_read_first(GuestAddr pc);
 // RET of a function whose callers read NZCV on return (outlined helpers): flags must be kept (see translate.cpp).
 void scan_flag_returning_calls(GuestAddr lo, GuestAddr hi);
 bool ret_keeps_flags(GuestAddr ret_pc);
+bool call_keeps_flags(GuestAddr target);   // a direct BL whose callee passes NZCV back to the return site
+bool call_uses_flags(GuestAddr target);    // ... or whose callee reads NZCV on entry: live at the BL
 extern bool g_abi_flags;   // NZCV dead at calls, returns and indirect branches (XEF_STRICT_FLAGS=1: no)
 
 // Decode helpers shared with SIMD translation.

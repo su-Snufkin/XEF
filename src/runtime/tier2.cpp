@@ -127,7 +127,8 @@ static bool compile_region(GuestAddr head) {
     int vuses[32] = {0}, vwrites[32] = {0};
     static u16 b_uses[kMaxRegionBlocks][32], b_writes[kMaxRegionBlocks][32], b_vuses[kMaxRegionBlocks][32],
         b_vwrites[kMaxRegionBlocks][32];   // per member, summed after pruning
-    bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], helper_of[kMaxRegionBlocks], call_of[kMaxRegionBlocks];
+    bool f_reads[kMaxRegionBlocks], f_writes[kMaxRegionBlocks], helper_of[kMaxRegionBlocks], call_of[kMaxRegionBlocks],
+         call_live[kMaxRegionBlocks];
     // Inlined calls (AAPCS64 assumed, as for NZCV): BL jumps to the callee inside the region; a
     // RET in the region compares X30 with the return addresses of the inlined calls (at most 2)
     // and otherwise returns as tier 1 does.
@@ -173,6 +174,11 @@ static bool compile_region(GuestAddr head) {
         f_nsucc[qi] = ns;
         f_reads[qi] = f_writes[qi] = helper_of[qi] = false;
         call_of[qi] = is_call(blk) || ret_of[qi];   // (NZCV dead at both by the ABI)
+        {   // ... unless the callee hands the flags back (a64::call_keeps_flags / ret_keeps_flags)
+            const ir::Inst* t = terminator(blk);
+            call_live[qi] = call_of[qi] && t && (t->op == ir::Op::ExitCall ? a64::call_uses_flags(t->imm)
+                                                 : t->op == ir::Op::ExitRet ? a64::ret_keeps_flags(blk.end - 4) : false);
+        }
         memset(b_uses[qi], 0, sizeof b_uses[qi]);
         memset(b_writes[qi], 0, sizeof b_writes[qi]);
         memset(b_vuses[qi], 0, sizeof b_vuses[qi]);
@@ -259,6 +265,7 @@ static bool compile_region(GuestAddr head) {
                 f_writes[n] = f_writes[i];
                 helper_of[n] = helper_of[i];
                 call_of[n] = call_of[i];
+                call_live[n] = call_live[i];
                 inl[n] = inl[i];
                 ret_of[n] = ret_of[i];
                 inl_callee[n] = inl_callee[i];
@@ -304,7 +311,7 @@ static bool compile_region(GuestAddr head) {
         changed = false;
         for (int i = R.n - 1; i >= 0; i--) {
             // a call: NZCV is dead at it by the ABI (else live: the callee may read it)
-            bool out = call_of[i] && !a64::g_abi_flags;
+            bool out = call_of[i] && (!a64::g_abi_flags || call_live[i]);
             for (int k = 0; k < f_nsucc[i] && !call_of[i]; k++) {
                 int j = idx_of(f_succ[i][k]);
                 out |= j >= 0 ? f_live_in[j] : ext_live[i][k];

@@ -1,4 +1,6 @@
 // XEF — translation driver and per-thread execution loop.
+#include "loader/macho_image.h"
+#include <unordered_set>
 #include "runtime/dispatch.h"
 #include "thunks/thunks.h"
 #include "runtime/verify.h"
@@ -276,6 +278,26 @@ static void run_guest(ThreadCtx* t, bool nested) {
         if (__atomic_load_n(&st->pending_signal, __ATOMIC_ACQUIRE)) {
             signals_deliver_pending(st);
             host = get_or_translate(t, st->pc);
+        }
+        {   // XEF_DBG_FLAGS=1 (with --trace --max-block 1): report a BL/RET after which NZCV is treated as dead but the
+            // next block reads it first (finds compiler patterns the a64::call_uses_flags/ret_keeps_flags rules miss)
+            static const bool on = getenv("XEF_DBG_FLAGS") != nullptr;
+            static thread_local u64 prev = 0;
+            if (on && prev && a64::guest_readable(prev)) {
+                u32 i = *(const u32*)prev;
+                bool bl = (i & 0xFC000000) == 0x94000000, ret = (i & 0xFFFFFC1F) == 0xD65F0000;
+                if (bl || ret) {
+                    GuestAddr tgt = bl ? prev + (GuestAddr)((i64)((i64)(i << 6) >> 6) * 4) : 0;
+                    bool kept = bl ? a64::call_uses_flags(tgt) : a64::ret_keeps_flags(prev);
+                    static std::mutex mu; static std::unordered_set<u64> seen;
+                    if (!kept && a64::nzcv_read_first(st->pc)) {
+                        std::lock_guard<std::mutex> lk(mu);
+                        if (seen.insert(prev).second)
+                            fprintf(stderr, "xef: FLAGS %s at %#lx -> %#lx reads NZCV (%s)\n", bl ? "BL" : "RET", (unsigned long)prev, (unsigned long)st->pc, dyld_describe(prev).c_str());
+                    }
+                }
+            }
+            if (on) prev = st->pc;
         }
         {   // XEF_DBG_PC=lo-hi (hex): log the full register file at every block entry in the range (use with --trace --max-block 1)
             static const bool on = [] { return getenv("XEF_DBG_PC") != nullptr; }();

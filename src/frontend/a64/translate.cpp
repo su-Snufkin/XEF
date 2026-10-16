@@ -1143,7 +1143,7 @@ static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast, bool memo
         switch (s.q) {
         case Q_WRITE: break;
         case Q_B: if (!push(s.t1)) return true; break;
-        case Q_BL: if (!abi_kills_flags(Op::ExitCall)) return true; break;
+        case Q_BL: if (!abi_kills_flags(Op::ExitCall) || call_uses_flags(s.t1)) return true; break;
         case Q_RET: if (!abi_kills_flags(Op::ExitRet) || ret_keeps_flags(run_end[next - 1] - 4)) return true; break;
         case Q_CB: if (!push(s.t1) || !push(s.t2)) return true; break;
         default: return true;   // Q_READ, Q_UNKNOWN
@@ -1163,7 +1163,7 @@ static bool nzcv_walk(const GuestAddr* starts, int nstarts, bool fast, bool memo
             case Q_READ: return true;
             case Q_WRITE: end = true; break;
             case Q_B: if (!push(t1)) return true; end = true; break;
-            case Q_BL: if (!abi_kills_flags(Op::ExitCall)) return true; end = true; break;
+            case Q_BL: if (!abi_kills_flags(Op::ExitCall) || call_uses_flags(t1)) return true; end = true; break;
             case Q_RET: if (!abi_kills_flags(Op::ExitRet) || ret_keeps_flags(pc)) return true; end = true; break;
             case Q_CB: if (!push(t1) || !push(t2)) return true; end = true; break;
             default: break;
@@ -1194,6 +1194,20 @@ bool nzcv_live_at(GuestAddr pc, int) { return nzcv_live_any(&pc, 1); }
 
 // True only if the straight-line code at pc certainly reads NZCV before writing it (the unknown
 // cases nzcv_live_at must count as live are not reported).
+// Whether a short helper (an outlined function: straight-line code up to its RET) may write NZCV. Anything
+// longer, branching or calling is assumed to.
+static bool callee_writes_flags(GuestAddr pc) {
+    for (int i = 0; i < 32; i++, pc += 4) {
+        if (!guest_readable(pc)) return true;
+        GuestAddr t1 = 0, t2 = 0;
+        QuickFlags q = quick_flags(*(const u32*)pc, pc, &t1, &t2);
+        if (q == Q_UNKNOWN) q = slow_flags(pc, &t1, &t2);
+        if (q == Q_RET) return false;
+        if (q != Q_NONE && q != Q_READ) return true;
+    }
+    return true;
+}
+
 bool nzcv_read_first(GuestAddr pc) {
     for (int i = 0; i < 16; i++, pc += 4) {
         if (!guest_readable(pc)) return false;
@@ -1209,6 +1223,11 @@ bool nzcv_read_first(GuestAddr pc) {
                 if (scratch->insts[v].op == Op::GetFlags) return true;
             return false;
         }
+        if (q == Q_BL && call_keeps_flags(t1)) {   // another such helper: a read after it is ours only if it
+            if (callee_writes_flags(t1)) return false;   // passes NZCV through untouched
+            continue;
+        }
+        if (q == Q_B) { pc = t1 - 4; continue; }
         if (q != Q_NONE) return false;
     }
     return false;
@@ -1228,20 +1247,36 @@ static std::vector<std::pair<GuestAddr, GuestAddr>> g_flagret_text;   // scanned
 
 void scan_flag_returning_calls(GuestAddr lo, GuestAddr hi) {
     if (!g_abi_flags) return;
-    std::unordered_set<GuestAddr> found;
-    for (GuestAddr p = lo & ~3ull; p + 4 <= hi; p += 4) {
-        u32 i = *(const u32*)p;
-        if ((i & 0xFC000000) != 0x94000000) continue;   // BL
-        GuestAddr t = p + (GuestAddr)(sext(i & 0x3FFFFFF, 26) * 4);
-        if (t < lo || t >= hi || found.count(t)) continue;
-        if (nzcv_read_first(p + 4)) found.insert(t);
+    // to a fixpoint: a return site may reach its NZCV read through further such calls (bl A; bl B; b.eq)
+    bool registered = false;
+    for (int pass = 0; pass < 8; pass++) {
+        std::unordered_set<GuestAddr> found;
+        for (GuestAddr p = lo & ~3ull; p + 4 <= hi; p += 4) {
+            u32 i = *(const u32*)p;
+            if ((i & 0xFC000000) != 0x94000000) continue;   // BL
+            GuestAddr t = p + (GuestAddr)(sext(i & 0x3FFFFFF, 26) * 4);
+            if (t < lo || t >= hi || found.count(t) || call_keeps_flags(t)) continue;
+            if (nzcv_read_first(p + 4)) found.insert(t);
+        }
+        if (found.empty()) return;
+        std::lock_guard<std::mutex> lk(g_flagret_mu);
+        if (!registered) { g_flagret_text.emplace_back(lo, hi); registered = true; }
+        g_flagret.insert(found.begin(), found.end());
+        g_flagret_any.store(true, std::memory_order_release);
     }
-    if (found.empty()) return;
-    std::lock_guard<std::mutex> lk(g_flagret_mu);
-    g_flagret_text.emplace_back(lo, hi);
-    g_flagret.insert(found.begin(), found.end());
-    g_flagret_any.store(true, std::memory_order_release);
 }
+
+// Flags set before such a call can reach its return site untouched (an outlined helper that only moves registers,
+// LLVM's machine outliner keeps NZCV live across it): they stay live at the BL.
+bool call_keeps_flags(GuestAddr target) {
+    if (!g_abi_flags || !g_flagret_any.load(std::memory_order_acquire)) return false;
+    std::lock_guard<std::mutex> lk(g_flagret_mu);
+    return g_flagret.count(target) != 0;
+}
+
+// NZCV is live at a direct call whose callee hands it back, or reads it on entry: the outliner also moves a
+// flag consumer into the helper ("cmp x8, #8 ; bl OUTLINED" with "csel x9, x8, x9, lo ; ... ; ret").
+bool call_uses_flags(GuestAddr target) { return call_keeps_flags(target) || nzcv_read_first(target); }
 
 bool ret_keeps_flags(GuestAddr ret_pc) {
     if (!g_abi_flags || !g_flagret_any.load(std::memory_order_acquire)) return false;
@@ -1273,6 +1308,7 @@ static void compute_flags_liveness(ir::Block& blk) {
         break;
     }
     case Op::ExitRet: blk.flags_live_out = !abi_kills_flags(term->op) || ret_keeps_flags(blk.end - 4); break;
+    case Op::ExitCall: blk.flags_live_out = !abi_kills_flags(term->op) || call_uses_flags(term->imm); break;
     default: blk.flags_live_out = !abi_kills_flags(term->op); break;
     }
 }
