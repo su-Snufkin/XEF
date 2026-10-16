@@ -534,51 +534,62 @@ EXPORT void dispatch_barrier_sync_f(dispatch_object_t q, void *ctx, dispatch_fun
 EXPORT void dispatch_async_and_wait(dispatch_object_t q, dispatch_block_t b) { sync_run(q, b, NULL, NULL, 0); }
 EXPORT void dispatch_async_and_wait_f(dispatch_object_t q, void *ctx, dispatch_function_t f) { sync_run(q, NULL, f, ctx, 0); }
 
-EXPORT void dispatch_apply(size_t n, dispatch_object_t q, void (^b)(size_t)) {
-    (void)q;
-    if (n == 0) return;
-    // the synchronisation objects must be shared by pointer: a block copies captured C structs by value
-    struct apply_state { size_t next, done; pthread_mutex_t lk; pthread_cond_t cv; } st = { 0, 0, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER };
-    struct apply_state *sp = &st;
-    size_t workers = g_max_workers < (int)n ? (size_t)g_max_workers : n;
-    void (^body)(void) = ^{
-        for (;;) {
-            size_t i = __atomic_fetch_add(&sp->next, 1, __ATOMIC_SEQ_CST);
-            if (i >= n) break;
-            b(i);
-            pthread_mutex_lock(&sp->lk);
-            if (++sp->done == n) pthread_cond_broadcast(&sp->cv);
-            pthread_mutex_unlock(&sp->lk);
-        }
-    };
-    for (size_t w = 1; w < workers; w++) dispatch_async(global_queue(2), body);
-    body();
-    pthread_mutex_lock(&st.lk);
-    while (st.done < n) pthread_cond_wait(&st.cv, &st.lk);
-    pthread_mutex_unlock(&st.lk);
+// dispatch_apply: the caller and up to g_max_workers-1 queued workers take indices from a shared counter. The state
+// lives on the heap with one reference per participant: a worker that only starts after the caller returned still
+// touches it (its first fetch_add finds next >= n), so it must not be in the caller's stack frame.
+struct apply_state {
+    size_t n, next, done;
+    long refs;
+    void *ctx; void (*f)(void *, size_t); void (^b)(size_t);
+    pthread_mutex_t lk; pthread_cond_t cv;
+};
+static struct apply_state *apply_new(size_t n, long refs) {
+    struct apply_state *a = calloc(1, sizeof *a);
+    a->n = n; a->refs = refs;
+    pthread_mutex_init(&a->lk, NULL);
+    pthread_cond_init(&a->cv, NULL);
+    return a;
 }
-struct apply_ctx { size_t n; void *ctx; void (*f)(void *, size_t); size_t next, done; pthread_mutex_t lk; pthread_cond_t cv; };
-static void apply_worker(void *p) {
-    struct apply_ctx *a = p;
+static void apply_release(struct apply_state *a) {
+    if (__atomic_sub_fetch(&a->refs, 1, __ATOMIC_ACQ_REL)) return;
+    pthread_mutex_destroy(&a->lk);
+    pthread_cond_destroy(&a->cv);
+    free(a);
+}
+static void apply_loop(struct apply_state *a) {
     for (;;) {
         size_t i = __atomic_fetch_add(&a->next, 1, __ATOMIC_SEQ_CST);
         if (i >= a->n) break;
-        a->f(a->ctx, i);
+        if (a->b) a->b(i); else a->f(a->ctx, i);
         pthread_mutex_lock(&a->lk);
         if (++a->done == a->n) pthread_cond_broadcast(&a->cv);
         pthread_mutex_unlock(&a->lk);
     }
 }
+static void apply_worker(void *p) { apply_loop(p); apply_release(p); }
+static void apply_run(struct apply_state *a, size_t workers) {
+    for (size_t w = 1; w < workers; w++) dispatch_async_f(global_queue(2), a, apply_worker);
+    apply_loop(a);
+    pthread_mutex_lock(&a->lk);
+    while (a->done < a->n) pthread_cond_wait(&a->cv, &a->lk);
+    pthread_mutex_unlock(&a->lk);
+    apply_release(a);
+}
+EXPORT void dispatch_apply(size_t n, dispatch_object_t q, void (^b)(size_t)) {
+    (void)q;
+    if (n == 0) return;
+    size_t workers = g_max_workers < (int)n ? (size_t)g_max_workers : n;
+    struct apply_state *a = apply_new(n, (long)workers);
+    a->b = b;   // used only while indices remain, i.e. before the caller can return
+    apply_run(a, workers);
+}
 EXPORT void dispatch_apply_f(size_t n, dispatch_object_t q, void *ctx, void (*f)(void *, size_t)) {
     (void)q;
     if (!n) return;
-    struct apply_ctx a = { n, ctx, f, 0, 0, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER };
     size_t workers = g_max_workers < (int)n ? (size_t)g_max_workers : n;
-    for (size_t w = 1; w < workers; w++) dispatch_async_f(global_queue(2), &a, apply_worker);
-    apply_worker(&a);
-    pthread_mutex_lock(&a.lk);
-    while (a.done < n) pthread_cond_wait(&a.cv, &a.lk);
-    pthread_mutex_unlock(&a.lk);
+    struct apply_state *a = apply_new(n, (long)workers);
+    a->ctx = ctx; a->f = f;
+    apply_run(a, workers);
 }
 
 // ---- timers (one scheduler thread) ----------------------------------------------------------------
