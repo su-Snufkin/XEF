@@ -388,6 +388,7 @@ static id qc_stub(id self, SEL _cmd, ...) {
   NSUInteger _pixelFormat;
   BOOL _framebufferOnly;
   CGSize _drawableSize;
+  BOOL _customDrawableSize;
   BOOL _presentsWithTransaction;
   BOOL _displaySyncEnabled;
   BOOL _allowsNextDrawableTimeout;
@@ -443,14 +444,20 @@ static id qc_stub(id self, SEL _cmd, ...) {
 - (void)setFramebufferOnly:(BOOL)f { _framebufferOnly = f; }
 - (void)setFrame:(CGRect)f {
   [super setFrame:f];
-  if (_drawableSize.width <= 0 || _drawableSize.height <= 0) {
+  if (!_customDrawableSize) {
     _drawableSize = CGSizeMake(f.size.width * _contentsScale, f.size.height * _contentsScale);
   }
 }
 - (void)setBounds:(CGRect)b {
   [super setBounds:b];
-  if (_drawableSize.width <= 0 || _drawableSize.height <= 0) {
+  if (!_customDrawableSize) {
     _drawableSize = CGSizeMake(b.size.width * _contentsScale, b.size.height * _contentsScale);
+  }
+}
+- (void)setContentsScale:(CGFloat)s {
+  [super setContentsScale:s];
+  if (!_customDrawableSize) {
+    _drawableSize = CGSizeMake(_bounds.size.width * _contentsScale, _bounds.size.height * _contentsScale);
   }
 }
 - (CGSize)drawableSize {
@@ -458,7 +465,7 @@ static id qc_stub(id self, SEL _cmd, ...) {
   if (_bounds.size.width > 0 && _bounds.size.height > 0) return CGSizeMake(_bounds.size.width * _contentsScale, _bounds.size.height * _contentsScale);
   return CGSizeMake(800, 600);
 }
-- (void)setDrawableSize:(CGSize)s { _drawableSize = s; }
+- (void)setDrawableSize:(CGSize)s { _customDrawableSize = YES; _drawableSize = s; }
 - (BOOL)presentsWithTransaction { return _presentsWithTransaction; }
 - (void)setPresentsWithTransaction:(BOOL)p { _presentsWithTransaction = p; }
 - (BOOL)displaySyncEnabled { return _displaySyncEnabled; }

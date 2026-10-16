@@ -389,15 +389,44 @@ static unichar key_char(int kc, int shift) {
   return c ? [c performSelector:@selector(layer)] : nil;
 }
 - (id)initWithFrame:(NSRect)f {
-  if ((self = [super init])) { _frame = f; _bounds = NSMakeRect(0, 0, f.size.width, f.size.height); _subviews = [[NSMutableArray alloc] init]; _needsDisplay = YES; }
-  return self; }
+  if ((self = [super init])) {
+    _frame = f;
+    _bounds = NSMakeRect(0, 0, f.size.width, f.size.height);
+    _subviews = [[NSMutableArray alloc] init];
+    _needsDisplay = YES;
+    _autoresizesSubviews = YES;
+    _autoresizingMask = 0;
+  }
+  return self;
+}
 - (id)init { return [self initWithFrame:NSMakeRect(0, 0, 0, 0)]; }
 - (NSRect)frame { return _frame; } - (NSRect)bounds { return _bounds; }
 - (void)setFrame:(NSRect)f {
+  NSSize oldSize = _frame.size;
   _frame = f; _bounds.size = f.size; _needsDisplay = YES;
   if (_layer) {
     if ([_layer respondsToSelector:@selector(setFrame:)]) [_layer setFrame:_frame];
     if ([_layer respondsToSelector:@selector(setBounds:)]) [_layer setBounds:_bounds];
+  }
+  if (_autoresizesSubviews && (oldSize.width != f.size.width || oldSize.height != f.size.height)) {
+    CGFloat dw = f.size.width - oldSize.width;
+    CGFloat dh = f.size.height - oldSize.height;
+    for (NSView *s in _subviews) {
+      NSRect sf = s->_frame;
+      NSUInteger mask = s->_autoresizingMask;
+      if (mask & 2 /* NSViewWidthSizable */) sf.size.width += dw;
+      if (mask & 16 /* NSViewHeightSizable */) sf.size.height += dh;
+      if (mask & 1 /* NSViewMinXMargin */) sf.origin.x += dw;
+      if (mask & 8 /* NSViewMinYMargin */) sf.origin.y += dh;
+      if ((mask & (2 | 16)) == (2 | 16) || (sf.origin.x == 0 && sf.origin.y == 0 && sf.size.width == oldSize.width && sf.size.height == oldSize.height)) {
+        sf.origin = NSMakePoint(0, 0);
+        sf.size = f.size;
+      }
+      [s setFrame:sf];
+      if ([s respondsToSelector:@selector(updateDrawableSize)]) {
+        [s performSelector:@selector(updateDrawableSize)];
+      }
+    }
   }
 }
 - (void)setFrameSize:(NSSize)s { NSRect f = _frame; f.size = s; [self setFrame:f]; }
@@ -410,8 +439,18 @@ static unichar key_char(int kc, int shift) {
  * releases its text-input view while it is first responder, and the next keyDown: went to freed memory) */
 - (void)_setWindow:(NSWindow *)w {
   if (_window && _window != w && _window->_first == (NSResponder *)self) _window->_first = nil;
-  _window = w; for (NSView *s in _subviews) [s _setWindow:w]; [self viewDidMoveToWindow]; }
-- (void)addSubview:(NSView *)v { [_subviews addObject:v]; v->_superview = self; [v _setWindow:_window]; }
+  _window = w;
+  if (!_superview && w) [self setNextResponder:w];
+  else if (_superview) [self setNextResponder:_superview];
+  for (NSView *s in _subviews) [s _setWindow:w];
+  [self viewDidMoveToWindow];
+}
+- (void)addSubview:(NSView *)v {
+  [_subviews addObject:v];
+  v->_superview = self;
+  [v setNextResponder:self];
+  [v _setWindow:_window];
+}
 - (void)removeFromSuperview { NSView *s = _superview; if (!s) return; _superview = nil; [self _setWindow:nil]; [s->_subviews removeObject:self]; }
 - (void)setNeedsDisplay:(BOOL)f { _needsDisplay = f; }
 - (BOOL)needsDisplay { return _needsDisplay; }
@@ -423,7 +462,22 @@ static unichar key_char(int kc, int shift) {
 - (void)lockFocus {} - (void)unlockFocus {}
 - (void)setWantsBestResolutionOpenGLSurface:(BOOL)f { _bestRes = f; }
 - (NSRect)convertRectToBacking:(NSRect)r { return r; } - (NSRect)convertRectFromBacking:(NSRect)r { return r; }
-- (NSPoint)convertPoint:(NSPoint)p fromView:(NSView *)v { return p; }
+- (NSPoint)convertPoint:(NSPoint)p fromView:(NSView *)v {
+  if (v == self) return p;
+  NSPoint winP = p;
+  if (v) {
+    for (NSView *cur = v; cur; cur = cur->_superview) {
+      winP.x += cur->_frame.origin.x;
+      winP.y += cur->_frame.origin.y;
+    }
+  }
+  NSPoint selfP = winP;
+  for (NSView *cur = self; cur; cur = cur->_superview) {
+    selfP.x -= cur->_frame.origin.x;
+    selfP.y -= cur->_frame.origin.y;
+  }
+  return selfP;
+}
 - (void)setWantsLayer:(BOOL)f {
   _wantsLayer = f;
   if (f && !_layer) {
@@ -532,7 +586,8 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   if (_content == v) return;
   [v retain]; [_content _setWindow:nil]; [_content release]; _content = v;
   NSRect c = [self contentRectForFrameRect:_frame]; [v setFrame:NSMakeRect(0, 0, c.size.width, c.size.height)];
-  [v _setWindow:self]; }
+  [v _setWindow:self];
+  [v setNextResponder:self]; }
 - (NSView *)contentView { return _content; }
 - (BOOL)isVisible { return _visible && !_mini; }
 - (void)setIsVisible:(BOOL)v { if (v) [self orderFront:nil]; else [self orderOut:nil]; }
@@ -611,12 +666,16 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
     NSRect full = NSMakeRect(0, 0, SCREEN_W, SCREEN_H);
     [self _applyFrame:full sync:NO];
     [self _notify:NSWindowDidEnterFullScreenNotification selector:@selector(windowDidEnterFullScreen:)];
+    [self _notify:kWinDidResize selector:@selector(windowDidResize:)];
+    [self _notify:kWinDidMove selector:@selector(windowDidMove:)];
   } else {
     [self _notify:NSWindowWillExitFullScreenNotification selector:@selector(windowWillExitFullScreen:)];
     _style &= ~NSWindowStyleMaskFullScreen;
     xef_host_window_set_fullscreen(_handle, 0);
     [self _applyFrame:_unzoomed sync:YES];
     [self _notify:NSWindowDidExitFullScreenNotification selector:@selector(windowDidExitFullScreen:)];
+    [self _notify:kWinDidResize selector:@selector(windowDidResize:)];
+    [self _notify:kWinDidMove selector:@selector(windowDidMove:)];
   }
 }
 - (void)miniaturize:(id)s { if (_mini) return; _mini = YES; xef_host_window_hide(_handle); [self _notify:kWinDidMini selector:@selector(windowDidMiniaturize:)]; }
@@ -908,17 +967,39 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 @implementation NSView (XefSDL)
 - (NSRect)convertRect:(NSRect)r toView:(NSView *)v { return r; }      /* subviews fill their parent at the origin */
 - (NSRect)convertRect:(NSRect)r fromView:(NSView *)v { return r; }
-- (NSPoint)convertPoint:(NSPoint)p toView:(NSView *)v { return p; }
+- (NSPoint)convertPoint:(NSPoint)p toView:(NSView *)v {
+  if (v == self) return p;
+  NSPoint winP = p;
+  for (NSView *cur = self; cur; cur = cur->_superview) {
+    winP.x += cur->_frame.origin.x;
+    winP.y += cur->_frame.origin.y;
+  }
+  NSPoint vP = winP;
+  if (v) {
+    for (NSView *cur = v; cur; cur = cur->_superview) {
+      vP.x -= cur->_frame.origin.x;
+      vP.y -= cur->_frame.origin.y;
+    }
+  }
+  return vP;
+}
 - (NSSize)convertSizeToBacking:(NSSize)s { return s; }
 - (NSSize)convertSizeFromBacking:(NSSize)s { return s; }
 - (NSPoint)convertPointToBacking:(NSPoint)p { return p; }
 - (NSView *)hitTest:(NSPoint)p {
   if (!NSPointInRect(p, _frame)) return nil;
   NSPoint q = NSMakePoint(p.x - _frame.origin.x, p.y - _frame.origin.y);
-  for (NSView *s in [_subviews reverseObjectEnumerator]) { NSView *h = [s hitTest:q]; if (h) return h; }
-  return self; }
-- (void)setAutoresizingMask:(NSUInteger)m {} - (NSUInteger)autoresizingMask { return 0; }
-- (void)setAutoresizesSubviews:(BOOL)f {}
+  for (NSView *s in [_subviews reverseObjectEnumerator]) {
+    if ([s respondsToSelector:@selector(isHidden)] && [s isHidden]) continue;
+    NSView *h = [s hitTest:q];
+    if (h) return h;
+  }
+  return self;
+}
+- (void)setAutoresizingMask:(NSUInteger)m { _autoresizingMask = m; }
+- (NSUInteger)autoresizingMask { return _autoresizingMask; }
+- (void)setAutoresizesSubviews:(BOOL)f { _autoresizesSubviews = f; }
+- (BOOL)autoresizesSubviews { return _autoresizesSubviews; }
 - (void)addCursorRect:(NSRect)r cursor:(NSCursor *)c {} - (void)resetCursorRects {} - (void)discardCursorRects {}
 - (void)setAcceptsTouchEvents:(BOOL)f {} - (void)setAllowedTouchTypes:(NSUInteger)t {}
 - (NSView *)viewWithTag:(NSInteger)t { return nil; } - (NSInteger)tag { return -1; }

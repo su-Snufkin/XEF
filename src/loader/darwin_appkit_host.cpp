@@ -519,13 +519,6 @@ int xef_host_window_get_geometry(int h, int* rx, int* ry, int* rw, int* rh) {
     std::lock_guard<std::mutex> lk(g_lock);
     HWin* hw = find(h);
     if (!hw) return 0;
-    if (hw->w > 0 && hw->h > 0) {
-        if (rx) *rx = hw->x;
-        if (ry) *ry = hw->y;
-        if (rw) *rw = hw->w;
-        if (rh) *rh = hw->h;
-        return 1;
-    }
     if (!g_dpy) return 0;
     int scr = X<int (*)(Display*)>("XDefaultScreen")(g_dpy);
 

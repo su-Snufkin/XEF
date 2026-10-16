@@ -174,6 +174,7 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 @public
   NSRect _frame, _bounds; NSWindow *_window; NSView *_superview; NSMutableArray *_subviews; BOOL _needsDisplay, _bestRes;
   NSMutableArray *_tracking; id _layer; BOOL _wantsLayer; NSArray *_dragTypes;
+  NSUInteger _autoresizingMask; BOOL _autoresizesSubviews;
 }
 + (Class)layerClass;
 - (id)makeBackingLayer;
@@ -184,7 +185,13 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (void)drawRect:(NSRect)r; - (BOOL)isFlipped; - (BOOL)isOpaque; - (void)viewDidMoveToWindow;
 - (void)lockFocus; - (void)unlockFocus; - (void)setWantsBestResolutionOpenGLSurface:(BOOL)f;
 - (NSRect)convertRectToBacking:(NSRect)r; - (NSRect)convertRectFromBacking:(NSRect)r;
-- (NSPoint)convertPoint:(NSPoint)p fromView:(NSView *)v; - (void)setWantsLayer:(BOOL)f; - (void)updateTrackingAreas;
+- (NSPoint)convertPoint:(NSPoint)p fromView:(NSView *)v;
+- (NSPoint)convertPoint:(NSPoint)p toView:(NSView *)v;
+- (NSSize)convertSizeToBacking:(NSSize)s; - (NSSize)convertSizeFromBacking:(NSSize)s;
+- (void)setAutoresizingMask:(NSUInteger)m; - (NSUInteger)autoresizingMask;
+- (void)setAutoresizesSubviews:(BOOL)f; - (BOOL)autoresizesSubviews;
+- (NSView *)hitTest:(NSPoint)p;
+- (void)setWantsLayer:(BOOL)f; - (void)updateTrackingAreas;
 - (void)addTrackingArea:(NSTrackingArea *)a; - (void)removeTrackingArea:(NSTrackingArea *)a; - (NSArray *)trackingAreas;
 - (void)registerForDraggedTypes:(NSArray *)t; - (BOOL)mouse:(NSPoint)p inRect:(NSRect)r; - (void)viewDidChangeBackingProperties;
 - (id)layer; - (void)setLayer:(id)l; - (BOOL)wantsLayer;
