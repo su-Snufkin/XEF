@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <search.h>
 #include <dirent.h>
 #include <sys/ioctl.h>
 #include <ftw.h>
@@ -1632,6 +1633,66 @@ static void* darwin_bsearch(const void* key, const void* base, size_t n, size_t 
     tl_cmp_fn = sf;
     return r;
 }
+// tsearch family: glibc's tree nodes also start with the key pointer, which is all callers may read
+static void* darwin_tsearch(const void* key, void** root, u64 cmp) {
+    u64 sf = tl_cmp_fn; tl_cmp_fn = cmp;
+    void* r = tsearch(key, root, cmp_guest2);
+    tl_cmp_fn = sf;
+    return r;
+}
+static void* darwin_tfind(const void* key, void* const* root, u64 cmp) {
+    u64 sf = tl_cmp_fn; tl_cmp_fn = cmp;
+    void* r = tfind(key, root, cmp_guest2);
+    tl_cmp_fn = sf;
+    return r;
+}
+static void* darwin_tdelete(const void* key, void** root, u64 cmp) {
+    u64 sf = tl_cmp_fn; tl_cmp_fn = cmp;
+    void* r = tdelete(key, root, cmp_guest2);
+    tl_cmp_fn = sf;
+    return r;
+}
+static thread_local u64 tl_walk_fn;
+static void walk_guest(const void* node, VISIT v, int depth) {   // preorder/postorder/endorder/leaf: 0..3 on both
+    u64 args[3] = {(u64)(uintptr_t)node, (u64)v, (u64)depth};
+    guest_call(tl_walk_fn, 3, args);
+}
+static void darwin_twalk(const void* root, u64 fn) {
+    u64 sf = tl_walk_fn; tl_walk_fn = fn;
+    twalk(root, walk_guest);
+    tl_walk_fn = sf;
+}
+static void* darwin_lfind(const void* key, const void* base, size_t* n, size_t size, u64 cmp) {
+    u64 sf = tl_cmp_fn; tl_cmp_fn = cmp;
+    void* r = lfind(key, base, n, size, cmp_guest2);
+    tl_cmp_fn = sf;
+    return r;
+}
+static void* darwin_lsearch(const void* key, void* base, size_t* n, size_t size, u64 cmp) {
+    u64 sf = tl_cmp_fn; tl_cmp_fn = cmp;
+    void* r = lsearch(key, base, n, size, cmp_guest2);
+    tl_cmp_fn = sf;
+    return r;
+}
+// Blocks variants (qsort_b, bsearch_b, ...): the comparator is a block; invoke(block, a, b) at offset 16
+static thread_local u64 tl_cmp_block;
+static int cmp_block(const void* a, const void* b) {
+    u64 args[3] = {tl_cmp_block, (u64)(uintptr_t)a, (u64)(uintptr_t)b};
+    return (int)guest_call(*(u64*)(uintptr_t)(tl_cmp_block + 16), 3, args);
+}
+static void darwin_qsort_b(void* base, size_t n, size_t size, u64 block) {
+    u64 sb = tl_cmp_block; tl_cmp_block = block;
+    qsort(base, n, size, cmp_block);
+    tl_cmp_block = sb;
+}
+static void* darwin_bsearch_b(const void* key, const void* base, size_t n, size_t size, u64 block) {
+    u64 sb = tl_cmp_block; tl_cmp_block = block;
+    void* r = bsearch(key, base, n, size, cmp_block);
+    tl_cmp_block = sb;
+    return r;
+}
+static int darwin_stable_sort(void* base, size_t n, size_t size, u64 cmp);
+static int darwin_stable_sort_b(void* base, size_t n, size_t size, u64 block);
 // mergesort/heapsort/radixsort do not exist in glibc: a stable insertion-merge on a copy
 static int darwin_stable_sort(void* base, size_t n, size_t size, u64 cmp) {
     if (n < 2) return 0;
@@ -1650,6 +1711,25 @@ static int darwin_stable_sort(void* base, size_t n, size_t size, u64 cmp) {
         memcpy(a, tmp.data(), n * size);
     }
     tl_cmp_fn = sf;
+    return 0;
+}
+static int darwin_stable_sort_b(void* base, size_t n, size_t size, u64 block) {
+    if (n < 2) return 0;
+    u64 sb = tl_cmp_block; tl_cmp_block = block;
+    std::vector<uint8_t> tmp(n * size);
+    uint8_t* a = (uint8_t*)base;
+    for (size_t width = 1; width < n; width *= 2) {
+        for (size_t lo = 0; lo < n; lo += 2 * width) {
+            size_t mid = std::min(lo + width, n), hi = std::min(lo + 2 * width, n);
+            size_t i = lo, j = mid, k = lo;
+            while (i < mid && j < hi)
+                memcpy(&tmp[(k++) * size], cmp_block(a + j * size, a + i * size) < 0 ? a + (j++) * size : a + (i++) * size, size);
+            while (i < mid) memcpy(&tmp[(k++) * size], a + (i++) * size, size);
+            while (j < hi) memcpy(&tmp[(k++) * size], a + (j++) * size, size);
+        }
+        memcpy(a, tmp.data(), n * size);
+    }
+    tl_cmp_block = sb;
     return 0;
 }
 
@@ -1789,7 +1869,7 @@ static void hle_fork_hold(bool take) {
     if (take) { g_hle_lock.lock(); g_kq_lock.lock(); g_tsd_lock.lock(); darwin_stdio_fork_lock(true); }
     else { darwin_stdio_fork_lock(false); g_tsd_lock.unlock(); g_kq_lock.unlock(); g_hle_lock.unlock(); }
 }
-static pid_t darwin_fork() {
+pid_t darwin_fork() {
     std::vector<AtforkEntry> h;
     { std::lock_guard<std::mutex> lk(g_atfork_lock); h = g_atfork; }
     for (size_t i = h.size(); i-- > 0;) if (h[i].prepare) guest_call(h[i].prepare, 0, nullptr);
@@ -2873,15 +2953,17 @@ static int darwin_isatty(int fd) { return isatty(fd); }
 struct DarwinWinsize { unsigned short ws_row, ws_col, ws_xpixel, ws_ypixel; };
 static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap) {
     void* arg = ap ? (void*)(uintptr_t)ap[0] : nullptr;
+    int tret;
+    if (darwin_termios_ioctl(fd, req & 0xffffffffu, arg, &tret)) return tret;
     switch (req) {
         case 0x40087468: { struct winsize w; if (ioctl(fd, TIOCGWINSZ, &w)) return -1; DarwinWinsize* d = (DarwinWinsize*)arg; d->ws_row = w.ws_row; d->ws_col = w.ws_col; d->ws_xpixel = w.ws_xpixel; d->ws_ypixel = w.ws_ypixel; return 0; }
         case 0x4004667f: return ioctl(fd, FIONREAD, arg);                  // FIONREAD
         case 0x8004667e: return ioctl(fd, FIONBIO, arg);                   // FIONBIO
         case 0x20006601: return ioctl(fd, FIOCLEX);                        // FIOCLEX
         case 0x20006602: return ioctl(fd, FIONCLEX);                       // FIONCLEX
-        case 0x40487413: case 0x402c7413: {                                // TIOCGETA: report "is a tty" via the host
+        case 0x402c7413: {                                                 // TIOCGETA of the 32-bit termios: "is a tty"
             if (!isatty(fd)) { errno = ENOTTY; return -1; }
-            memset(arg, 0, 72);
+            memset(arg, 0, 44);
             return 0;
         }
         default: errno = ENOTTY; return -1;
@@ -3164,6 +3246,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = sio;
     } else if (void* pr = darwin_proc_lookup(name)) {
         host_fn = pr;
+    } else if (void* tc = darwin_termios_lookup(name)) {
+        host_fn = tc;
     } else if (void* pt = darwin_pthread_lookup(name)) {
         host_fn = pt;
     } else if (strcmp(name, "___error") == 0) {
@@ -3480,6 +3564,24 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_bsearch;
     } else if (strcmp(name, "_mergesort") == 0 || strcmp(name, "_heapsort") == 0) {
         host_fn = (void*)&darwin_stable_sort;
+    } else if (strcmp(name, "_mergesort_b") == 0 || strcmp(name, "_heapsort_b") == 0) {
+        host_fn = (void*)&darwin_stable_sort_b;
+    } else if (strcmp(name, "_qsort_b") == 0) {
+        host_fn = (void*)&darwin_qsort_b;
+    } else if (strcmp(name, "_bsearch_b") == 0) {
+        host_fn = (void*)&darwin_bsearch_b;
+    } else if (strcmp(name, "_tsearch") == 0) {
+        host_fn = (void*)&darwin_tsearch;
+    } else if (strcmp(name, "_tfind") == 0) {
+        host_fn = (void*)&darwin_tfind;
+    } else if (strcmp(name, "_tdelete") == 0) {
+        host_fn = (void*)&darwin_tdelete;
+    } else if (strcmp(name, "_twalk") == 0) {
+        host_fn = (void*)&darwin_twalk;
+    } else if (strcmp(name, "_lfind") == 0) {
+        host_fn = (void*)&darwin_lfind;
+    } else if (strcmp(name, "_lsearch") == 0) {
+        host_fn = (void*)&darwin_lsearch;
     } else if (strcmp(name, "_dlsym") == 0 || strcmp(name, "dlsym") == 0) {
         host_fn = (void*)&darwin_dlsym;
     } else if (strcmp(name, "_dlopen") == 0 || strcmp(name, "dlopen") == 0) {
