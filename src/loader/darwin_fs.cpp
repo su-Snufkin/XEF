@@ -585,6 +585,60 @@ static int f_getattrlist(const char* p, const DarwinAttrlist* al, void* buf, siz
     return attrlist_fill(rp(p, !(opt & 1)), -1, al, buf, size, opt & 1);
 }
 static int f_fgetattrlist(int fd, const DarwinAttrlist* al, void* buf, size_t size, uint32_t) { return attrlist_fill({}, fd, al, buf, size, false); }
+// setattrlist family: common attributes packed in bit order, each 4-byte aligned. Times (MODTIME, ACCTIME), owner, group,
+// mode and flags (0 only: no BSD file flags here) are applied; CRTIME and BKUPTIME are accepted but not stored (Linux
+// cannot set a birth time), CHGTIME is read-only (EINVAL), as is any non-common attribute.
+static int attrlist_apply(const std::string& host, int fd, const DarwinAttrlist* al, const void* buf, size_t size, bool nofollow) {
+    if (!al || !buf) { errno = EFAULT; return -1; }
+    const uint32_t kSettable = 0x200 | 0x400 | 0x1000 | 0x2000 | 0x4000 | 0x8000 | 0x10000 | 0x20000 | 0x40000;
+    if (al->bitmapcount != 5 || (al->commonattr & ~kSettable) || al->volattr || al->dirattr || al->fileattr || al->forkattr) {
+        errno = EINVAL; return -1;
+    }
+    const uint8_t* p = (const uint8_t*)buf;
+    size_t off = 0;
+    struct timespec ts[2] = {{0, UTIME_OMIT}, {0, UTIME_OMIT}};
+    uid_t uid = (uid_t)-1; gid_t gid = (gid_t)-1;
+    int64_t mode = -1;
+    uint32_t flags = 0;
+    for (uint32_t bit = 0x200; bit <= 0x40000; bit <<= 1) {
+        if (!(al->commonattr & bit)) continue;
+        size_t len = (bit <= 0x2000) ? 16 : bit == 0x4000 ? 32 : 4;
+        if (off + len > size) { errno = EINVAL; return -1; }
+        int64_t t[2]; uint32_t v = 0;
+        if (len == 16) memcpy(t, p + off, 16); else if (len == 4) memcpy(&v, p + off, 4);
+        if (bit == 0x400) { ts[1].tv_sec = t[0]; ts[1].tv_nsec = t[1]; }
+        else if (bit == 0x1000) { ts[0].tv_sec = t[0]; ts[0].tv_nsec = t[1]; }
+        else if (bit == 0x8000) uid = v;
+        else if (bit == 0x10000) gid = v;
+        else if (bit == 0x20000) mode = v & 07777;
+        else if (bit == 0x40000) flags = v;
+        off += (len + 3) & ~(size_t)3;
+    }
+    if (flags) { errno = ENOTSUP; return -1; }
+    int r = 0;
+    if (ts[0].tv_nsec != UTIME_OMIT || ts[1].tv_nsec != UTIME_OMIT)
+        r = fd >= 0 ? futimens(fd, ts) : utimensat(AT_FDCWD, host.c_str(), ts, nofollow ? AT_SYMLINK_NOFOLLOW : 0);
+    if (!r && (uid != (uid_t)-1 || gid != (gid_t)-1))
+        r = fd >= 0 ? fchown(fd, uid, gid) : nofollow ? lchown(host.c_str(), uid, gid) : chown(host.c_str(), uid, gid);
+    if (!r && mode >= 0) {
+        if (fd >= 0) r = fchmod(fd, (mode_t)mode);
+        else r = fchmodat(AT_FDCWD, host.c_str(), (mode_t)mode, 0);   // (a link's own mode cannot be set on Linux)
+    }
+    return r;
+}
+static int f_setattrlist(const char* p, const DarwinAttrlist* al, const void* buf, size_t size, uint32_t opt) {
+    if (!p) { errno = EFAULT; return -1; }
+    return attrlist_apply(rp(p, !(opt & 1)), -1, al, buf, size, opt & 1);
+}
+static int f_fsetattrlist(int fd, const DarwinAttrlist* al, const void* buf, size_t size, uint32_t) {
+    return attrlist_apply({}, fd, al, buf, size, false);
+}
+static int f_setattrlistat(int dfd, const char* p, const DarwinAttrlist* al, const void* buf, size_t size, uint32_t opt) {
+    if (!p) { errno = EFAULT; return -1; }
+    std::string s = at_path(&dfd, p, !(opt & 1));
+    if (dfd != AT_FDCWD && s[0] != '/') s = "/proc/self/fd/" + std::to_string(dfd) + "/" + s;
+    return attrlist_apply(s, -1, al, buf, size, opt & 1);
+}
 static int f_getattrlistat(int dfd, const char* p, const DarwinAttrlist* al, void* buf, size_t size, uint64_t opt) {
     std::string s = at_path(&dfd, p, !(opt & 1));
     if (dfd != AT_FDCWD && s[0] != '/') {
@@ -678,6 +732,7 @@ void* darwin_fs_lookup(const char* name) {
         {"_statvfs", (void*)&f_statvfs}, {"_fstatvfs", (void*)&f_fstatvfs},
         {"_getattrlist", (void*)&f_getattrlist}, {"_fgetattrlist", (void*)&f_fgetattrlist},
         {"_getattrlistat", (void*)&f_getattrlistat},
+        {"_setattrlist", (void*)&f_setattrlist}, {"_fsetattrlist", (void*)&f_fsetattrlist}, {"_setattrlistat", (void*)&f_setattrlistat},
         {"_basename", (void*)&f_basename}, {"_dirname", (void*)&f_dirname}, {"_shmctl", (void*)&f_shmctl},
     };
     for (const E& e : k) if (!strcmp(e.n, name)) return e.f;
