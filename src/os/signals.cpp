@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <sys/mman.h>
@@ -85,6 +86,12 @@ static bool relocate_jit_stack(int sig, siginfo_t* si, ucontext_t* uc) {
     return true;
 }
 
+// a guest frame record (fp, lr), read without faulting: the frame chain of a crashed guest may be garbage
+static bool crash_rd(u64 a, u64 out[2]) {
+    struct iovec l{out, 16}, r{(void*)a, 16};
+    return syscall(SYS_process_vm_readv, getpid(), &l, 1, &r, 1, 0) == 16;
+}
+
 static void crash_handler(int sig, siginfo_t* si, void* ctx) {
     ucontext_t* uc = (ucontext_t*)ctx;
     if (relocate_jit_stack(sig, si, uc)) return;
@@ -94,6 +101,11 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
     int n = snprintf(buf, sizeof buf, "xef: fatal signal %d at host %p [xef+%#lx] (fault addr %p)\n", sig, rip,
                      (unsigned long)(rip - (u8*)&__executable_start), si->si_addr);
     write(2, buf, n);
+    if (tls_thread && tls_thread->jit_stack) {
+        n = snprintf(buf, sizeof buf, "xef:   host rsp %p, JIT stack %p..%p\n", (void*)uc->uc_mcontext.gregs[REG_RSP],
+                     (void*)tls_thread->jit_stack, (void*)(tls_thread->jit_stack + 4096 + tls_thread->jit_stack_size));
+        write(2, buf, n);
+    }
     if (g_is_darwin) {
         const char* hn; u64 hlr;
         if (darwin_hle_current(&hn, &hlr)) {
@@ -103,11 +115,13 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
             if (tls_thread) {   // guest frame-pointer chain
                 u64 fp = tls_thread->st->x[29];
                 for (int depth = 0; depth < 12 && fp && !(fp & 7); depth++) {
-                    u64 lr = ((u64*)fp)[1];
+                    u64 fr[2];
+                    if (!crash_rd(fp, fr)) break;
+                    u64 lr = fr[1];
                     std::string fd = dyld_describe(lr);
                     n = snprintf(buf, sizeof buf, "xef:     #%d %s\n", depth, fd.empty() ? "?" : fd.c_str());
                     write(2, buf, n);
-                    u64 nfp = ((u64*)fp)[0];
+                    u64 nfp = fr[0];
                     if (nfp <= fp) break;
                     fp = nfp;
                 }
@@ -152,11 +166,13 @@ static void crash_handler(int sig, siginfo_t* si, void* ctx) {
             if (!ld.empty()) { n = snprintf(buf, sizeof buf, "xef:   lr in %s\n", ld.c_str()); write(2, buf, n); }
             u64 fp = (block_host_reg(b, 29) != x64::NOREG) ? (u64)uc->uc_mcontext.gregs[host_greg_index(block_host_reg(b, 29))] : st->x[29];
             for (int depth = 0; depth < 16 && fp && !(fp & 7); depth++) {
-                u64 lr = ((u64*)fp)[1];
+                u64 fr[2];
+                if (!crash_rd(fp, fr)) break;
+                u64 lr = fr[1];
                 std::string fd = dyld_describe(lr);
                 n = snprintf(buf, sizeof buf, "xef:     #%d %s (fp=%#lx, lr=%#lx)\n", depth, fd.empty() ? "?" : fd.c_str(), (unsigned long)fp, (unsigned long)lr);
                 write(2, buf, n);
-                u64 nfp = ((u64*)fp)[0];
+                u64 nfp = fr[0];
                 if (nfp <= fp || nfp >= fp + 0x10000000) break;
                 fp = nfp;
             }

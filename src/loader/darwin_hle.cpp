@@ -11,6 +11,7 @@
 
 #include <dlfcn.h>
 #include <sys/mman.h>
+#include <sys/uio.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <search.h>
@@ -4046,7 +4047,19 @@ void darwin_hle_dispatch(CpuState* st) {
     u64 hstack[18];
     hstack[0] = st->x[6];
     hstack[1] = st->x[7];
-    memcpy(&hstack[2], guest_stack, 16 * sizeof(u64));
+    // (the 16 words may run past the end of the guest stack mapping - a stack switched to the very top of an mmap'ed
+    // region, e.g. Rust's stacker - so a copy that crosses a page boundary reads only what is mapped)
+    uintptr_t gs = (uintptr_t)guest_stack;
+    if (((gs + 16 * sizeof(u64) - 1) ^ gs) < 4096) {
+        memcpy(&hstack[2], guest_stack, 16 * sizeof(u64));
+    } else {
+        memset(&hstack[2], 0, 16 * sizeof(u64));
+        struct iovec l{&hstack[2], 16 * sizeof(u64)}, r{(void*)gs, 16 * sizeof(u64)};
+        if (process_vm_readv(getpid(), &l, 1, &r, 1, 0) < (ssize_t)(16 * sizeof(u64))) {
+            size_t first = 4096 - (gs & 4095);   // the first page is the guest's sp page: readable
+            memcpy(&hstack[2], guest_stack, first);
+        }
+    }
     u64 xmm0_out = 0;
     errno = 0;
     u64 pc_before = st->pc;
