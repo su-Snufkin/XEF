@@ -18,7 +18,9 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/statvfs.h>
+#include <sys/ioctl.h>
 #include <sys/ipc.h>
+#include <linux/fs.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <sys/time.h>
@@ -110,6 +112,73 @@ static int f_renameatx_np(int fd1, const char* a, int fd2, const char* b, unsign
     return (int)syscall(SYS_renameat2, fd1, x.c_str(), fd2, y.c_str(), lf);
 }
 static int f_renamex_np(const char* a, const char* b, unsigned fl) { return f_renameatx_np(-2, a, -2, b, fl); }
+// clonefile family: dst gets the data and the attributes of src (mode, times; the owner too when running as root unless
+// CLONE_NOOWNERCOPY 2). FICLONE shares the blocks where the filesystem can, otherwise the data is copied. Directories
+// (recursive clones, APFS only) give ENOTSUP, as on volumes without clone support. CLONE_NOFOLLOW 1: a link is cloned.
+static int clone_fd(int sfd, int ddir, const char* dst, uint32_t flags) {
+    struct stat st;
+    if (fstat(sfd, &st) < 0) return -1;
+    if (S_ISDIR(st.st_mode)) { errno = ENOTSUP; return -1; }
+    if (!S_ISREG(st.st_mode)) { errno = EINVAL; return -1; }
+    std::string d = at_path(&ddir, dst, false);
+    int dfd = openat(ddir, d.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, st.st_mode & 07777);
+    if (dfd < 0) return -1;
+    int ok = ioctl(dfd, FICLONE, sfd) == 0;
+    for (off_t off = 0; !ok;) {
+        ssize_t n = copy_file_range(sfd, &off, dfd, nullptr, 1 << 30, 0);
+        if (n == 0) { ok = 1; break; }
+        if (n > 0) continue;
+        if (errno != EXDEV && errno != EINVAL && errno != ENOSYS && errno != EOPNOTSUPP) break;
+        char buf[65536];   // no copy_file_range between these filesystems
+        while ((n = pread(sfd, buf, sizeof buf, off)) > 0) {
+            for (ssize_t w = 0; w < n;) { ssize_t k = write(dfd, buf + w, n - w); if (k < 0) { n = -1; break; } w += k; }
+            if (n < 0) break;
+            off += n;
+        }
+        ok = n == 0;
+        break;
+    }
+    if (ok) {
+        fchmod(dfd, st.st_mode & 07777);   // not reduced by the umask
+        if (geteuid() == 0 && !(flags & 2)) { if (fchown(dfd, st.st_uid, st.st_gid) < 0) {} }
+        struct timespec ts[2] = {st.st_atim, st.st_mtim};
+        futimens(dfd, ts);
+        close(dfd);
+        return 0;
+    }
+    int e = errno;
+    close(dfd);
+    unlinkat(ddir, d.c_str(), 0);
+    errno = e;
+    return -1;
+}
+static int f_fclonefileat(int sfd, int ddir, const char* dst, uint32_t flags) {
+    if (!dst) { errno = EFAULT; return -1; }
+    if (flags & ~7u) { errno = EINVAL; return -1; }
+    return clone_fd(sfd, ddir, dst, flags);
+}
+static int f_clonefileat(int sdir, const char* src, int ddir, const char* dst, uint32_t flags) {
+    if (!src || !dst) { errno = EFAULT; return -1; }
+    if (flags & ~7u) { errno = EINVAL; return -1; }
+    std::string s = at_path(&sdir, src, !(flags & 1));
+    struct stat st;
+    if ((flags & 1) && fstatat(sdir, s.c_str(), &st, AT_SYMLINK_NOFOLLOW) == 0 && S_ISLNK(st.st_mode)) {
+        char t[PATH_MAX];
+        ssize_t n = readlinkat(sdir, s.c_str(), t, sizeof t - 1);
+        if (n < 0) return -1;
+        t[n] = 0;
+        std::string d = at_path(&ddir, dst, false);
+        return symlinkat(t, ddir, d.c_str());
+    }
+    int sfd = openat(sdir, s.c_str(), O_RDONLY | O_CLOEXEC | ((flags & 1) ? O_NOFOLLOW : 0));
+    if (sfd < 0) { if (errno == EISDIR) errno = ENOTSUP; return -1; }
+    int r = clone_fd(sfd, ddir, dst, flags);
+    int e = errno;
+    close(sfd);
+    errno = e;
+    return r;
+}
+static int f_clonefile(const char* src, const char* dst, uint32_t flags) { return f_clonefileat(-2, src, -2, dst, flags); }
 static ssize_t f_readlinkat(int dfd, const char* p, char* buf, size_t n) { std::string s = at_path(&dfd, p, false); return readlinkat(dfd, s.c_str(), buf, n); }
 static int f_faccessat(int dfd, const char* p, int mode, int fl) {
     std::string s = at_path(&dfd, p, !(fl & 0x20));
@@ -588,6 +657,7 @@ void* darwin_fs_lookup(const char* name) {
     static const E k[] = {
         {"_mkdirat", (void*)&f_mkdirat}, {"_mkfifoat", (void*)&f_mkfifoat}, {"_mknodat", (void*)&f_mknodat},
         {"_unlinkat", (void*)&f_unlinkat}, {"_renameat", (void*)&f_renameat}, {"_renameatx_np", (void*)&f_renameatx_np},
+        {"_clonefile", (void*)&f_clonefile}, {"_clonefileat", (void*)&f_clonefileat}, {"_fclonefileat", (void*)&f_fclonefileat},
         {"_renamex_np", (void*)&f_renamex_np}, {"_readlinkat", (void*)&f_readlinkat}, {"_faccessat", (void*)&f_faccessat},
         {"_fchmodat", (void*)&f_fchmodat}, {"_fchownat", (void*)&f_fchownat}, {"_linkat", (void*)&f_linkat},
         {"_symlinkat", (void*)&f_symlinkat}, {"_utimensat", (void*)&f_utimensat}, {"_futimens", (void*)&f_futimens},
