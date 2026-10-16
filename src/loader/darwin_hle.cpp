@@ -2724,6 +2724,7 @@ struct KqState {
 };
 static constexpr int16_t  DARWIN_EVFILT_PROC  = -5;
 static constexpr int16_t  DARWIN_EVFILT_SIGNAL = -6;
+static constexpr int16_t  DARWIN_EVFILT_MACHPORT = -8;
 // EVFILT_SIGNAL: the host signal handler counts deliveries in these slots and pokes the registration's eventfd
 // (async-signal-safe: atomics and write). Signals the guest ignores never reach the handler and are not counted.
 struct KqSigSlot { std::atomic<int> sig{0}; int evfd = -1; std::atomic<uint64_t> count{0}; };
@@ -2771,6 +2772,15 @@ static bool kq_timer_arm(int tfd, const darwin_kevent_t& kev) {
     if (!(kev.flags & DARWIN_EV_ONESHOT)) its.it_interval = its.it_value;
     return timerfd_settime(tfd, 0, &its, nullptr) == 0;
 }
+// a disabled entry leaves the epoll interest set (a level-triggered fd would otherwise wake every wait)
+static void kq_aux_enable(int kq, uint64_t id, KqAux& x, bool on) {
+    x.disabled = !on;
+    struct epoll_event e;
+    memset(&e, 0, sizeof e);
+    e.events = on ? EPOLLIN : 0;
+    e.data.u64 = kKqAuxTag | id;
+    epoll_ctl(kq, EPOLL_CTL_MOD, x.hfd, &e);
+}
 static int kq_apply_aux(int kq, KqState& st, const darwin_kevent_t& kev) {
     auto it = st.aux.begin();
     for (; it != st.aux.end(); ++it)
@@ -2800,6 +2810,9 @@ static int kq_apply_aux(int kq, KqState& st, const darwin_kevent_t& kev) {
                 g_kq_sig[slot].evfd = hfd;
                 g_kq_sig[slot].count.store(0);
                 g_kq_sig[slot].sig.store(lsig, std::memory_order_release);
+            } else if (kev.filter == DARWIN_EVFILT_MACHPORT) {
+                hfd = darwin_mach_port_notify_fd((uint32_t)kev.ident);
+                if (hfd < 0) return EINVAL;
             } else {
                 hfd = timerfd_create((kev.fflags & 8) ? CLOCK_REALTIME : CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
                 if (hfd < 0) return errno;
@@ -2820,8 +2833,8 @@ static int kq_apply_aux(int kq, KqState& st, const darwin_kevent_t& kev) {
     } else if (it == st.aux.end()) {
         return ENOENT;
     }
-    if (kev.flags & DARWIN_EV_DISABLE) it->second.disabled = true;
-    if (kev.flags & DARWIN_EV_ENABLE) it->second.disabled = false;
+    if (kev.flags & DARWIN_EV_DISABLE) kq_aux_enable(kq, it->first, it->second, false);
+    if (kev.flags & DARWIN_EV_ENABLE) kq_aux_enable(kq, it->first, it->second, true);
     return 0;
 }
 static std::unordered_map<int, KqState> g_kq;
@@ -2928,7 +2941,8 @@ static int kq_apply_change(int kq, KqState& st, const darwin_kevent_t& kev) {   
         }
         return 0;
     }
-    if (kev.filter == DARWIN_EVFILT_PROC || kev.filter == DARWIN_EVFILT_TIMER || kev.filter == DARWIN_EVFILT_SIGNAL)
+    if (kev.filter == DARWIN_EVFILT_PROC || kev.filter == DARWIN_EVFILT_TIMER || kev.filter == DARWIN_EVFILT_SIGNAL ||
+        kev.filter == DARWIN_EVFILT_MACHPORT)
         return kq_apply_aux(kq, st, kev);
     if (kev.filter != DARWIN_EVFILT_READ && kev.filter != DARWIN_EVFILT_WRITE) return ENOTSUP;
     int fd = (int)kev.ident;
@@ -3023,13 +3037,21 @@ static long darwin_kevent(int kq, const darwin_kevent_t* changelist, int nchange
                 kq_aux_drop(kq, st, a);
                 continue;
             }
+            if (x.filter == DARWIN_EVFILT_MACHPORT) {   // level-triggered: the fd stays readable while a message waits
+                uint32_t sz = darwin_mach_port_pending_size((uint32_t)x.ident);
+                if (!sz) continue;
+                emit(x.ident, x.filter, fl, 0, (int64_t)sz, x.udata);
+                if (x.flags & DARWIN_EV_ONESHOT) kq_aux_drop(kq, st, a);
+                else if (x.flags & DARWIN_EV_DISPATCH) kq_aux_enable(kq, a->first, x, false);
+                continue;
+            }
             uint64_t n = 0;
             if (read(x.hfd, &n, 8) != 8 || !n) continue;
             if (x.filter == DARWIN_EVFILT_SIGNAL) n = g_kq_sig[x.sig_slot].count.exchange(0);   // deliveries since last
             if (!n) continue;
             emit(x.ident, x.filter, fl, 0, (int64_t)n, x.udata);
             if (x.flags & DARWIN_EV_ONESHOT) kq_aux_drop(kq, st, a);
-            else if (x.flags & DARWIN_EV_DISPATCH) x.disabled = true;
+            else if (x.flags & DARWIN_EV_DISPATCH) kq_aux_enable(kq, a->first, x, false);
             continue;
         }
         int fd = (int)ep[i].data.u64;

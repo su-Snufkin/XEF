@@ -60,6 +60,8 @@ uint64_t darwin_new_pthread_handle(void* stack_top, size_t stack_size);   // gue
 void darwin_set_pthread_host(uint64_t handle, pthread_t host, int tid);
 int darwin_pthread_host(uint64_t th, pthread_t* host);    // 0 = current thread; ESRCH if not a pthread_t
 uint64_t darwin_pthread_main_handle();
+int darwin_mach_port_notify_fd(uint32_t name);         // darwin_mach.cpp: EVFILT_MACHPORT
+uint32_t darwin_mach_port_pending_size(uint32_t name);
 uint32_t darwin_thread_port(int tid);                     // mach port name of a thread
 
 } // namespace xef

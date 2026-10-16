@@ -9,6 +9,9 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <sys/eventfd.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <thread>
 #include <vector>
 #include <string.h>
@@ -41,6 +44,7 @@ struct Port {
     uint32_t qlimit = 5;
     uint64_t timer_gen = 0;                 // mk_timer
     bool is_timer = false;
+    int evfd = -1;                          // kqueue EVFILT_MACHPORT: readable while a message is queued
 };
 
 static std::mutex g_mach_lock;
@@ -51,6 +55,24 @@ static uint32_t g_next_port = 0x1103;
 static Port* find_port(uint32_t name) {
     auto it = g_ports.find(name);
     return it == g_ports.end() ? nullptr : it->second.get();
+}
+
+// The notification eventfd of a port (or set) is readable exactly while it has a message to receive.
+static bool has_msgs_locked(Port* p) {
+    if (!p->is_set) return !p->msgs.empty();
+    for (uint32_t m : p->members) { Port* mp = find_port(m); if (mp && !mp->msgs.empty()) return true; }
+    return false;
+}
+static void sync_evfd_locked(Port* p) {
+    if (!p || p->evfd < 0) return;
+    uint64_t v;
+    bool readable = read(p->evfd, &v, 8) == 8;    // (drained, then set again if still non-empty)
+    (void)readable;
+    if (has_msgs_locked(p)) { uint64_t one = 1; if (write(p->evfd, &one, 8) < 0) {} }
+}
+static void queue_changed_locked(Port* p) {
+    sync_evfd_locked(p);
+    if (p->in_set) sync_evfd_locked(find_port(p->in_set));
 }
 
 static uint32_t new_port_locked(bool is_set) {
@@ -68,6 +90,19 @@ static int mach_port_allocate_(uint32_t, uint32_t right, uint32_t* name) {
     if (right == 1 || right == 3 || right == 2) { *name = new_port_locked(right == 3); return KERN_SUCCESS_; }
     return KERN_INVALID_ARGUMENT_;
 }
+// mach_port_construct(task, options, context, *name): a receive right; MPO_QLIMIT (2) sets the queue limit,
+// MPO_PORT_SET... is not an option here (sets come from mach_port_allocate). mach_port_destruct destroys it.
+struct MachPortOptions { uint32_t flags; uint32_t qlimit; uint64_t reserved[2]; };
+static int mach_port_construct_(uint32_t, const MachPortOptions* opt, uint64_t, uint32_t* name) {
+    if (!name || !opt) return KERN_INVALID_ARGUMENT_;
+    std::lock_guard<std::mutex> lk(g_mach_lock);
+    *name = new_port_locked(false);
+    if (opt->flags & 2) find_port(*name)->qlimit = opt->qlimit ? opt->qlimit : 1;
+    return KERN_SUCCESS_;
+}
+static int mach_port_destroy_(uint32_t, uint32_t name);
+static int mach_port_destruct_(uint32_t t, uint32_t name, int32_t, uint64_t) { return mach_port_destroy_(t, name); }
+
 static int mach_port_destroy_(uint32_t, uint32_t name) {
     std::lock_guard<std::mutex> lk(g_mach_lock);
     Port* p = find_port(name);
@@ -76,6 +111,7 @@ static int mach_port_destroy_(uint32_t, uint32_t name) {
         for (auto it = s->members.begin(); it != s->members.end(); ++it) if (*it == name) { s->members.erase(it); break; }
     }
     p->timer_gen++;
+    if (p->evfd >= 0) close(p->evfd);
     g_ports.erase(name);
     return KERN_SUCCESS_;
 }
@@ -117,6 +153,7 @@ static int mach_port_insert_member_(uint32_t, uint32_t name, uint32_t pset) {
     if (p->in_set == pset) return KERN_SUCCESS_;
     p->in_set = pset;
     s->members.push_back(name);
+    sync_evfd_locked(s);
     g_mach_cv.notify_all();
     return KERN_SUCCESS_;
 }
@@ -126,6 +163,7 @@ static int mach_port_extract_member_(uint32_t, uint32_t name, uint32_t pset) {
     if (!p || !s) return KERN_INVALID_NAME_;
     for (auto it = s->members.begin(); it != s->members.end(); ++it) if (*it == name) { s->members.erase(it); break; }
     p->in_set = 0;
+    sync_evfd_locked(s);
     return KERN_SUCCESS_;
 }
 static int mach_port_request_notification_(uint32_t, uint32_t, int, uint32_t, uint32_t, uint32_t, uint32_t* prev) {
@@ -149,6 +187,7 @@ static int mach_msg_(MachMsgHeader* msg, uint32_t option, uint32_t send_size, ui
         h->bits &= 0x00FF00FFu;
         if (dest->msgs.size() >= dest->qlimit && (option & MACH_SEND_TIMEOUT_)) return MACH_SEND_TIMED_OUT_;
         dest->msgs.push_back(std::move(copy));
+        queue_changed_locked(dest);
         g_mach_cv.notify_all();
     }
     if (option & MACH_RCV_MSG_) {
@@ -164,12 +203,13 @@ static int mach_msg_(MachMsgHeader* msg, uint32_t option, uint32_t send_size, ui
             if (src) {
                 std::vector<uint8_t>& front = src->msgs.front();
                 if (front.size() > rcv_size) {
-                    if (!(option & MACH_RCV_LARGE_)) src->msgs.pop_front();
+                    if (!(option & MACH_RCV_LARGE_)) { src->msgs.pop_front(); queue_changed_locked(src); }
                     return MACH_RCV_TOO_LARGE_;
                 }
                 memcpy(msg, front.data(), front.size());
                 ((MachMsgHeader*)msg)->local = src->name;
                 src->msgs.pop_front();
+                queue_changed_locked(src);
                 return 0;
             }
             if ((option & MACH_RCV_TIMEOUT_)) {
@@ -227,6 +267,7 @@ static int mk_timer_arm_(uint32_t name, uint64_t expire) {
         std::vector<uint8_t> m(sizeof h + 8, 0);
         memcpy(m.data(), &h, sizeof h);
         p->msgs.push_back(std::move(m));
+        queue_changed_locked(p);
         g_mach_cv.notify_all();
     }).detach();
     return KERN_SUCCESS_;
@@ -520,7 +561,8 @@ static const MachShim kMach[] = {
     {"_host_statistics", (void*)&host_statistics_}, {"_host_statistics64", (void*)&host_statistics64_},
     {"_host_processor_info", (void*)&host_processor_info_}, {"_host_info", (void*)&host_info_},
     {"_host_get_clock_service", (void*)&host_get_clock_service_}, {"_clock_get_time", (void*)&clock_get_time_},
-    {"_mach_port_allocate", (void*)&mach_port_allocate_}, {"_mach_port_destroy", (void*)&mach_port_destroy_},
+    {"_mach_port_allocate", (void*)&mach_port_allocate_}, {"_mach_port_construct", (void*)&mach_port_construct_},
+    {"_mach_port_destruct", (void*)&mach_port_destruct_}, {"_mach_port_destroy", (void*)&mach_port_destroy_},
     {"_mach_port_deallocate", (void*)&mach_port_deallocate_}, {"_mach_port_insert_right", (void*)&mach_port_insert_right_},
     {"_mach_port_mod_refs", (void*)&mach_port_mod_refs_}, {"_mach_port_type", (void*)&mach_port_type_},
     {"_mach_port_get_attributes", (void*)&mach_port_get_attributes_}, {"_mach_port_set_attributes", (void*)&mach_port_set_attributes_},
@@ -541,6 +583,27 @@ static const MachShim kMach[] = {
     {"_task_swap_exception_ports", (void*)&task_swap_exception_ports_},
     {"_thread_set_exception_ports", (void*)&thread_set_exception_ports_}, {"_thread_get_exception_ports", (void*)&thread_get_exception_ports_},
 };
+
+// kqueue EVFILT_MACHPORT: a dup of the port's notification eventfd (readable while it has messages), or -1
+int darwin_mach_port_notify_fd(uint32_t name) {
+    std::lock_guard<std::mutex> lk(g_mach_lock);
+    Port* p = find_port(name);
+    if (!p) return -1;
+    if (p->evfd < 0) {
+        p->evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        if (p->evfd < 0) return -1;
+        sync_evfd_locked(p);
+    }
+    return fcntl(p->evfd, F_DUPFD_CLOEXEC, 1000);
+}
+uint32_t darwin_mach_port_pending_size(uint32_t name) {   // size of the next message (0: none)
+    std::lock_guard<std::mutex> lk(g_mach_lock);
+    Port* p = find_port(name);
+    if (!p) return 0;
+    if (!p->is_set) return p->msgs.empty() ? 0 : (uint32_t)p->msgs.front().size();
+    for (uint32_t m : p->members) { Port* mp = find_port(m); if (mp && !mp->msgs.empty()) return (uint32_t)mp->msgs.front().size(); }
+    return 0;
+}
 
 void* darwin_mach_lookup(const char* name) {
     for (const MachShim& s : kMach) if (!strcmp(s.name, name)) return s.fn;
