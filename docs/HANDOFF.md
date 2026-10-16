@@ -411,7 +411,7 @@ Tabela aplikacji (2026-10-16, Linux x86-64 w chmurze):
 | esbuild (Go) | działa | binarka Go uruchamiana przez node |
 | git 2.56 | działa | init/add/commit/diff/log/gc, `clone` https (libcurl z butelki) |
 | curl 8.23 | działa | https z weryfikacją OpenSSL; LDAP/GSS niedostępne (błąd 7 / fallback) |
-| jq, ripgrep, fd, fzf --version, rsync, redis-server, nginx -v | `--version` działa | realne użycie: jq tak; reszta do sprawdzenia |
+| jq, ripgrep, fd, fzf | działa | realne użycie: wyszukiwanie/liczniki rg, fd po typie i rozszerzeniu, `fzf -f`, filtry jq (zgodne z narzędziami hosta) |
 | vim 9.2 | działa | ex-mode i interaktywnie (pty) |
 | neovim 0.12 | działa | LuaJIT (`--headless`, lua), edycja interaktywna na pty (`tools/ptyrun.py`) |
 | tmux 3.6 | działa | sesja, powłoka, wyjście |
