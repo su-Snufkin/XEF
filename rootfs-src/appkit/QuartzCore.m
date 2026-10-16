@@ -327,16 +327,25 @@ NSString *const kCAMediaTimingFunctionDefault = @"default";
         ptrdiff_t offset = ivar_getOffset(iv);
         int handle = *(int *)((uint8_t *)win + offset);
         if (handle > 0) {
-          const void *pixels = NULL;
-          int tw = 0, th = 0, tfmt = 80;
-          if (_texture && [(id)_texture respondsToSelector:@selector(_rawBytes)]) {
-            pixels = [(id)_texture _rawBytes];
-            tw = (int)[(id)_texture width];
-            th = (int)[(id)_texture height];
-            tfmt = (int)[(id)_texture pixelFormat];
+          uint32_t hostTex = 0;
+          if (_texture && [(id)_texture respondsToSelector:@selector(_hostTexId)]) {
+            hostTex = (uint32_t)[(id)_texture _hostTexId];
           }
-          extern void xef_host_present_pixels(int handle, const void *pixels, int w, int h, int format);
-          xef_host_present_pixels(handle, pixels, tw, th, tfmt);
+          if (hostTex > 0) {
+            extern void xef_host_metal_present_gpu(int handle, uint32_t tex_id);
+            xef_host_metal_present_gpu(handle, hostTex);
+          } else {
+            const void *pixels = NULL;
+            int tw = 0, th = 0, tfmt = 80;
+            if (_texture && [(id)_texture respondsToSelector:@selector(_rawBytes)]) {
+              pixels = [(id)_texture _rawBytes];
+              tw = (int)[(id)_texture width];
+              th = (int)[(id)_texture height];
+              tfmt = (int)[(id)_texture pixelFormat];
+            }
+            extern void xef_host_present_pixels(int handle, const void *pixels, int w, int h, int format);
+            xef_host_present_pixels(handle, pixels, tw, th, tfmt);
+          }
         }
       }
     }

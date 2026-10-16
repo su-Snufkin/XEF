@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include "xef_host.h"
 
 NSString *const MTLDeviceWasAddedNotification = @"MTLDeviceWasAddedNotification";
 NSString *const MTLDeviceRemovalRequestedNotification = @"MTLDeviceRemovalRequestedNotification";
@@ -958,9 +959,11 @@ static id metal_stub(id self, SEL _cmd, ...) {
   id<MTLTexture> _parentTexture;
   NSUInteger _parentRelativeLevel;
   NSUInteger _parentRelativeSlice;
+  uint32_t _hostTexId;
 }
 - (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc device:(id<MTLDevice>)device;
 - (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices;
+- (uint32_t)_hostTexId;
 - (const void *)_rawBytes;
 - (void *)_mutableRawBytes;
 - (NSUInteger)_bpp;
@@ -984,6 +987,7 @@ static id metal_stub(id self, SEL _cmd, ...) {
     _device = device;
     NSUInteger slices = _arrayLength * (_textureType == MTLTextureTypeCube ? 6 : 1);
     _storage = [[XEFMetalTextureStorage alloc] initWithWidth:_width height:_height depth:_depth arrayLength:slices bpp:xef_mtl_bpp(_pixelFormat)];
+    _hostTexId = xef_host_metal_tex_create((int)_width, (int)_height, (int)_pixelFormat, (_usage & MTLTextureUsageRenderTarget) != 0);
   }
   return self;
 }
@@ -1006,9 +1010,11 @@ static id metal_stub(id self, SEL _cmd, ...) {
     _parentTexture = [parent retain];
     _parentRelativeLevel = levels.location;
     _parentRelativeSlice = slices.location;
+    _hostTexId = parent->_hostTexId;
   }
   return self;
 }
+- (uint32_t)_hostTexId { return _hostTexId; }
 - (const void *)_rawBytes { return _storage ? _storage->_data : NULL; }
 - (void *)_mutableRawBytes { return _storage ? _storage->_data : NULL; }
 - (NSUInteger)_bpp { return _storage ? _storage->_bpp : 4; }
@@ -1079,6 +1085,9 @@ static id metal_stub(id self, SEL _cmd, ...) {
       }
     }
   }
+  if (_hostTexId > 0 && pixelBytes && level == 0 && slice == 0 && _parentRelativeSlice == 0) {
+    xef_host_metal_tex_update(_hostTexId, (int)x0, (int)y0, (int)w, (int)h, pixelBytes, (int)srcBpr);
+  }
 }
 
 - (void)replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level withBytes:(const void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow {
@@ -1119,6 +1128,10 @@ static id metal_stub(id self, SEL _cmd, ...) {
 }
 
 - (void)dealloc {
+  if (_hostTexId > 0 && !_parentTexture) {
+    xef_host_metal_tex_destroy(_hostTexId);
+    _hostTexId = 0;
+  }
   [_storage release];
   [(id)_parentTexture release];
   [_label release];
@@ -1767,7 +1780,12 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
             _scissorRect = (MTLScissorRect){0, 0, tex->_width, tex->_height};
           }
           if (att.loadAction == MTLLoadActionClear) {
+            if (tex->_hostTexId > 0) {
+              xef_host_metal_pass_begin(0, tex->_hostTexId, 1, (float)att.clearColor.red, (float)att.clearColor.green, (float)att.clearColor.blue, (float)att.clearColor.alpha);
+            }
             xef_tex_clear(tex, att.clearColor);
+          } else if (tex->_hostTexId > 0) {
+            xef_host_metal_pass_begin(0, tex->_hostTexId, 0, 0, 0, 0, 0);
           }
         }
       }
@@ -2409,6 +2427,81 @@ static void xef_rasterize_triangle_fast(const XEFRasterContext *ctx, const XEFVe
   }
 }
 
+static void xef_fill_host_metal_pipeline(xef_host_metal_pipeline_t *pipe, XEFMetalRenderCommandEncoder *enc, XEFMetalTexture *target) {
+  memset(pipe, 0, sizeof(*pipe));
+  if (!target) return;
+  pipe->rt_tex_id = target->_hostTexId;
+  if (enc->_fragmentTextures[0] && [(id)enc->_fragmentTextures[0] respondsToSelector:@selector(_hostTexId)]) {
+    pipe->tex_id = [(id)enc->_fragmentTextures[0] _hostTexId];
+  }
+
+  XEFMetalFunction *ffn = enc->_pipelineState && enc->_pipelineState->_desc ? (XEFMetalFunction *)enc->_pipelineState->_desc.fragmentFunction : nil;
+  pipe->frag_mode = ffn ? ffn->_fragMode : 0;
+  if (!enc->_fragmentTextures[0] && pipe->frag_mode != XEF_FRAG_MODE_CONST_COLOR) {
+    pipe->frag_mode = XEF_FRAG_MODE_COLOR_ONLY;
+  }
+  pipe->color_scale = 1.0f;
+  pipe->uv_left_top[0] = 0.0f; pipe->uv_left_top[1] = 0.0f;
+  pipe->uv_dims[0] = 1.0f;     pipe->uv_dims[1] = 1.0f;
+
+  if (enc->_fragmentBuffers[0]) {
+    XEFMetalBuffer *fb = enc->_fragmentBuffers[0];
+    size_t foff = enc->_fragmentBufferOffsets[0];
+    if (pipe->frag_mode == XEF_FRAG_MODE_BLIT2D && foff + 16 <= fb->_length) {
+      const float *fp = (const float *)((const uint8_t *)fb->_data + foff);
+      pipe->uv_left_top[0] = fp[0]; pipe->uv_left_top[1] = fp[1];
+      pipe->uv_dims[0] = fp[2];    pipe->uv_dims[1] = fp[3];
+    } else if (foff + 4 <= fb->_length) {
+      const float *fp = (const float *)((const uint8_t *)fb->_data + foff);
+      if (foff + 16 <= fb->_length && ffn && ffn->_source && strstr([ffn->_source UTF8String], "scRGB_output")) {
+        pipe->color_scale = fp[3];
+      } else {
+        pipe->color_scale = fp[0];
+      }
+      if (isnan(pipe->color_scale) || pipe->color_scale <= 0.0f || pipe->color_scale > 100.0f) pipe->color_scale = 1.0f;
+    }
+  }
+
+  MTLRenderPipelineColorAttachmentDescriptor *catt =
+      (enc->_pipelineState && enc->_pipelineState->_desc) ? enc->_pipelineState->_desc.colorAttachments->_descriptors[0] : nil;
+  pipe->write_mask = catt ? (int)catt.writeMask : 15;
+
+  if (catt && catt.isBlendingEnabled) {
+    pipe->blend_enable = 1;
+    pipe->src_rgb = (int)catt.sourceRGBBlendFactor;
+    pipe->dst_rgb = (int)catt.destinationRGBBlendFactor;
+    pipe->rgb_op  = (int)catt.rgbBlendOperation;
+    pipe->src_a   = (int)catt.sourceAlphaBlendFactor;
+    pipe->dst_a   = (int)catt.destinationAlphaBlendFactor;
+    pipe->a_op    = (int)catt.alphaBlendOperation;
+  }
+
+  pipe->viewport[0] = (int)enc->_viewport.originX;
+  pipe->viewport[1] = (int)enc->_viewport.originY;
+  pipe->viewport[2] = (int)enc->_viewport.width;
+  pipe->viewport[3] = (int)enc->_viewport.height;
+
+  if (enc->_hasScissor) {
+    pipe->clip_rect[0] = (int)enc->_scissorRect.x;
+    pipe->clip_rect[1] = (int)enc->_scissorRect.y;
+    pipe->clip_rect[2] = (int)enc->_scissorRect.width;
+    pipe->clip_rect[3] = (int)enc->_scissorRect.height;
+  } else {
+    pipe->clip_rect[0] = 0;
+    pipe->clip_rect[1] = 0;
+    pipe->clip_rect[2] = (int)target->_width;
+    pipe->clip_rect[3] = (int)target->_height;
+  }
+
+  if (enc->_fragmentSamplers[0]) {
+    pipe->filter_linear = (enc->_fragmentSamplers[0]->_minFilter == MTLSamplerMinMagFilterNearest) ? 0 : 1;
+    pipe->clamp_to_edge = (enc->_fragmentSamplers[0]->_sAddressMode == MTLSamplerAddressModeRepeat) ? 0 : 1;
+  } else {
+    pipe->filter_linear = 1;
+    pipe->clamp_to_edge = 1;
+  }
+}
+
 static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommandEncoder *enc, XEFMetalTexture *target) {
   memset(ctx, 0, sizeof(*ctx));
   if (!target || !target->_storage || !target->_storage->_data) return;
@@ -2590,6 +2683,41 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   if (!att0 || !att0.texture) return;
   XEFMetalTexture *target = (XEFMetalTexture *)att0.texture;
 
+  if (target->_hostTexId > 0) {
+    xef_host_metal_pipeline_t pipe;
+    xef_fill_host_metal_pipeline(&pipe, self, target);
+
+    xef_host_metal_vertex_t vstack[256];
+    xef_host_metal_vertex_t *vbuf = (vertexCount <= 256) ? vstack : (xef_host_metal_vertex_t *)malloc(vertexCount * sizeof(xef_host_metal_vertex_t));
+
+    XEFVertexFetcher vf;
+    xef_init_vertex_fetcher(&vf, self);
+
+    for (NSUInteger i = 0; i < vertexCount; i++) {
+      XEFVertex v;
+      xef_fetch_vertex_fast(&vf, (NSInteger)(vertexStart + i), &v);
+      vbuf[i].sx = v.sx;
+      vbuf[i].sy = v.sy;
+      vbuf[i].sz = v.sz;
+      vbuf[i].u  = v.uv[0];
+      vbuf[i].v  = v.uv[1];
+      vbuf[i].r  = v.col[0];
+      vbuf[i].g  = v.col[1];
+      vbuf[i].b  = v.col[2];
+      vbuf[i].a  = v.col[3];
+    }
+
+    int prim = (primitiveType == MTLPrimitiveTypeTriangle) ? 0 :
+               (primitiveType == MTLPrimitiveTypeTriangleStrip) ? 1 :
+               (primitiveType == MTLPrimitiveTypeLine) ? 2 :
+               (primitiveType == MTLPrimitiveTypeLineStrip) ? 3 : 4;
+
+    xef_host_metal_draw(0, &pipe, prim, vbuf, (int)vertexCount, NULL, 0);
+
+    if (vbuf != vstack) free(vbuf);
+    return;
+  }
+
   /* Fast-path for 1:1 fullscreen BlitFrom2D */
   XEFMetalFunction *vfn = _pipelineState && _pipelineState->_desc ? (XEFMetalFunction *)_pipelineState->_desc.vertexFunction : nil;
   XEFMetalFunction *ffn = _pipelineState && _pipelineState->_desc ? (XEFMetalFunction *)_pipelineState->_desc.fragmentFunction : nil;
@@ -2686,6 +2814,41 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 
   #define READ_IDX(k) ((indexType == MTLIndexTypeUInt16) ? (NSInteger)((const uint16_t *)iptr)[k] + baseVertex : (NSInteger)((const uint32_t *)iptr)[k] + baseVertex)
 
+  if (target->_hostTexId > 0) {
+    xef_host_metal_pipeline_t pipe;
+    xef_fill_host_metal_pipeline(&pipe, self, target);
+
+    xef_host_metal_vertex_t vstack[256];
+    xef_host_metal_vertex_t *vbuf = (indexCount <= 256) ? vstack : (xef_host_metal_vertex_t *)malloc(indexCount * sizeof(xef_host_metal_vertex_t));
+
+    XEFVertexFetcher vf;
+    xef_init_vertex_fetcher(&vf, self);
+
+    for (NSUInteger i = 0; i < indexCount; i++) {
+      XEFVertex v;
+      xef_fetch_vertex_fast(&vf, READ_IDX(i), &v);
+      vbuf[i].sx = v.sx;
+      vbuf[i].sy = v.sy;
+      vbuf[i].sz = v.sz;
+      vbuf[i].u  = v.uv[0];
+      vbuf[i].v  = v.uv[1];
+      vbuf[i].r  = v.col[0];
+      vbuf[i].g  = v.col[1];
+      vbuf[i].b  = v.col[2];
+      vbuf[i].a  = v.col[3];
+    }
+
+    int prim = (primitiveType == MTLPrimitiveTypeTriangle) ? 0 :
+               (primitiveType == MTLPrimitiveTypeTriangleStrip) ? 1 :
+               (primitiveType == MTLPrimitiveTypeLine) ? 2 :
+               (primitiveType == MTLPrimitiveTypeLineStrip) ? 3 : 4;
+
+    xef_host_metal_draw(0, &pipe, prim, vbuf, (int)indexCount, NULL, 0);
+
+    if (vbuf != vstack) free(vbuf);
+    return;
+  }
+
   XEFRasterContext ctx;
   xef_init_raster_context(&ctx, self, target);
   XEFVertexFetcher vf;
@@ -2748,7 +2911,17 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   [self drawIndexedPrimitives:primitiveType indexCount:indexCount indexType:indexType indexBuffer:indexBuffer indexBufferOffset:indexBufferOffset instanceCount:1 baseVertex:0 baseInstance:0];
 }
 
-- (void)endEncoding {}
+- (void)endEncoding {
+  if (_passDesc) {
+    MTLRenderPassColorAttachmentDescriptor *att0 = _passDesc.colorAttachments->_attachments[0];
+    if (att0 && att0.texture) {
+      XEFMetalTexture *tex = (XEFMetalTexture *)att0.texture;
+      if (tex->_hostTexId > 0) {
+        xef_host_metal_pass_end(0, tex->_hostTexId);
+      }
+    }
+  }
+}
 
 - (void)dealloc {
   [_label release];
@@ -2888,6 +3061,10 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   XEFMetalTexture *dst = (XEFMetalTexture *)destinationTexture;
   int w = (int)sourceSize.width;
   int h = (int)sourceSize.height;
+  if (src->_hostTexId > 0 && dst->_hostTexId > 0 && sourceLevel == 0 && destinationLevel == 0) {
+    xef_host_metal_tex_copy(src->_hostTexId, (int)sourceOrigin.x, (int)sourceOrigin.y, w, h, dst->_hostTexId, (int)destinationOrigin.x, (int)destinationOrigin.y);
+    return;
+  }
   for (int y = 0; y < h; y++) {
     for (int x = 0; x < w; x++) {
       float rgba[4];

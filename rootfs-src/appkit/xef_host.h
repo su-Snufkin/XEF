@@ -51,6 +51,49 @@ int  xef_host_mouse_buttons(void);
 int  xef_host_window_get_geometry(int handle, int *rx, int *ry, int *rw, int *rh);
 int  xef_host_file_dialog(const char *title, const char *initial_path, int is_save, int is_dir, int allow_multi, char *out_buf, int out_len);
 void xef_host_present_pixels(int handle, const void *pixels, int w, int h, int format);
+
+/* Metal hardware GPU acceleration interface */
+typedef struct {
+    uint32_t rt_tex_id;
+    uint32_t tex_id;
+    int      frag_mode;       /* 0=auto/tex_rgba, 1=color_only, 2=tex_rgb, 3=blit2d, 4=const_color */
+    int      blend_enable;
+    int      src_rgb, dst_rgb, rgb_op;
+    int      src_a, dst_a, a_op;
+    int      write_mask;
+    int      clip_rect[4];    /* x, y, w, h */
+    int      viewport[4];     /* x, y, w, h */
+    float    color_scale;
+    float    uv_left_top[2];
+    float    uv_dims[2];
+    int      filter_linear;   /* 1=linear, 0=nearest */
+    int      clamp_to_edge;   /* 1=clamp, 0=repeat */
+} xef_host_metal_pipeline_t;
+
+typedef struct {
+    float sx, sy, sz;
+    float u, v;
+    float r, g, b, a;
+} xef_host_metal_vertex_t;
+
+uint32_t xef_host_metal_tex_create(int w, int h, int fmt, int is_render_target);
+void     xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, const void *data, int pitch);
+void     xef_host_metal_tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy);
+void     xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, void *out_data, int pitch);
+void     xef_host_metal_tex_destroy(uint32_t tex_id);
+
+void     xef_host_metal_pass_begin(int handle, uint32_t rt_tex_id, int clear, float r, float g, float b, float a);
+void     xef_host_metal_pass_end(int handle, uint32_t rt_tex_id);
+
+void     xef_host_metal_draw(int handle,
+                             const xef_host_metal_pipeline_t *pipe,
+                             int prim_type,
+                             const xef_host_metal_vertex_t *vertices,
+                             int vertex_count,
+                             const uint32_t *indices,
+                             int index_count);
+
+void     xef_host_metal_present_gpu(int handle, uint32_t tex_id);
 #ifdef __cplusplus
 }
 #endif

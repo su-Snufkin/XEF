@@ -761,8 +761,13 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   if (h->type == XEF_EV_FOCUS_IN) { _active = YES; [w makeKeyWindow]; return nil; }
   if (h->type == XEF_EV_FOCUS_OUT) { _active = NO; [w resignKeyWindow]; return nil; }
   if (h->type == XEF_EV_RESIZE) {
-    if (w) [w frame];
-    return nil; }
+    if (w) {
+      NSRect c = NSMakeRect(w->_frame.origin.x, w->_frame.origin.y, h->x, h->y);
+      NSRect f = [w frameRectForContentRect:c];
+      [w _applyFrame:f sync:NO];
+    }
+    return nil;
+  }
   NSEvent *e = [[[NSEvent alloc] init] autorelease];
   e->_type = (NSEventType)h->type; e->_keyCode = (unsigned short)h->keycode; e->_flags = (NSEventModifierFlags)h->flags; e->_window = w;
   CGFloat ch = 0;
