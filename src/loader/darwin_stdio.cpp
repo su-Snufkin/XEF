@@ -97,6 +97,7 @@ static void sync_out(DarwinFILE* d) {
 }
 
 void darwin_stdio_sync(void* g) { sync_out((DarwinFILE*)g); }
+void darwin_stdio_fork_lock(bool take) { if (take) g_files_lock.lock(); else g_files_lock.unlock(); }
 
 void* darwin_stdio_guest(FILE* h, const char* mode) {
     if (!h) return nullptr;

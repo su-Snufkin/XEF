@@ -3,6 +3,7 @@
 without a Mac: formula metadata from formulae.brew.sh, bottles from ghcr.io (both plain HTTPS).
 
   tools/fetch_bottle.py --libcxx                # once: /usr/lib/libc++, libc++abi, libunwind (llvm bottle)
+  tools/fetch_bottle.py --syslibs [libcurl.4.dylib ...]   # /usr/lib/libcurl, libedit, libffi, ... from bottles
   tools/fetch_bottle.py jq ripgrep node         # -> darwin-rootfs/opt/homebrew/{Cellar,opt,bin,lib,...}
   build/xef-osx darwin-rootfs/opt/homebrew/bin/jq --version
 
@@ -85,7 +86,7 @@ def patch_macho_slice(buf, off):
                 new = new.replace(a, b)
             if new != s:
                 if len(new) >= s1 - s0:
-                    print('  warning: %r does not fit its load command' % new, file=sys.stderr)
+                    pass  # longer than the original: the loader resolves the placeholder itself
                 else:
                     buf[s0:s1] = new + b'\0' * (s1 - s0 - len(new))
                     n += 1
@@ -191,6 +192,32 @@ def install_libcxx():
                 print('usr/lib/' + os.path.basename(out), f['versions']['stable'])
 
 
+# macOS system dylibs (dyld shared cache) with an ABI-compatible open-source build in Homebrew:
+# /usr/lib/<name> -> keg library (the loader treats the symlink and the keg path as one image)
+SYSLIBS = {'libcurl.4.dylib': ('curl', 'lib/libcurl.4.dylib'), 'libedit.3.dylib': ('libedit', 'lib/libedit.0.dylib'),
+           'libffi.dylib': ('libffi', 'lib/libffi.8.dylib'), 'libxslt.1.dylib': ('libxslt', 'lib/libxslt.1.dylib'),
+           'libexslt.0.dylib': ('libxslt', 'lib/libexslt.0.dylib'), 'libarchive.2.dylib': ('libarchive', 'lib/libarchive.13.dylib'),
+           'libpcap.A.dylib': ('libpcap', 'lib/libpcap.A.dylib')}
+
+
+def install_syslibs(names=None):
+    done = set()
+    for so, (formula_name, rel) in SYSLIBS.items():
+        if names and so not in names:
+            continue
+        install(formula_name, done)
+        target = os.path.join(ROOT + PREFIX, 'opt', formula_name, rel)
+        if not os.path.exists(target):
+            print('  %s: %s missing in the keg' % (so, rel), file=sys.stderr)
+            continue
+        link = os.path.join(ROOT, 'usr/lib', so)
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        if os.path.lexists(link):
+            os.unlink(link)
+        os.symlink(os.path.relpath(target, os.path.dirname(link)), link)
+        print('usr/lib/%s -> %s' % (so, os.path.relpath(target, ROOT)))
+
+
 def set_dylib_id(buf, name):
     ncmds, = struct.unpack_from('<I', buf, 16)
     p = 32
@@ -209,6 +236,9 @@ if __name__ == '__main__':
     if sys.argv[1] == '--libcxx':
         install_libcxx()
         sys.argv[1:2] = []
+    elif sys.argv[1] == '--syslibs':
+        install_syslibs(sys.argv[2:])
+        sys.argv[1:] = []
     done = set()
     for n in sys.argv[1:]:
         install(n, done)

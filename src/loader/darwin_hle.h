@@ -21,6 +21,7 @@ void darwin_tsd_run_destructors();
 FILE* darwin_stdio_host(void* guest_file);
 void* darwin_stdio_guest(FILE* host, const char* mode);
 void darwin_stdio_sync(void* guest_file);
+void darwin_stdio_fork_lock(bool take);
 void* darwin_stdio_lookup(const char* name);
 void* darwin_stdio_data_lookup(const char* name);     // guest pthread key destructors of the exiting thread
 

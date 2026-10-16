@@ -442,7 +442,18 @@ static int st_madvise(void* addr, size_t len, int advice) {
 }
 static int st_posix_madvise(void* addr, size_t len, int advice) { return advice >= 0 && advice <= 4 ? 0 : EINVAL; }
 
+// C11 Annex K memset_s (Darwin errno values: EINVAL 22, E2BIG 7, EOVERFLOW 84)
+static int st_memset_s(void* s, size_t smax, int c, size_t n) {
+    if (!s) return 22;
+    if (smax > (SIZE_MAX >> 1)) return 7;
+    volatile unsigned char* p = (volatile unsigned char*)s;
+    size_t k = n > smax ? smax : n;
+    for (size_t i = 0; i < k; i++) p[i] = (unsigned char)c;
+    return n > smax ? 84 : 0;
+}
+
 static const StubEntry kStubs2[] = {
+    {"_memset_s", (void*)&st_memset_s},
     {"_madvise", (void*)&st_madvise}, {"_posix_madvise", (void*)&st_posix_madvise},
     {"_sys_icache_invalidate", (void*)&st_sys_icache_invalidate}, {"_sys_dcache_flush", (void*)&st_noop2},
     {"_srandomdev", (void*)&st_srandomdev},

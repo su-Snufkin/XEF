@@ -216,6 +216,14 @@ static void* thread_trampoline(void* arg) {
     cpu_loop(t);
 }
 
+static void fork_child_fixup(CpuState* st) {
+    g_live_threads.store(1);
+    guest_tid_init();
+    if (st->thread) st->thread->tid = (int)syscall(SYS_gettid);
+    tier2_after_fork(st->thread);
+    aot::after_fork();
+}
+
 i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid) {
     if (flags & kCloneVM && !(flags & kCloneVfork)) {
         if (!(flags & kCloneThread)) return -EINVAL;  // CLONE_VM without CLONE_THREAD: not supported yet
@@ -258,13 +266,29 @@ i64 thread_clone(CpuState* st, u64 flags, u64 stack, u64 ptid, u64 tls, u64 ctid
         // child
         if (stack) st->x[kGuestSP] = stack;
         if (flags & kCloneSettls) st->tpidr_el0 = tls;
-        g_live_threads.store(1);
-        guest_tid_init();
-        if (st->thread) st->thread->tid = (int)syscall(SYS_gettid);
-        tier2_after_fork(st->thread);
-        aot::after_fork();
+        fork_child_fixup(st);
         return 0;
     }
+    return r;
+}
+
+// Darwin fork(): the guest's malloc/stdio are the host libc's, so go through glibc's fork() (it resets its own
+// locks in the child) while holding XEF's; `hold` takes/releases the HLE layer's locks around it.
+i64 process_fork(CpuState* st, void (*hold)(bool)) {
+    pid_t r;
+    {
+        std::lock_guard<std::mutex> lk(g_cache.lock);
+        std::lock_guard<std::mutex> pl(g_pool_lock);
+        signals_fork_lock(true);
+        if (hold) hold(true);
+        r = fork();
+        int e = errno;
+        if (hold) hold(false);
+        signals_fork_lock(false);
+        errno = e;
+    }
+    if (r < 0) return -errno;
+    if (r == 0 && st) fork_child_fixup(st);
     return r;
 }
 

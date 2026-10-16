@@ -704,7 +704,8 @@ static char*** darwin_NSGetArgv() {
     }
     return &g_darwin_argv;
 }
-static char*** darwin_NSGetEnviron() { return &g_darwin_envp; }
+// one environment: the host's `environ`, which getenv/setenv/putenv (host libc) maintain and `_environ` names
+static char*** darwin_NSGetEnviron() { return &environ; }
 // _NSGetProgname: pointer to the program name (basename of argv[0], like libc's __progname)
 static char** darwin_NSGetProgname() {
     static char* progname = nullptr;
@@ -1322,6 +1323,72 @@ static int darwin_posix_spawn(pid_t* pid, const char* path, void* file_actions, 
 }
 
 
+// exec family: process_execve (os/thread.cpp) runs Mach-O / arm64 ELF images under a fresh XEF, x86-64 natively and
+// follows #! lines; on failure it returns -errno and the caller keeps running.
+static int darwin_execve(const char* path, char* const argv[], char* const envp[]) {
+    if (!path) { errno = EFAULT; return -1; }
+    i64 r = process_execve(tls_thread ? tls_thread->st : nullptr, (u64)(uintptr_t)path, (u64)(uintptr_t)argv,
+                           (u64)(uintptr_t)(envp ? envp : environ));
+    errno = (int)-r;
+    return -1;
+}
+static int darwin_execv(const char* path, char* const argv[]) { return darwin_execve(path, argv, environ); }
+// execvP: search `search_path` like execvp; ENOEXEC (no #!, not a binary) runs the file with /bin/sh
+static int darwin_execvP(const char* file, const char* search_path, char* const argv[]) {
+    if (!file || !*file) { errno = ENOENT; return -1; }
+    auto try_one = [&](const char* p) {
+        darwin_execve(p, argv, environ);
+        if (errno == ENOEXEC) {
+            std::vector<char*> av{(char*)"sh", (char*)p};
+            for (int i = 1; argv && argv[0] && argv[i]; i++) av.push_back(argv[i]);
+            av.push_back(nullptr);
+            darwin_execve("/bin/sh", av.data(), environ);
+            errno = ENOEXEC;
+        }
+    };
+    if (strchr(file, '/')) { try_one(file); return -1; }
+    std::string sp = search_path ? search_path : "/usr/bin:/bin";
+    bool eacces = false;
+    size_t start = 0;
+    for (;;) {
+        size_t end = sp.find(':', start);
+        std::string dir = sp.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        std::string cand = (dir.empty() ? std::string(".") : dir) + "/" + file;
+        try_one(cand.c_str());
+        if (errno == EACCES) eacces = true;
+        else if (errno != ENOENT && errno != ENOTDIR && errno != ELOOP && errno != ENAMETOOLONG) return -1;
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    errno = eacces ? EACCES : ENOENT;
+    return -1;
+}
+static int darwin_execvp(const char* file, char* const argv[]) {
+    const char* path = getenv("PATH");
+    return darwin_execvP(file, path ? path : "/usr/bin:/bin:/usr/sbin:/sbin", argv);
+}
+// execl/execlp(path, arg0, ...) and execle(path, arg0, ..., NULL, envp): variadic arguments come from the stack
+static std::vector<char*> exec_list(const char* arg0, const uint64_t* ap, const uint64_t** after) {
+    std::vector<char*> av{(char*)arg0};
+    if (arg0) { while (*ap) av.push_back((char*)(uintptr_t)*ap++); }
+    if (after) *after = arg0 ? ap + 1 : ap;
+    av.push_back(nullptr);
+    return av;
+}
+static int darwin_execl(const char* path, const char* arg0, const uint64_t* ap) {
+    std::vector<char*> av = exec_list(arg0, ap, nullptr);
+    return darwin_execve(path, av.data(), environ);
+}
+static int darwin_execlp(const char* file, const char* arg0, const uint64_t* ap) {
+    std::vector<char*> av = exec_list(arg0, ap, nullptr);
+    return darwin_execvp(file, av.data());
+}
+static int darwin_execle(const char* path, const char* arg0, const uint64_t* ap) {
+    const uint64_t* rest;
+    std::vector<char*> av = exec_list(arg0, ap, &rest);
+    return darwin_execve(path, av.data(), (char* const*)(uintptr_t)*rest);
+}
+
 static int darwin_posix_spawnp(pid_t* pid, const char* file, void* file_actions, void* attrp, char* const argv[], char* const envp[]) {
     if (!file || !file[0]) return ENOENT;
     if (strchr(file, '/')) {
@@ -1724,7 +1791,33 @@ static int darwin_getpwnam_r(const char* name, DarwinPasswd* out, char* buf, siz
     if (r == 0 && p) { fill_darwin_passwd(out, p); *res = out; } else *res = nullptr;
     return r;
 }
-static int darwin_pthread_atfork(u64, u64, u64) { return 0; }
+// pthread_atfork + fork: prepare handlers run in reverse registration order, parent/child ones in order
+struct AtforkEntry { u64 prepare, parent, child; };
+static std::mutex g_atfork_lock;
+static std::vector<AtforkEntry> g_atfork;
+static int darwin_pthread_atfork(u64 prepare, u64 parent, u64 child) {
+    std::lock_guard<std::mutex> lk(g_atfork_lock);
+    g_atfork.push_back({prepare, parent, child});
+    return 0;
+}
+static std::mutex g_kq_lock;
+static std::mutex g_tsd_lock;
+static void hle_fork_hold(bool take) {
+    if (take) { g_hle_lock.lock(); g_kq_lock.lock(); g_tsd_lock.lock(); darwin_stdio_fork_lock(true); }
+    else { darwin_stdio_fork_lock(false); g_tsd_lock.unlock(); g_kq_lock.unlock(); g_hle_lock.unlock(); }
+}
+static pid_t darwin_fork() {
+    std::vector<AtforkEntry> h;
+    { std::lock_guard<std::mutex> lk(g_atfork_lock); h = g_atfork; }
+    for (size_t i = h.size(); i-- > 0;) if (h[i].prepare) guest_call(h[i].prepare, 0, nullptr);
+    i64 r = process_fork(tls_thread ? tls_thread->st : nullptr, hle_fork_hold);
+    for (const AtforkEntry& e : h) {
+        u64 fn = r == 0 ? e.child : e.parent;
+        if (fn) guest_call(fn, 0, nullptr);
+    }
+    if (r < 0) { errno = (int)-r; return -1; }
+    return (pid_t)r;
+}
 static int darwin_fprintf_l(FILE* f, void*, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(f, fmt, ap); }
 static int darwin_printf_l(void*, const char* fmt, const uint64_t* ap) { return darwin_vfprintf(stdout, fmt, ap); }
 static int darwin_sprintf_l(char* s, void*, const char* fmt, const uint64_t* ap) { return darwin_vsnprintf(s, (size_t)1 << 30, fmt, ap); }
@@ -1887,6 +1980,9 @@ static int darwin_ioctl_v(int fd, unsigned long req, const uint64_t* ap);
 static const ShimEntry kShims[] = {
     {"__xef_open", (void*)&darwin_open_v, 2}, {"__xef_openat", (void*)&darwin_openat_v, 3}, {"__xef_fcntl", (void*)&darwin_fcntl_v, 2},
     {"__xef_ioctl", (void*)&darwin_ioctl_v, 2},
+    {"_execl", (void*)&darwin_execl, 2}, {"_execlp", (void*)&darwin_execlp, 2}, {"_execle", (void*)&darwin_execle, 2},
+    {"_execve", (void*)&darwin_execve, -1}, {"_execv", (void*)&darwin_execv, -1}, {"_execvp", (void*)&darwin_execvp, -1},
+    {"_execvP", (void*)&darwin_execvP, -1},
     {"_snprintf_l", (void*)&darwin_snprintf_l, 4}, {"_sprintf", (void*)&darwin_sprintf, 2},
     {"_asprintf", (void*)&darwin_asprintf, 2}, {"_asprintf_l", (void*)&darwin_asprintf_l, 3},
     {"_dprintf", (void*)&darwin_dprintf, 2}, {"_vasprintf", (void*)&darwin_vasprintf, -1},
@@ -1952,6 +2048,7 @@ static const ShimEntry kShims[] = {
     {"_getpwuid", (void*)&darwin_getpwuid, -1}, {"_getpwnam", (void*)&darwin_getpwnam, -1},
     {"_getpwuid_r", (void*)&darwin_getpwuid_r, -1}, {"_getpwnam_r", (void*)&darwin_getpwnam_r, -1},
     {"_pthread_atfork", (void*)&darwin_pthread_atfork, -1},
+    {"_fork", (void*)&darwin_fork, -1}, {"_vfork", (void*)&darwin_fork, -1},
     {"_pthread_mach_thread_np", (void*)&darwin_pthread_mach_thread_np, -1},
     {"_regcomp", (void*)&darwin_regcomp, -1}, {"_regcomp$DARWIN_EXTSN", (void*)&darwin_regcomp, -1},
     {"_regexec", (void*)&darwin_regexec, -1}, {"_regexec$DARWIN_EXTSN", (void*)&darwin_regexec, -1},
@@ -2049,7 +2146,6 @@ static int darwin_tlv_atexit(void (*term)(void*), void* obj, void* dso) {
 static constexpr int kTsdFirstDynamic = 256, kTsdSlots = 768;
 static uint64_t g_destructors[kTsdSlots] = {};
 static bool g_key_used[kTsdSlots] = {};
-static std::mutex g_tsd_lock;
 
 static uint64_t* tsd_slots() { return tls_thread ? (uint64_t*)tls_thread->tsd : nullptr; }
 
@@ -2537,7 +2633,6 @@ static int kq_apply_aux(int kq, KqState& st, const darwin_kevent_t& kev) {
     if (kev.flags & DARWIN_EV_ENABLE) it->second.disabled = false;
     return 0;
 }
-static std::mutex g_kq_lock;
 static std::unordered_map<int, KqState> g_kq;
 
 static void kq_sync_epoll(int kq, KqState& st, int fd) {      // make the epoll registration of fd match rd/wr
