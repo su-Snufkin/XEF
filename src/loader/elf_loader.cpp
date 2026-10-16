@@ -122,7 +122,11 @@ std::string resolve_guest_path(const char* path, bool follow_last) {
         g_dir_cache[dir] = d;
     }
     std::string full = (d.phys == "/" ? "" : d.phys) + "/" + name;
-    if (lstat((g_rootfs + full).c_str(), &st) != 0) return d.via_abs ? g_rootfs + full : std::string(path);
+    if (lstat((g_rootfs + full).c_str(), &st) != 0) {
+        // a new name in a rootfs directory: the host's only where the host has that directory too (/tmp)
+        if (d.via_abs || stat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) return g_rootfs + full;
+        return std::string(path);
+    }
     if (follow_last && S_ISLNK(st.st_mode)) {
         std::string phys;
         bool abs = false;

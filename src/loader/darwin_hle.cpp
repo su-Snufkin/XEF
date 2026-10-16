@@ -826,7 +826,7 @@ static int darwin_stat_fn(const char* path, darwin_stat64* dst) {
 
 static int darwin_lstat_fn(const char* path, darwin_stat64* dst) {
     if (!path || !dst) { errno = EFAULT; return -1; }
-    std::string hp = resolve_guest_path(path);
+    std::string hp = resolve_guest_path(path, false);   // the link itself
     struct stat host_st;
     int r = lstat(hp.c_str(), &host_st);
     if (r < 0) return -1;
@@ -876,7 +876,9 @@ int darwin_open_flags_to_linux(int df) {
 
 static int darwin_open(const char* path, int dflags, mode_t mode) {
     if (!path) { errno = EFAULT; return -1; }
-    std::string hp = resolve_guest_path(path);
+    // O_NOFOLLOW, or O_CREAT|O_EXCL (which must not follow a final symlink either): resolve up to the last component
+    bool nofollow = (dflags & 0x100) || ((dflags & 0x200) && (dflags & 0x800));
+    std::string hp = resolve_guest_path(path, !nofollow);
     int lflags = darwin_open_flags_to_linux(dflags);
     int r = open(hp.c_str(), lflags, mode);
     XEF_LOG(2, "darwin_open('%s' -> '%s', dflags=%#x lflags=%#x mode=%o) = %d errno=%d", path, hp.c_str(), dflags, lflags, mode, r, r < 0 ? errno : 0);
@@ -926,13 +928,13 @@ static int darwin_remove(const char* path) {
 
 static int darwin_mkdir(const char* path, mode_t mode) {
     if (!path) { errno = EFAULT; return -1; }
-    std::string hp = resolve_guest_path(path);
+    std::string hp = resolve_guest_path(path, false);
     return mkdir(hp.c_str(), mode);
 }
 
 static int darwin_rmdir(const char* path) {
     if (!path) { errno = EFAULT; return -1; }
-    std::string hp = resolve_guest_path(path);
+    std::string hp = resolve_guest_path(path, false);
     return rmdir(hp.c_str());
 }
 
