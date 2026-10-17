@@ -1110,8 +1110,8 @@ static id metal_stub(id self, SEL _cmd, ...) {
       }
     }
   }
-  if (_hostTexId > 0 && pixelBytes && level == 0 && slice == 0 && _parentRelativeSlice == 0) {
-    xef_host_metal_tex_update(_hostTexId, (int)x0, (int)y0, (int)w, (int)h, pixelBytes, (int)srcBpr);
+  if (_hostTexId > 0 && pixelBytes) {
+    xef_host_metal_tex_update_ex(_hostTexId, (int)z0, (int)(level + _parentRelativeLevel), (int)x0, (int)y0, 0, (int)w, (int)h, (int)d, pixelBytes, (int)srcBpr, (int)srcBpi);
   }
 }
 
@@ -1134,8 +1134,8 @@ static id metal_stub(id self, SEL _cmd, ...) {
   if (x0 + w > _width) w = _width - x0;
   NSUInteger rowBytes = w * bpp;
   NSUInteger dstBpi = bytesPerImage > 0 ? bytesPerImage : dstBpr * region.size.height;
-  if (_hostTexId > 0 && level == 0 && slice == 0 && _parentRelativeSlice == 0) {
-    xef_host_metal_tex_readback(_hostTexId, (int)x0, (int)y0, (int)w, (int)h, pixelBytes, (int)dstBpr);
+  if (_hostTexId > 0) {
+    xef_host_metal_tex_readback_ex(_hostTexId, (int)z0, (int)(level + _parentRelativeLevel), (int)x0, (int)y0, 0, (int)w, (int)h, (int)d, pixelBytes, (int)dstBpr, (int)dstBpi);
     return;
   }
   for (NSUInteger z = 0; z < d; z++) {

@@ -107,11 +107,13 @@ uint32_t xef_host_metal_tex_create_view(uint32_t parent_id, int fmt,
                                         int swizzle_r, int swizzle_g, int swizzle_b, int swizzle_a,
                                         int base_mip, int mip_count, int base_layer, int layer_count);
 void     xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, const void *data, int pitch);
+void     xef_host_metal_tex_update_ex(uint32_t tex_id, int slice, int level, int x, int y, int z, int w, int h, int d, const void *data, int pitch, int image_pitch);
 void     xef_host_metal_tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy);
 void     xef_host_metal_tex_copy_ex(uint32_t src_tex_id, int src_slice, int src_level, int sx, int sy, int sz,
                                     uint32_t dst_tex_id, int dst_slice, int dst_level, int dx, int dy, int dz,
                                     int sw, int sh, int sd);
 void     xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, void *out_data, int pitch);
+void     xef_host_metal_tex_readback_ex(uint32_t tex_id, int slice, int level, int x, int y, int z, int w, int h, int d, void *out_data, int pitch, int image_pitch);
 void     xef_host_metal_tex_generate_mipmaps(uint32_t tex_id);
 void     xef_host_metal_tex_destroy(uint32_t tex_id);
 

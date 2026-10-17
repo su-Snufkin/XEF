@@ -759,9 +759,9 @@ uint32_t xef_host_metal_tex_create_view(uint32_t parent_id, int fmt,
     return xef_host_metal_tex_create(64, 64, fmt, 0);
 }
 
-void xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch) {
+void xef_host_metal_tex_update_ex(uint32_t tex_id, int slice, int level, int x, int y, int z, int w, int h, int d, const void* data, int pitch, int image_pitch) {
     if (xef::metal_vk::is_available()) {
-        xef::metal_vk::tex_update(tex_id, x, y, w, h, data, pitch);
+        xef::metal_vk::tex_update_ex(tex_id, slice, level, x, y, z, w, h, d, data, pitch, image_pitch);
         return;
     }
     if (!data || w <= 0 || h <= 0) return;
@@ -790,11 +790,15 @@ void xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, cons
         }
     }
 
-    glTexSubImage2D_fn(0x0DE1 /*GL_TEXTURE_2D*/, 0, x, y, w, h, gl_fmt, 0x1401 /*GL_UNSIGNED_BYTE*/, data);
+    glTexSubImage2D_fn(0x0DE1 /*GL_TEXTURE_2D*/, level, x, y, w, h, gl_fmt, 0x1401 /*GL_UNSIGNED_BYTE*/, data);
 
     if (glPixelStorei_fn) {
         glPixelStorei_fn(0x0CF2 /*GL_UNPACK_ROW_LENGTH*/, 0);
     }
+}
+
+void xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch) {
+    xef_host_metal_tex_update_ex(tex_id, 0, 0, x, y, 0, w, h, 1, data, pitch, 0);
 }
 
 void xef_host_metal_tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy) {
@@ -852,9 +856,9 @@ void xef_host_metal_tex_copy_ex(uint32_t src_tex_id, int src_slice, int src_leve
     xef_host_metal_tex_copy(src_tex_id, sx, sy, sw, sh, dst_tex_id, dx, dy);
 }
 
-void xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, int pitch) {
+void xef_host_metal_tex_readback_ex(uint32_t tex_id, int slice, int level, int x, int y, int z, int w, int h, int d, void* out_data, int pitch, int image_pitch) {
     if (xef::metal_vk::is_available()) {
-        xef::metal_vk::tex_readback(tex_id, x, y, w, h, out_data, pitch);
+        xef::metal_vk::tex_readback_ex(tex_id, slice, level, x, y, z, w, h, d, out_data, pitch, image_pitch);
         return;
     }
     if (!out_data || w <= 0 || h <= 0) return;
@@ -882,6 +886,10 @@ void xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, vo
         if (glPixelStorei_fn) glPixelStorei_fn(0x0D02, 0);
         glBindFramebuffer_fn(0x8D40, 0);
     }
+}
+
+void xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, int pitch) {
+    xef_host_metal_tex_readback_ex(tex_id, 0, 0, x, y, 0, w, h, 1, out_data, pitch, 0);
 }
 
 void xef_host_metal_tex_generate_mipmaps(uint32_t tex_id) {
@@ -1470,9 +1478,11 @@ const Fn kFns[] = {
     {"_xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
     {"_xef_host_metal_tex_create_view", (void*)&xef_host_metal_tex_create_view},
     {"_xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
+    {"_xef_host_metal_tex_update_ex", (void*)&xef_host_metal_tex_update_ex},
     {"_xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
     {"_xef_host_metal_tex_copy_ex", (void*)&xef_host_metal_tex_copy_ex},
     {"_xef_host_metal_tex_readback", (void*)&xef_host_metal_tex_readback},
+    {"_xef_host_metal_tex_readback_ex", (void*)&xef_host_metal_tex_readback_ex},
     {"_xef_host_metal_tex_generate_mipmaps", (void*)&xef_host_metal_tex_generate_mipmaps},
     {"_xef_host_metal_tex_destroy", (void*)&xef_host_metal_tex_destroy},
     {"_xef_host_metal_pass_begin", (void*)&xef_host_metal_pass_begin},
@@ -1484,9 +1494,11 @@ const Fn kFns[] = {
     {"xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
     {"xef_host_metal_tex_create_view", (void*)&xef_host_metal_tex_create_view},
     {"xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
+    {"xef_host_metal_tex_update_ex", (void*)&xef_host_metal_tex_update_ex},
     {"xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
     {"xef_host_metal_tex_copy_ex", (void*)&xef_host_metal_tex_copy_ex},
     {"xef_host_metal_tex_readback", (void*)&xef_host_metal_tex_readback},
+    {"xef_host_metal_tex_readback_ex", (void*)&xef_host_metal_tex_readback_ex},
     {"xef_host_metal_tex_generate_mipmaps", (void*)&xef_host_metal_tex_generate_mipmaps},
     {"xef_host_metal_tex_destroy", (void*)&xef_host_metal_tex_destroy},
     {"xef_host_metal_pass_begin", (void*)&xef_host_metal_pass_begin},

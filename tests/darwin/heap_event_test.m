@@ -152,8 +152,18 @@ int main(void) {
       NSLog(@"FAIL: swizzle mismatch on texture view");
       return 13;
     }
-    NSLog(@"MTLTextureView verified: swizzle r=%d g=%d b=%d a=%d",
-          (int)swzView.swizzle.red, (int)swzView.swizzle.green, (int)swzView.swizzle.blue, (int)swzView.swizzle.alpha);
+    /* 6. Test Subresource Update and Readback */
+    uint32_t testPixels[4 * 4];
+    for (int i = 0; i < 16; i++) testPixels[i] = 0xFF00AA55;
+    [htex replaceRegion:MTLRegionMake2D(0, 0, 4, 4) mipmapLevel:0 slice:0 withBytes:testPixels bytesPerRow:4 * 4 bytesPerImage:0];
+
+    uint32_t readPixels[4 * 4] = {0};
+    [htex getBytes:readPixels bytesPerRow:4 * 4 bytesPerImage:0 fromRegion:MTLRegionMake2D(0, 0, 4, 4) mipmapLevel:0 slice:0];
+    if (readPixels[0] != 0xFF00AA55) {
+      NSLog(@"FAIL: subresource readback mismatch (got 0x%08X, expected 0x%08X)", readPixels[0], 0xFF00AA55);
+      return 14;
+    }
+    NSLog(@"Subresource update/readback verified: pixel[0]=0x%08X", readPixels[0]);
 
     NSLog(@"PASS heap_event_test");
     return 0;

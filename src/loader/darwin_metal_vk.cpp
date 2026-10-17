@@ -1147,7 +1147,11 @@ uint32_t tex_create_view(uint32_t parent_id, int fmt,
 }
 
 void tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch) {
-    if (!is_available() || !data || w <= 0 || h <= 0) return;
+    tex_update_ex(tex_id, 0, 0, x, y, 0, w, h, 1, data, pitch, 0);
+}
+
+void tex_update_ex(uint32_t tex_id, int slice, int level, int x, int y, int z, int w, int h, int d, const void* data, int pitch, int image_pitch) {
+    if (!is_available() || !data || w <= 0 || h <= 0 || d <= 0) return;
     std::lock_guard<std::mutex> lk(g_metal_vk_lock);
     auto it = g_textures.find(tex_id);
     if (it == g_textures.end()) return;
@@ -1155,7 +1159,8 @@ void tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, i
 
     size_t bpp = 4;
     size_t row_size = (size_t)w * bpp;
-    size_t upload_size = row_size * h;
+    size_t image_size = row_size * h;
+    size_t upload_size = image_size * d;
 
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
@@ -1183,9 +1188,14 @@ void tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, i
     const uint8_t* src = (const uint8_t*)data;
     uint8_t* dst = (uint8_t*)mapped;
     int src_pitch = (pitch > 0) ? pitch : (int)row_size;
+    int src_img_pitch = (image_pitch > 0) ? image_pitch : (src_pitch * h);
 
-    for (int r = 0; r < h; r++) {
-        memcpy(dst + r * row_size, src + r * src_pitch, row_size);
+    for (int depth_idx = 0; depth_idx < d; depth_idx++) {
+        const uint8_t* src_slice = src + depth_idx * src_img_pitch;
+        uint8_t* dst_slice = dst + depth_idx * image_size;
+        for (int r = 0; r < h; r++) {
+            memcpy(dst_slice + r * row_size, src_slice + r * src_pitch, row_size);
+        }
     }
     vkUnmapMemory(g_device, stagingMemory);
 
@@ -1196,12 +1206,12 @@ void tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, i
     region.bufferOffset = 0;
     region.bufferRowLength = 0;
     region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.aspectMask = (tex.vk_fmt == VK_FORMAT_D32_SFLOAT || tex.vk_fmt == VK_FORMAT_D16_UNORM) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = (uint32_t)level;
+    region.imageSubresource.baseArrayLayer = (uint32_t)slice;
     region.imageSubresource.layerCount = 1;
-    region.imageOffset = { x, y, 0 };
-    region.imageExtent = { (uint32_t)w, (uint32_t)h, 1 };
+    region.imageOffset = { x, y, z };
+    region.imageExtent = { (uint32_t)w, (uint32_t)h, (uint32_t)d };
 
     vkCmdCopyBufferToImage(cmd, stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
@@ -1302,7 +1312,11 @@ void tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_
 }
 
 void tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, int pitch) {
-    if (!is_available() || !out_data || w <= 0 || h <= 0) return;
+    tex_readback_ex(tex_id, 0, 0, x, y, 0, w, h, 1, out_data, pitch, 0);
+}
+
+void tex_readback_ex(uint32_t tex_id, int slice, int level, int x, int y, int z, int w, int h, int d, void* out_data, int pitch, int image_pitch) {
+    if (!is_available() || !out_data || w <= 0 || h <= 0 || d <= 0) return;
     std::lock_guard<std::mutex> lk(g_metal_vk_lock);
     auto it = g_textures.find(tex_id);
     if (it == g_textures.end()) return;
@@ -1310,7 +1324,8 @@ void tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, i
 
     size_t bpp = 4;
     size_t row_size = (size_t)w * bpp;
-    size_t read_size = row_size * h;
+    size_t image_size = row_size * h;
+    size_t read_size = image_size * d;
 
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
@@ -1340,12 +1355,12 @@ void tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, i
     region.bufferOffset = 0;
     region.bufferRowLength = 0;
     region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.aspectMask = (tex.vk_fmt == VK_FORMAT_D32_SFLOAT || tex.vk_fmt == VK_FORMAT_D16_UNORM) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = (uint32_t)level;
+    region.imageSubresource.baseArrayLayer = (uint32_t)slice;
     region.imageSubresource.layerCount = 1;
-    region.imageOffset = { x, y, 0 };
-    region.imageExtent = { (uint32_t)w, (uint32_t)h, 1 };
+    region.imageOffset = { x, y, z };
+    region.imageExtent = { (uint32_t)w, (uint32_t)h, (uint32_t)d };
 
     vkCmdCopyImageToBuffer(cmd, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
 
@@ -1359,9 +1374,14 @@ void tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, i
     const uint8_t* src = (const uint8_t*)mapped;
     uint8_t* dst = (uint8_t*)out_data;
     int dst_pitch = (pitch > 0) ? pitch : (int)row_size;
+    int dst_img_pitch = (image_pitch > 0) ? image_pitch : (dst_pitch * h);
 
-    for (int r = 0; r < h; r++) {
-        memcpy(dst + r * dst_pitch, src + r * row_size, row_size);
+    for (int depth_idx = 0; depth_idx < d; depth_idx++) {
+        const uint8_t* src_slice = src + depth_idx * image_size;
+        uint8_t* dst_slice = dst + depth_idx * dst_img_pitch;
+        for (int r = 0; r < h; r++) {
+            memcpy(dst_slice + r * dst_pitch, src_slice + r * row_size, row_size);
+        }
     }
     vkUnmapMemory(g_device, stagingMemory);
 
