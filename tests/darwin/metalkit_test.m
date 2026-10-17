@@ -108,6 +108,45 @@ int main(void) {
     [queue release];
     [loader release];
 
+    /* Test MTKMeshBufferAllocator and MTKMeshBuffer */
+    MTKMeshBufferAllocator *allocator = [[MTKMeshBufferAllocator alloc] initWithDevice:d];
+    if (!allocator || allocator.device != d) {
+      NSLog(@"FAIL: MTKMeshBufferAllocator init failed");
+      return 11;
+    }
+
+    id<MDLMeshBuffer> meshBuf = [allocator newBuffer:256 type:MDLMeshBufferTypeVertex];
+    if (!meshBuf || meshBuf.length != 256 || meshBuf.allocator != allocator) {
+      NSLog(@"FAIL: allocator newBuffer failed");
+      return 12;
+    }
+    float testVerts[6] = { 0.0f, 0.5f, -0.5f, -0.5f, 0.5f, -0.5f };
+    [meshBuf fillData:[NSData dataWithBytes:testVerts length:sizeof(testVerts)] offset:0];
+
+    MDLMeshBufferMap *map = [meshBuf map];
+    if (!map || memcmp([map bytes], testVerts, sizeof(testVerts)) != 0) {
+      NSLog(@"FAIL: meshBuffer map memory verification failed");
+      return 13;
+    }
+    NSLog(@"Verified MTKMeshBufferAllocator and MTKMeshBuffer memory mapping");
+
+    /* Test MDLVertexDescriptor to MTLVertexDescriptor conversion */
+    MDLVertexDescriptor *mdlDesc = [[[MDLVertexDescriptor alloc] init] autorelease];
+    MDLVertexAttribute *attr0 = [mdlDesc.attributes objectAtIndexedSubscript:0];
+    attr0.format = MDLVertexFormatFloat3;
+    attr0.offset = 0;
+    attr0.bufferIndex = 0;
+    MDLVertexBufferLayout *lay0 = [mdlDesc.layouts objectAtIndexedSubscript:0];
+    lay0.stride = 12;
+
+    MTLVertexDescriptor *mtlDesc = MTKMetalVertexDescriptorFromModelIO(mdlDesc);
+    if (!mtlDesc || mtlDesc.attributes[0].format != MTLVertexFormatFloat3 || mtlDesc.layouts[0].stride != 12) {
+      NSLog(@"FAIL: MTKMetalVertexDescriptorFromModelIO conversion failed");
+      return 14;
+    }
+    NSLog(@"Verified MTKMetalVertexDescriptorFromModelIO format conversion: fmt=%lu, stride=%lu", (unsigned long)mtlDesc.attributes[0].format, (unsigned long)mtlDesc.layouts[0].stride);
+    [allocator release];
+
     DummyDelegate *del = [[DummyDelegate alloc] init];
     v.delegate = del;
 

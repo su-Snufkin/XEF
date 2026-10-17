@@ -525,3 +525,349 @@ typedef void (^MTKTextureLoaderCallback)(id<MTLTexture> texture, NSError *error)
 
 @end
 
+/* ------------------------------------------------------------------- MTKModel */
+
+#import <MetalKit/MTKModel.h>
+
+MTKModelError const MTKModelErrorDomain = @"MTKModelErrorDomain";
+MTKModelError const MTKModelErrorKey = @"MTKModelErrorKey";
+
+@interface MTKMeshBufferZone : NSObject <MDLMeshBufferZone> {
+  id<MDLMeshBufferAllocator> _allocator;
+  NSUInteger _capacity;
+  id<MTLBuffer> _buffer;
+}
+@end
+
+@implementation MTKMeshBufferZone
+- (instancetype)initWithCapacity:(NSUInteger)capacity allocator:(id<MDLMeshBufferAllocator>)allocator device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _capacity = capacity;
+    _allocator = allocator;
+    _buffer = [[device newBufferWithLength:capacity options:MTLResourceStorageModeShared] retain];
+  }
+  return self;
+}
+- (NSUInteger)capacity { return _capacity; }
+- (id<MDLMeshBufferAllocator>)allocator { return _allocator; }
+- (id<MTLBuffer>)buffer { return _buffer; }
+- (void)dealloc {
+  [_buffer release];
+  [super dealloc];
+}
+@end
+
+@interface MTKMeshBuffer (Internal)
+- (instancetype)initWithLength:(NSUInteger)length allocator:(MTKMeshBufferAllocator *)allocator zone:(id<MDLMeshBufferZone>)zone type:(MDLMeshBufferType)type;
+- (instancetype)initWithBytes:(const void *)bytes length:(NSUInteger)length allocator:(MTKMeshBufferAllocator *)allocator zone:(id<MDLMeshBufferZone>)zone type:(MDLMeshBufferType)type;
+@end
+
+@implementation MTKMeshBuffer {
+  NSUInteger _length;
+  MTKMeshBufferAllocator *_allocator;
+  id<MDLMeshBufferZone> _zone;
+  id<MTLBuffer> _buffer;
+  NSUInteger _offset;
+  MDLMeshBufferType _type;
+  NSString *_name;
+}
+- (instancetype)initWithLength:(NSUInteger)length allocator:(MTKMeshBufferAllocator *)allocator zone:(id<MDLMeshBufferZone>)zone type:(MDLMeshBufferType)type {
+  if ((self = [super init])) {
+    _length = length;
+    _allocator = [allocator retain];
+    _zone = [zone retain];
+    _type = type;
+    _offset = 0;
+    _buffer = [[allocator.device newBufferWithLength:length > 0 ? length : 16 options:MTLResourceStorageModeShared] retain];
+  }
+  return self;
+}
+- (instancetype)initWithBytes:(const void *)bytes length:(NSUInteger)length allocator:(MTKMeshBufferAllocator *)allocator zone:(id<MDLMeshBufferZone>)zone type:(MDLMeshBufferType)type {
+  if ((self = [super init])) {
+    _length = length;
+    _allocator = [allocator retain];
+    _zone = [zone retain];
+    _type = type;
+    _offset = 0;
+    if (bytes && length > 0) {
+      _buffer = [[allocator.device newBufferWithBytes:bytes length:length options:MTLResourceStorageModeShared] retain];
+    } else {
+      _buffer = [[allocator.device newBufferWithLength:length > 0 ? length : 16 options:MTLResourceStorageModeShared] retain];
+    }
+  }
+  return self;
+}
+- (NSUInteger)length { return _length; }
+- (MTKMeshBufferAllocator *)allocator { return _allocator; }
+- (id<MDLMeshBufferZone>)zone { return _zone; }
+- (id<MTLBuffer>)buffer { return _buffer; }
+- (NSUInteger)offset { return _offset; }
+- (MDLMeshBufferType)type { return _type; }
+- (NSString *)name { return _name; }
+- (void)setName:(NSString *)name { [name retain]; [_name release]; _name = name; }
+- (void)fillData:(NSData *)data offset:(NSUInteger)offset {
+  if (data && _buffer) {
+    NSUInteger copyLen = [data length];
+    if (offset + copyLen > _length) copyLen = _length > offset ? (_length - offset) : 0;
+    if (copyLen > 0) {
+      memcpy((uint8_t *)[_buffer contents] + _offset + offset, [data bytes], copyLen);
+    }
+  }
+}
+- (MDLMeshBufferMap *)map {
+  void *ptr = (uint8_t *)[_buffer contents] + _offset;
+  return [[[MDLMeshBufferMap alloc] initWithBytes:ptr deallocator:nil] autorelease];
+}
+- (id)copyWithZone:(NSZone *)zone {
+  return [self retain];
+}
+- (void)dealloc {
+  [_allocator release];
+  [_zone release];
+  [_buffer release];
+  [_name release];
+  [super dealloc];
+}
+@end
+
+@implementation MTKMeshBufferAllocator {
+  id<MTLDevice> _device;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _device = [device retain];
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (id<MDLMeshBufferZone>)newZone:(NSUInteger)capacity {
+  return [[[MTKMeshBufferZone alloc] initWithCapacity:capacity allocator:self device:_device] autorelease];
+}
+- (id<MDLMeshBufferZone>)newZoneForBuffersWithSize:(NSArray<NSNumber *> *)sizes andType:(NSArray<NSNumber *> *)types {
+  NSUInteger total = 0;
+  for (NSNumber *s in sizes) total += [s unsignedIntegerValue];
+  return [self newZone:total];
+}
+- (id<MDLMeshBuffer>)newBuffer:(NSUInteger)length type:(MDLMeshBufferType)type {
+  return [[[MTKMeshBuffer alloc] initWithLength:length allocator:self zone:nil type:type] autorelease];
+}
+- (id<MDLMeshBuffer>)newBufferWithData:(NSData *)data type:(MDLMeshBufferType)type {
+  return [[[MTKMeshBuffer alloc] initWithBytes:[data bytes] length:[data length] allocator:self zone:nil type:type] autorelease];
+}
+- (id<MDLMeshBuffer>)newBufferFromZone:(id<MDLMeshBufferZone>)zone length:(NSUInteger)length type:(MDLMeshBufferType)type {
+  return [[[MTKMeshBuffer alloc] initWithLength:length allocator:self zone:zone type:type] autorelease];
+}
+- (id<MDLMeshBuffer>)newBufferFromZone:(id<MDLMeshBufferZone>)zone data:(NSData *)data type:(MDLMeshBufferType)type {
+  return [[[MTKMeshBuffer alloc] initWithBytes:[data bytes] length:[data length] allocator:self zone:zone type:type] autorelease];
+}
+- (void)dealloc {
+  [_device release];
+  [super dealloc];
+}
+@end
+
+@interface MTKSubmesh (Internal)
+- (instancetype)initWithPrimitiveType:(MTLPrimitiveType)primitiveType indexType:(MTLIndexType)indexType indexBuffer:(MTKMeshBuffer *)indexBuffer indexCount:(NSUInteger)indexCount mesh:(MTKMesh *)mesh name:(NSString *)name;
+@end
+
+@implementation MTKSubmesh {
+  MTLPrimitiveType _primitiveType;
+  MTLIndexType _indexType;
+  MTKMeshBuffer *_indexBuffer;
+  NSUInteger _indexCount;
+  MTKMesh *_mesh;
+  NSString *_name;
+}
+- (instancetype)initWithPrimitiveType:(MTLPrimitiveType)primitiveType indexType:(MTLIndexType)indexType indexBuffer:(MTKMeshBuffer *)indexBuffer indexCount:(NSUInteger)indexCount mesh:(MTKMesh *)mesh name:(NSString *)name {
+  if ((self = [super init])) {
+    _primitiveType = primitiveType;
+    _indexType = indexType;
+    _indexBuffer = [indexBuffer retain];
+    _indexCount = indexCount;
+    _mesh = mesh;
+    _name = [name copy];
+  }
+  return self;
+}
+- (MTLPrimitiveType)primitiveType { return _primitiveType; }
+- (MTLIndexType)indexType { return _indexType; }
+- (MTKMeshBuffer *)indexBuffer { return _indexBuffer; }
+- (NSUInteger)indexCount { return _indexCount; }
+- (MTKMesh *)mesh { return _mesh; }
+- (NSString *)name { return _name; }
+- (void)setName:(NSString *)name { [name retain]; [_name release]; _name = name; }
+- (void)dealloc {
+  [_indexBuffer release];
+  [_name release];
+  [super dealloc];
+}
+@end
+
+@implementation MTKMesh {
+  NSMutableArray<MTKMeshBuffer *> *_vertexBuffers;
+  MDLVertexDescriptor *_vertexDescriptor;
+  NSMutableArray<MTKSubmesh *> *_submeshes;
+  NSUInteger _vertexCount;
+  NSString *_name;
+}
+- (instancetype)initWithMesh:(MDLMesh *)mesh device:(id<MTLDevice>)device error:(NSError **)error {
+  if ((self = [super init])) {
+    if (error) *error = nil;
+    _vertexBuffers = [[NSMutableArray alloc] init];
+    _submeshes = [[NSMutableArray alloc] init];
+    if (mesh) {
+      _vertexCount = mesh.vertexCount;
+      _vertexDescriptor = [mesh.vertexDescriptor retain];
+      _name = [mesh.name copy];
+      if (mesh.vertexBuffers) {
+        for (id buf in mesh.vertexBuffers) {
+          if ([buf isKindOfClass:[MTKMeshBuffer class]]) {
+            [_vertexBuffers addObject:buf];
+          }
+        }
+      }
+      if (mesh.submeshes) {
+        for (MDLSubmesh *sub in mesh.submeshes) {
+          MTKMeshBuffer *ibuf = (MTKMeshBuffer *)sub.indexBuffer;
+          MTLIndexType itype = (sub.indexType == MDLIndexBitDepthUInt16) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
+          MTLPrimitiveType ptype = (sub.geometryType == MDLGeometryTypeTriangles) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangleStrip;
+          MTKSubmesh *s = [[MTKSubmesh alloc] initWithPrimitiveType:ptype indexType:itype indexBuffer:ibuf indexCount:sub.indexCount mesh:self name:sub.name];
+          [_submeshes addObject:s];
+          [s release];
+        }
+      }
+    }
+  }
+  return self;
+}
++ (NSArray<MTKMesh *> *)newMeshesFromAsset:(MDLAsset *)asset device:(id<MTLDevice>)device sourceMeshes:(NSArray<MDLMesh *> **)sourceMeshes error:(NSError **)error {
+  if (error) *error = nil;
+  NSMutableArray *outMeshes = [NSMutableArray array];
+  NSMutableArray *srcMeshes = [NSMutableArray array];
+  if (asset && [asset count] > 0) {
+    for (NSUInteger i = 0; i < [asset count]; i++) {
+      id obj = [asset objectAtIndex:i];
+      if ([obj isKindOfClass:[MDLMesh class]]) {
+        MDLMesh *m = (MDLMesh *)obj;
+        MTKMesh *km = [[[MTKMesh alloc] initWithMesh:m device:device error:error] autorelease];
+        if (km) {
+          [outMeshes addObject:km];
+          [srcMeshes addObject:m];
+        }
+      }
+    }
+  }
+  if (sourceMeshes) *sourceMeshes = srcMeshes;
+  return outMeshes;
+}
+- (NSArray<MTKMeshBuffer *> *)vertexBuffers { return _vertexBuffers; }
+- (MDLVertexDescriptor *)vertexDescriptor { return _vertexDescriptor; }
+- (NSArray<MTKSubmesh *> *)submeshes { return _submeshes; }
+- (NSUInteger)vertexCount { return _vertexCount; }
+- (NSString *)name { return _name; }
+- (void)setName:(NSString *)name { [name retain]; [_name release]; _name = name; }
+- (void)dealloc {
+  [_vertexBuffers release];
+  [_vertexDescriptor release];
+  [_submeshes release];
+  [_name release];
+  [super dealloc];
+}
+@end
+
+MTLVertexFormat MTKMetalVertexFormatFromModelIO(MDLVertexFormat vertexFormat) {
+  switch (vertexFormat) {
+    case MDLVertexFormatFloat:  return MTLVertexFormatFloat;
+    case MDLVertexFormatFloat2: return MTLVertexFormatFloat2;
+    case MDLVertexFormatFloat3: return MTLVertexFormatFloat3;
+    case MDLVertexFormatFloat4: return MTLVertexFormatFloat4;
+    case MDLVertexFormatHalf2:  return MTLVertexFormatHalf2;
+    case MDLVertexFormatHalf4:  return MTLVertexFormatHalf4;
+    case MDLVertexFormatInt:    return MTLVertexFormatInt;
+    case MDLVertexFormatInt2:   return MTLVertexFormatInt2;
+    case MDLVertexFormatInt3:   return MTLVertexFormatInt3;
+    case MDLVertexFormatInt4:   return MTLVertexFormatInt4;
+    case MDLVertexFormatUInt:   return MTLVertexFormatUInt;
+    case MDLVertexFormatUInt2:  return MTLVertexFormatUInt2;
+    case MDLVertexFormatUInt3:  return MTLVertexFormatUInt3;
+    case MDLVertexFormatUInt4:  return MTLVertexFormatUInt4;
+    case MDLVertexFormatShort2: return MTLVertexFormatShort2;
+    case MDLVertexFormatShort4: return MTLVertexFormatShort4;
+    case MDLVertexFormatUChar4: return MTLVertexFormatUChar4;
+    case MDLVertexFormatUChar4Normalized: return MTLVertexFormatUChar4Normalized;
+    default: return MTLVertexFormatInvalid;
+  }
+}
+
+MDLVertexFormat MTKModelIOVertexFormatFromMetal(MTLVertexFormat vertexFormat) {
+  switch (vertexFormat) {
+    case MTLVertexFormatFloat:  return MDLVertexFormatFloat;
+    case MTLVertexFormatFloat2: return MDLVertexFormatFloat2;
+    case MTLVertexFormatFloat3: return MDLVertexFormatFloat3;
+    case MTLVertexFormatFloat4: return MDLVertexFormatFloat4;
+    case MTLVertexFormatHalf2:  return MDLVertexFormatHalf2;
+    case MTLVertexFormatHalf4:  return MDLVertexFormatHalf4;
+    case MTLVertexFormatInt:    return MDLVertexFormatInt;
+    case MTLVertexFormatInt2:   return MDLVertexFormatInt2;
+    case MTLVertexFormatInt3:   return MDLVertexFormatInt3;
+    case MTLVertexFormatInt4:   return MDLVertexFormatInt4;
+    case MTLVertexFormatUInt:   return MDLVertexFormatUInt;
+    case MTLVertexFormatUInt2:  return MDLVertexFormatUInt2;
+    case MTLVertexFormatUInt3:  return MDLVertexFormatUInt3;
+    case MTLVertexFormatUInt4:  return MDLVertexFormatUInt4;
+    case MTLVertexFormatShort2: return MDLVertexFormatShort2;
+    case MTLVertexFormatShort4: return MDLVertexFormatShort4;
+    case MTLVertexFormatUChar4: return MDLVertexFormatUChar4;
+    case MTLVertexFormatUChar4Normalized: return MDLVertexFormatUChar4Normalized;
+    default: return MDLVertexFormatInvalid;
+  }
+}
+
+MTLVertexDescriptor *MTKMetalVertexDescriptorFromModelIO(MDLVertexDescriptor *modelIODescriptor) {
+  return MTKMetalVertexDescriptorFromModelIOWithError(modelIODescriptor, nil);
+}
+
+MTLVertexDescriptor *MTKMetalVertexDescriptorFromModelIOWithError(MDLVertexDescriptor *modelIODescriptor, NSError **error) {
+  if (error) *error = nil;
+  if (!modelIODescriptor) return nil;
+  MTLVertexDescriptor *desc = [MTLVertexDescriptor vertexDescriptor];
+  for (NSUInteger i = 0; i < 31; i++) {
+    MDLVertexAttribute *attr = [modelIODescriptor.attributes objectAtIndexedSubscript:i];
+    if (attr && attr.format != MDLVertexFormatInvalid) {
+      desc.attributes[i].format = MTKMetalVertexFormatFromModelIO(attr.format);
+      desc.attributes[i].offset = attr.offset;
+      desc.attributes[i].bufferIndex = attr.bufferIndex;
+    }
+    MDLVertexBufferLayout *layout = [modelIODescriptor.layouts objectAtIndexedSubscript:i];
+    if (layout && layout.stride > 0) {
+      desc.layouts[i].stride = layout.stride;
+    }
+  }
+  return desc;
+}
+
+MDLVertexDescriptor *MTKModelIOVertexDescriptorFromMetal(MTLVertexDescriptor *metalDescriptor) {
+  return MTKModelIOVertexDescriptorFromMetalWithError(metalDescriptor, nil);
+}
+
+MDLVertexDescriptor *MTKModelIOVertexDescriptorFromMetalWithError(MTLVertexDescriptor *metalDescriptor, NSError **error) {
+  if (error) *error = nil;
+  if (!metalDescriptor) return nil;
+  MDLVertexDescriptor *desc = [[[MDLVertexDescriptor alloc] init] autorelease];
+  for (NSUInteger i = 0; i < 31; i++) {
+    MTLVertexAttributeDescriptor *attr = metalDescriptor.attributes[i];
+    if (attr && attr.format != MTLVertexFormatInvalid) {
+      MDLVertexAttribute *mattr = [desc.attributes objectAtIndexedSubscript:i];
+      mattr.format = MTKModelIOVertexFormatFromMetal(attr.format);
+      mattr.offset = attr.offset;
+      mattr.bufferIndex = attr.bufferIndex;
+    }
+    MTLVertexBufferLayoutDescriptor *layout = metalDescriptor.layouts[i];
+    if (layout && layout.stride > 0) {
+      MDLVertexBufferLayout *mlayout = [desc.layouts objectAtIndexedSubscript:i];
+      mlayout.stride = layout.stride;
+    }
+  }
+  return desc;
+}
+
