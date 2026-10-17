@@ -137,7 +137,7 @@ inline bool find_entry(llvm::Module& m, const std::string& name, AirEntry& out) 
             for (unsigned j = 3; j < n->getNumOperands(); j++) {
                 auto* t = llvm::dyn_cast_or_null<llvm::MDNode>(n->getOperand(j));
                 std::string s = t && t->getNumOperands() ? md_str(t->getOperand(0)) : md_str(n->getOperand(j));
-                if (s == "air.early_fragment_tests") out.early_fragment_tests = true;
+                if (s == "early_fragment_tests" || s == "air.early_fragment_tests") out.early_fragment_tests = true;   // Apple: bare string
                 if (s == "air.patch" && t && t->getNumOperands() > 1) out.patch = md_str(t->getOperand(1));
             }
             return true;
