@@ -150,6 +150,7 @@ struct MetalVkTex {
     VkFramebuffer framebuffer_clear = VK_NULL_HANDLE;
     VkFramebuffer framebuffer_load = VK_NULL_HANDLE;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    bool owns_image = true;
     VkDescriptorSet desc_set_linear = VK_NULL_HANDLE;
     VkDescriptorSet desc_set_nearest = VK_NULL_HANDLE;
     VkDescriptorSet desc_set_linear_repeat = VK_NULL_HANDLE;
@@ -1065,6 +1066,66 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     return id;
 }
 
+static VkComponentSwizzle map_vk_swizzle(int s) {
+    switch (s) {
+        case 0: return VK_COMPONENT_SWIZZLE_ZERO;
+        case 1: return VK_COMPONENT_SWIZZLE_ONE;
+        case 2: return VK_COMPONENT_SWIZZLE_R;
+        case 3: return VK_COMPONENT_SWIZZLE_G;
+        case 4: return VK_COMPONENT_SWIZZLE_B;
+        case 5: return VK_COMPONENT_SWIZZLE_A;
+        default: return VK_COMPONENT_SWIZZLE_IDENTITY;
+    }
+}
+
+uint32_t tex_create_view(uint32_t parent_id, int fmt,
+                         int swizzle_r, int swizzle_g, int swizzle_b, int swizzle_a,
+                         int base_mip, int mip_count, int base_layer, int layer_count) {
+    if (!is_available() || parent_id == 0) return 0;
+    std::lock_guard<std::mutex> lk(g_metal_vk_lock);
+    auto it_p = g_textures.find(parent_id);
+    if (it_p == g_textures.end()) return 0;
+    MetalVkTex& parent = it_p->second;
+
+    uint32_t id = ++g_next_tex_id;
+    MetalVkTex t;
+    t.owns_image = false;
+    t.image = parent.image;
+    t.memory = VK_NULL_HANDLE;
+    t.vk_fmt = map_metal_fmt_to_vk(fmt);
+    t.w = std::max(1, parent.w >> base_mip);
+    t.h = std::max(1, parent.h >> base_mip);
+    t.mip_levels = (mip_count > 0) ? mip_count : 1;
+    t.is_rt = parent.is_rt;
+    t.layout = parent.layout;
+
+    VkImageViewCreateInfo ivci = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+    ivci.image = t.image;
+    ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    ivci.format = t.vk_fmt;
+    ivci.components.r = map_vk_swizzle(swizzle_r);
+    ivci.components.g = map_vk_swizzle(swizzle_g);
+    ivci.components.b = map_vk_swizzle(swizzle_b);
+    ivci.components.a = map_vk_swizzle(swizzle_a);
+    ivci.subresourceRange.aspectMask = (t.vk_fmt == VK_FORMAT_D32_SFLOAT || t.vk_fmt == VK_FORMAT_D16_UNORM) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    ivci.subresourceRange.baseMipLevel = (uint32_t)base_mip;
+    ivci.subresourceRange.levelCount = (uint32_t)t.mip_levels;
+    ivci.subresourceRange.baseArrayLayer = (uint32_t)base_layer;
+    ivci.subresourceRange.layerCount = (uint32_t)((layer_count > 0) ? layer_count : 1);
+
+    if (vkCreateImageView(g_device, &ivci, nullptr, &t.view) != VK_SUCCESS) {
+        return 0;
+    }
+
+    update_texture_descriptor(t, g_sampler_linear, t.desc_set_linear);
+    update_texture_descriptor(t, g_sampler_nearest, t.desc_set_nearest);
+    update_texture_descriptor(t, g_sampler_linear_repeat, t.desc_set_linear_repeat);
+    update_texture_descriptor(t, g_sampler_nearest_repeat, t.desc_set_nearest_repeat);
+
+    g_textures[id] = t;
+    return id;
+}
+
 void tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch) {
     if (!is_available() || !data || w <= 0 || h <= 0) return;
     std::lock_guard<std::mutex> lk(g_metal_vk_lock);
@@ -1392,8 +1453,10 @@ void tex_destroy(uint32_t tex_id) {
     if (t.render_pass_clear) vkDestroyRenderPass(g_device, t.render_pass_clear, nullptr);
     if (t.render_pass_load) vkDestroyRenderPass(g_device, t.render_pass_load, nullptr);
     if (t.view) vkDestroyImageView(g_device, t.view, nullptr);
-    if (t.image) vkDestroyImage(g_device, t.image, nullptr);
-    if (t.memory) vkFreeMemory(g_device, t.memory, nullptr);
+    if (t.owns_image) {
+        if (t.image) vkDestroyImage(g_device, t.image, nullptr);
+        if (t.memory) vkFreeMemory(g_device, t.memory, nullptr);
+    }
 
     for (auto it_fb = g_fb_cache.begin(); it_fb != g_fb_cache.end(); ) {
         if (it_fb->first.color_tex_id == tex_id || it_fb->first.depth_tex_id == tex_id) {

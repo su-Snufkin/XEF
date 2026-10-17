@@ -14,6 +14,9 @@ bool        is_available();
 const char* get_device_name();
 
 uint32_t    tex_create(int w, int h, int fmt, int is_render_target);
+uint32_t    tex_create_view(uint32_t parent_id, int fmt,
+                            int swizzle_r, int swizzle_g, int swizzle_b, int swizzle_a,
+                            int base_mip, int mip_count, int base_layer, int layer_count);
 void        tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch);
 void        tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy);
 void        tex_copy_ex(uint32_t src_tex_id, int src_slice, int src_level, int sx, int sy, int sz,

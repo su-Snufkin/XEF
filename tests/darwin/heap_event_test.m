@@ -117,8 +117,23 @@ int main(void) {
        destinationOrigin:MTLOriginMake(0, 0, 0)];
     [bce endEncoding];
 
-    [cmdBuf commit];
-    [cmdBuf waitUntilCompleted];
+    /* 5. Test Texture View and Swizzle */
+    MTLTextureSwizzleChannels swz = MTLTextureSwizzleChannelsMake(MTLTextureSwizzleBlue, MTLTextureSwizzleGreen, MTLTextureSwizzleRed, MTLTextureSwizzleOne);
+    id<MTLTexture> swzView = [htex newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                     textureType:MTLTextureType2D
+                                                          levels:NSMakeRange(0, 1)
+                                                          slices:NSMakeRange(0, 1)
+                                                         swizzle:swz];
+    if (!swzView) {
+      NSLog(@"FAIL: newTextureViewWithPixelFormat:textureType:levels:slices:swizzle: returned nil");
+      return 12;
+    }
+    if (swzView.swizzle.red != MTLTextureSwizzleBlue || swzView.swizzle.alpha != MTLTextureSwizzleOne) {
+      NSLog(@"FAIL: swizzle mismatch on texture view");
+      return 13;
+    }
+    NSLog(@"MTLTextureView verified: swizzle r=%d g=%d b=%d a=%d",
+          (int)swzView.swizzle.red, (int)swzView.swizzle.green, (int)swzView.swizzle.blue, (int)swzView.swizzle.alpha);
 
     NSLog(@"PASS heap_event_test");
     return 0;

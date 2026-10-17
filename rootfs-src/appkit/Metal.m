@@ -536,6 +536,7 @@ static uint16_t xef_float_to_half(float v) {
   MTLHazardTrackingMode _hazardTrackingMode;
   MTLTextureUsage _usage;
   BOOL _allowGPUOptimizedContents;
+  MTLTextureSwizzleChannels _swizzle;
 }
 + (MTLTextureDescriptor *)texture2DDescriptorWithPixelFormat:(MTLPixelFormat)pixelFormat width:(NSUInteger)width height:(NSUInteger)height mipmapped:(BOOL)mipmapped {
   MTLTextureDescriptor *d = [[[self alloc] init] autorelease];
@@ -580,6 +581,7 @@ static uint16_t xef_float_to_half(float v) {
     _mipmapLevelCount = 1; _sampleCount = 1; _arrayLength = 1;
     _usage = MTLTextureUsageShaderRead;
     _allowGPUOptimizedContents = YES;
+    _swizzle = MTLTextureSwizzleChannelsMake(MTLTextureSwizzleRed, MTLTextureSwizzleGreen, MTLTextureSwizzleBlue, MTLTextureSwizzleAlpha);
   }
   return self;
 }
@@ -597,6 +599,7 @@ static uint16_t xef_float_to_half(float v) {
 - (MTLHazardTrackingMode)hazardTrackingMode { return _hazardTrackingMode; } - (void)setHazardTrackingMode:(MTLHazardTrackingMode)m { _hazardTrackingMode = m; }
 - (MTLTextureUsage)usage { return _usage; } - (void)setUsage:(MTLTextureUsage)u { _usage = u; }
 - (BOOL)allowGPUOptimizedContents { return _allowGPUOptimizedContents; } - (void)setAllowGPUOptimizedContents:(BOOL)a { _allowGPUOptimizedContents = a; }
+- (MTLTextureSwizzleChannels)swizzle { return _swizzle; } - (void)setSwizzle:(MTLTextureSwizzleChannels)s { _swizzle = s; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLTextureDescriptor *c = [[MTLTextureDescriptor allocWithZone:zone] init];
   c->_textureType = _textureType; c->_pixelFormat = _pixelFormat;
@@ -604,6 +607,7 @@ static uint16_t xef_float_to_half(float v) {
   c->_mipmapLevelCount = _mipmapLevelCount; c->_sampleCount = _sampleCount;
   c->_arrayLength = _arrayLength; c->_usage = _usage;
   c->_resourceOptions = _resourceOptions; c->_storageMode = _storageMode;
+  c->_swizzle = _swizzle;
   return c;
 }
 @end
@@ -965,9 +969,11 @@ static id metal_stub(id self, SEL _cmd, ...) {
   uint32_t _hostTexId;
   id<MTLHeap> _heap;
   NSUInteger _heapOffset;
+  MTLTextureSwizzleChannels _swizzle;
 }
 - (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc device:(id<MTLDevice>)device;
 - (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices;
+- (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices swizzle:(MTLTextureSwizzleChannels)swizzle;
 - (uint32_t)_hostTexId;
 - (const void *)_rawBytes;
 - (void *)_mutableRawBytes;
@@ -990,6 +996,7 @@ static id metal_stub(id self, SEL _cmd, ...) {
     _cpuCacheMode = desc.cpuCacheMode;
     _resourceOptions = desc.resourceOptions;
     _device = device;
+    _swizzle = desc.swizzle;
     NSUInteger slices = _arrayLength * (_textureType == MTLTextureTypeCube ? 6 : 1);
     _storage = [[XEFMetalTextureStorage alloc] initWithWidth:_width height:_height depth:_depth arrayLength:slices bpp:xef_mtl_bpp(_pixelFormat)];
     _hostTexId = xef_host_metal_tex_create((int)_width, (int)_height, (int)_pixelFormat, (_usage & MTLTextureUsageRenderTarget) != 0);
@@ -997,6 +1004,9 @@ static id metal_stub(id self, SEL _cmd, ...) {
   return self;
 }
 - (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices {
+  return [self initWithParent:parent pixelFormat:fmt textureType:ttype levels:levels slices:slices swizzle:MTLTextureSwizzleChannelsMake(MTLTextureSwizzleRed, MTLTextureSwizzleGreen, MTLTextureSwizzleBlue, MTLTextureSwizzleAlpha)];
+}
+- (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices swizzle:(MTLTextureSwizzleChannels)swizzle {
   if ((self = [super init])) {
     _width = parent->_width;
     _height = parent->_height;
@@ -1011,11 +1021,17 @@ static id metal_stub(id self, SEL _cmd, ...) {
     _cpuCacheMode = parent->_cpuCacheMode;
     _resourceOptions = parent->_resourceOptions;
     _device = parent->_device;
+    _swizzle = swizzle;
     _storage = [parent->_storage retain];
     _parentTexture = [parent retain];
     _parentRelativeLevel = levels.location;
     _parentRelativeSlice = slices.location;
-    _hostTexId = parent->_hostTexId;
+    if (parent->_hostTexId > 0) {
+      _hostTexId = xef_host_metal_tex_create_view(parent->_hostTexId, (int)_pixelFormat,
+                                                  (int)swizzle.red, (int)swizzle.green, (int)swizzle.blue, (int)swizzle.alpha,
+                                                  (int)levels.location, (int)_mipmapLevelCount,
+                                                  (int)slices.location, (int)_arrayLength);
+    }
   }
   return self;
 }
@@ -1054,12 +1070,16 @@ static id metal_stub(id self, SEL _cmd, ...) {
 - (NSUInteger)heapOffset { return _heapOffset; }
 - (NSUInteger)allocatedSize { return _storage ? _storage->_dataSize : 0; }
 - (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state { return MTLPurgeableStateNonVolatile; }
+- (MTLTextureSwizzleChannels)swizzle { return _swizzle; }
 
 - (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat {
   return [[XEFMetalTexture alloc] initWithParent:self pixelFormat:pixelFormat textureType:_textureType levels:NSMakeRange(0, _mipmapLevelCount) slices:NSMakeRange(0, _arrayLength)];
 }
 - (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat textureType:(MTLTextureType)textureType levels:(NSRange)levelRange slices:(NSRange)sliceRange {
   return [[XEFMetalTexture alloc] initWithParent:self pixelFormat:pixelFormat textureType:textureType levels:levelRange slices:sliceRange];
+}
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat textureType:(MTLTextureType)textureType levels:(NSRange)levelRange slices:(NSRange)sliceRange swizzle:(MTLTextureSwizzleChannels)swizzle {
+  return [[XEFMetalTexture alloc] initWithParent:self pixelFormat:pixelFormat textureType:textureType levels:levelRange slices:sliceRange swizzle:swizzle];
 }
 
 - (void)replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level slice:(NSUInteger)slice withBytes:(const void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow bytesPerImage:(NSUInteger)bytesPerImage {
@@ -1136,7 +1156,7 @@ static id metal_stub(id self, SEL _cmd, ...) {
 }
 
 - (void)dealloc {
-  if (_hostTexId > 0 && !_parentTexture) {
+  if (_hostTexId > 0 && (!_parentTexture || _hostTexId != [(XEFMetalTexture *)_parentTexture _hostTexId])) {
     xef_host_metal_tex_destroy(_hostTexId);
     _hostTexId = 0;
   }

@@ -749,6 +749,16 @@ uint32_t xef_host_metal_tex_create(int w, int h, int fmt, int is_render_target) 
     return id;
 }
 
+uint32_t xef_host_metal_tex_create_view(uint32_t parent_id, int fmt,
+                                        int swizzle_r, int swizzle_g, int swizzle_b, int swizzle_a,
+                                        int base_mip, int mip_count, int base_layer, int layer_count) {
+    if (xef::metal_vk::is_available()) {
+        return xef::metal_vk::tex_create_view(parent_id, fmt, swizzle_r, swizzle_g, swizzle_b, swizzle_a,
+                                             base_mip, mip_count, base_layer, layer_count);
+    }
+    return xef_host_metal_tex_create(64, 64, fmt, 0);
+}
+
 void xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch) {
     if (xef::metal_vk::is_available()) {
         xef::metal_vk::tex_update(tex_id, x, y, w, h, data, pitch);
@@ -1458,6 +1468,7 @@ const Fn kFns[] = {
     {"_xef_host_file_dialog", (void*)&xef_host_file_dialog},
     {"_xef_host_present_pixels", (void*)&xef_host_present_pixels},
     {"_xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
+    {"_xef_host_metal_tex_create_view", (void*)&xef_host_metal_tex_create_view},
     {"_xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
     {"_xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
     {"_xef_host_metal_tex_copy_ex", (void*)&xef_host_metal_tex_copy_ex},
@@ -1471,6 +1482,7 @@ const Fn kFns[] = {
     {"_xef_host_metal_present_gpu", (void*)&xef_host_metal_present_gpu},
     {"_xef_host_metal_backend_name", (void*)&xef_host_metal_backend_name},
     {"xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
+    {"xef_host_metal_tex_create_view", (void*)&xef_host_metal_tex_create_view},
     {"xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
     {"xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
     {"xef_host_metal_tex_copy_ex", (void*)&xef_host_metal_tex_copy_ex},
