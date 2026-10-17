@@ -1,3 +1,4 @@
+#include <objc/message.h>
 /* MetalKit-lite for XEF-OSX: MTKView, MTKTextureLoader, etc. */
 #import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
@@ -644,6 +645,13 @@ typedef void (^MTKTextureLoaderCallback)(id<MTLTexture> texture, NSError *error)
 
 - (id<MTLTexture>)newTextureWithName:(NSString *)name scaleFactor:(CGFloat)scaleFactor bundle:(NSBundle *)bundle options:(NSDictionary *)options error:(NSError **)error {
   if (!bundle) bundle = [NSBundle mainBundle];
+  /* compiled asset catalog first (MetalKitAssets.m) */
+  Class cat = NSClassFromString(@"XEFAssetCatalog");
+  id c = [cat performSelector:@selector(catalogForBundle:) withObject:bundle];
+  if (c) {
+    id<MTLTexture> t = ((id (*)(id, SEL, id, id, id, NSError **))objc_msgSend)(c, NSSelectorFromString(@"newTextureNamed:device:options:error:"), name, _device, options, error);
+    if (t) return t;
+  }
   NSString *path = [bundle pathForResource:name ofType:@"png"];
   if (!path) path = [bundle pathForResource:name ofType:@"bmp"];
   if (!path) path = [bundle pathForResource:name ofType:@"tga"];

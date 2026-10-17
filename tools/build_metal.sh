@@ -16,7 +16,7 @@ CFLAGS="$COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -
 build() {   # name extra-link-args sources...
   local NAME=$1 EXTRA=$2; shift 2
   local objs=""
-  for src in "$@"; do clang $CFLAGS -c $S/$src -o $O/${src%.m}.o; objs="$objs $O/${src%.m}.o"; done
+  for src in "$@"; do o=$O/$(echo ${src%.*} | tr / _).o; clang $CFLAGS -c $S/$src -o $o; objs="$objs $o"; done
   mkdir -p $F/$NAME.framework/Versions/A
   clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/$NAME.framework/Versions/A/$NAME \
     -Wl,-compatibility_version,1 -Wl,-current_version,1 -Wl,-not_for_dyld_shared_cache \
@@ -29,7 +29,8 @@ CG=$F/CoreGraphics.framework/Versions/A/CoreGraphics
 build Metal "$CG" Metal.m MetalCore.m MetalExtras.m
 build GameController "" GameController.m
 build QuartzCore "$CG $F/Metal.framework/Versions/A/Metal" QuartzCore.m
-build MetalKit "$CG $F/AppKit.framework/Versions/C/AppKit $F/QuartzCore.framework/Versions/A/QuartzCore $F/Metal.framework/Versions/A/Metal" MetalKit.m
+build MetalKit "$CG $F/AppKit.framework/Versions/C/AppKit $F/QuartzCore.framework/Versions/A/QuartzCore $F/Metal.framework/Versions/A/Metal" MetalKit.m MetalKitAssets.m \
+  lzfse/lzfse_decode.c lzfse/lzfse_decode_base.c lzfse/lzfse_fse.c lzfse/lzvn_decode_base.c
 REMOTE
 for f in Metal QuartzCore MetalKit GameController; do
   rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/$f.framework darwin-rootfs/System/Library/Frameworks/
