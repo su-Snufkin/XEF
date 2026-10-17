@@ -40,11 +40,14 @@
 - (uint64_t)_signaledValue;
 - (void)_setSignaledValue:(uint64_t)v;
 - (void)_setLabel:(NSString *)l;
+- (id)_event;
+- (void)_setEvent:(id)e;
 @end
 
 @implementation MTLSharedEventHandle {
   NSString *_label;
   uint64_t _signaledValue;
+  id _event;                 /* the event this handle was made from (same process) */
 }
 + (BOOL)supportsSecureCoding { return YES; }
 - (void)encodeWithCoder:(NSCoder *)coder {
@@ -62,9 +65,19 @@
 - (uint64_t)_signaledValue { return _signaledValue; }
 - (void)_setSignaledValue:(uint64_t)v { _signaledValue = v; }
 - (void)_setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
-- (void)dealloc { [_label release]; [super dealloc]; }
+- (id)_event { return _event; }
+- (void)_setEvent:(id)e { [e retain]; [_event release]; _event = e; }
+- (void)dealloc { [_label release]; [_event release]; [super dealloc]; }
 @end
 
+
+@implementation MTLSharedTextureHandle
++ (BOOL)supportsSecureCoding { return YES; }
+- (void)encodeWithCoder:(NSCoder *)coder {}
+- (instancetype)initWithCoder:(NSCoder *)coder { return [super init]; }
+- (id<MTLDevice>)device { id t = objc_getAssociatedObject(self, "xef_texture"); return t ? [t device] : [XEFMetalDevice sharedDevice]; }
+- (NSString *)label { id t = objc_getAssociatedObject(self, "xef_texture"); return t ? [t label] : nil; }
+@end
 
 @interface XEFMetalCounter : NSObject <MTLCounter> {
   NSString *_name;

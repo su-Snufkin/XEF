@@ -109,6 +109,7 @@ static id<MTLDevice> xef_shared_device(void);
   NSUInteger _parentLevel, _parentSlice;
   id<MTLBuffer> _buffer;
   NSUInteger _bufferOffset, _bufferBytesPerRow;
+  id<MTLHeap> _heap;         /* not retained: the heap outlives its resources */
 }
 + (id)wrapHostTexture:(uint32_t)tex resourceID:(uint64_t)rid width:(NSUInteger)w height:(NSUInteger)h pixelFormat:(MTLPixelFormat)pf;
 @end
@@ -162,7 +163,7 @@ static void xef_region6(MTLRegion r, uint32_t *out) {
 - (IOSurfaceRef)iosurface { return NULL; }
 - (NSUInteger)iosurfacePlane { return 0; }
 - (NSUInteger)allocatedSize { return _width * _height * _depth * _arrayLength * 4; }
-- (id<MTLHeap>)heap { return nil; }
+- (id<MTLHeap>)heap { return _heap; }
 - (NSUInteger)heapOffset { return 0; }
 - (void)makeAliasable {}
 - (BOOL)isAliasable { return NO; }
@@ -224,7 +225,11 @@ static void xef_region6(MTLRegion r, uint32_t *out) {
   return [self newTextureViewWithPixelFormat:pixelFormat textureType:_type levels:NSMakeRange(0, _mips)
                                       slices:NSMakeRange(0, cube ? _arrayLength * 6 : _arrayLength)];
 }
-- (MTLSharedTextureHandle *)newSharedTextureHandle { return nil; }
+- (MTLSharedTextureHandle *)newSharedTextureHandle {
+  MTLSharedTextureHandle *h = [[MTLSharedTextureHandle alloc] init];
+  objc_setAssociatedObject(h, "xef_texture", self, OBJC_ASSOCIATION_RETAIN);
+  return h;
+}
 - (void)dealloc {
   if (_owned && _id) xef_mtl_texture_destroy(_id);
   [(id)_parent release];
@@ -465,7 +470,7 @@ static NSUInteger xef_data_type_size(MTLDataType t) {
 - (NSUInteger)maxTotalThreadsPerThreadgroup { return 1024; }
 - (BOOL)threadgroupSizeMatchesTileSize { return NO; }
 - (NSUInteger)imageblockSampleLength { return 0; }
-- (BOOL)supportIndirectCommandBuffers { return NO; }
+- (BOOL)supportIndirectCommandBuffers { return YES; }   /* CPU-encoded ICBs replay through the encoder */
 - (MTLResourceID)gpuResourceID { MTLResourceID r; r._impl = _id; return r; }
 - (NSUInteger)maxTotalThreadsPerObjectThreadgroup { return 0; }
 - (NSUInteger)maxTotalThreadsPerMeshThreadgroup { return 0; }
@@ -488,7 +493,7 @@ static NSUInteger xef_data_type_size(MTLDataType t) {
 - (NSUInteger)threadExecutionWidth { return _info.execution_width; }
 - (NSUInteger)staticThreadgroupMemoryLength { return _info.static_threadgroup_memory; }
 - (NSUInteger)imageblockMemoryLengthForDimensions:(MTLSize)d { return 0; }
-- (BOOL)supportIndirectCommandBuffers { return NO; }
+- (BOOL)supportIndirectCommandBuffers { return YES; }   /* CPU-encoded ICBs replay through the encoder */
 - (MTLResourceID)gpuResourceID { MTLResourceID r; r._impl = _id; return r; }
 - (void)dealloc { if (_id) xef_mtl_pipeline_destroy(_id); [super dealloc]; }
 @end
@@ -499,6 +504,40 @@ static NSUInteger xef_data_type_size(MTLDataType t) {
 @end
 @implementation XEFMetalFence
 - (id<MTLDevice>)device { return xef_shared_device(); }
+@end
+
+/* implemented in MetalExtras.m */
+@interface MTLSharedEventHandle (XEFInternal)
+- (uint64_t)_signaledValue;
+- (void)_setSignaledValue:(uint64_t)v;
+- (void)_setLabel:(NSString *)l;
+- (id)_event;
+- (void)_setEvent:(id)e;
+@end
+
+/* objects implemented in MetalExtras.m */
+@interface XEFMetalBinaryArchive : NSObject
+- (instancetype)initWithDescriptor:(MTLBinaryArchiveDescriptor *)descriptor device:(id<MTLDevice>)device;
+@end
+@interface XEFMetalDynamicLibrary : NSObject
+- (instancetype)initWithLibrary:(id<MTLLibrary>)library device:(id<MTLDevice>)device;
+@end
+@interface XEFMetalIndirectCommandBuffer : NSObject {
+@public
+  id<MTLDevice> _device;
+  MTLIndirectCommandBufferDescriptor *_descriptor;
+  NSUInteger _maxCommandCount;
+  MTLResourceOptions _options;
+  NSMutableArray *_renderCommands;
+  NSMutableArray *_computeCommands;
+}
+- (instancetype)initWithDescriptor:(MTLIndirectCommandBufferDescriptor *)descriptor maxCommandCount:(NSUInteger)count options:(MTLResourceOptions)options device:(id<MTLDevice>)device;
+@end
+@interface XEFMetalLogState : NSObject
+- (instancetype)initWithDescriptor:(MTLLogStateDescriptor *)desc;
+@end
+@protocol XEFIndirectReplay
+- (void)executeOnEncoder:(id)encoder;
 @end
 
 @interface XEFMetalEvent : XEFMetalObject <MTLSharedEvent> {
@@ -521,7 +560,13 @@ static NSUInteger xef_data_type_size(MTLDataType t) {
     dispatch_async(q, ^{ b(self, value); Block_release(b); [self release]; });
   });
 }
-- (MTLSharedEventHandle *)newSharedEventHandle { return nil; }
+- (MTLSharedEventHandle *)newSharedEventHandle {
+  MTLSharedEventHandle *h = [[MTLSharedEventHandle alloc] init];
+  [h _setEvent:self];
+  [h _setSignaledValue:[self signaledValue]];
+  if ([self label]) [h _setLabel:[self label]];
+  return h;
+}
 - (void)dealloc { if (_id) xef_mtl_event_destroy(_id); [super dealloc]; }
 @end
 
@@ -793,6 +838,18 @@ XEF_STAGE_BINDINGS(Fragment, XEF_MTL_STAGE_FRAGMENT)
 - (void)setTileSamplerState:(id<MTLSamplerState>)s atIndex:(NSUInteger)i {}
 - (void)setThreadgroupMemoryLength:(NSUInteger)l offset:(NSUInteger)o atIndex:(NSUInteger)i {}
 - (void)dispatchThreadsPerTile:(MTLSize)s {}
+- (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)icb withRange:(NSRange)range {
+  XEFMetalIndirectCommandBuffer *b = (XEFMetalIndirectCommandBuffer *)icb;
+  NSArray *cmds = b ? b->_renderCommands : nil;
+  for (NSUInteger i = range.location; i < NSMaxRange(range) && i < cmds.count; i++) {
+    id c = cmds[i];
+    if (c != [NSNull null]) [(id<XEFIndirectReplay>)c executeOnEncoder:self];
+  }
+}
+- (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)icb indirectBuffer:(id<MTLBuffer>)rb indirectBufferOffset:(NSUInteger)off {
+  const uint32_t *r = (const uint32_t *)((const uint8_t *)[rb contents] + off);   /* MTLIndirectCommandBufferExecutionRange */
+  [self executeCommandsInBuffer:icb withRange:NSMakeRange(r[0], r[1])];
+}
 @end
 
 /* ---- compute ---- */
@@ -837,6 +894,18 @@ XEF_STAGE_BINDINGS(, XEF_MTL_STAGE_KERNEL)
   xef_stream_emit(&_cb->_stream, XEF_MTL_CMD_MEMORY_BARRIER, 0);
 }
 - (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage {}
+- (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)icb withRange:(NSRange)range {
+  XEFMetalIndirectCommandBuffer *b = (XEFMetalIndirectCommandBuffer *)icb;
+  NSArray *cmds = b ? b->_computeCommands : nil;
+  for (NSUInteger i = range.location; i < NSMaxRange(range) && i < cmds.count; i++) {
+    id c = cmds[i];
+    if (c != [NSNull null]) [(id<XEFIndirectReplay>)c executeOnEncoder:self];
+  }
+}
+- (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)icb indirectBuffer:(id<MTLBuffer>)rb indirectBufferOffset:(NSUInteger)off {
+  const uint32_t *r = (const uint32_t *)((const uint8_t *)[rb contents] + off);
+  [self executeCommandsInBuffer:icb withRange:NSMakeRange(r[0], r[1])];
+}
 @end
 
 /* ---- blit ---- */
@@ -1431,7 +1500,35 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
   return [self newTextureWithDescriptor:desc];
 }
 - (id<MTLTexture>)newSharedTextureWithDescriptor:(MTLTextureDescriptor *)desc { return [self newTextureWithDescriptor:desc]; }
-- (id<MTLTexture>)newSharedTextureWithHandle:(MTLSharedTextureHandle *)h { return nil; }
+- (id<MTLTexture>)newSharedTextureWithHandle:(MTLSharedTextureHandle *)h {
+  /* handles only travel inside this process: they wrap the texture itself */
+  id t = h ? objc_getAssociatedObject(h, "xef_texture") : nil;
+  return t ? [t retain] : nil;
+}
+/* ---- archives, dynamic libraries, indirect command buffers, logging ---- */
+- (id<MTLBinaryArchive>)newBinaryArchiveWithDescriptor:(MTLBinaryArchiveDescriptor *)d error:(NSError **)error {
+  if (error) *error = nil;
+  return (id<MTLBinaryArchive>)[[XEFMetalBinaryArchive alloc] initWithDescriptor:d device:self];
+}
+- (id<MTLDynamicLibrary>)newDynamicLibrary:(id<MTLLibrary>)library error:(NSError **)error {
+  if (error) *error = nil;
+  return (id<MTLDynamicLibrary>)[[XEFMetalDynamicLibrary alloc] initWithLibrary:library device:self];
+}
+- (id<MTLDynamicLibrary>)newDynamicLibraryWithURL:(NSURL *)url error:(NSError **)error {
+  id<MTLLibrary> l = [self newLibraryWithURL:url error:error];
+  if (!l) return nil;
+  id<MTLDynamicLibrary> d = [self newDynamicLibrary:l error:error];
+  [(id)l release];
+  return d;
+}
+- (id<MTLIndirectCommandBuffer>)newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)d
+                                                       maxCommandCount:(NSUInteger)n options:(MTLResourceOptions)o {
+  return (id<MTLIndirectCommandBuffer>)[[XEFMetalIndirectCommandBuffer alloc] initWithDescriptor:d maxCommandCount:n options:o device:self];
+}
+- (id<MTLLogState>)newLogStateWithDescriptor:(MTLLogStateDescriptor *)d error:(NSError **)error {
+  if (error) *error = nil;
+  return (id<MTLLogState>)[[XEFMetalLogState alloc] initWithDescriptor:d];
+}
 /* ---- samplers / depth stencil ---- */
 - (id<MTLSamplerState>)newSamplerStateWithDescriptor:(MTLSamplerDescriptor *)desc {
   xef_mtl_sampler_desc d;
@@ -1449,10 +1546,12 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
   if (!id) return nil;
   XEFMetalSamplerState *s = [[XEFMetalSamplerState alloc] init];
   s->_id = id; s->_rid = rid;
+  s.label = desc.label;
   return s;
 }
 - (id<MTLDepthStencilState>)newDepthStencilStateWithDescriptor:(MTLDepthStencilDescriptor *)desc {
   XEFMetalDepthStencilState *s = [[XEFMetalDepthStencilState alloc] init];
+  s.label = desc.label;
   s->_ds.depth_compare = (uint32_t)desc.depthCompareFunction;
   s->_ds.depth_write = desc.depthWriteEnabled ? 1 : 0;
   MTLStencilDescriptor *f = desc.frontFaceStencil, *b = desc.backFaceStencil;
@@ -1692,7 +1791,13 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
   e->_id = xef_mtl_event_create();
   return e;
 }
-- (id<MTLSharedEvent>)newSharedEventWithHandle:(MTLSharedEventHandle *)h { return [self newSharedEvent]; }
+- (id<MTLSharedEvent>)newSharedEventWithHandle:(MTLSharedEventHandle *)h {
+  id e = [h _event];
+  if (e) return [e retain];
+  id<MTLSharedEvent> n = [self newSharedEvent];
+  if (h) n.signaledValue = [h _signaledValue];
+  return n;
+}
 - (id<MTLHeap>)newHeapWithDescriptor:(MTLHeapDescriptor *)desc {
   XEFMetalHeap *h = [[XEFMetalHeap alloc] init];
   h->_size = desc.size; h->_storageMode = desc.storageMode; h->_cacheMode = desc.cpuCacheMode; h->_type = desc.type;
@@ -1723,7 +1828,9 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
 }
 - (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)desc {
   _used += desc.width * MAX(1, desc.height) * 4;
-  return [xef_shared_device() newTextureWithDescriptor:desc];
+  XEFMetalTexture *t = (XEFMetalTexture *)[xef_shared_device() newTextureWithDescriptor:desc];
+  if (t) t->_heap = self;
+  return t;
 }
 - (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)desc offset:(NSUInteger)offset {
   return [self newTextureWithDescriptor:desc];
