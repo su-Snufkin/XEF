@@ -87,10 +87,10 @@ public:
 
     // ---- images ----
     std::map<uint32_t, Id> image_vars;   // binding -> variable
-    Id sampler_var = 0;
+    Id sampler_var = 0, cmp_sampler_var = 0;
     Id image_type_for(uint32_t dim, uint32_t comp, bool storage);
     Id load_image(uint32_t dim, uint32_t comp, bool storage, llvm::Value* handle, Id& img_type);
-    Id load_sampler(llvm::Value* handle);
+    Id load_sampler(llvm::Value* handle, bool compare = false);
     Id handle_index(llvm::Value* handle);
 
     // ---- instructions ----

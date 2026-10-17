@@ -298,7 +298,7 @@ bool engine_init() {
     for (uint32_t i = 0; i < kNumBindings; i++) {
         b[i].binding = i;
         b[i].stageFlags = VK_SHADER_STAGE_ALL;
-        if (i == kSamplerBinding) { b[i].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER; b[i].descriptorCount = kMaxSamplers; continue; }
+        if (i == kSamplerBinding || i == kCompareSamplerBinding) { b[i].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER; b[i].descriptorCount = kMaxSamplers; continue; }
         bool storage = i >= kNumImageBindings;
         uint32_t dim = (storage ? i - kNumImageBindings : i) / COMP_COUNT;
         if (dim == DIM_BUFFER) b[i].descriptorType = storage ? VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
@@ -319,7 +319,7 @@ bool engine_init() {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kMaxTextures * (DIM_COUNT - 1) * COMP_COUNT},
         {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, kMaxTextures * COMP_COUNT},
         {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, kMaxTextures * COMP_COUNT},
-        {VK_DESCRIPTOR_TYPE_SAMPLER, kMaxSamplers},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 2 * kMaxSamplers},
     };
     VkDescriptorPoolCreateInfo pci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     pci.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
@@ -805,7 +805,7 @@ uint32_t sampler_create(const xef_mtl_sampler_desc* d, uint64_t* rid) {
     sci.mipLodBias = d->lod_bias;
     sci.anisotropyEnable = d->max_anisotropy > 1 ? VK_TRUE : VK_FALSE;
     sci.maxAnisotropy = (float)std::min<uint32_t>(d->max_anisotropy, 16);
-    sci.compareEnable = d->compare_enable ? VK_TRUE : VK_FALSE;
+    sci.compareEnable = VK_FALSE;
     sci.compareOp = (VkCompareOp)d->compare;
     sci.minLod = d->lod_min;
     sci.maxLod = d->mip_filter == 0 ? 0.25f : d->lod_max;
@@ -823,19 +823,36 @@ uint32_t sampler_create(const xef_mtl_sampler_desc* d, uint64_t* rid) {
         sci.addressModeU = fix(sci.addressModeU); sci.addressModeV = fix(sci.addressModeV); sci.addressModeW = fix(sci.addressModeW);
     }
     if (vk.CreateSampler(g.dev, &sci, nullptr, &s->s) != VK_SUCCESS) return 0;
+    if (!sci.unnormalizedCoordinates) {
+        // sample_compare without a compare function compares with "never" like Metal's default
+        sci.compareEnable = VK_TRUE;
+        if (!d->compare_enable) sci.compareOp = VK_COMPARE_OP_NEVER;
+        if (vk.CreateSampler(g.dev, &sci, nullptr, &s->cmp) != VK_SUCCESS) s->cmp = VK_NULL_HANDLE;
+    }
     s->resource_id = alloc_sampler_id();
-    if (!s->resource_id) { vk.DestroySampler(g.dev, s->s, nullptr); return 0; }
-    VkDescriptorImageInfo ii{s->s, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
-    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    w.dstSet = g.set;
-    w.dstBinding = kSamplerBinding;
-    w.dstArrayElement = s->resource_id;
-    w.descriptorCount = 1;
-    w.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-    w.pImageInfo = &ii;
-    vk.UpdateDescriptorSets(g.dev, 1, &w, 0, nullptr);
+    if (!s->resource_id) {
+        vk.DestroySampler(g.dev, s->s, nullptr);
+        if (s->cmp) vk.DestroySampler(g.dev, s->cmp, nullptr);
+        return 0;
+    }
+    VkDescriptorImageInfo ii[2] = {{s->s, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED}, {s->cmp ? s->cmp : s->s, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED}};
+    VkWriteDescriptorSet w[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+    for (int k = 0; k < 2; k++) {
+        w[k].dstSet = g.set;
+        w[k].dstBinding = k ? kCompareSamplerBinding : kSamplerBinding;
+        w[k].dstArrayElement = s->resource_id;
+        w[k].descriptorCount = 1;
+        w[k].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+        w[k].pImageInfo = &ii[k];
+    }
+    vk.UpdateDescriptorSets(g.dev, 2, w, 0, nullptr);
     if (rid) *rid = s->resource_id;
-    return add_object(g.samplers, std::move(s));
+    uint32_t id = add_object(g.samplers, std::move(s));
+    if (getenv("XEF_MTL_TRACE"))
+        fprintf(stderr, "mtl: sampler %u: min %u mag %u mip %u addr %u %u %u aniso %u cmp %u/%u border %u norm %u lod %g..%g bias %g\n", id,
+                d->min_filter, d->mag_filter, d->mip_filter, d->s_address, d->t_address, d->r_address, d->max_anisotropy, d->compare_enable,
+                d->compare, d->border_color, d->normalized, d->lod_min, d->lod_max, d->lod_bias);
+    return id;
 }
 
 void sampler_destroy(uint32_t id) {
@@ -843,6 +860,7 @@ void sampler_destroy(uint32_t id) {
     if (!s) return;
     vk.DeviceWaitIdle(g.dev);
     vk.DestroySampler(g.dev, s->s, nullptr);
+    if (s->cmp) vk.DestroySampler(g.dev, s->cmp, nullptr);
     g.free_sampler_ids.push_back(s->resource_id);
     g.samplers[id].reset();
 }

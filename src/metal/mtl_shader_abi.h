@@ -13,7 +13,7 @@
 namespace xef::mtlabi {
 
 constexpr uint32_t kProtoMagic = 0x43544D58;   // "XMTC"
-constexpr uint32_t kProtoVersion = 5;
+constexpr uint32_t kProtoVersion = 6;
 
 enum Stage : uint32_t { STAGE_VERTEX = 0, STAGE_FRAGMENT = 1, STAGE_KERNEL = 2 };
 
@@ -27,7 +27,10 @@ constexpr uint32_t sampled_image_binding(uint32_t dim, uint32_t comp) { return d
 constexpr uint32_t kNumImageBindings = (uint32_t)DIM_COUNT * (uint32_t)COMP_COUNT;
 constexpr uint32_t storage_image_binding(uint32_t dim, uint32_t comp) { return kNumImageBindings + dim * COMP_COUNT + comp; }
 constexpr uint32_t kSamplerBinding = 2 * kNumImageBindings;   // 60
-constexpr uint32_t kNumBindings = kSamplerBinding + 1;
+// the same samplers with depth comparison enabled: Metal applies a sampler's compare function only in
+// sample_compare/gather_compare, Vulkan applies it to every sample through that sampler
+constexpr uint32_t kCompareSamplerBinding = kSamplerBinding + 1;
+constexpr uint32_t kNumBindings = kCompareSamplerBinding + 1;
 
 // array sizes of the bindless bindings (the engine allocates resource ids below these limits)
 constexpr uint32_t kMaxTextures = 16384;

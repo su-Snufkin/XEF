@@ -54,11 +54,13 @@ struct Texture {
 
 struct Sampler {
     VkSampler s = VK_NULL_HANDLE;
+    VkSampler cmp = VK_NULL_HANDLE;     // compare-enabled twin for sample_compare (kCompareSamplerBinding)
     uint32_t resource_id = 0;
 };
 
 struct Library {
     std::vector<uint8_t> data;
+    std::string source;                 // MSL source when built by newLibraryWithSource (debug captures)
     std::vector<metallib::Function> fns;
 };
 
@@ -90,6 +92,7 @@ struct ComputePipeline {
     mtlabi::CompileRequest req;          // template (stage + constants)
     std::map<std::vector<uint32_t>, std::unique_ptr<ComputeVariant>> variants;   // key: tg size + tg memory
     uint32_t max_threads = 1024;
+    std::string source;                 // MSL source of the library, if known
 };
 
 struct Pipeline {

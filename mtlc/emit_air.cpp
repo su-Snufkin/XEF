@@ -853,18 +853,19 @@ Id Emitter::load_image(uint32_t dim, uint32_t comp, bool storage, Value* handle,
     return img;
 }
 
-Id Emitter::load_sampler(Value* handle) {
+Id Emitter::load_sampler(Value* handle, bool compare) {
     Id st = sb.t_sampler();
-    if (!sampler_var) {
+    Id& var = compare ? cmp_sampler_var : sampler_var;
+    if (!var) {
         Id arr = sb.t_rtarray(st);
-        sampler_var = sb.variable(sb.t_ptr(spv::StorageClassUniformConstant, arr), spv::StorageClassUniformConstant);
-        sb.decorate(sampler_var, spv::DecorationDescriptorSet, {0});
-        sb.decorate(sampler_var, spv::DecorationBinding, {kSamplerBinding});
+        var = sb.variable(sb.t_ptr(spv::StorageClassUniformConstant, arr), spv::StorageClassUniformConstant);
+        sb.decorate(var, spv::DecorationDescriptorSet, {0});
+        sb.decorate(var, spv::DecorationBinding, {compare ? kCompareSamplerBinding : kSamplerBinding});
         sb.cap(spv::CapabilityRuntimeDescriptorArray);
-        interface_ids.push_back(sampler_var);
+        interface_ids.push_back(var);
     }
     Id idx = handle_index(handle);
-    Id p = emit_r(spv::OpAccessChain, sb.t_ptr(spv::StorageClassUniformConstant, st), {sampler_var, idx});
+    Id p = emit_r(spv::OpAccessChain, sb.t_ptr(spv::StorageClassUniformConstant, st), {var, idx});
     Id s = emit_r(spv::OpLoad, st, {p});
     if (!handle_uniform(handle)) {
         sb.cap(spv::CapabilityShaderNonUniform);
@@ -1066,7 +1067,7 @@ bool Emitter::emit_air_texture(CallInst* ci, StringRef name) {
 
     Id it;
     Id img = load_image(tk->dim, comp, false, argv(0), it);
-    Id smp = load_sampler(argv(1));
+    Id smp = load_sampler(argv(1), kind == SAMPLE_CMP || kind == GATHER_CMP);
     Id sit = sb.t_sampled_image(it);
     Id si = emit_r(spv::OpSampledImage, sit, {img, smp});
     if (!handle_uniform(argv(0)) || !handle_uniform(argv(1))) { sb.decorate(si, spv::DecorationNonUniform); sb.cap(spv::CapabilityShaderNonUniform); }
