@@ -2210,6 +2210,7 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   float _depthBiasClamp;
   float _blendColor[4];
   uint32_t _stencilRef;
+  uint32_t _stencilBackRef;
 }
 - (instancetype)initWithDescriptor:(MTLRenderPassDescriptor *)desc device:(id<MTLDevice>)device;
 @end
@@ -2355,8 +2356,8 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
 - (void)setBlendColorRed:(float)red green:(float)green blue:(float)blue alpha:(float)alpha {
   _blendColor[0] = red; _blendColor[1] = green; _blendColor[2] = blue; _blendColor[3] = alpha;
 }
-- (void)setStencilReferenceValue:(uint32_t)val { _stencilRef = val; }
-- (void)setStencilFrontReferenceValue:(uint32_t)front backReferenceValue:(uint32_t)back { _stencilRef = front; }
+- (void)setStencilReferenceValue:(uint32_t)val { _stencilRef = val; _stencilBackRef = val; }
+- (void)setStencilFrontReferenceValue:(uint32_t)front backReferenceValue:(uint32_t)back { _stencilRef = front; _stencilBackRef = back; }
 - (void)setTriangleFillMode:(MTLTriangleFillMode)fillMode {
   _triangleFillMode = fillMode;
 }
@@ -3001,16 +3002,36 @@ static void xef_fill_host_metal_pipeline(xef_host_metal_pipeline_t *pipe, XEFMet
     pipe->depth_write_enable = enc->_depthStencilState->_depthWriteEnabled ? 1 : 0;
     pipe->depth_test_enable = (pipe->depth_compare_op != (int)MTLCompareFunctionAlways || pipe->depth_write_enable) ? 1 : 0;
 
-    MTLStencilDescriptor *st = enc->_depthStencilState->_frontFaceStencil;
-    if (st) {
+    MTLStencilDescriptor *front = enc->_depthStencilState->_frontFaceStencil;
+    MTLStencilDescriptor *back = enc->_depthStencilState->_backFaceStencil;
+    if (front || back) {
       pipe->stencil_test_enable = 1;
-      pipe->stencil_compare_op = (int)st.stencilCompareFunction;
-      pipe->stencil_fail_op = (int)st.stencilFailureOperation;
-      pipe->stencil_depth_fail_op = (int)st.depthFailureOperation;
-      pipe->stencil_pass_op = (int)st.depthStencilPassOperation;
-      pipe->stencil_read_mask = st.readMask;
-      pipe->stencil_write_mask = st.writeMask;
+      if (front) {
+        pipe->stencil_compare_op = (int)front.stencilCompareFunction;
+        pipe->stencil_fail_op = (int)front.stencilFailureOperation;
+        pipe->stencil_depth_fail_op = (int)front.depthFailureOperation;
+        pipe->stencil_pass_op = (int)front.depthStencilPassOperation;
+        pipe->stencil_read_mask = front.readMask;
+        pipe->stencil_write_mask = front.writeMask;
+      }
       pipe->stencil_ref = enc->_stencilRef;
+
+      if (back) {
+        pipe->stencil_back_compare_op = (int)back.stencilCompareFunction;
+        pipe->stencil_back_fail_op = (int)back.stencilFailureOperation;
+        pipe->stencil_back_depth_fail_op = (int)back.depthFailureOperation;
+        pipe->stencil_back_pass_op = (int)back.depthStencilPassOperation;
+        pipe->stencil_back_read_mask = back.readMask;
+        pipe->stencil_back_write_mask = back.writeMask;
+      } else if (front) {
+        pipe->stencil_back_compare_op = pipe->stencil_compare_op;
+        pipe->stencil_back_fail_op = pipe->stencil_fail_op;
+        pipe->stencil_back_depth_fail_op = pipe->stencil_depth_fail_op;
+        pipe->stencil_back_pass_op = pipe->stencil_pass_op;
+        pipe->stencil_back_read_mask = pipe->stencil_read_mask;
+        pipe->stencil_back_write_mask = pipe->stencil_write_mask;
+      }
+      pipe->stencil_back_ref = enc->_stencilBackRef;
     }
   }
 

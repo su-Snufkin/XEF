@@ -97,11 +97,31 @@ int main(void) {
     passDesc.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
 
     id<MTLRenderCommandEncoder> rce = [cmdBuf renderCommandEncoderWithDescriptor:passDesc];
+    MTLDepthStencilDescriptor *dsDesc = [[MTLDepthStencilDescriptor alloc] init];
+    dsDesc.depthCompareFunction = MTLCompareFunctionLess;
+    dsDesc.depthWriteEnabled = YES;
+    dsDesc.frontFaceStencil.stencilCompareFunction = MTLCompareFunctionEqual;
+    dsDesc.frontFaceStencil.stencilFailureOperation = MTLStencilOperationKeep;
+    dsDesc.frontFaceStencil.depthFailureOperation = MTLStencilOperationIncrementClamp;
+    dsDesc.frontFaceStencil.depthStencilPassOperation = MTLStencilOperationReplace;
+    dsDesc.frontFaceStencil.readMask = 0xFF;
+    dsDesc.frontFaceStencil.writeMask = 0xFF;
+
+    dsDesc.backFaceStencil.stencilCompareFunction = MTLCompareFunctionNotEqual;
+    dsDesc.backFaceStencil.stencilFailureOperation = MTLStencilOperationZero;
+    dsDesc.backFaceStencil.depthFailureOperation = MTLStencilOperationDecrementClamp;
+    dsDesc.backFaceStencil.depthStencilPassOperation = MTLStencilOperationInvert;
+    dsDesc.backFaceStencil.readMask = 0xFE;
+    dsDesc.backFaceStencil.writeMask = 0xFE;
+
+    id<MTLDepthStencilState> dsState = [device newDepthStencilStateWithDescriptor:dsDesc];
+    [rce setDepthStencilState:dsState];
+    [rce setStencilFrontReferenceValue:128 backReferenceValue:64];
     [rce setTriangleFillMode:MTLTriangleFillModeLines];
     [rce setDepthBias:2.0f slopeScale:1.5f clamp:0.5f];
     [rce setBlendColorRed:0.8f green:0.6f blue:0.4f alpha:1.0f];
-    [rce setStencilReferenceValue:128];
     [rce endEncoding];
+    [dsDesc release];
 
     /* Blit copy test */
     id<MTLTexture> dstTex = [device newTextureWithDescriptor:texDesc];

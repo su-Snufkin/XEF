@@ -180,6 +180,12 @@ struct PipelineKey {
     int stencil_pass_op;
     uint32_t stencil_read_mask;
     uint32_t stencil_write_mask;
+    int stencil_back_compare_op;
+    int stencil_back_fail_op;
+    int stencil_back_depth_fail_op;
+    int stencil_back_pass_op;
+    uint32_t stencil_back_read_mask;
+    uint32_t stencil_back_write_mask;
     int cull_mode;
     int front_face;
     int fill_mode;
@@ -202,6 +208,12 @@ struct PipelineKey {
                stencil_pass_op == o.stencil_pass_op &&
                stencil_read_mask == o.stencil_read_mask &&
                stencil_write_mask == o.stencil_write_mask &&
+               stencil_back_compare_op == o.stencil_back_compare_op &&
+               stencil_back_fail_op == o.stencil_back_fail_op &&
+               stencil_back_depth_fail_op == o.stencil_back_depth_fail_op &&
+               stencil_back_pass_op == o.stencil_back_pass_op &&
+               stencil_back_read_mask == o.stencil_back_read_mask &&
+               stencil_back_write_mask == o.stencil_back_write_mask &&
                cull_mode == o.cull_mode &&
                front_face == o.front_face &&
                fill_mode == o.fill_mode &&
@@ -223,6 +235,7 @@ struct PipelineKeyHash {
         h ^= std::hash<int>()(k.depth_write_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.depth_compare_op) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.stencil_test_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.stencil_back_compare_op) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.cull_mode) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.front_face) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.fill_mode) + 0x9e3779b9 + (h << 6) + (h >> 2);
@@ -603,8 +616,15 @@ static VkPipeline get_or_create_pipeline(const PipelineKey& key, VkRenderPass re
         depthStencil.front.compareOp = map_vk_compare_op(key.stencil_compare_op);
         depthStencil.front.compareMask = key.stencil_read_mask;
         depthStencil.front.writeMask = key.stencil_write_mask;
-        depthStencil.front.reference = 0; // overridden by dynamic or static
-        depthStencil.back = depthStencil.front;
+        depthStencil.front.reference = 0; // overridden by dynamic state
+
+        depthStencil.back.failOp = map_vk_stencil_op(key.stencil_back_fail_op ? key.stencil_back_fail_op : key.stencil_fail_op);
+        depthStencil.back.passOp = map_vk_stencil_op(key.stencil_back_pass_op ? key.stencil_back_pass_op : key.stencil_pass_op);
+        depthStencil.back.depthFailOp = map_vk_stencil_op(key.stencil_back_depth_fail_op ? key.stencil_back_depth_fail_op : key.stencil_depth_fail_op);
+        depthStencil.back.compareOp = map_vk_compare_op(key.stencil_back_compare_op ? key.stencil_back_compare_op : key.stencil_compare_op);
+        depthStencil.back.compareMask = key.stencil_back_read_mask ? key.stencil_back_read_mask : key.stencil_read_mask;
+        depthStencil.back.writeMask = key.stencil_back_write_mask ? key.stencil_back_write_mask : key.stencil_write_mask;
+        depthStencil.back.reference = 0;
     }
 
     VkPipelineDynamicStateCreateInfo dynamicState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
@@ -1663,6 +1683,12 @@ void draw(int handle,
     key.stencil_pass_op = pipe->stencil_pass_op;
     key.stencil_read_mask = pipe->stencil_read_mask;
     key.stencil_write_mask = pipe->stencil_write_mask;
+    key.stencil_back_compare_op = pipe->stencil_back_compare_op;
+    key.stencil_back_fail_op = pipe->stencil_back_fail_op;
+    key.stencil_back_depth_fail_op = pipe->stencil_back_depth_fail_op;
+    key.stencil_back_pass_op = pipe->stencil_back_pass_op;
+    key.stencil_back_read_mask = pipe->stencil_back_read_mask;
+    key.stencil_back_write_mask = pipe->stencil_back_write_mask;
     key.cull_mode = pipe->cull_mode;
     key.front_face = pipe->front_facing_winding;
     key.fill_mode = pipe->triangle_fill_mode;
@@ -1723,7 +1749,12 @@ void draw(int handle,
         vkCmdSetDepthBias(g_active_cmd, pipe->depth_bias, pipe->depth_bias_clamp, pipe->depth_bias_slope_scale);
     }
     if (vkCmdSetStencilReference) {
-        vkCmdSetStencilReference(g_active_cmd, VK_STENCIL_FRONT_AND_BACK, pipe->stencil_ref);
+        if (pipe->stencil_ref == pipe->stencil_back_ref) {
+            vkCmdSetStencilReference(g_active_cmd, VK_STENCIL_FRONT_AND_BACK, pipe->stencil_ref);
+        } else {
+            vkCmdSetStencilReference(g_active_cmd, VK_STENCIL_FACE_FRONT_BIT, pipe->stencil_ref);
+            vkCmdSetStencilReference(g_active_cmd, VK_STENCIL_FACE_BACK_BIT, pipe->stencil_back_ref);
+        }
     }
     if (vkCmdSetBlendConstants) {
         float blendConst[4] = { pipe->blend_color[0], pipe->blend_color[1], pipe->blend_color[2], pipe->blend_color[3] };

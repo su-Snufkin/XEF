@@ -79,6 +79,13 @@ typedef struct {
     uint32_t stencil_read_mask;
     uint32_t stencil_write_mask;
     uint32_t stencil_ref;
+    int      stencil_back_compare_op;
+    int      stencil_back_fail_op;
+    int      stencil_back_depth_fail_op;
+    int      stencil_back_pass_op;
+    uint32_t stencil_back_read_mask;
+    uint32_t stencil_back_write_mask;
+    uint32_t stencil_back_ref;
     uint32_t depth_tex_id;
     int      cull_mode;             /* 0=none, 1=front, 2=back */
     int      front_facing_winding;  /* 0=cw, 1=ccw */
