@@ -428,6 +428,72 @@ int main(void) {
     NSLog(@"MTLRasterizationRateMap verified: label=%@, screenSize=%lux%lu, paramAlign=%lu", rateMap.label, (unsigned long)rateMap.screenSize.width, (unsigned long)rateMap.screenSize.height, (unsigned long)rateMap.parameterBufferSizeAndAlign.align);
     [paramBuf release];
 
+    /* 15. Test MTLFunctionHandle, MTLVisibleFunctionTable and MTLIntersectionFunctionTable */
+    id<MTLLibrary> dummyLib = [device newLibraryWithSource:@"vertex float4 testVert() { return float4(0); }" options:nil error:nil];
+    id<MTLFunction> vertFn = [dummyLib newFunctionWithName:@"testVert"];
+    rpd.vertexFunction = vertFn;
+    cpd.computeFunction = vertFn;
+
+    id<MTLRenderPipelineState> rps = [device newRenderPipelineStateWithDescriptor:rpd error:nil];
+    if (!rps) {
+      NSLog(@"FAIL: newRenderPipelineStateWithDescriptor failed");
+      return 40;
+    }
+    id<MTLComputePipelineState> cps = [device newComputePipelineStateWithDescriptor:cpd options:0 reflection:nil error:nil];
+    if (!cps) {
+      NSLog(@"FAIL: newComputePipelineStateWithDescriptor failed");
+      return 41;
+    }
+
+    id<MTLFunctionHandle> rfh = [rps functionHandleWithFunction:vertFn stage:MTLRenderStageVertex];
+    if (!rfh || ![rfh.name isEqualToString:@"testVert"] || rfh.device != device) {
+      NSLog(@"FAIL: render functionHandleWithFunction failed");
+      return 42;
+    }
+    id<MTLFunctionHandle> cfh = [cps functionHandleWithFunction:vertFn];
+    if (!cfh || ![cfh.name isEqualToString:@"testVert"] || cfh.device != device) {
+      NSLog(@"FAIL: compute functionHandleWithFunction failed");
+      return 43;
+    }
+
+    MTLVisibleFunctionTableDescriptor *vftDesc = [MTLVisibleFunctionTableDescriptor visibleFunctionTableDescriptor];
+    vftDesc.functionCount = 4;
+    id<MTLVisibleFunctionTable> vft = [cps newVisibleFunctionTableWithDescriptor:vftDesc];
+    if (!vft || vft.device != device || vft.gpuResourceID._impl == 0) {
+      NSLog(@"FAIL: newVisibleFunctionTableWithDescriptor failed");
+      return 44;
+    }
+    [vft setFunction:cfh atIndex:0];
+
+    MTLIntersectionFunctionTableDescriptor *iftDesc = [MTLIntersectionFunctionTableDescriptor intersectionFunctionTableDescriptor];
+    iftDesc.functionCount = 4;
+    id<MTLIntersectionFunctionTable> ift = [cps newIntersectionFunctionTableWithDescriptor:iftDesc];
+    if (!ift || ift.device != device || ift.gpuResourceID._impl == 0) {
+      NSLog(@"FAIL: newIntersectionFunctionTableWithDescriptor failed");
+      return 45;
+    }
+    [ift setFunction:cfh atIndex:0];
+    [ift setOpaqueTriangleIntersectionFunctionWithSignature:MTLIntersectionFunctionSignatureNone atIndex:1];
+
+    id<MTLCommandBuffer> tblCb = [queue commandBuffer];
+    id<MTLComputeCommandEncoder> cenc = [tblCb computeCommandEncoder];
+    [cenc setVisibleFunctionTable:vft atBufferIndex:0];
+    [cenc setIntersectionFunctionTable:ift atBufferIndex:1];
+    [cenc endEncoding];
+
+    id<MTLRenderCommandEncoder> renc = [tblCb renderCommandEncoderWithDescriptor:passDesc];
+    [renc setVertexVisibleFunctionTable:vft atBufferIndex:0];
+    [renc setVertexIntersectionFunctionTable:ift atBufferIndex:1];
+    [renc setFragmentVisibleFunctionTable:vft atBufferIndex:0];
+    [renc setFragmentIntersectionFunctionTable:ift atBufferIndex:1];
+    [renc endEncoding];
+    [tblCb commit];
+    [tblCb waitUntilCompleted];
+
+    NSLog(@"MTLFunctionHandle and function tables verified: rfh=%@, cfh=%@, vft=%@, ift=%@", rfh.name, cfh.name, vft, ift);
+    [vertFn release];
+    [dummyLib release];
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

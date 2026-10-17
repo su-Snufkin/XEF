@@ -2762,6 +2762,225 @@ MTLCommonCounterSet const MTLCommonCounterSetStatistic = @"MTLCommonCounterSetSt
 }
 @end
 
+/* ------------------------------------------------------------------- MTLFunctionHandle & Function Tables */
+
+@interface XEFMetalFunctionHandle : NSObject <MTLFunctionHandle> {
+  NSString *_name;
+  MTLFunctionType _functionType;
+  id<MTLDevice> _device;
+}
+- (instancetype)initWithName:(NSString *)name functionType:(MTLFunctionType)type device:(id<MTLDevice>)device;
+@end
+
+@implementation XEFMetalFunctionHandle
+- (instancetype)initWithName:(NSString *)name functionType:(MTLFunctionType)type device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _name = [name copy];
+    _functionType = type;
+    _device = device;
+  }
+  return self;
+}
+- (NSString *)name { return _name; }
+- (MTLFunctionType)functionType { return _functionType; }
+- (id<MTLDevice>)device { return _device; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
+- (void)dealloc {
+  [_name release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLVisibleFunctionTableDescriptor
++ (instancetype)visibleFunctionTableDescriptor {
+  return [[[self alloc] init] autorelease];
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLVisibleFunctionTableDescriptor *c = [[MTLVisibleFunctionTableDescriptor allocWithZone:zone] init];
+  c.functionCount = self.functionCount;
+  return c;
+}
+@end
+
+@interface XEFMetalVisibleFunctionTable : XEFMetalObject <MTLVisibleFunctionTable> {
+  id<MTLDevice> _device;
+  NSString *_label;
+  NSUInteger _functionCount;
+  NSMutableArray<id<MTLFunctionHandle>> *_functions;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLVisibleFunctionTableDescriptor *)descriptor;
+@end
+
+@implementation XEFMetalVisibleFunctionTable
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLVisibleFunctionTableDescriptor *)descriptor {
+  if ((self = [super init])) {
+    _device = device;
+    _functionCount = descriptor.functionCount;
+    _functions = [[NSMutableArray alloc] initWithCapacity:_functionCount];
+    for (NSUInteger i = 0; i < _functionCount; i++) {
+      [_functions addObject:(id)[NSNull null]];
+    }
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (NSUInteger)allocatedSize { return _functionCount * 8; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
+- (void)setFunction:(id<MTLFunctionHandle>)function atIndex:(NSUInteger)index {
+  if (index < _functionCount) {
+    [_functions replaceObjectAtIndex:index withObject:(function ? (id)function : (id)[NSNull null])];
+  }
+}
+- (void)setFunctions:(const id<MTLFunctionHandle> *)functions withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setFunction:functions ? functions[i] : nil atIndex:range.location + i];
+  }
+}
+- (MTLStorageMode)storageMode { return MTLStorageModeShared; }
+- (MTLCPUCacheMode)cpuCacheMode { return MTLCPUCacheModeDefaultCache; }
+- (MTLHazardTrackingMode)hazardTrackingMode { return MTLHazardTrackingModeDefault; }
+- (MTLResourceOptions)resourceOptions { return MTLResourceStorageModeShared; }
+- (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state { return MTLPurgeableStateNonVolatile; }
+- (void)makeAliasable {}
+- (BOOL)isAliasable { return NO; }
+- (id<MTLHeap>)heap { return nil; }
+- (NSUInteger)heapOffset { return 0; }
+- (void)dealloc {
+  [_label release];
+  [_functions release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLIntersectionFunctionTableDescriptor
++ (instancetype)intersectionFunctionTableDescriptor {
+  return [[[self alloc] init] autorelease];
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLIntersectionFunctionTableDescriptor *c = [[MTLIntersectionFunctionTableDescriptor allocWithZone:zone] init];
+  c.functionCount = self.functionCount;
+  return c;
+}
+@end
+
+@interface XEFMetalIntersectionFunctionTable : XEFMetalObject <MTLIntersectionFunctionTable> {
+  id<MTLDevice> _device;
+  NSString *_label;
+  NSUInteger _functionCount;
+  NSMutableArray *_functions;
+  NSMutableArray *_buffers;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLIntersectionFunctionTableDescriptor *)descriptor;
+@end
+
+@implementation XEFMetalIntersectionFunctionTable
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLIntersectionFunctionTableDescriptor *)descriptor {
+  if ((self = [super init])) {
+    _device = device;
+    _functionCount = descriptor.functionCount;
+    _functions = [[NSMutableArray alloc] initWithCapacity:_functionCount];
+    _buffers = [[NSMutableArray alloc] initWithCapacity:31];
+    for (NSUInteger i = 0; i < _functionCount; i++) {
+      [_functions addObject:(id)[NSNull null]];
+    }
+    for (NSUInteger i = 0; i < 31; i++) {
+      [_buffers addObject:(id)[NSNull null]];
+    }
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (NSUInteger)allocatedSize { return _functionCount * 8; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
+- (void)setBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index < _buffers.count) {
+    [_buffers replaceObjectAtIndex:index withObject:(buffer ? (id)buffer : (id)[NSNull null])];
+  }
+}
+- (void)setBuffers:(const id<MTLBuffer> *)buffers offsets:(const NSUInteger *)offsets withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setBuffer:buffers ? buffers[i] : nil offset:offsets ? offsets[i] : 0 atIndex:range.location + i];
+  }
+}
+- (void)setFunction:(id<MTLFunctionHandle>)function atIndex:(NSUInteger)index {
+  if (index < _functionCount) {
+    [_functions replaceObjectAtIndex:index withObject:(function ? (id)function : (id)[NSNull null])];
+  }
+}
+- (void)setFunctions:(const id<MTLFunctionHandle> *)functions withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setFunction:functions ? functions[i] : nil atIndex:range.location + i];
+  }
+}
+- (void)setOpaqueTriangleIntersectionFunctionWithSignature:(MTLIntersectionFunctionSignature)signature atIndex:(NSUInteger)index {
+  [self setFunction:nil atIndex:index];
+}
+- (void)setOpaqueTriangleIntersectionFunctionWithSignature:(MTLIntersectionFunctionSignature)signature withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setFunction:nil atIndex:range.location + i];
+  }
+}
+- (void)setOpaqueCurveIntersectionFunctionWithSignature:(MTLIntersectionFunctionSignature)signature atIndex:(NSUInteger)index {
+  [self setFunction:nil atIndex:index];
+}
+- (void)setOpaqueCurveIntersectionFunctionWithSignature:(MTLIntersectionFunctionSignature)signature withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setFunction:nil atIndex:range.location + i];
+  }
+}
+- (void)setVisibleFunctionTable:(id<MTLVisibleFunctionTable>)functionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setVisibleFunctionTables:(const id<MTLVisibleFunctionTable> *)functionTables withBufferRange:(NSRange)bufferRange {}
+- (MTLStorageMode)storageMode { return MTLStorageModeShared; }
+- (MTLCPUCacheMode)cpuCacheMode { return MTLCPUCacheModeDefaultCache; }
+- (MTLHazardTrackingMode)hazardTrackingMode { return MTLHazardTrackingModeDefault; }
+- (MTLResourceOptions)resourceOptions { return MTLResourceStorageModeShared; }
+- (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state { return MTLPurgeableStateNonVolatile; }
+- (void)makeAliasable {}
+- (BOOL)isAliasable { return NO; }
+- (id<MTLHeap>)heap { return nil; }
+- (NSUInteger)heapOffset { return 0; }
+- (void)dealloc {
+  [_label release];
+  [_functions release];
+  [_buffers release];
+  [super dealloc];
+}
+@end
+
+@implementation XEFMetalRenderPipelineState (FunctionTables)
+- (id<MTLFunctionHandle>)functionHandleWithFunction:(id<MTLFunction>)function stage:(MTLRenderStages)stage {
+  if (!function) return nil;
+  return [[[XEFMetalFunctionHandle alloc] initWithName:function.name functionType:function.functionType device:self.device] autorelease];
+}
+- (id<MTLVisibleFunctionTable>)newVisibleFunctionTableWithDescriptor:(MTLVisibleFunctionTableDescriptor *)descriptor stage:(MTLRenderStages)stage {
+  if (!descriptor) return nil;
+  return [[[XEFMetalVisibleFunctionTable alloc] initWithDevice:self.device descriptor:descriptor] autorelease];
+}
+- (id<MTLIntersectionFunctionTable>)newIntersectionFunctionTableWithDescriptor:(MTLIntersectionFunctionTableDescriptor *)descriptor stage:(MTLRenderStages)stage {
+  if (!descriptor) return nil;
+  return [[[XEFMetalIntersectionFunctionTable alloc] initWithDevice:self.device descriptor:descriptor] autorelease];
+}
+@end
+
+@implementation XEFMetalComputePipelineState (FunctionTables)
+- (id<MTLFunctionHandle>)functionHandleWithFunction:(id<MTLFunction>)function {
+  if (!function) return nil;
+  return [[[XEFMetalFunctionHandle alloc] initWithName:function.name functionType:function.functionType device:self.device] autorelease];
+}
+- (id<MTLVisibleFunctionTable>)newVisibleFunctionTableWithDescriptor:(MTLVisibleFunctionTableDescriptor *)descriptor {
+  if (!descriptor) return nil;
+  return [[[XEFMetalVisibleFunctionTable alloc] initWithDevice:self.device descriptor:descriptor] autorelease];
+}
+- (id<MTLIntersectionFunctionTable>)newIntersectionFunctionTableWithDescriptor:(MTLIntersectionFunctionTableDescriptor *)descriptor {
+  if (!descriptor) return nil;
+  return [[[XEFMetalIntersectionFunctionTable alloc] initWithDevice:self.device descriptor:descriptor] autorelease];
+}
+@end
+
 /* ------------------------------------------------------------------- MTLIndirectCommandBuffer */
 
 @implementation MTLIndirectCommandBufferDescriptor {
@@ -4450,6 +4669,19 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   [self executeCommandsInBuffer:indirectCommandBuffer withRange:NSMakeRange(range->location, range->length)];
 }
 
+- (void)setVertexVisibleFunctionTable:(id<MTLVisibleFunctionTable>)functionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setVertexVisibleFunctionTables:(const id<MTLVisibleFunctionTable> *)functionTables withBufferRange:(NSRange)range {}
+- (void)setVertexIntersectionFunctionTable:(id<MTLIntersectionFunctionTable>)intersectionFunctionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setVertexIntersectionFunctionTables:(const id<MTLIntersectionFunctionTable> *)intersectionFunctionTables withBufferRange:(NSRange)range {}
+- (void)setFragmentVisibleFunctionTable:(id<MTLVisibleFunctionTable>)functionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setFragmentVisibleFunctionTables:(const id<MTLVisibleFunctionTable> *)functionTables withBufferRange:(NSRange)range {}
+- (void)setFragmentIntersectionFunctionTable:(id<MTLIntersectionFunctionTable>)intersectionFunctionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setFragmentIntersectionFunctionTables:(const id<MTLIntersectionFunctionTable> *)intersectionFunctionTables withBufferRange:(NSRange)range {}
+- (void)setTileVisibleFunctionTable:(id<MTLVisibleFunctionTable>)functionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setTileVisibleFunctionTables:(const id<MTLVisibleFunctionTable> *)functionTables withBufferRange:(NSRange)range {}
+- (void)setTileIntersectionFunctionTable:(id<MTLIntersectionFunctionTable>)intersectionFunctionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setTileIntersectionFunctionTables:(const id<MTLIntersectionFunctionTable> *)intersectionFunctionTables withBufferRange:(NSRange)range {}
+
 - (void)endEncoding {
   if (_passDesc) {
     MTLRenderPassColorAttachmentDescriptor *att0 = _passDesc.colorAttachments->_attachments[0];
@@ -4652,6 +4884,11 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 - (void)pushDebugGroup:(NSString *)string {}
 - (void)popDebugGroup {}
 - (void)insertDebugSignpost:(NSString *)string {}
+- (void)setVisibleFunctionTable:(id<MTLVisibleFunctionTable>)visibleFunctionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setVisibleFunctionTables:(const id<MTLVisibleFunctionTable> *)visibleFunctionTables withBufferRange:(NSRange)range {}
+- (void)setIntersectionFunctionTable:(id<MTLIntersectionFunctionTable>)intersectionFunctionTable atBufferIndex:(NSUInteger)bufferIndex {}
+- (void)setIntersectionFunctionTables:(const id<MTLIntersectionFunctionTable> *)intersectionFunctionTables withBufferRange:(NSRange)range {}
+
 - (void)endEncoding {}
 - (void)dealloc {
   [_label release];
@@ -5218,6 +5455,10 @@ typedef enum {
   if (error) *error = nil;
   if (reflection) *reflection = nil;
   return [[XEFMetalRenderPipelineState alloc] initWithDevice:self descriptor:descriptor];
+}
+
+- (id<MTLComputePipelineState>)newComputePipelineStateWithDescriptor:(MTLComputePipelineDescriptor *)descriptor error:(NSError **)error {
+  return [self newComputePipelineStateWithDescriptor:descriptor options:0 reflection:nil error:error];
 }
 
 - (id<MTLComputePipelineState>)newComputePipelineStateWithDescriptor:(MTLComputePipelineDescriptor *)descriptor options:(MTLPipelineOption)options reflection:(MTLAutoreleasedComputePipelineReflection *)reflection error:(NSError **)error {
