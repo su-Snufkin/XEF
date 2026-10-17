@@ -1748,6 +1748,7 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
   float _lodMaxClamp;
   NSUInteger _maxAnisotropy;
   MTLCompareFunction _compareFunction;
+  uint32_t _hostSamplerId;
 }
 - (instancetype)initWithDescriptor:(MTLSamplerDescriptor *)desc device:(id<MTLDevice>)device;
 @end
@@ -1776,6 +1777,11 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
       _maxAnisotropy = 1;
       _compareFunction = MTLCompareFunctionNever;
     }
+    _hostSamplerId = xef_host_metal_sampler_create(
+        (int)_minFilter, (int)_magFilter, (int)_mipFilter,
+        (int)_sAddressMode, (int)_tAddressMode, (int)_rAddressMode,
+        (int)_maxAnisotropy, (int)_compareFunction, (int)_borderColor,
+        _lodMinClamp, _lodMaxClamp, _normalizedCoordinates ? 1 : 0);
   }
   return self;
 }
@@ -1795,7 +1801,14 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
 - (MTLCompareFunction)compareFunction { return _compareFunction; }
 - (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
 - (uint64_t)gpuAddress { return (uint64_t)(uintptr_t)self; }
-- (void)dealloc { [_label release]; [super dealloc]; }
+- (void)dealloc {
+  if (_hostSamplerId > 0) {
+    xef_host_metal_sampler_destroy(_hostSamplerId);
+    _hostSamplerId = 0;
+  }
+  [_label release];
+  [super dealloc];
+}
 @end
 
 static inline float xef_wrap_coord(float c, MTLSamplerAddressMode mode, BOOL *out_is_border) {
@@ -4761,9 +4774,11 @@ static void xef_fill_host_metal_pipeline(xef_host_metal_pipeline_t *pipe, XEFMet
   if (enc->_fragmentSamplers[0]) {
     pipe->filter_linear = (enc->_fragmentSamplers[0]->_minFilter == MTLSamplerMinMagFilterNearest) ? 0 : 1;
     pipe->clamp_to_edge = (enc->_fragmentSamplers[0]->_sAddressMode == MTLSamplerAddressModeRepeat) ? 0 : 1;
+    pipe->sampler_id = enc->_fragmentSamplers[0]->_hostSamplerId;
   } else {
     pipe->filter_linear = 1;
     pipe->clamp_to_edge = 1;
+    pipe->sampler_id = 0;
   }
 
   /* Depth & Stencil states */

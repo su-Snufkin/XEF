@@ -13,6 +13,12 @@ void        finit();
 bool        is_available();
 const char* get_device_name();
 
+uint32_t    sampler_create(int min_filter, int mag_filter, int mip_filter,
+                           int s_address_mode, int t_address_mode, int r_address_mode,
+                           int max_aniso, int compare_fn, int border_color,
+                           float lod_min, float lod_max, int normalized_coords);
+void        sampler_destroy(uint32_t sampler_id);
+
 uint32_t    tex_create(int w, int h, int fmt, int is_render_target);
 uint32_t    tex_create_ex(int w, int h, int depth, int layers, int texture_type, int fmt, int is_render_target);
 uint32_t    tex_create_view(uint32_t parent_id, int fmt,

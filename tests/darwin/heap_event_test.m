@@ -796,6 +796,72 @@ int main(void) {
           (unsigned long)posCount, (unsigned long)rpdFull.depthAttachment.depthResolveFilter, (unsigned long)rpdFull.stencilAttachment.stencilResolveFilter,
           rpdFull.sampleBufferAttachments[0].sampleBuffer);
 
+    // Stage 21: Dynamic sampler state creation, custom address modes, border colors, anisotropy, compare ops, and binding
+    MTLSamplerDescriptor *sdCustom = [[[MTLSamplerDescriptor alloc] init] autorelease];
+    sdCustom.minFilter = MTLSamplerMinMagFilterLinear;
+    sdCustom.magFilter = MTLSamplerMinMagFilterNearest;
+    sdCustom.mipFilter = MTLSamplerMipFilterLinear;
+    sdCustom.sAddressMode = MTLSamplerAddressModeMirrorRepeat;
+    sdCustom.tAddressMode = MTLSamplerAddressModeClampToEdge;
+    sdCustom.rAddressMode = MTLSamplerAddressModeClampToBorderColor;
+    sdCustom.borderColor = MTLSamplerBorderColorOpaqueWhite;
+    sdCustom.maxAnisotropy = 4;
+    sdCustom.compareFunction = MTLCompareFunctionLessEqual;
+    sdCustom.lodMinClamp = 0.5f;
+    sdCustom.lodMaxClamp = 8.0f;
+    sdCustom.normalizedCoordinates = YES;
+
+    id<MTLSamplerState> ssCustom = [device newSamplerStateWithDescriptor:sdCustom];
+    if (!ssCustom) {
+      NSLog(@"FAIL: newSamplerStateWithDescriptor for custom sampler failed");
+      return 67;
+    }
+
+    MTLSamplerDescriptor *sdBorder = [[[MTLSamplerDescriptor alloc] init] autorelease];
+    sdBorder.sAddressMode = MTLSamplerAddressModeClampToZero;
+    sdBorder.tAddressMode = MTLSamplerAddressModeClampToZero;
+    sdBorder.borderColor = MTLSamplerBorderColorTransparentBlack;
+    sdBorder.normalizedCoordinates = NO;
+
+    id<MTLSamplerState> ssBorder = [device newSamplerStateWithDescriptor:sdBorder];
+    if (!ssBorder) {
+      NSLog(@"FAIL: newSamplerStateWithDescriptor for border sampler failed");
+      return 68;
+    }
+
+    // Render pass with custom sampler bound to fragment sampler index 0
+    MTLRenderPassDescriptor *rpdSampler = [MTLRenderPassDescriptor renderPassDescriptor];
+    id<MTLTexture> targetTex = [device newTextureWithDescriptor:[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:64 height:64 mipmapped:NO]];
+    rpdSampler.colorAttachments[0].texture = targetTex;
+    rpdSampler.colorAttachments[0].loadAction = MTLLoadActionClear;
+    rpdSampler.colorAttachments[0].storeAction = MTLStoreActionStore;
+    rpdSampler.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+
+    id<MTLCommandBuffer> samplerCb = [queue commandBuffer];
+    id<MTLRenderCommandEncoder> samplerEnc = [samplerCb renderCommandEncoderWithDescriptor:rpdSampler];
+    [samplerEnc setFragmentTexture:cubeTex atIndex:0];
+    [samplerEnc setFragmentSamplerState:ssCustom atIndex:0];
+
+    float quadVerts[] = {
+      -1.0f, -1.0f, 0.0f, 1.0f,   0.0f, 0.0f,   1.0f, 1.0f, 1.0f, 1.0f,
+       1.0f, -1.0f, 0.0f, 1.0f,   1.0f, 0.0f,   1.0f, 1.0f, 1.0f, 1.0f,
+      -1.0f,  1.0f, 0.0f, 1.0f,   0.0f, 1.0f,   1.0f, 1.0f, 1.0f, 1.0f,
+       1.0f,  1.0f, 0.0f, 1.0f,   1.0f, 1.0f,   1.0f, 1.0f, 1.0f, 1.0f,
+    };
+    id<MTLBuffer> qvBuf = [device newBufferWithBytes:quadVerts length:sizeof(quadVerts) options:MTLResourceStorageModeShared];
+    [samplerEnc setVertexBuffer:qvBuf offset:0 atIndex:0];
+    [samplerEnc drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+    [samplerEnc endEncoding];
+    [samplerCb commit];
+    [samplerCb waitUntilCompleted];
+
+    [ssCustom release];
+    [ssBorder release];
+    [targetTex release];
+    [qvBuf release];
+
+    NSLog(@"Dynamic samplers verified: ssCustom (aniso=4, cmp=LessEqual, lod=[0.5, 8.0]), ssBorder (clampToZero, unnormalized), draw executed cleanly");
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

@@ -719,6 +719,25 @@ static inline unsigned int map_blend_op(int op) {
     }
 }
 
+uint32_t xef_host_metal_sampler_create(int min_filter, int mag_filter, int mip_filter,
+                                       int s_address_mode, int t_address_mode, int r_address_mode,
+                                       int max_aniso, int compare_fn, int border_color,
+                                       float lod_min, float lod_max, int normalized_coords) {
+    if (xef::metal_vk::is_available()) {
+        return xef::metal_vk::sampler_create(min_filter, mag_filter, mip_filter,
+                                             s_address_mode, t_address_mode, r_address_mode,
+                                             max_aniso, compare_fn, border_color,
+                                             lod_min, lod_max, normalized_coords);
+    }
+    return 1;
+}
+
+void xef_host_metal_sampler_destroy(uint32_t sampler_id) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::sampler_destroy(sampler_id);
+    }
+}
+
 uint32_t xef_host_metal_tex_create(int w, int h, int fmt, int is_render_target) {
     if (xef::metal_vk::is_available()) {
         return xef::metal_vk::tex_create(w, h, fmt, is_render_target);
@@ -1482,6 +1501,8 @@ const Fn kFns[] = {
     {"_xef_host_window_get_geometry", (void*)&xef_host_window_get_geometry},
     {"_xef_host_file_dialog", (void*)&xef_host_file_dialog},
     {"_xef_host_present_pixels", (void*)&xef_host_present_pixels},
+    {"_xef_host_metal_sampler_create", (void*)&xef_host_metal_sampler_create},
+    {"_xef_host_metal_sampler_destroy", (void*)&xef_host_metal_sampler_destroy},
     {"_xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
     {"_xef_host_metal_tex_create_ex", (void*)&xef_host_metal_tex_create_ex},
     {"_xef_host_metal_tex_create_view", (void*)&xef_host_metal_tex_create_view},
@@ -1499,6 +1520,8 @@ const Fn kFns[] = {
     {"_xef_host_metal_draw", (void*)&xef_host_metal_draw},
     {"_xef_host_metal_present_gpu", (void*)&xef_host_metal_present_gpu},
     {"_xef_host_metal_backend_name", (void*)&xef_host_metal_backend_name},
+    {"xef_host_metal_sampler_create", (void*)&xef_host_metal_sampler_create},
+    {"xef_host_metal_sampler_destroy", (void*)&xef_host_metal_sampler_destroy},
     {"xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
     {"xef_host_metal_tex_create_ex", (void*)&xef_host_metal_tex_create_ex},
     {"xef_host_metal_tex_create_view", (void*)&xef_host_metal_tex_create_view},

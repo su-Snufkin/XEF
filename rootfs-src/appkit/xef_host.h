@@ -94,6 +94,7 @@ typedef struct {
     float    depth_bias_slope_scale;
     float    depth_bias_clamp;
     float    blend_color[4];
+    uint32_t sampler_id;
 } xef_host_metal_pipeline_t;
 
 typedef struct {
@@ -101,6 +102,12 @@ typedef struct {
     float u, v;
     float r, g, b, a;
 } xef_host_metal_vertex_t;
+
+uint32_t xef_host_metal_sampler_create(int min_filter, int mag_filter, int mip_filter,
+                                       int s_address_mode, int t_address_mode, int r_address_mode,
+                                       int max_aniso, int compare_fn, int border_color,
+                                       float lod_min, float lod_max, int normalized_coords);
+void     xef_host_metal_sampler_destroy(uint32_t sampler_id);
 
 uint32_t xef_host_metal_tex_create(int w, int h, int fmt, int is_render_target);
 uint32_t xef_host_metal_tex_create_ex(int w, int h, int depth, int layers, int texture_type, int fmt, int is_render_target);

@@ -91,6 +91,7 @@ static PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout = nullptr;
 static PFN_vkCreateDescriptorPool vkCreateDescriptorPool = nullptr;
 static PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool = nullptr;
 static PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets = nullptr;
+static PFN_vkFreeDescriptorSets vkFreeDescriptorSets = nullptr;
 static PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets = nullptr;
 static PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets = nullptr;
 
@@ -125,6 +126,9 @@ static VkSampler g_sampler_linear = VK_NULL_HANDLE;
 static VkSampler g_sampler_nearest = VK_NULL_HANDLE;
 static VkSampler g_sampler_linear_repeat = VK_NULL_HANDLE;
 static VkSampler g_sampler_nearest_repeat = VK_NULL_HANDLE;
+static std::unordered_map<uint32_t, VkSampler> g_custom_samplers;
+static uint32_t g_next_sampler_id = 1;
+static std::unordered_map<uint64_t, VkDescriptorSet> g_desc_set_cache;
 
 struct PushConstants {
     float u_target_size[2];
@@ -369,6 +373,35 @@ static VkStencilOp map_vk_stencil_op(int op) {
     case 6: return VK_STENCIL_OP_INCREMENT_AND_WRAP;
     case 7: return VK_STENCIL_OP_DECREMENT_AND_WRAP;
     default: return VK_STENCIL_OP_KEEP;
+    }
+}
+
+static VkFilter map_vk_sampler_filter(int f) {
+    return (f == 0) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+}
+
+static VkSamplerMipmapMode map_vk_sampler_mipmap_mode(int m) {
+    return (m == 2) ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
+}
+
+static VkSamplerAddressMode map_vk_sampler_address_mode(int a) {
+    switch (a) {
+    case 0: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    case 1: return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+    case 2: return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    case 3: return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+    case 4: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    case 5: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    default: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    }
+}
+
+static VkBorderColor map_vk_sampler_border_color(int b) {
+    switch (b) {
+    case 0: return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+    case 1: return VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    case 2: return VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    default: return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
     }
 }
 
@@ -847,6 +880,7 @@ bool init() {
     LOAD_VK_DEV(vkCreateDescriptorPool);
     LOAD_VK_DEV(vkDestroyDescriptorPool);
     LOAD_VK_DEV(vkAllocateDescriptorSets);
+    LOAD_VK_DEV(vkFreeDescriptorSets);
     LOAD_VK_DEV(vkUpdateDescriptorSets);
     LOAD_VK_DEV(vkCmdBindDescriptorSets);
     #undef LOAD_VK_DEV
@@ -953,7 +987,11 @@ void finit() {
         if (t.image) vkDestroyImage(g_device, t.image, nullptr);
         if (t.memory) vkFreeMemory(g_device, t.memory, nullptr);
     }
-    g_textures.clear();
+    for (auto& kv : g_custom_samplers) {
+        if (kv.second) vkDestroySampler(g_device, kv.second, nullptr);
+    }
+    g_custom_samplers.clear();
+    g_desc_set_cache.clear();
 
     if (g_sampler_linear) vkDestroySampler(g_device, g_sampler_linear, nullptr);
     if (g_sampler_nearest) vkDestroySampler(g_device, g_sampler_nearest, nullptr);
@@ -980,6 +1018,63 @@ bool is_available() {
 
 const char* get_device_name() {
     return g_device_name.empty() ? "MetalVK Vulkan Device" : g_device_name.c_str();
+}
+
+uint32_t sampler_create(int min_filter, int mag_filter, int mip_filter,
+                        int s_address_mode, int t_address_mode, int r_address_mode,
+                        int max_aniso, int compare_fn, int border_color,
+                        float lod_min, float lod_max, int normalized_coords) {
+    if (!is_available()) return 0;
+    std::lock_guard<std::mutex> lk(g_metal_vk_lock);
+
+    VkSamplerCreateInfo info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+    info.magFilter = map_vk_sampler_filter(mag_filter);
+    info.minFilter = map_vk_sampler_filter(min_filter);
+    info.mipmapMode = map_vk_sampler_mipmap_mode(mip_filter);
+    info.addressModeU = map_vk_sampler_address_mode(s_address_mode);
+    info.addressModeV = map_vk_sampler_address_mode(t_address_mode);
+    info.addressModeW = map_vk_sampler_address_mode(r_address_mode);
+    info.mipLodBias = 0.0f;
+    info.anisotropyEnable = (max_aniso > 1) ? VK_TRUE : VK_FALSE;
+    info.maxAnisotropy = (float)(max_aniso > 0 ? max_aniso : 1);
+    info.compareEnable = (compare_fn > 0) ? VK_TRUE : VK_FALSE;
+    info.compareOp = map_vk_compare_op(compare_fn);
+    info.minLod = (normalized_coords != 0) ? lod_min : 0.0f;
+    info.maxLod = (normalized_coords != 0) ? lod_max : 0.0f;
+    info.borderColor = map_vk_sampler_border_color(border_color);
+    info.unnormalizedCoordinates = (normalized_coords != 0) ? VK_FALSE : VK_TRUE;
+
+    VkSampler sampler = VK_NULL_HANDLE;
+    if (vkCreateSampler(g_device, &info, nullptr, &sampler) != VK_SUCCESS) {
+        return 0;
+    }
+
+    uint32_t id = g_next_sampler_id++;
+    g_custom_samplers[id] = sampler;
+    return id;
+}
+
+void sampler_destroy(uint32_t sampler_id) {
+    if (!is_available() || sampler_id == 0) return;
+    std::lock_guard<std::mutex> lk(g_metal_vk_lock);
+    auto it = g_custom_samplers.find(sampler_id);
+    if (it == g_custom_samplers.end()) return;
+
+    vkQueueWaitIdle(g_queue);
+
+    for (auto it_d = g_desc_set_cache.begin(); it_d != g_desc_set_cache.end(); ) {
+        if ((uint32_t)(it_d->first & 0xFFFFFFFFULL) == sampler_id) {
+            if (it_d->second != VK_NULL_HANDLE && g_desc_pool != VK_NULL_HANDLE && vkFreeDescriptorSets) {
+                vkFreeDescriptorSets(g_device, g_desc_pool, 1, &it_d->second);
+            }
+            it_d = g_desc_set_cache.erase(it_d);
+        } else {
+            ++it_d;
+        }
+    }
+
+    vkDestroySampler(g_device, it->second, nullptr);
+    g_custom_samplers.erase(it);
 }
 
 uint32_t tex_create_ex(int w, int h, int depth, int layers, int texture_type, int fmt, int is_render_target) {
@@ -1545,6 +1640,17 @@ void tex_destroy(uint32_t tex_id) {
         }
     }
 
+    for (auto it_d = g_desc_set_cache.begin(); it_d != g_desc_set_cache.end(); ) {
+        if ((uint32_t)(it_d->first >> 32) == tex_id) {
+            if (it_d->second != VK_NULL_HANDLE && g_desc_pool != VK_NULL_HANDLE && vkFreeDescriptorSets) {
+                vkFreeDescriptorSets(g_device, g_desc_pool, 1, &it_d->second);
+            }
+            it_d = g_desc_set_cache.erase(it_d);
+        } else {
+            ++it_d;
+        }
+    }
+
     g_textures.erase(it);
 }
 
@@ -1851,12 +1957,31 @@ void draw(int handle,
     auto it_sample = g_textures.find(sample_tex_id);
     if (it_sample != g_textures.end()) {
         VkDescriptorSet dset = VK_NULL_HANDLE;
-        if (pipe->clamp_to_edge) {
-            dset = pipe->filter_linear ? it_sample->second.desc_set_linear : it_sample->second.desc_set_nearest;
-        } else {
-            dset = pipe->filter_linear ? it_sample->second.desc_set_linear_repeat : it_sample->second.desc_set_nearest_repeat;
+        if (pipe->sampler_id != 0) {
+            auto it_samp = g_custom_samplers.find(pipe->sampler_id);
+            if (it_samp != g_custom_samplers.end()) {
+                uint64_t cache_key = ((uint64_t)sample_tex_id << 32) | (uint64_t)pipe->sampler_id;
+                auto it_cached = g_desc_set_cache.find(cache_key);
+                if (it_cached != g_desc_set_cache.end()) {
+                    dset = it_cached->second;
+                } else {
+                    update_texture_descriptor(it_sample->second, it_samp->second, dset);
+                    if (dset != VK_NULL_HANDLE) {
+                        g_desc_set_cache[cache_key] = dset;
+                    }
+                }
+            }
         }
-        vkCmdBindDescriptorSets(g_active_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline_layout, 0, 1, &dset, 0, nullptr);
+        if (dset == VK_NULL_HANDLE) {
+            if (pipe->clamp_to_edge) {
+                dset = pipe->filter_linear ? it_sample->second.desc_set_linear : it_sample->second.desc_set_nearest;
+            } else {
+                dset = pipe->filter_linear ? it_sample->second.desc_set_linear_repeat : it_sample->second.desc_set_nearest_repeat;
+            }
+        }
+        if (dset != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(g_active_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline_layout, 0, 1, &dset, 0, nullptr);
+        }
     }
 
     if (indices && index_count > 0) {
