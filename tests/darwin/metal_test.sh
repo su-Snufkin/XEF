@@ -63,6 +63,22 @@ if [ -f tests/darwin/heap_event_test ]; then
   fi
 fi
 
+if [ -f tests/darwin/mip_sample_test ]; then
+  OUT8=$(timeout 15 $X -L darwin-rootfs tests/darwin/mip_sample_test 2>&1)
+  if ! echo "$OUT8" | grep -q "PASS mip_sample_test"; then echo "FAIL metal_test (mip_sample_test)"; echo "$OUT8"; exit 1; fi
+fi
+
+# Xcode's macOS Metal Game template (storyboard, MTKView, ModelIO box, asset-catalog texture), built on a Mac
+MG=darwin-rootfs/Applications/MetalGame.app/Contents/MacOS/MetalGame
+if [ -x $MG ]; then
+  SHOT=$(mktemp -d)
+  OUT9=$(XEF_MTL_SHOT=$SHOT/mg.ppm XEF_MTL_SHOT_FRAME=30 XEF_MTL_SHOT_EXIT=1 timeout 30 $X -L darwin-rootfs $MG 2>&1)
+  if [ ! -s $SHOT/mg.ppm ] || echo "$OUT9" | grep -qi "error creating\|failed\|fatal signal"; then
+    echo "FAIL metal_test (MetalGame)"; echo "$OUT9" | tail -20; rm -rf $SHOT; exit 1
+  fi
+  rm -rf $SHOT
+fi
+
 # SDL3 GPU samples (github.com/TheSpydog/SDL_gpu_examples built on a Mac, installed with their Content/ and
 # libSDL3.0.dylib under darwin-rootfs): every sample must reach its 30th presented frame
 SGE=darwin-rootfs/Applications/SDL_gpu_examples
