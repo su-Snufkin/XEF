@@ -254,8 +254,27 @@
   return _preferredFramesPerSecond;
 }
 
+/* the internal display loop: a run-loop timer at preferredFramesPerSecond while the view is in a window,
+   not paused and not in setNeedsDisplay mode */
+- (void)_xefTick:(NSTimer *)t {
+  if (!_paused && !_enableSetNeedsDisplay && [self window]) [self draw];
+}
+- (void)_xefUpdateTimer {
+  BOOL want = !_paused && !_enableSetNeedsDisplay && [self window] != nil;
+  NSTimeInterval iv = 1.0 / (double)(_preferredFramesPerSecond > 0 ? _preferredFramesPerSecond : 60);
+  if (_timer && (!want || fabs([_timer timeInterval] - iv) > 1e-6)) { [_timer invalidate]; [_timer release]; _timer = nil; }
+  if (want && !_timer) {
+    _timer = [[NSTimer timerWithTimeInterval:iv target:self selector:@selector(_xefTick:) userInfo:nil repeats:YES] retain];
+    [[NSRunLoop currentRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
+  }
+}
+- (void)viewDidMoveToWindow {
+  [super viewDidMoveToWindow];
+  [self _xefUpdateTimer];
+}
 - (void)setPreferredFramesPerSecond:(NSInteger)fps {
   _preferredFramesPerSecond = fps;
+  [self _xefUpdateTimer];
 }
 
 - (BOOL)isPaused {
@@ -264,6 +283,7 @@
 
 - (void)setPaused:(BOOL)p {
   _paused = p;
+  [self _xefUpdateTimer];
 }
 
 - (BOOL)enableSetNeedsDisplay {
@@ -272,6 +292,7 @@
 
 - (void)setEnableSetNeedsDisplay:(BOOL)e {
   _enableSetNeedsDisplay = e;
+  [self _xefUpdateTimer];
 }
 
 - (BOOL)autoResizeDrawable {
@@ -781,8 +802,9 @@ MTKModelError const MTKModelErrorKey = @"MTKModelErrorKey";
   return self;
 }
 - (id<MTLDevice>)device { return _device; }
+/* "new" methods return +1 objects (ARC callers release them) */
 - (id<MDLMeshBufferZone>)newZone:(NSUInteger)capacity {
-  return [[[MTKMeshBufferZone alloc] initWithCapacity:capacity allocator:self device:_device] autorelease];
+  return [[MTKMeshBufferZone alloc] initWithCapacity:capacity allocator:self device:_device];
 }
 - (id<MDLMeshBufferZone>)newZoneForBuffersWithSize:(NSArray<NSNumber *> *)sizes andType:(NSArray<NSNumber *> *)types {
   NSUInteger total = 0;
@@ -790,16 +812,16 @@ MTKModelError const MTKModelErrorKey = @"MTKModelErrorKey";
   return [self newZone:total];
 }
 - (id<MDLMeshBuffer>)newBuffer:(NSUInteger)length type:(MDLMeshBufferType)type {
-  return [[[MTKMeshBuffer alloc] initWithLength:length allocator:self zone:nil type:type] autorelease];
+  return [[MTKMeshBuffer alloc] initWithLength:length allocator:self zone:nil type:type];
 }
 - (id<MDLMeshBuffer>)newBufferWithData:(NSData *)data type:(MDLMeshBufferType)type {
-  return [[[MTKMeshBuffer alloc] initWithBytes:[data bytes] length:[data length] allocator:self zone:nil type:type] autorelease];
+  return [[MTKMeshBuffer alloc] initWithBytes:[data bytes] length:[data length] allocator:self zone:nil type:type];
 }
 - (id<MDLMeshBuffer>)newBufferFromZone:(id<MDLMeshBufferZone>)zone length:(NSUInteger)length type:(MDLMeshBufferType)type {
-  return [[[MTKMeshBuffer alloc] initWithLength:length allocator:self zone:zone type:type] autorelease];
+  return [[MTKMeshBuffer alloc] initWithLength:length allocator:self zone:zone type:type];
 }
 - (id<MDLMeshBuffer>)newBufferFromZone:(id<MDLMeshBufferZone>)zone data:(NSData *)data type:(MDLMeshBufferType)type {
-  return [[[MTKMeshBuffer alloc] initWithBytes:[data bytes] length:[data length] allocator:self zone:zone type:type] autorelease];
+  return [[MTKMeshBuffer alloc] initWithBytes:[data bytes] length:[data length] allocator:self zone:zone type:type];
 }
 - (void)dealloc {
   [_device release];
@@ -860,16 +882,23 @@ MTKModelError const MTKModelErrorKey = @"MTKModelErrorKey";
       _vertexCount = mesh.vertexCount;
       _vertexDescriptor = [mesh.vertexDescriptor retain];
       _name = [mesh.name copy];
-      if (mesh.vertexBuffers) {
-        for (id buf in mesh.vertexBuffers) {
-          if ([buf isKindOfClass:[MTKMeshBuffer class]]) {
-            [_vertexBuffers addObject:buf];
-          }
-        }
+      /* buffers keep their index (the vertex descriptor's buffer index); others are copied into Metal buffers */
+      MTKMeshBufferAllocator *alloc = [[[MTKMeshBufferAllocator alloc] initWithDevice:device] autorelease];
+      MTKMeshBuffer *(^metal)(id) = ^MTKMeshBuffer *(id buf) {
+        if ([buf isKindOfClass:[MTKMeshBuffer class]]) return buf;
+        if (!buf || buf == [NSNull null]) return nil;
+        id<MDLMeshBuffer> b = buf;
+        MDLMeshBufferMap *m = [b map];
+        NSData *d = [NSData dataWithBytes:[m bytes] length:[b length]];
+        return [(MTKMeshBuffer *)[alloc newBufferWithData:d type:[b type]] autorelease];
+      };
+      for (id buf in mesh.vertexBuffers) {
+        MTKMeshBuffer *mb = metal(buf);
+        [_vertexBuffers addObject:mb ? (id)mb : (id)[NSNull null]];
       }
       if (mesh.submeshes) {
         for (MDLSubmesh *sub in mesh.submeshes) {
-          MTKMeshBuffer *ibuf = (MTKMeshBuffer *)sub.indexBuffer;
+          MTKMeshBuffer *ibuf = metal(sub.indexBuffer);
           MTLIndexType itype = (sub.indexType == MDLIndexBitDepthUInt16) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
           MTLPrimitiveType ptype = (sub.geometryType == MDLGeometryTypeTriangles) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangleStrip;
           MTKSubmesh *s = [[MTKSubmesh alloc] initWithPrimitiveType:ptype indexType:itype indexBuffer:ibuf indexCount:sub.indexCount mesh:self name:sub.name];
