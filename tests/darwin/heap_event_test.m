@@ -494,6 +494,75 @@ int main(void) {
     [vertFn release];
     [dummyLib release];
 
+    /* 16. Test Ray Tracing MTLAccelerationStructure and MTLAccelerationStructureCommandEncoder */
+    if (!device.supportsRaytracing || !device.supportsRaytracingFromRender) {
+      NSLog(@"FAIL: device raytracing support query failed");
+      return 46;
+    }
+
+    MTLAccelerationStructureTriangleGeometryDescriptor *triGeo = [MTLAccelerationStructureTriangleGeometryDescriptor descriptor];
+    triGeo.vertexBuffer = hbuf;
+    triGeo.triangleCount = 1;
+    triGeo.opaque = YES;
+
+    MTLPrimitiveAccelerationStructureDescriptor *primDesc = [MTLPrimitiveAccelerationStructureDescriptor descriptor];
+    primDesc.geometryDescriptors = @[triGeo];
+
+    MTLAccelerationStructureSizes sizes = [device accelerationStructureSizesWithDescriptor:primDesc];
+    if (sizes.accelerationStructureSize == 0 || sizes.buildScratchBufferSize == 0) {
+      NSLog(@"FAIL: accelerationStructureSizesWithDescriptor returned 0");
+      return 47;
+    }
+
+    id<MTLAccelerationStructure> primAS = [device newAccelerationStructureWithDescriptor:primDesc];
+    if (!primAS || primAS.size < sizes.accelerationStructureSize || primAS.device != device || primAS.gpuResourceID._impl == 0) {
+      NSLog(@"FAIL: newAccelerationStructureWithDescriptor failed");
+      return 48;
+    }
+    [primAS setLabel:@"TestPrimAS"];
+
+    id<MTLBuffer> scratchBuf = [device newBufferWithLength:sizes.buildScratchBufferSize options:MTLResourceStorageModeShared];
+    id<MTLBuffer> compactSizeBuf = [device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+
+    id<MTLCommandBuffer> asCb = [queue commandBuffer];
+    id<MTLAccelerationStructureCommandEncoder> asEnc = [asCb accelerationStructureCommandEncoder];
+    if (!asEnc) {
+      NSLog(@"FAIL: accelerationStructureCommandEncoder returned nil");
+      return 49;
+    }
+    [asEnc buildAccelerationStructure:primAS descriptor:primDesc scratchBuffer:scratchBuf scratchBufferOffset:0];
+    [asEnc writeCompactedAccelerationStructureSize:primAS toBuffer:compactSizeBuf offset:0];
+    [asEnc endEncoding];
+    [asCb commit];
+    [asCb waitUntilCompleted];
+
+    uint32_t compSz = *(uint32_t *)[compactSizeBuf contents];
+    if (compSz != (uint32_t)primAS.size) {
+      NSLog(@"FAIL: writeCompactedAccelerationStructureSize mismatch: got %u, expected %lu", compSz, (unsigned long)primAS.size);
+      return 50;
+    }
+
+    MTLInstanceAccelerationStructureDescriptor *instDesc = [MTLInstanceAccelerationStructureDescriptor descriptor];
+    instDesc.instanceCount = 1;
+    instDesc.instancedAccelerationStructures = @[primAS];
+    id<MTLAccelerationStructure> instAS = [device newAccelerationStructureWithDescriptor:instDesc];
+    if (!instAS || instAS.size == 0) {
+      NSLog(@"FAIL: instance acceleration structure creation failed");
+      return 51;
+    }
+    [instAS setLabel:@"TestInstAS"];
+
+    MTLAccelerationStructurePassDescriptor *asPassDesc = [MTLAccelerationStructurePassDescriptor accelerationStructurePassDescriptor];
+    id<MTLCommandBuffer> asCb2 = [queue commandBuffer];
+    id<MTLAccelerationStructureCommandEncoder> asEnc2 = [asCb2 accelerationStructureCommandEncoderWithDescriptor:asPassDesc];
+    [asEnc2 endEncoding];
+    [asCb2 commit];
+    [asCb2 waitUntilCompleted];
+
+    NSLog(@"MTLAccelerationStructure verified: primAS=%@ (%lu bytes), instAS=%@ (%lu bytes), compacted=%u", primAS.label, (unsigned long)primAS.size, instAS.label, (unsigned long)instAS.size, compSz);
+    [scratchBuf release];
+    [compactSizeBuf release];
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

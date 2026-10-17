@@ -2981,6 +2981,299 @@ MTLCommonCounterSet const MTLCommonCounterSetStatistic = @"MTLCommonCounterSetSt
 }
 @end
 
+/* ------------------------------------------------------------------- MTLAccelerationStructure */
+
+@implementation MTLAccelerationStructureDescriptor
+@synthesize usage = _usage;
+- (id)copyWithZone:(NSZone *)zone {
+  MTLAccelerationStructureDescriptor *c = [[[self class] allocWithZone:zone] init];
+  c.usage = self.usage;
+  return c;
+}
+@end
+
+@implementation MTLAccelerationStructureGeometryDescriptor
+@synthesize intersectionFunctionTableOffset = _intersectionFunctionTableOffset;
+@synthesize opaque = _opaque;
+@synthesize allowDuplicateIntersectionFunctionInvocation = _allowDuplicateIntersectionFunctionInvocation;
+@synthesize label = _label;
+@synthesize primitiveDataBuffer = _primitiveDataBuffer;
+@synthesize primitiveDataBufferOffset = _primitiveDataBufferOffset;
+@synthesize primitiveDataStride = _primitiveDataStride;
+@synthesize primitiveDataElementSize = _primitiveDataElementSize;
+
+- (instancetype)init {
+  if ((self = [super init])) {
+    _allowDuplicateIntersectionFunctionInvocation = YES;
+  }
+  return self;
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLAccelerationStructureGeometryDescriptor *c = [[[self class] allocWithZone:zone] init];
+  c.intersectionFunctionTableOffset = self.intersectionFunctionTableOffset;
+  c.opaque = self.opaque;
+  c.allowDuplicateIntersectionFunctionInvocation = self.allowDuplicateIntersectionFunctionInvocation;
+  c.label = self.label;
+  c.primitiveDataBuffer = self.primitiveDataBuffer;
+  c.primitiveDataBufferOffset = self.primitiveDataBufferOffset;
+  c.primitiveDataStride = self.primitiveDataStride;
+  c.primitiveDataElementSize = self.primitiveDataElementSize;
+  return c;
+}
+- (void)dealloc {
+  [_label release];
+  [_primitiveDataBuffer release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLAccelerationStructureTriangleGeometryDescriptor
+@synthesize vertexBuffer = _vertexBuffer;
+@synthesize vertexBufferOffset = _vertexBufferOffset;
+@synthesize vertexFormat = _vertexFormat;
+@synthesize vertexStride = _vertexStride;
+@synthesize indexBuffer = _indexBuffer;
+@synthesize indexBufferOffset = _indexBufferOffset;
+@synthesize indexType = _indexType;
+@synthesize triangleCount = _triangleCount;
+@synthesize transformationMatrixBuffer = _transformationMatrixBuffer;
+@synthesize transformationMatrixBufferOffset = _transformationMatrixBufferOffset;
+
++ (instancetype)descriptor {
+  return [[[self alloc] init] autorelease];
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _vertexFormat = MTLAttributeFormatFloat3;
+  }
+  return self;
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLAccelerationStructureTriangleGeometryDescriptor *c = [super copyWithZone:zone];
+  c.vertexBuffer = self.vertexBuffer;
+  c.vertexBufferOffset = self.vertexBufferOffset;
+  c.vertexFormat = self.vertexFormat;
+  c.vertexStride = self.vertexStride;
+  c.indexBuffer = self.indexBuffer;
+  c.indexBufferOffset = self.indexBufferOffset;
+  c.indexType = self.indexType;
+  c.triangleCount = self.triangleCount;
+  c.transformationMatrixBuffer = self.transformationMatrixBuffer;
+  c.transformationMatrixBufferOffset = self.transformationMatrixBufferOffset;
+  return c;
+}
+- (void)dealloc {
+  [_vertexBuffer release];
+  [_indexBuffer release];
+  [_transformationMatrixBuffer release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLAccelerationStructureBoundingBoxGeometryDescriptor
+@synthesize boundingBoxBuffer = _boundingBoxBuffer;
+@synthesize boundingBoxBufferOffset = _boundingBoxBufferOffset;
+@synthesize boundingBoxStride = _boundingBoxStride;
+@synthesize boundingBoxCount = _boundingBoxCount;
+
++ (instancetype)descriptor {
+  return [[[self alloc] init] autorelease];
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _boundingBoxStride = 24;
+  }
+  return self;
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLAccelerationStructureBoundingBoxGeometryDescriptor *c = [super copyWithZone:zone];
+  c.boundingBoxBuffer = self.boundingBoxBuffer;
+  c.boundingBoxBufferOffset = self.boundingBoxBufferOffset;
+  c.boundingBoxStride = self.boundingBoxStride;
+  c.boundingBoxCount = self.boundingBoxCount;
+  return c;
+}
+- (void)dealloc {
+  [_boundingBoxBuffer release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLPrimitiveAccelerationStructureDescriptor
+@synthesize geometryDescriptors = _geometryDescriptors;
+@synthesize motionStartBorderMode = _motionStartBorderMode;
+@synthesize motionEndBorderMode = _motionEndBorderMode;
+@synthesize motionStartTime = _motionStartTime;
+@synthesize motionEndTime = _motionEndTime;
+@synthesize motionKeyframeCount = _motionKeyframeCount;
+
++ (instancetype)descriptor {
+  return [[[self alloc] init] autorelease];
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _motionKeyframeCount = 1;
+    _motionEndTime = 1.0f;
+  }
+  return self;
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLPrimitiveAccelerationStructureDescriptor *c = [super copyWithZone:zone];
+  c.geometryDescriptors = self.geometryDescriptors;
+  c.motionStartBorderMode = self.motionStartBorderMode;
+  c.motionEndBorderMode = self.motionEndBorderMode;
+  c.motionStartTime = self.motionStartTime;
+  c.motionEndTime = self.motionEndTime;
+  c.motionKeyframeCount = self.motionKeyframeCount;
+  return c;
+}
+- (void)dealloc {
+  [_geometryDescriptors release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLInstanceAccelerationStructureDescriptor
+@synthesize instanceDescriptorBuffer = _instanceDescriptorBuffer;
+@synthesize instanceDescriptorBufferOffset = _instanceDescriptorBufferOffset;
+@synthesize instanceDescriptorStride = _instanceDescriptorStride;
+@synthesize instanceCount = _instanceCount;
+@synthesize instancedAccelerationStructures = _instancedAccelerationStructures;
+@synthesize instanceDescriptorType = _instanceDescriptorType;
+
++ (instancetype)descriptor {
+  return [[[self alloc] init] autorelease];
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _instanceDescriptorStride = sizeof(MTLAccelerationStructureInstanceDescriptor);
+  }
+  return self;
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLInstanceAccelerationStructureDescriptor *c = [super copyWithZone:zone];
+  c.instanceDescriptorBuffer = self.instanceDescriptorBuffer;
+  c.instanceDescriptorBufferOffset = self.instanceDescriptorBufferOffset;
+  c.instanceDescriptorStride = self.instanceDescriptorStride;
+  c.instanceCount = self.instanceCount;
+  c.instancedAccelerationStructures = self.instancedAccelerationStructures;
+  c.instanceDescriptorType = self.instanceDescriptorType;
+  return c;
+}
+- (void)dealloc {
+  [_instanceDescriptorBuffer release];
+  [_instancedAccelerationStructures release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLAccelerationStructurePassDescriptor
++ (MTLAccelerationStructurePassDescriptor *)accelerationStructurePassDescriptor {
+  return [[[self alloc] init] autorelease];
+}
+- (id)copyWithZone:(NSZone *)zone {
+  return [[[self class] allocWithZone:zone] init];
+}
+@end
+
+@interface XEFMetalAccelerationStructure : XEFMetalObject <MTLAccelerationStructure> {
+  id<MTLDevice> _device;
+  NSString *_label;
+  NSUInteger _size;
+  MTLAccelerationStructureDescriptor *_descriptor;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device size:(NSUInteger)size;
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLAccelerationStructureDescriptor *)descriptor;
+@end
+
+@implementation XEFMetalAccelerationStructure
+- (instancetype)initWithDevice:(id<MTLDevice>)device size:(NSUInteger)size {
+  if ((self = [super init])) {
+    _device = device;
+    _size = size;
+  }
+  return self;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLAccelerationStructureDescriptor *)descriptor {
+  if ((self = [super init])) {
+    _device = device;
+    _descriptor = [descriptor copy];
+    MTLAccelerationStructureSizes sizes = [device accelerationStructureSizesWithDescriptor:descriptor];
+    _size = sizes.accelerationStructureSize;
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (NSUInteger)size { return _size; }
+- (NSUInteger)allocatedSize { return _size; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
+- (MTLStorageMode)storageMode { return MTLStorageModeShared; }
+- (MTLCPUCacheMode)cpuCacheMode { return MTLCPUCacheModeDefaultCache; }
+- (MTLHazardTrackingMode)hazardTrackingMode { return MTLHazardTrackingModeDefault; }
+- (MTLResourceOptions)resourceOptions { return MTLResourceStorageModeShared; }
+- (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state { return MTLPurgeableStateNonVolatile; }
+- (void)makeAliasable {}
+- (BOOL)isAliasable { return NO; }
+- (id<MTLHeap>)heap { return nil; }
+- (NSUInteger)heapOffset { return 0; }
+- (void)dealloc {
+  [_label release];
+  [_descriptor release];
+  [super dealloc];
+}
+@end
+
+@interface XEFMetalAccelerationStructureCommandEncoder : XEFMetalObject <MTLAccelerationStructureCommandEncoder> {
+  id<MTLCommandBuffer> _commandBuffer;
+  NSString *_label;
+}
+- (instancetype)initWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer;
+@end
+
+@implementation XEFMetalAccelerationStructureCommandEncoder
+- (instancetype)initWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer {
+  if ((self = [super init])) {
+    _commandBuffer = commandBuffer;
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _commandBuffer.device; }
+- (NSString *)label { return _label; }
+- (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (void)buildAccelerationStructure:(id<MTLAccelerationStructure>)accelerationStructure descriptor:(MTLAccelerationStructureDescriptor *)descriptor scratchBuffer:(id<MTLBuffer>)scratchBuffer scratchBufferOffset:(NSUInteger)scratchBufferOffset {}
+- (void)refitAccelerationStructure:(id<MTLAccelerationStructure>)baseAccelerationStructure descriptor:(MTLAccelerationStructureDescriptor *)descriptor destination:(id<MTLAccelerationStructure>)destination scratchBuffer:(id<MTLBuffer>)scratchBuffer scratchBufferOffset:(NSUInteger)scratchBufferOffset {}
+- (void)refitAccelerationStructure:(id<MTLAccelerationStructure>)sourceAccelerationStructure descriptor:(MTLAccelerationStructureDescriptor *)descriptor destination:(id<MTLAccelerationStructure>)destination scratchBuffer:(id<MTLBuffer>)scratchBuffer scratchBufferOffset:(NSUInteger)scratchBufferOffset options:(MTLAccelerationStructureRefitOptions)options {}
+- (void)copyAccelerationStructure:(id<MTLAccelerationStructure>)source toAccelerationStructure:(id<MTLAccelerationStructure>)destination {}
+- (void)writeCompactedAccelerationStructureSize:(id<MTLAccelerationStructure>)accelerationStructure toBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset {
+  if (buffer && [buffer contents] && offset + sizeof(uint32_t) <= [buffer length]) {
+    uint32_t *p = (uint32_t *)((uint8_t *)[buffer contents] + offset);
+    *p = (uint32_t)[accelerationStructure size];
+  }
+}
+- (void)writeCompactedAccelerationStructureSize:(id<MTLAccelerationStructure>)accelerationStructure toBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset sizeDataType:(MTLDataType)sizeDataType {
+  [self writeCompactedAccelerationStructureSize:accelerationStructure toBuffer:buffer offset:offset];
+}
+- (void)copyAndCompactAccelerationStructure:(id<MTLAccelerationStructure>)source toAccelerationStructure:(id<MTLAccelerationStructure>)destination {}
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage {}
+- (void)useResources:(const id<MTLResource> *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {}
+- (void)useHeap:(id<MTLHeap>)heap {}
+- (void)useHeaps:(const id<MTLHeap> *)heaps count:(NSUInteger)count {}
+- (void)updateFence:(id<MTLFence>)fence {}
+- (void)waitForFence:(id<MTLFence>)fence {}
+- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer atSampleIndex:(NSUInteger)sampleIndex withBarrier:(BOOL)barrier {
+  if (sampleBuffer && [sampleBuffer isKindOfClass:[XEFMetalCounterSampleBuffer class]]) {
+    [(XEFMetalCounterSampleBuffer *)sampleBuffer sampleAtIndex:sampleIndex];
+  }
+}
+- (void)endEncoding {}
+- (void)dealloc {
+  [_label release];
+  [super dealloc];
+}
+@end
+
 /* ------------------------------------------------------------------- MTLIndirectCommandBuffer */
 
 @implementation MTLIndirectCommandBufferDescriptor {
@@ -5108,6 +5401,12 @@ typedef enum {
 - (id<MTLBlitCommandEncoder>)blitCommandEncoder {
   return [[[XEFMetalBlitCommandEncoder alloc] init] autorelease];
 }
+- (id<MTLAccelerationStructureCommandEncoder>)accelerationStructureCommandEncoder {
+  return [[[XEFMetalAccelerationStructureCommandEncoder alloc] initWithCommandBuffer:self] autorelease];
+}
+- (id<MTLAccelerationStructureCommandEncoder>)accelerationStructureCommandEncoderWithDescriptor:(MTLAccelerationStructurePassDescriptor *)descriptor {
+  return [[[XEFMetalAccelerationStructureCommandEncoder alloc] initWithCommandBuffer:self] autorelease];
+}
 - (void)enqueue { _status = MTLCommandBufferStatusEnqueued; }
 - (void)presentDrawable:(id<MTLDrawable>)drawable {
   if (!drawable) return;
@@ -5396,6 +5695,61 @@ typedef enum {
 - (BOOL)supportsTextureSampleCount:(NSUInteger)sampleCount { return (sampleCount == 1 || sampleCount == 4); }
 - (BOOL)supportsCounterSampling:(MTLCounterSamplingPoint)samplingPoint { return YES; }
 - (BOOL)supportsRasterizationRateMapWithLayerCount:(NSUInteger)layerCount { return layerCount <= 8; }
+- (BOOL)supportsRaytracing { return YES; }
+- (BOOL)supportsRaytracingFromRender { return YES; }
+
+- (MTLAccelerationStructureSizes)accelerationStructureSizesWithDescriptor:(MTLAccelerationStructureDescriptor *)descriptor {
+  MTLAccelerationStructureSizes sizes;
+  sizes.accelerationStructureSize = 65536;
+  sizes.buildScratchBufferSize = 65536;
+  sizes.refitScratchBufferSize = 32768;
+
+  if ([descriptor isKindOfClass:[MTLPrimitiveAccelerationStructureDescriptor class]]) {
+    MTLPrimitiveAccelerationStructureDescriptor *pdesc = (MTLPrimitiveAccelerationStructureDescriptor *)descriptor;
+    NSUInteger totalPrimitives = 0;
+    for (MTLAccelerationStructureGeometryDescriptor *g in pdesc.geometryDescriptors) {
+      if ([g isKindOfClass:[MTLAccelerationStructureTriangleGeometryDescriptor class]]) {
+        totalPrimitives += ((MTLAccelerationStructureTriangleGeometryDescriptor *)g).triangleCount;
+      } else if ([g isKindOfClass:[MTLAccelerationStructureBoundingBoxGeometryDescriptor class]]) {
+        totalPrimitives += ((MTLAccelerationStructureBoundingBoxGeometryDescriptor *)g).boundingBoxCount;
+      }
+    }
+    if (totalPrimitives > 0) {
+      sizes.accelerationStructureSize = ((totalPrimitives * 128 + 65535) / 65536) * 65536;
+      sizes.buildScratchBufferSize = ((totalPrimitives * 64 + 65535) / 65536) * 65536;
+      sizes.refitScratchBufferSize = ((totalPrimitives * 32 + 65535) / 65536) * 65536;
+    }
+  } else if ([descriptor isKindOfClass:[MTLInstanceAccelerationStructureDescriptor class]]) {
+    MTLInstanceAccelerationStructureDescriptor *idesc = (MTLInstanceAccelerationStructureDescriptor *)descriptor;
+    NSUInteger count = idesc.instanceCount;
+    if (count > 0) {
+      sizes.accelerationStructureSize = ((count * 256 + 65535) / 65536) * 65536;
+      sizes.buildScratchBufferSize = ((count * 128 + 65535) / 65536) * 65536;
+      sizes.refitScratchBufferSize = ((count * 64 + 65535) / 65536) * 65536;
+    }
+  }
+  return sizes;
+}
+
+- (id<MTLAccelerationStructure>)newAccelerationStructureWithSize:(NSUInteger)size {
+  return [[[XEFMetalAccelerationStructure alloc] initWithDevice:self size:size] autorelease];
+}
+
+- (id<MTLAccelerationStructure>)newAccelerationStructureWithDescriptor:(MTLAccelerationStructureDescriptor *)descriptor {
+  return [[[XEFMetalAccelerationStructure alloc] initWithDevice:self descriptor:descriptor] autorelease];
+}
+
+- (MTLSizeAndAlign)heapAccelerationStructureSizeAndAlignWithSize:(NSUInteger)size {
+  MTLSizeAndAlign sa;
+  sa.size = (size + 255) & ~255ULL;
+  sa.align = 256;
+  return sa;
+}
+
+- (MTLSizeAndAlign)heapAccelerationStructureSizeAndAlignWithDescriptor:(MTLAccelerationStructureDescriptor *)descriptor {
+  MTLAccelerationStructureSizes sizes = [self accelerationStructureSizesWithDescriptor:descriptor];
+  return [self heapAccelerationStructureSizeAndAlignWithSize:sizes.accelerationStructureSize];
+}
 - (NSArray<id<MTLCounterSet>> *)counterSets {
   static NSArray *sets = nil;
   if (!sets) {
