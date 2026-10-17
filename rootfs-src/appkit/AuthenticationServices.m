@@ -615,13 +615,7 @@
 - (void)forwardInvocation:(NSInvocation *)anInvocation {}
 @end
 
-@interface NSViewController : NSObject @end
-@implementation NSViewController
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector {
-    return [NSMethodSignature signatureWithObjCTypes: "v@:"];
-}
-- (void)forwardInvocation:(NSInvocation *)anInvocation {}
-@end
+/* NSViewController comes from AppKit */
 
 
 @interface _ASCABLEQRCodeBadgePlatterView : NSObject @end
