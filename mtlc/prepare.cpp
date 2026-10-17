@@ -334,6 +334,19 @@ static Value* make_arg(WrapperCtx& c, const AirElem& e, Type* t) {
         if (t->isIntegerTy()) return b.CreateZExtOrTrunc(v, t);
         return PoisonValue::get(t);
     };
+    // arrays of resources arrive as a byval pointer to [N x ptr]: build that array from consecutive bindings
+    if ((k == "air.texture" || k == "air.sampler" || k == "air.buffer") && e.location_count > 1 && t->isPointerTy() && e.location >= 0) {
+        uint8_t kind = k == "air.texture" ? BIND_TEXTURE : k == "air.sampler" ? BIND_SAMPLER : BIND_BUFFER;
+        Type* et = PointerType::get(ctx, k == "air.sampler" ? 2 : 1);
+        ArrayType* at = ArrayType::get(et, (uint64_t)e.location_count);
+        IRBuilder<> eb(&*b.GetInsertBlock()->getParent()->getEntryBlock().getFirstInsertionPt());
+        AllocaInst* arr = eb.CreateAlloca(at);
+        for (int i = 0; i < e.location_count; i++) {
+            Value* h = b.CreateIntToPtr(c.load_table(kind, (uint16_t)(e.location + i)), et);
+            b.CreateStore(h, b.CreateConstInBoundsGEP2_32(at, arr, 0, (unsigned)i));
+        }
+        return b.CreateAddrSpaceCast(arr, t);
+    }
     if (k == "air.buffer" || k == "air.indirect_buffer") {
         if (e.location < 0) return PoisonValue::get(t);
         return as_ptr(c.load_table(BIND_BUFFER, (uint16_t)e.location));
