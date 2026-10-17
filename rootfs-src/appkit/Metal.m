@@ -1358,6 +1358,42 @@ static id metal_stub(id self, SEL _cmd, ...) {
 }
 @end
 
+@interface MTLSharedTextureHandle (Internal)
+- (void)_setDevice:(id<MTLDevice>)d;
+- (void)_setLabel:(NSString *)l;
+- (void)_setTexture:(id<MTLTexture>)t;
+- (id<MTLTexture>)_texture;
+@end
+
+@implementation MTLSharedTextureHandle {
+  id<MTLDevice> _device;
+  NSString *_label;
+  id<MTLTexture> _texture;
+}
++ (BOOL)supportsSecureCoding { return YES; }
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (void)_setDevice:(id<MTLDevice>)d { [d retain]; [_device release]; _device = d; }
+- (void)_setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (void)_setTexture:(id<MTLTexture>)t { [t retain]; [_texture release]; _texture = t; }
+- (id<MTLTexture>)_texture { return _texture; }
+- (void)encodeWithCoder:(NSCoder *)coder {
+  if (_label) [coder encodeObject:_label forKey:@"label"];
+}
+- (instancetype)initWithCoder:(NSCoder *)coder {
+  if ((self = [super init])) {
+    _label = [[coder decodeObjectOfClass:[NSString class] forKey:@"label"] retain];
+  }
+  return self;
+}
+- (void)dealloc {
+  [_device release];
+  [_label release];
+  [_texture release];
+  [super dealloc];
+}
+@end
+
 @interface XEFMetalTextureStorage : NSObject {
 @public
   uint8_t *_data;
@@ -1519,6 +1555,14 @@ static id metal_stub(id self, SEL _cmd, ...) {
 }
 - (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat textureType:(MTLTextureType)textureType levels:(NSRange)levelRange slices:(NSRange)sliceRange swizzle:(MTLTextureSwizzleChannels)swizzle {
   return [[XEFMetalTexture alloc] initWithParent:self pixelFormat:pixelFormat textureType:textureType levels:levelRange slices:sliceRange swizzle:swizzle];
+}
+
+- (MTLSharedTextureHandle *)newSharedTextureHandle {
+  MTLSharedTextureHandle *h = [[MTLSharedTextureHandle alloc] init];
+  [h _setDevice:self.device];
+  [h _setLabel:self.label];
+  [h _setTexture:self];
+  return h;
 }
 
 - (void)replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level slice:(NSUInteger)slice withBytes:(const void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow bytesPerImage:(NSUInteger)bytesPerImage {
@@ -5698,9 +5742,12 @@ typedef enum {
   NSMutableArray *_eventActions;
   BOOL _retainedReferences;
   MTLCommandBufferErrorOption _errorOptions;
+  id<MTLLogState> _logState;
 }
 - (instancetype)initWithQueue:(id<MTLCommandQueue>)queue;
 - (instancetype)initWithQueue:(id<MTLCommandQueue>)queue descriptor:(MTLCommandBufferDescriptor *)desc;
+- (id<MTLLogState>)logState;
+- (void)setLogState:(id<MTLLogState>)ls;
 @end
 @implementation XEFMetalCommandBuffer
 - (instancetype)initWithQueue:(id<MTLCommandQueue>)queue {
@@ -5712,9 +5759,14 @@ typedef enum {
     _status = MTLCommandBufferStatusNotEnqueued;
     _retainedReferences = desc ? desc.retainedReferences : YES;
     _errorOptions = desc ? desc.errorOptions : MTLCommandBufferErrorOptionNone;
+    if (desc && [desc respondsToSelector:@selector(logState)]) {
+      _logState = [[(id)desc logState] retain];
+    }
   }
   return self;
 }
+- (id<MTLLogState>)logState { return _logState; }
+- (void)setLogState:(id<MTLLogState>)ls { [ls retain]; [_logState release]; _logState = ls; }
 - (BOOL)retainedReferences { return _retainedReferences; }
 - (MTLCommandBufferErrorOption)errorOptions { return _errorOptions; }
 - (id<MTLCommandQueue>)commandQueue { return _commandQueue; }
@@ -5855,36 +5907,135 @@ typedef enum {
   [_scheduledHandlers release];
   [_drawables release];
   [_eventActions release];
+  [_logState release];
   [super dealloc];
 }
 @end
 
+@implementation MTLLogStateDescriptor {
+  MTLLogLevel _level;
+  NSInteger _bufferSize;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _level = MTLLogLevelUndefined;
+    _bufferSize = 1024;
+  }
+  return self;
+}
+- (MTLLogLevel)level { return _level; }
+- (void)setLevel:(MTLLogLevel)l { _level = l; }
+- (NSInteger)bufferSize { return _bufferSize; }
+- (void)setBufferSize:(NSInteger)s { _bufferSize = (s >= 1024) ? s : 1024; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLLogStateDescriptor *c = [[MTLLogStateDescriptor allocWithZone:zone] init];
+  c.level = _level;
+  c.bufferSize = _bufferSize;
+  return c;
+}
+@end
+
+@interface XEFMetalLogState : XEFMetalObject <MTLLogState> {
+  NSMutableArray *_handlers;
+  MTLLogLevel _level;
+  NSInteger _bufferSize;
+}
+- (instancetype)initWithDescriptor:(MTLLogStateDescriptor *)desc;
+@end
+
+@implementation XEFMetalLogState
+- (instancetype)initWithDescriptor:(MTLLogStateDescriptor *)desc {
+  if ((self = [super init])) {
+    _handlers = [[NSMutableArray alloc] init];
+    _level = desc ? desc.level : MTLLogLevelUndefined;
+    _bufferSize = desc ? desc.bufferSize : 1024;
+  }
+  return self;
+}
+- (void)addLogHandler:(void(^)(NSString *subSystem, NSString *category, MTLLogLevel logLevel, NSString *message))block {
+  if (block) {
+    id copy = [block copy];
+    [_handlers addObject:copy];
+    [copy release];
+  }
+}
+- (void)dealloc {
+  [_handlers release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLCommandQueueDescriptor {
+  NSUInteger _maxCommandBufferCount;
+  id<MTLLogState> _logState;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _maxCommandBufferCount = 64;
+  }
+  return self;
+}
+- (NSUInteger)maxCommandBufferCount { return _maxCommandBufferCount; }
+- (void)setMaxCommandBufferCount:(NSUInteger)count { _maxCommandBufferCount = count; }
+- (id<MTLLogState>)logState { return _logState; }
+- (void)setLogState:(id<MTLLogState>)ls { [ls retain]; [_logState release]; _logState = ls; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLCommandQueueDescriptor *c = [[MTLCommandQueueDescriptor allocWithZone:zone] init];
+  c.maxCommandBufferCount = _maxCommandBufferCount;
+  c.logState = _logState;
+  return c;
+}
+- (void)dealloc { [_logState release]; [super dealloc]; }
+@end
+
 @interface XEFMetalCommandQueue : XEFMetalObject <MTLCommandQueue> {
+@public
   id<MTLDevice> _device;
   NSString *_label;
+  id<MTLLogState> _logState;
 }
 - (instancetype)initWithDevice:(id<MTLDevice>)device;
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLCommandQueueDescriptor *)desc;
 @end
+
 @implementation XEFMetalCommandQueue
 - (instancetype)initWithDevice:(id<MTLDevice>)device {
-  if ((self = [super init])) { _device = device; }
+  return [self initWithDevice:device descriptor:nil];
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLCommandQueueDescriptor *)desc {
+  if ((self = [super init])) {
+    _device = device;
+    if (desc && desc.logState) {
+      _logState = [desc.logState retain];
+    }
+  }
   return self;
 }
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (id<MTLLogState>)logState { return _logState; }
+- (void)setLogState:(id<MTLLogState>)ls { [ls retain]; [_logState release]; _logState = ls; }
 - (id<MTLCommandBuffer>)commandBuffer {
   return [[[XEFMetalCommandBuffer alloc] initWithQueue:self] autorelease];
 }
 - (id<MTLCommandBuffer>)commandBufferWithUnretainedReferences {
   MTLCommandBufferDescriptor *desc = [[[MTLCommandBufferDescriptor alloc] init] autorelease];
   desc.retainedReferences = NO;
-  return [[[XEFMetalCommandBuffer alloc] initWithQueue:self descriptor:desc] autorelease];
+  XEFMetalCommandBuffer *cb = [[[XEFMetalCommandBuffer alloc] initWithQueue:self descriptor:desc] autorelease];
+  if (_logState && !cb.logState) cb.logState = _logState;
+  return cb;
 }
 - (id<MTLCommandBuffer>)commandBufferWithDescriptor:(MTLCommandBufferDescriptor *)descriptor {
-  return [[[XEFMetalCommandBuffer alloc] initWithQueue:self descriptor:descriptor] autorelease];
+  XEFMetalCommandBuffer *cb = [[[XEFMetalCommandBuffer alloc] initWithQueue:self descriptor:descriptor] autorelease];
+  if (_logState && !cb.logState) cb.logState = _logState;
+  return cb;
 }
 - (void)insertDebugCaptureBoundary {}
-- (void)dealloc { [_label release]; [super dealloc]; }
+- (void)dealloc {
+  [_label release];
+  [_logState release];
+  [super dealloc];
+}
 @end
 
 /* ------------------------------------------------------------------- MTLDynamicLibrary & MTLBinaryArchive */
@@ -6034,6 +6185,159 @@ typedef enum {
 - (BOOL)supportsRasterizationRateMapWithLayerCount:(NSUInteger)layerCount { return layerCount <= 8; }
 - (BOOL)supportsRaytracing { return YES; }
 - (BOOL)supportsRaytracingFromRender { return YES; }
+- (MTLDeviceLocation)location { return MTLDeviceLocationBuiltIn; }
+- (NSUInteger)locationNumber { return 0; }
+- (uint64_t)maxTransferRate { return 0; }
+- (BOOL)areRasterOrderGroupsSupported { return YES; }
+- (BOOL)supports32BitFloatFiltering { return YES; }
+- (BOOL)supports32BitMSAA { return YES; }
+- (BOOL)supportsQueryTextureLOD { return YES; }
+- (BOOL)supportsBCTextureCompression { return YES; }
+- (BOOL)supportsPullModelInterpolation { return YES; }
+- (BOOL)areBarycentricCoordsSupported { return YES; }
+- (BOOL)supportsShaderBarycentricCoordinates { return YES; }
+- (uint64_t)peerGroupID { return 0; }
+- (uint32_t)peerCount { return 1; }
+- (uint32_t)peerIndex { return 0; }
+
+- (NSUInteger)sparseTileSizeInBytes {
+  return 65536;
+}
+
+- (NSUInteger)sparseTileSizeInBytesForSparsePageSize:(MTLSparsePageSize)sparsePageSize {
+  switch (sparsePageSize) {
+    case MTLSparsePageSize16:  return 16384;
+    case MTLSparsePageSize64:  return 65536;
+    case MTLSparsePageSize256: return 262144;
+    default: return 65536;
+  }
+}
+
+- (MTLSize)sparseTileSizeWithTextureType:(MTLTextureType)textureType
+                             pixelFormat:(MTLPixelFormat)pixelFormat
+                             sampleCount:(NSUInteger)sampleCount
+                          sparsePageSize:(MTLSparsePageSize)sparsePageSize {
+  NSUInteger pageBytes = [self sparseTileSizeInBytesForSparsePageSize:sparsePageSize];
+  NSUInteger bpp = xef_mtl_bpp(pixelFormat);
+  if (bpp == 0) bpp = 4;
+  NSUInteger sc = (sampleCount > 0) ? sampleCount : 1;
+  NSUInteger totalPixels = pageBytes / (bpp * sc);
+  if (totalPixels == 0) totalPixels = 1;
+
+  if (textureType == MTLTextureType1D || textureType == MTLTextureType1DArray) {
+    return MTLSizeMake(totalPixels, 1, 1);
+  } else if (textureType == MTLTextureType3D) {
+    NSUInteger dim = 1;
+    while (dim * dim * (dim / 2) < totalPixels && dim < 1024) dim <<= 1;
+    NSUInteger d = (dim > 1) ? (dim / 2) : 1;
+    NSUInteger w = dim;
+    NSUInteger h = totalPixels / (w * d);
+    return MTLSizeMake(w, (h > 0) ? h : 1, (d > 0) ? d : 1);
+  } else {
+    /* 2D, 2DArray, 2DMultisample, Cube, CubeArray */
+    NSUInteger dim = 1;
+    while (dim * dim < totalPixels && dim < 4096) dim <<= 1;
+    NSUInteger w = dim;
+    NSUInteger h = totalPixels / w;
+    return MTLSizeMake(w, (h > 0) ? h : 1, 1);
+  }
+}
+
+- (MTLSize)sparseTileSizeWithTextureType:(MTLTextureType)textureType
+                             pixelFormat:(MTLPixelFormat)pixelFormat
+                             sampleCount:(NSUInteger)sampleCount {
+  return [self sparseTileSizeWithTextureType:textureType pixelFormat:pixelFormat sampleCount:sampleCount sparsePageSize:MTLSparsePageSize64];
+}
+
+- (void)convertSparsePixelRegions:(const MTLRegion *)pixelRegions
+                    toTileRegions:(MTLRegion *)tileRegions
+                     withTileSize:(MTLSize)tileSize
+                    alignmentMode:(MTLSparseTextureRegionAlignmentMode)mode
+                       numRegions:(NSUInteger)numRegions {
+  if (!pixelRegions || !tileRegions || numRegions == 0) return;
+  for (NSUInteger i = 0; i < numRegions; i++) {
+    const MTLRegion *pr = &pixelRegions[i];
+    MTLRegion *tr = &tileRegions[i];
+    if (tileSize.width == 0 || tileSize.height == 0 || tileSize.depth == 0) {
+      *tr = *pr;
+      continue;
+    }
+    if (mode == MTLSparseTextureRegionAlignmentModeOutward) {
+      NSUInteger x0 = pr->origin.x / tileSize.width;
+      NSUInteger y0 = pr->origin.y / tileSize.height;
+      NSUInteger z0 = pr->origin.z / tileSize.depth;
+      NSUInteger x1 = (pr->origin.x + pr->size.width + tileSize.width - 1) / tileSize.width;
+      NSUInteger y1 = (pr->origin.y + pr->size.height + tileSize.height - 1) / tileSize.height;
+      NSUInteger z1 = (pr->origin.z + pr->size.depth + tileSize.depth - 1) / tileSize.depth;
+      tr->origin = MTLOriginMake(x0, y0, z0);
+      tr->size = MTLSizeMake(x1 - x0, y1 - y0, z1 - z0);
+    } else {
+      NSUInteger x0 = (pr->origin.x + tileSize.width - 1) / tileSize.width;
+      NSUInteger y0 = (pr->origin.y + tileSize.height - 1) / tileSize.height;
+      NSUInteger z0 = (pr->origin.z + tileSize.depth - 1) / tileSize.depth;
+      NSUInteger x1 = (pr->origin.x + pr->size.width) / tileSize.width;
+      NSUInteger y1 = (pr->origin.y + pr->size.height) / tileSize.height;
+      NSUInteger z1 = (pr->origin.z + pr->size.depth) / tileSize.depth;
+      tr->origin = MTLOriginMake(x0, y0, z0);
+      tr->size = MTLSizeMake((x1 > x0) ? (x1 - x0) : 0, (y1 > y0) ? (y1 - y0) : 0, (z1 > z0) ? (z1 - z0) : 0);
+    }
+  }
+}
+
+- (void)convertSparseTileRegions:(const MTLRegion *)tileRegions
+                  toPixelRegions:(MTLRegion *)pixelRegions
+                    withTileSize:(MTLSize)tileSize
+                      numRegions:(NSUInteger)numRegions {
+  if (!tileRegions || !pixelRegions || numRegions == 0) return;
+  for (NSUInteger i = 0; i < numRegions; i++) {
+    const MTLRegion *tr = &tileRegions[i];
+    MTLRegion *pr = &pixelRegions[i];
+    pr->origin = MTLOriginMake(tr->origin.x * tileSize.width,
+                               tr->origin.y * tileSize.height,
+                               tr->origin.z * tileSize.depth);
+    pr->size = MTLSizeMake(tr->size.width * tileSize.width,
+                           tr->size.height * tileSize.height,
+                           tr->size.depth * tileSize.depth);
+  }
+}
+
+- (id<MTLBuffer>)newBufferWithLength:(NSUInteger)length options:(MTLResourceOptions)options placementSparsePageSize:(MTLSparsePageSize)placementSparsePageSize {
+  return [self newBufferWithLength:length options:options];
+}
+
+- (id<MTLSharedEvent>)newSharedEvent {
+  return [[[XEFMetalSharedEvent alloc] initWithDevice:self] autorelease];
+}
+
+- (id<MTLSharedEvent>)newSharedEventWithHandle:(MTLSharedEventHandle *)sharedEventHandle {
+  XEFMetalSharedEvent *ev = [[[XEFMetalSharedEvent alloc] initWithDevice:self] autorelease];
+  if (sharedEventHandle) {
+    ev.label = sharedEventHandle.label;
+    ev.signaledValue = [sharedEventHandle _signaledValue];
+  }
+  return ev;
+}
+
+- (id<MTLTexture>)newSharedTextureWithDescriptor:(MTLTextureDescriptor *)descriptor {
+  return [self newTextureWithDescriptor:descriptor];
+}
+
+- (id<MTLTexture>)newSharedTextureWithHandle:(MTLSharedTextureHandle *)sharedHandle {
+  if (sharedHandle && [sharedHandle _texture]) {
+    return [[sharedHandle _texture] retain];
+  }
+  MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:64 height:64 mipmapped:NO];
+  return [self newTextureWithDescriptor:d];
+}
+
+- (id<MTLCommandQueue>)newCommandQueueWithDescriptor:(MTLCommandQueueDescriptor *)descriptor {
+  return [[XEFMetalCommandQueue alloc] initWithDevice:self descriptor:descriptor];
+}
+
+- (id<MTLLogState>)newLogStateWithDescriptor:(MTLLogStateDescriptor *)descriptor error:(NSError **)error {
+  if (error) *error = nil;
+  return [[[XEFMetalLogState alloc] initWithDescriptor:descriptor] autorelease];
+}
 
 - (MTLAccelerationStructureSizes)accelerationStructureSizesWithDescriptor:(MTLAccelerationStructureDescriptor *)descriptor {
   MTLAccelerationStructureSizes sizes;
@@ -6227,19 +6531,6 @@ typedef enum {
 
 - (id<MTLEvent>)newEvent {
   return [[XEFMetalEvent alloc] initWithDevice:self];
-}
-
-- (id<MTLSharedEvent>)newSharedEvent {
-  return [[[XEFMetalSharedEvent alloc] initWithDevice:self] autorelease];
-}
-
-- (id<MTLSharedEvent>)newSharedEventWithHandle:(MTLSharedEventHandle *)sharedEventHandle {
-  XEFMetalSharedEvent *ev = [[[XEFMetalSharedEvent alloc] initWithDevice:self] autorelease];
-  if (sharedEventHandle) {
-    ev.label = sharedEventHandle.label;
-    ev.signaledValue = [sharedEventHandle _signaledValue];
-  }
-  return ev;
 }
 
 - (MTLSizeAndAlign)heapBufferSizeAndAlignWithLength:(NSUInteger)length options:(MTLResourceOptions)options {

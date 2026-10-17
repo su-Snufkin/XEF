@@ -862,6 +862,90 @@ int main(void) {
 
     NSLog(@"Dynamic samplers verified: ssCustom (aniso=4, cmp=LessEqual, lod=[0.5, 8.0]), ssBorder (clampToZero, unnormalized), draw executed cleanly");
 
+    // Stage 22: Shared texture handles, sparse tile calculations, log states and extended device queries
+    MTLSharedTextureHandle *texHandle = [cubeTex newSharedTextureHandle];
+    if (!texHandle) {
+      NSLog(@"FAIL: newSharedTextureHandle returned nil");
+      return 69;
+    }
+    if (texHandle.device != device) {
+      NSLog(@"FAIL: shared texture handle device mismatch");
+      return 70;
+    }
+    id<MTLTexture> reconstructedTex = [device newSharedTextureWithHandle:texHandle];
+    if (!reconstructedTex) {
+      NSLog(@"FAIL: newSharedTextureWithHandle returned nil");
+      return 71;
+    }
+
+    MTLSize tileSize2D = [device sparseTileSizeWithTextureType:MTLTextureType2D
+                                                   pixelFormat:MTLPixelFormatRGBA8Unorm
+                                                   sampleCount:1];
+    if (tileSize2D.width != 128 || tileSize2D.height != 128 || tileSize2D.depth != 1) {
+      NSLog(@"FAIL: sparseTileSizeWithTextureType 2D RGBA8Unorm mismatch: %lux%lux%lu",
+            (unsigned long)tileSize2D.width, (unsigned long)tileSize2D.height, (unsigned long)tileSize2D.depth);
+      return 72;
+    }
+
+    MTLRegion pixelIn = MTLRegionMake2D(10, 20, 200, 150);
+    MTLRegion tileOut = MTLRegionMake2D(0, 0, 0, 0);
+    [device convertSparsePixelRegions:&pixelIn
+                        toTileRegions:&tileOut
+                         withTileSize:tileSize2D
+                        alignmentMode:MTLSparseTextureRegionAlignmentModeOutward
+                           numRegions:1];
+    if (tileOut.origin.x != 0 || tileOut.origin.y != 0 || tileOut.size.width != 2 || tileOut.size.height != 2) {
+      NSLog(@"FAIL: convertSparsePixelRegions Outward mismatch: origin=(%lu,%lu) size=(%lu,%lu)",
+            (unsigned long)tileOut.origin.x, (unsigned long)tileOut.origin.y,
+            (unsigned long)tileOut.size.width, (unsigned long)tileOut.size.height);
+      return 73;
+    }
+
+    MTLRegion pixelBack = MTLRegionMake2D(0, 0, 0, 0);
+    [device convertSparseTileRegions:&tileOut
+                      toPixelRegions:&pixelBack
+                        withTileSize:tileSize2D
+                          numRegions:1];
+    if (pixelBack.origin.x != 0 || pixelBack.origin.y != 0 || pixelBack.size.width != 256 || pixelBack.size.height != 256) {
+      NSLog(@"FAIL: convertSparseTileRegions mismatch: origin=(%lu,%lu) size=(%lu,%lu)",
+            (unsigned long)pixelBack.origin.x, (unsigned long)pixelBack.origin.y,
+            (unsigned long)pixelBack.size.width, (unsigned long)pixelBack.size.height);
+      return 74;
+    }
+
+    MTLLogStateDescriptor *logDesc = [[[MTLLogStateDescriptor alloc] init] autorelease];
+    logDesc.level = MTLLogLevelDebug;
+    logDesc.bufferSize = 32768;
+    NSError *logErr = nil;
+    id<MTLLogState> logState = [device newLogStateWithDescriptor:logDesc error:&logErr];
+    if (!logState || logErr) {
+      NSLog(@"FAIL: newLogStateWithDescriptor failed: %@", logErr);
+      return 75;
+    }
+
+    MTLCommandQueueDescriptor *cqDesc = [[[MTLCommandQueueDescriptor alloc] init] autorelease];
+    cqDesc.maxCommandBufferCount = 32;
+    cqDesc.logState = logState;
+    id<MTLCommandQueue> descQueue = [device newCommandQueueWithDescriptor:cqDesc];
+    if (!descQueue) {
+      NSLog(@"FAIL: newCommandQueueWithDescriptor returned nil");
+      return 76;
+    }
+    id<MTLCommandBuffer> descCb = [descQueue commandBuffer];
+    [descCb commit];
+    [descCb waitUntilCompleted];
+
+    if (!device.areRasterOrderGroupsSupported || !device.supports32BitFloatFiltering || !device.supportsShaderBarycentricCoordinates) {
+      NSLog(@"FAIL: device extended query properties mismatch");
+      return 77;
+    }
+
+    [texHandle release];
+    [reconstructedTex release];
+    [descQueue release];
+
+    NSLog(@"Stage 22 verified: shared textures, sparse tiles, log states & command queue descriptors");
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }
