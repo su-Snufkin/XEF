@@ -184,6 +184,23 @@ int main(void) {
     [waitBuf commit];
     NSLog(@"Command buffer event synchronization verified: val=%llu", (unsigned long long)cmdEvent.signaledValue);
 
+    /* 8. Test Sampler Descriptor and State */
+    MTLSamplerDescriptor *sampDesc = [[[MTLSamplerDescriptor alloc] init] autorelease];
+    sampDesc.label = @"TestSampler";
+    sampDesc.minFilter = MTLSamplerMinMagFilterNearest;
+    sampDesc.magFilter = MTLSamplerMinMagFilterLinear;
+    sampDesc.sAddressMode = MTLSamplerAddressModeClampToEdge;
+    sampDesc.tAddressMode = MTLSamplerAddressModeRepeat;
+    sampDesc.lodMinClamp = 1.0f;
+    sampDesc.lodMaxClamp = 5.0f;
+    sampDesc.maxAnisotropy = 4;
+    id<MTLSamplerState> sampState = [device newSamplerStateWithDescriptor:sampDesc];
+    if (!sampState || ![sampState.label isEqualToString:@"TestSampler"] || [sampState device] != device) {
+      NSLog(@"FAIL: newSamplerStateWithDescriptor failed");
+      return 17;
+    }
+    NSLog(@"MTLSamplerState verified: label=%@, device=%@", sampState.label, [sampState.device name]);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

@@ -1303,6 +1303,10 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
   MTLSamplerAddressMode _rAddressMode;
   MTLSamplerBorderColor _borderColor;
   BOOL _normalizedCoordinates;
+  float _lodMinClamp;
+  float _lodMaxClamp;
+  NSUInteger _maxAnisotropy;
+  MTLCompareFunction _compareFunction;
 }
 - (instancetype)initWithDescriptor:(MTLSamplerDescriptor *)desc device:(id<MTLDevice>)device;
 @end
@@ -1320,14 +1324,34 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
       _rAddressMode = desc.rAddressMode;
       _borderColor = desc.borderColor;
       _normalizedCoordinates = desc.normalizedCoordinates;
+      _lodMinClamp = desc.lodMinClamp;
+      _lodMaxClamp = desc.lodMaxClamp;
+      _maxAnisotropy = desc.maxAnisotropy;
+      _compareFunction = desc.compareFunction;
     } else {
       _normalizedCoordinates = YES;
+      _lodMinClamp = 0.0f;
+      _lodMaxClamp = 1000.0f;
+      _maxAnisotropy = 1;
+      _compareFunction = MTLCompareFunctionNever;
     }
   }
   return self;
 }
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; }
+- (MTLSamplerMinMagFilter)minFilter { return _minFilter; }
+- (MTLSamplerMinMagFilter)magFilter { return _magFilter; }
+- (MTLSamplerMipFilter)mipFilter { return _mipFilter; }
+- (MTLSamplerAddressMode)sAddressMode { return _sAddressMode; }
+- (MTLSamplerAddressMode)tAddressMode { return _tAddressMode; }
+- (MTLSamplerAddressMode)rAddressMode { return _rAddressMode; }
+- (MTLSamplerBorderColor)borderColor { return _borderColor; }
+- (BOOL)normalizedCoordinates { return _normalizedCoordinates; }
+- (float)lodMinClamp { return _lodMinClamp; }
+- (float)lodMaxClamp { return _lodMaxClamp; }
+- (NSUInteger)maxAnisotropy { return _maxAnisotropy; }
+- (MTLCompareFunction)compareFunction { return _compareFunction; }
 - (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
@@ -1383,7 +1407,11 @@ static inline void xef_tex_sample(XEFMetalTexture *tex, XEFMetalSamplerState *sa
     fx = u * (float)w - 0.5f;
     fy = v * (float)h - 0.5f;
   }
-  if (!samp || samp->_magFilter == MTLSamplerMinMagFilterNearest) {
+  MTLSamplerMinMagFilter filter = samp ? samp->_magFilter : MTLSamplerMinMagFilterLinear;
+  if (samp && samp->_minFilter == MTLSamplerMinMagFilterNearest && samp->_magFilter == MTLSamplerMinMagFilterNearest) {
+    filter = MTLSamplerMinMagFilterNearest;
+  }
+  if (filter == MTLSamplerMinMagFilterNearest) {
     int ix = (int)floorf(fx + 0.5f);
     int iy = (int)floorf(fy + 0.5f);
     xef_tex_read_pixel(tex, ix, iy, out_rgba);
