@@ -707,6 +707,43 @@ int main(void) {
     NSLog(@"StageInputOutputDescriptor and pipeline extensions verified: stageInput=%@, vertAmp=%lu, depthClipClamp verified",
           cpd2.stageInputDescriptor, (unsigned long)rpd2.maxVertexAmplificationCount);
 
+    // Stage 19: GPU resource IDs and sampler/texture descriptor extensions
+    MTLSamplerDescriptor *sd2 = [[[MTLSamplerDescriptor alloc] init] autorelease];
+    sd2.supportArgumentBuffers = YES;
+    id<MTLSamplerState> ss2 = [device newSamplerStateWithDescriptor:sd2];
+    if (!ss2 || ss2.gpuResourceID._impl == 0) {
+      NSLog(@"FAIL: sampler gpuResourceID is 0");
+      return 59;
+    }
+
+    MTLTextureDescriptor *tdLossy = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:16 height:16 mipmapped:NO];
+    tdLossy.compressionType = MTLTextureCompressionTypeLossy;
+    if (tdLossy.compressionType != MTLTextureCompressionTypeLossy) {
+      NSLog(@"FAIL: texture compressionType mismatch");
+      return 60;
+    }
+    id<MTLTexture> tLossy = [device newTextureWithDescriptor:tdLossy];
+    if (!tLossy || tLossy.gpuResourceID._impl == 0) {
+      NSLog(@"FAIL: texture gpuResourceID is 0");
+      return 61;
+    }
+
+    id<MTLBuffer> bufTest = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
+    if (!bufTest || bufTest.gpuAddress == 0) {
+      NSLog(@"FAIL: buffer gpuAddress is 0");
+      return 62;
+    }
+
+    if (rps.gpuResourceID._impl == 0 || cps.gpuResourceID._impl == 0 || dsState.gpuResourceID._impl == 0) {
+      NSLog(@"FAIL: pipeline or depth-stencil gpuResourceID is 0");
+      return 63;
+    }
+
+    NSLog(@"GPU Resource IDs and extended descriptors verified: ss_rid=0x%llx, tex_rid=0x%llx, rps_rid=0x%llx, cps_rid=0x%llx, ds_rid=0x%llx, buf_gpuAddr=0x%llx",
+          (unsigned long long)ss2.gpuResourceID._impl, (unsigned long long)tLossy.gpuResourceID._impl,
+          (unsigned long long)rps.gpuResourceID._impl, (unsigned long long)cps.gpuResourceID._impl, (unsigned long long)dsState.gpuResourceID._impl,
+          (unsigned long long)bufTest.gpuAddress);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

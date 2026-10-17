@@ -784,6 +784,7 @@ static uint16_t xef_float_to_half(float v) {
   float _lodMinClamp;
   float _lodMaxClamp;
   MTLSamplerBorderColor _borderColor;
+  BOOL _supportArgumentBuffers;
 }
 - (id)init {
   if ((self = [super init])) {
@@ -806,6 +807,7 @@ static uint16_t xef_float_to_half(float v) {
 - (float)lodMinClamp { return _lodMinClamp; } - (void)setLodMinClamp:(float)c { _lodMinClamp = c; }
 - (float)lodMaxClamp { return _lodMaxClamp; } - (void)setLodMaxClamp:(float)c { _lodMaxClamp = c; }
 - (MTLSamplerBorderColor)borderColor { return _borderColor; } - (void)setBorderColor:(MTLSamplerBorderColor)b { _borderColor = b; }
+- (BOOL)supportArgumentBuffers { return _supportArgumentBuffers; } - (void)setSupportArgumentBuffers:(BOOL)s { _supportArgumentBuffers = s; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLSamplerDescriptor *c = [[MTLSamplerDescriptor allocWithZone:zone] init];
   c.label = _label; c.minFilter = _minFilter; c.magFilter = _magFilter; c.mipFilter = _mipFilter;
@@ -814,6 +816,7 @@ static uint16_t xef_float_to_half(float v) {
   c.normalizedCoordinates = _normalizedCoordinates;
   c.lodMinClamp = _lodMinClamp; c.lodMaxClamp = _lodMaxClamp;
   c.borderColor = _borderColor;
+  c.supportArgumentBuffers = _supportArgumentBuffers;
   return c;
 }
 - (void)dealloc {
@@ -837,6 +840,7 @@ static uint16_t xef_float_to_half(float v) {
   MTLHazardTrackingMode _hazardTrackingMode;
   MTLTextureUsage _usage;
   BOOL _allowGPUOptimizedContents;
+  MTLTextureCompressionType _compressionType;
   MTLTextureSwizzleChannels _swizzle;
 }
 + (MTLTextureDescriptor *)texture2DDescriptorWithPixelFormat:(MTLPixelFormat)pixelFormat width:(NSUInteger)width height:(NSUInteger)height mipmapped:(BOOL)mipmapped {
@@ -882,6 +886,7 @@ static uint16_t xef_float_to_half(float v) {
     _mipmapLevelCount = 1; _sampleCount = 1; _arrayLength = 1;
     _usage = MTLTextureUsageShaderRead;
     _allowGPUOptimizedContents = YES;
+    _compressionType = MTLTextureCompressionTypeLossless;
     _swizzle = MTLTextureSwizzleChannelsMake(MTLTextureSwizzleRed, MTLTextureSwizzleGreen, MTLTextureSwizzleBlue, MTLTextureSwizzleAlpha);
   }
   return self;
@@ -900,6 +905,7 @@ static uint16_t xef_float_to_half(float v) {
 - (MTLHazardTrackingMode)hazardTrackingMode { return _hazardTrackingMode; } - (void)setHazardTrackingMode:(MTLHazardTrackingMode)m { _hazardTrackingMode = m; }
 - (MTLTextureUsage)usage { return _usage; } - (void)setUsage:(MTLTextureUsage)u { _usage = u; }
 - (BOOL)allowGPUOptimizedContents { return _allowGPUOptimizedContents; } - (void)setAllowGPUOptimizedContents:(BOOL)a { _allowGPUOptimizedContents = a; }
+- (MTLTextureCompressionType)compressionType { return _compressionType; } - (void)setCompressionType:(MTLTextureCompressionType)t { _compressionType = t; }
 - (MTLTextureSwizzleChannels)swizzle { return _swizzle; } - (void)setSwizzle:(MTLTextureSwizzleChannels)s { _swizzle = s; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLTextureDescriptor *c = [[MTLTextureDescriptor allocWithZone:zone] init];
@@ -908,6 +914,7 @@ static uint16_t xef_float_to_half(float v) {
   c->_mipmapLevelCount = _mipmapLevelCount; c->_sampleCount = _sampleCount;
   c->_arrayLength = _arrayLength; c->_usage = _usage;
   c->_resourceOptions = _resourceOptions; c->_storageMode = _storageMode;
+  c->_compressionType = _compressionType;
   c->_swizzle = _swizzle;
   return c;
 }
@@ -1202,6 +1209,7 @@ static id metal_stub(id self, SEL _cmd, ...) {
 - (void *)contents { return _data; }
 - (NSUInteger)length { return _length; }
 - (uint64_t)gpuAddress { return (uint64_t)(uintptr_t)_data; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
 - (void)didModifyRange:(NSRange)range {}
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
@@ -1376,6 +1384,8 @@ static id metal_stub(id self, SEL _cmd, ...) {
 - (NSUInteger)heapOffset { return _heapOffset; }
 - (NSUInteger)allocatedSize { return _storage ? _storage->_dataSize : 0; }
 - (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state { return MTLPurgeableStateNonVolatile; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
+- (uint64_t)gpuAddress { return (uint64_t)(uintptr_t)self; }
 - (MTLTextureSwizzleChannels)swizzle { return _swizzle; }
 
 - (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat {
@@ -1660,6 +1670,8 @@ static void xef_tex_clear(XEFMetalTexture *tex, MTLClearColor cc) {
 - (float)lodMaxClamp { return _lodMaxClamp; }
 - (NSUInteger)maxAnisotropy { return _maxAnisotropy; }
 - (MTLCompareFunction)compareFunction { return _compareFunction; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
+- (uint64_t)gpuAddress { return (uint64_t)(uintptr_t)self; }
 - (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
@@ -1770,6 +1782,7 @@ static inline void xef_tex_sample(XEFMetalTexture *tex, XEFMetalSamplerState *sa
 }
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
 - (void)dealloc { [_label release]; [_frontFaceStencil release]; [_backFaceStencil release]; [super dealloc]; }
 @end
 
@@ -2059,6 +2072,7 @@ enum {
 }
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
 - (void)dealloc { [_label release]; [_desc release]; [super dealloc]; }
 @end
 
@@ -2084,6 +2098,7 @@ enum {
 - (NSUInteger)maxTotalThreadsPerThreadgroup { return 1024; }
 - (NSUInteger)threadExecutionWidth { return 32; }
 - (NSUInteger)staticThreadgroupMemoryLength { return 0; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
 - (void)dealloc { [_label release]; [_function release]; [super dealloc]; }
 @end
 
