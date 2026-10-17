@@ -217,6 +217,45 @@ int main(void) {
     }
     NSLog(@"MTLCommandBufferDescriptor verified: descBuf=%@, unretBuf=%@", descBuf, unretBuf);
 
+    /* 10. Test Binary Archive and Dynamic Library */
+    MTLBinaryArchiveDescriptor *archDesc = [[[MTLBinaryArchiveDescriptor alloc] init] autorelease];
+    id<MTLBinaryArchive> archive = [device newBinaryArchiveWithDescriptor:archDesc error:nil];
+    if (!archive || [archive device] != device) {
+      NSLog(@"FAIL: newBinaryArchiveWithDescriptor returned nil");
+      return 20;
+    }
+    [archive setLabel:@"TestArchive"];
+    if (![archive.label isEqualToString:@"TestArchive"]) {
+      NSLog(@"FAIL: archive label mismatch");
+      return 21;
+    }
+
+    MTLRenderPipelineDescriptor *rpDesc = [[[MTLRenderPipelineDescriptor alloc] init] autorelease];
+    BOOL addedRP = [archive addRenderPipelineFunctionsWithDescriptor:rpDesc error:nil];
+    if (!addedRP) {
+      NSLog(@"FAIL: addRenderPipelineFunctionsWithDescriptor failed");
+      return 22;
+    }
+
+    MTLComputePipelineDescriptor *cpDesc = [[[MTLComputePipelineDescriptor alloc] init] autorelease];
+    BOOL addedCP = [archive addComputePipelineFunctionsWithDescriptor:cpDesc error:nil];
+    if (!addedCP) {
+      NSLog(@"FAIL: addComputePipelineFunctionsWithDescriptor failed");
+      return 23;
+    }
+
+    id<MTLDynamicLibrary> dynLib = [device newDynamicLibrary:nil error:nil];
+    if (!dynLib || [dynLib device] != device) {
+      NSLog(@"FAIL: newDynamicLibrary returned nil");
+      return 24;
+    }
+    [dynLib setLabel:@"TestDynamicLib"];
+    if (![dynLib.label isEqualToString:@"TestDynamicLib"] || ![dynLib.installName containsString:@"dynamic.metallib"]) {
+      NSLog(@"FAIL: dynLib properties mismatch");
+      return 25;
+    }
+    NSLog(@"MTLBinaryArchive and MTLDynamicLibrary verified: archive=%@, dynLib=%@", archive.label, dynLib.label);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

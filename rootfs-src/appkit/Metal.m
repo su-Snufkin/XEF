@@ -4013,6 +4013,107 @@ typedef enum {
 - (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
+/* ------------------------------------------------------------------- MTLDynamicLibrary & MTLBinaryArchive */
+
+@interface XEFMetalDynamicLibrary : XEFMetalObject <MTLDynamicLibrary> {
+  id<MTLDevice> _device;
+  id<MTLLibrary> _library;
+  NSString *_label;
+  NSString *_installName;
+}
+- (instancetype)initWithLibrary:(id<MTLLibrary>)library device:(id<MTLDevice>)device;
+@end
+
+@implementation XEFMetalDynamicLibrary
+- (instancetype)initWithLibrary:(id<MTLLibrary>)library device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _device = device;
+    _library = [library retain];
+    _installName = [@"@executable_path/dynamic.metallib" retain];
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (NSString *)installName { return _installName; }
+- (BOOL)serializeToURL:(NSURL *)url error:(NSError **)error {
+  if (error) *error = nil;
+  if (_library && [_library respondsToSelector:@selector(_data)]) {
+    NSData *data = [(id)_library _data];
+    if (data && url) {
+      return [data writeToURL:url options:NSDataWritingAtomic error:error];
+    }
+  }
+  return YES;
+}
+- (void)dealloc {
+  [_library release];
+  [_label release];
+  [_installName release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLBinaryArchiveDescriptor {
+  NSURL *_url;
+}
+- (NSURL *)url { return _url; }
+- (void)setUrl:(NSURL *)u { [u retain]; [_url release]; _url = u; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLBinaryArchiveDescriptor *c = [[MTLBinaryArchiveDescriptor allocWithZone:zone] init];
+  c.url = _url;
+  return c;
+}
+- (void)dealloc {
+  [_url release];
+  [super dealloc];
+}
+@end
+
+@interface XEFMetalBinaryArchive : XEFMetalObject <MTLBinaryArchive> {
+  id<MTLDevice> _device;
+  NSString *_label;
+  NSMutableArray *_functions;
+}
+- (instancetype)initWithDescriptor:(MTLBinaryArchiveDescriptor *)descriptor device:(id<MTLDevice>)device;
+@end
+
+@implementation XEFMetalBinaryArchive
+- (instancetype)initWithDescriptor:(MTLBinaryArchiveDescriptor *)descriptor device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _device = device;
+    _functions = [[NSMutableArray alloc] init];
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (BOOL)addComputePipelineFunctionsWithDescriptor:(MTLComputePipelineDescriptor *)descriptor error:(NSError **)error {
+  if (error) *error = nil;
+  if (descriptor && descriptor.computeFunction) {
+    [_functions addObject:descriptor.computeFunction];
+  }
+  return YES;
+}
+- (BOOL)addRenderPipelineFunctionsWithDescriptor:(MTLRenderPipelineDescriptor *)descriptor error:(NSError **)error {
+  if (error) *error = nil;
+  if (descriptor) {
+    if (descriptor.vertexFunction) [_functions addObject:descriptor.vertexFunction];
+    if (descriptor.fragmentFunction) [_functions addObject:descriptor.fragmentFunction];
+  }
+  return YES;
+}
+- (BOOL)serializeToURL:(NSURL *)url error:(NSError **)error {
+  if (error) *error = nil;
+  return YES;
+}
+- (void)dealloc {
+  [_label release];
+  [_functions release];
+  [super dealloc];
+}
+@end
+
 /* ------------------------------------------------------------------- Device */
 
 @interface XEFMetalDevice : XEFMetalObject <MTLDevice>
@@ -4228,6 +4329,22 @@ typedef enum {
     positions[i].x = 0.5f;
     positions[i].y = 0.5f;
   }
+}
+
+- (id<MTLDynamicLibrary>)newDynamicLibrary:(id<MTLLibrary>)library error:(NSError **)error {
+  if (error) *error = nil;
+  return [[[XEFMetalDynamicLibrary alloc] initWithLibrary:library device:self] autorelease];
+}
+
+- (id<MTLDynamicLibrary>)newDynamicLibraryWithURL:(NSURL *)url error:(NSError **)error {
+  if (error) *error = nil;
+  id<MTLLibrary> lib = [self newLibraryWithURL:url error:error];
+  return [[[XEFMetalDynamicLibrary alloc] initWithLibrary:lib device:self] autorelease];
+}
+
+- (id<MTLBinaryArchive>)newBinaryArchiveWithDescriptor:(MTLBinaryArchiveDescriptor *)descriptor error:(NSError **)error {
+  if (error) *error = nil;
+  return [[[XEFMetalBinaryArchive alloc] initWithDescriptor:descriptor device:self] autorelease];
 }
 
 @end
