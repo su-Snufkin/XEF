@@ -2,6 +2,7 @@
 #include "mtl_engine.h"
 #include "common/common.h"
 #include <cstring>
+#include <unistd.h>
 
 namespace xef {
 void* darwin_gl_host_x(const char* n);
@@ -265,6 +266,7 @@ static void maybe_screenshot(PendingPresent& p) {
     fclose(f);
     XEF_LOG(1, "metal: screenshot of frame %ld -> %s", want, path);
     fprintf(stderr, "xef-metal: screenshot frame %ld -> %s\n", want, path);
+    if (getenv("XEF_MTL_SHOT_EXIT")) _exit(0);   // scripted runs: stop once the frame is saved
 }
 
 void present_after_submit(std::vector<PendingPresent>& to_present) {

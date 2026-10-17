@@ -672,6 +672,12 @@ struct Recorder {
             fprintf(stderr, "\n");
             break;
         }
+        case XEF_MTL_CMD_SET_BUFFER: case XEF_MTL_CMD_SET_BUFFER_OFFSET: {
+            auto* c = (const xef_mtl_set_buffer*)d;
+            fprintf(stderr, "mtl: %s stage %u idx %u buf %u off %llu\n", op == XEF_MTL_CMD_SET_BUFFER ? "set_buffer" : "set_buffer_offset", c->stage, c->index,
+                    c->buffer, (unsigned long long)c->offset);
+            break;
+        }
         case XEF_MTL_CMD_SET_SAMPLER: { auto* c = (const xef_mtl_set_sampler*)d; fprintf(stderr, "mtl: set_sampler stage %u idx %u smp %u\n", c->stage, c->index, c->sampler); break; }
         case XEF_MTL_CMD_SET_SCISSOR: { auto* c = (const xef_mtl_scissor*)d; fprintf(stderr, "mtl: scissor %u,%u %ux%u\n", c->x, c->y, c->w, c->h); break; }
         case XEF_MTL_CMD_SET_VIEWPORT: { auto* c = (const xef_mtl_viewport*)d; fprintf(stderr, "mtl: viewport %g,%g %gx%g\n", c->x, c->y, c->w, c->h); break; }
