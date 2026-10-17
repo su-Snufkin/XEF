@@ -17,6 +17,10 @@
   MTLRenderPassDescriptor *_currentRenderPassDescriptor;
   MTLPixelFormat _colorPixelFormat;
   MTLPixelFormat _depthStencilPixelFormat;
+  MTLStorageMode _depthStencilStorageMode;
+  MTLTextureUsage _depthStencilAttachmentTextureUsage;
+  MTLTextureUsage _multisampleColorAttachmentTextureUsage;
+  NSUInteger _sampleCount;
   MTLClearColor _clearColor;
   double _clearDepth;
   uint32_t _clearStencil;
@@ -25,16 +29,23 @@
   BOOL _enableSetNeedsDisplay;
   BOOL _autoResizeDrawable;
   id<MTLTexture> _depthStencilTexture;
+  id<MTLTexture> _multisampleColorTexture;
   NSTimer *_timer;
 }
 
 @property (nonatomic, retain) id<MTLDevice> device;
+@property (nonatomic, readonly) id<MTLDevice> preferredDevice;
 @property (nonatomic, assign) id<MTKViewDelegate> delegate;
 @property (nonatomic, readonly) id<CAMetalDrawable> currentDrawable;
 @property (nonatomic, readonly) MTLRenderPassDescriptor *currentRenderPassDescriptor;
 @property (nonatomic, readonly) id<MTLTexture> depthStencilTexture;
+@property (nonatomic, readonly) id<MTLTexture> multisampleColorTexture;
 @property (nonatomic) MTLPixelFormat colorPixelFormat;
 @property (nonatomic) MTLPixelFormat depthStencilPixelFormat;
+@property (nonatomic) MTLStorageMode depthStencilStorageMode;
+@property (nonatomic) MTLTextureUsage depthStencilAttachmentTextureUsage;
+@property (nonatomic) MTLTextureUsage multisampleColorAttachmentTextureUsage;
+@property (nonatomic) NSUInteger sampleCount;
 @property (nonatomic) MTLClearColor clearColor;
 @property (nonatomic) double clearDepth;
 @property (nonatomic) uint32_t clearStencil;
@@ -43,8 +54,13 @@
 @property (nonatomic) BOOL enableSetNeedsDisplay;
 @property (nonatomic) BOOL autoResizeDrawable;
 @property (nonatomic) CGSize drawableSize;
+@property (nonatomic, readonly) CGSize preferredDrawableSize;
+@property (nonatomic) BOOL framebufferOnly;
+@property (nonatomic) BOOL presentsWithTransaction;
+@property (nonatomic) CGColorSpaceRef colorspace;
 
 - (void)draw;
+- (void)releaseDrawables;
 @end
 
 @implementation MTKView
@@ -66,6 +82,10 @@
   }
   _colorPixelFormat = MTLPixelFormatBGRA8Unorm;
   _depthStencilPixelFormat = MTLPixelFormatInvalid;
+  _depthStencilStorageMode = MTLStorageModePrivate;
+  _depthStencilAttachmentTextureUsage = MTLTextureUsageRenderTarget;
+  _multisampleColorAttachmentTextureUsage = MTLTextureUsageRenderTarget;
+  _sampleCount = 1;
   _clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
   _clearDepth = 1.0;
   _clearStencil = 0;
@@ -113,6 +133,10 @@
   }
 }
 
+- (id<MTLDevice>)preferredDevice {
+  return _metalLayer ? _metalLayer.preferredDevice : (_device ? _device : MTLCreateSystemDefaultDevice());
+}
+
 - (id<MTKViewDelegate>)delegate {
   return _delegate;
 }
@@ -136,6 +160,70 @@
 
 - (void)setDepthStencilPixelFormat:(MTLPixelFormat)fmt {
   _depthStencilPixelFormat = fmt;
+}
+
+- (MTLStorageMode)depthStencilStorageMode {
+  return _depthStencilStorageMode;
+}
+
+- (void)setDepthStencilStorageMode:(MTLStorageMode)mode {
+  _depthStencilStorageMode = mode;
+}
+
+- (MTLTextureUsage)depthStencilAttachmentTextureUsage {
+  return _depthStencilAttachmentTextureUsage;
+}
+
+- (void)setDepthStencilAttachmentTextureUsage:(MTLTextureUsage)usage {
+  _depthStencilAttachmentTextureUsage = usage;
+}
+
+- (MTLTextureUsage)multisampleColorAttachmentTextureUsage {
+  return _multisampleColorAttachmentTextureUsage;
+}
+
+- (void)setMultisampleColorAttachmentTextureUsage:(MTLTextureUsage)usage {
+  _multisampleColorAttachmentTextureUsage = usage;
+}
+
+- (NSUInteger)sampleCount {
+  return _sampleCount;
+}
+
+- (void)setSampleCount:(NSUInteger)sc {
+  if (_sampleCount != sc) {
+    _sampleCount = sc;
+    [_multisampleColorTexture release];
+    _multisampleColorTexture = nil;
+  }
+}
+
+- (BOOL)framebufferOnly {
+  return _metalLayer ? _metalLayer.framebufferOnly : YES;
+}
+
+- (void)setFramebufferOnly:(BOOL)fo {
+  if (_metalLayer) _metalLayer.framebufferOnly = fo;
+}
+
+- (BOOL)presentsWithTransaction {
+  return _metalLayer ? _metalLayer.presentsWithTransaction : NO;
+}
+
+- (void)setPresentsWithTransaction:(BOOL)pwt {
+  if (_metalLayer) _metalLayer.presentsWithTransaction = pwt;
+}
+
+- (CGColorSpaceRef)colorspace {
+  return _metalLayer ? _metalLayer.colorspace : NULL;
+}
+
+- (void)setColorspace:(CGColorSpaceRef)cs {
+  if (_metalLayer) _metalLayer.colorspace = cs;
+}
+
+- (CGSize)preferredDrawableSize {
+  return self.drawableSize;
 }
 
 - (MTLClearColor)clearColor {
@@ -222,15 +310,37 @@
   if (!_depthStencilTexture || [_depthStencilTexture width] != w || [_depthStencilTexture height] != h || [_depthStencilTexture pixelFormat] != _depthStencilPixelFormat) {
     [_depthStencilTexture release];
     MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:_depthStencilPixelFormat width:w height:h mipmapped:NO];
-    td.usage = MTLTextureUsageRenderTarget;
+    td.usage = _depthStencilAttachmentTextureUsage;
+    td.storageMode = _depthStencilStorageMode;
+    if (_sampleCount > 1) {
+      td.textureType = MTLTextureType2DMultisample;
+      td.sampleCount = _sampleCount;
+    }
     _depthStencilTexture = [[_device newTextureWithDescriptor:td] retain];
   }
   return _depthStencilTexture;
 }
 
+- (id<MTLTexture>)multisampleColorTexture {
+  if (_sampleCount <= 1 || !_device) return nil;
+  CGSize sz = self.drawableSize;
+  NSUInteger w = sz.width > 0 ? (NSUInteger)sz.width : 1;
+  NSUInteger h = sz.height > 0 ? (NSUInteger)sz.height : 1;
+  if (!_multisampleColorTexture || [_multisampleColorTexture width] != w || [_multisampleColorTexture height] != h || [_multisampleColorTexture sampleCount] != _sampleCount || [_multisampleColorTexture pixelFormat] != _colorPixelFormat) {
+    [_multisampleColorTexture release];
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:_colorPixelFormat width:w height:h mipmapped:NO];
+    td.textureType = MTLTextureType2DMultisample;
+    td.sampleCount = _sampleCount;
+    td.usage = _multisampleColorAttachmentTextureUsage;
+    td.storageMode = MTLStorageModePrivate;
+    _multisampleColorTexture = [[_device newTextureWithDescriptor:td] retain];
+  }
+  return _multisampleColorTexture;
+}
+
 - (id<CAMetalDrawable>)currentDrawable {
   if (!_currentDrawable && _metalLayer) {
-    _currentDrawable = [_metalLayer nextDrawable];
+    _currentDrawable = [[_metalLayer nextDrawable] retain];
   }
   return _currentDrawable;
 }
@@ -244,9 +354,18 @@
   }
 
   MTLRenderPassColorAttachmentDescriptor *colorAtt = _currentRenderPassDescriptor.colorAttachments[0];
-  colorAtt.texture = drawable.texture;
-  colorAtt.loadAction = MTLLoadActionClear;
-  colorAtt.storeAction = MTLStoreActionStore;
+  if (_sampleCount > 1) {
+    id<MTLTexture> msaaTex = [self multisampleColorTexture];
+    colorAtt.texture = msaaTex;
+    colorAtt.resolveTexture = drawable.texture;
+    colorAtt.loadAction = MTLLoadActionClear;
+    colorAtt.storeAction = MTLStoreActionMultisampleResolve;
+  } else {
+    colorAtt.texture = drawable.texture;
+    colorAtt.resolveTexture = nil;
+    colorAtt.loadAction = MTLLoadActionClear;
+    colorAtt.storeAction = MTLStoreActionStore;
+  }
   colorAtt.clearColor = _clearColor;
 
   if (_depthStencilPixelFormat != MTLPixelFormatInvalid) {
@@ -256,13 +375,33 @@
       _currentRenderPassDescriptor.depthAttachment.loadAction = MTLLoadActionClear;
       _currentRenderPassDescriptor.depthAttachment.storeAction = MTLStoreActionDontCare;
       _currentRenderPassDescriptor.depthAttachment.clearDepth = _clearDepth;
+
+      if (_depthStencilPixelFormat == MTLPixelFormatDepth32Float_Stencil8 ||
+          _depthStencilPixelFormat == MTLPixelFormatDepth24Unorm_Stencil8 ||
+          _depthStencilPixelFormat == MTLPixelFormatStencil8 ||
+          _depthStencilPixelFormat == 260 /* X8_Stencil8 */) {
+        _currentRenderPassDescriptor.stencilAttachment.texture = dt;
+        _currentRenderPassDescriptor.stencilAttachment.loadAction = MTLLoadActionClear;
+        _currentRenderPassDescriptor.stencilAttachment.storeAction = MTLStoreActionDontCare;
+        _currentRenderPassDescriptor.stencilAttachment.clearStencil = _clearStencil;
+      }
     }
   }
 
   return _currentRenderPassDescriptor;
 }
 
+- (void)releaseDrawables {
+  [_currentDrawable release];
+  _currentDrawable = nil;
+  [_depthStencilTexture release];
+  _depthStencilTexture = nil;
+  [_multisampleColorTexture release];
+  _multisampleColorTexture = nil;
+}
+
 - (void)draw {
+  [_currentDrawable release];
   _currentDrawable = nil;
   if (_delegate && [_delegate respondsToSelector:@selector(drawInMTKView:)]) {
     [_delegate drawInMTKView:self];
@@ -277,7 +416,9 @@
   [_timer invalidate];
   [_timer release];
   [_device release];
+  [_currentDrawable release];
   [_depthStencilTexture release];
+  [_multisampleColorTexture release];
   [_currentRenderPassDescriptor release];
   [super dealloc];
 }

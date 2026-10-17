@@ -50,6 +50,30 @@ int main(void) {
     }
     NSLog(@"Verified MTKView currentRenderPassDescriptor depth attachment attached");
 
+    if (v.preferredDevice != d && v.preferredDevice != v.device) {
+      NSLog(@"FAIL: preferredDevice mismatch");
+      return 15;
+    }
+    if (!v.framebufferOnly) {
+      NSLog(@"FAIL: framebufferOnly expected default YES");
+      return 16;
+    }
+
+    /* Test MSAA setup */
+    v.sampleCount = 4;
+    [v releaseDrawables];
+    id<MTLTexture> msaaTex = v.multisampleColorTexture;
+    if (!msaaTex || msaaTex.textureType != MTLTextureType2DMultisample || msaaTex.sampleCount != 4) {
+      NSLog(@"FAIL: multisampleColorTexture invalid");
+      return 17;
+    }
+    MTLRenderPassDescriptor *msaaRpd = v.currentRenderPassDescriptor;
+    if (!msaaRpd || msaaRpd.colorAttachments[0].texture != msaaTex || msaaRpd.colorAttachments[0].resolveTexture == nil || msaaRpd.colorAttachments[0].storeAction != MTLStoreActionMultisampleResolve) {
+      NSLog(@"FAIL: currentRenderPassDescriptor MSAA resolve setup mismatch");
+      return 18;
+    }
+    NSLog(@"Verified MTKView MSAA 4x multisampleColorTexture and resolve attachment setup");
+
     /* Test MTKTextureLoader */
     MTKTextureLoader *loader = [[MTKTextureLoader alloc] initWithDevice:d];
     if (!loader) {
