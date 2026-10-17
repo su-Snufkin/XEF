@@ -218,7 +218,7 @@ uint32_t create_render_pipeline(const xef_mtl_render_pipeline_desc* d, std::stri
     bool has_fs = d->fragment.library && d->rasterization_enabled;
     if (has_fs && !function_source(d->fragment, STAGE_FRAGMENT, req, err)) return 0;
     if (!d->rasterization_enabled) req.flags |= REQ_RASTER_DISABLED;
-    if (getenv("XEF_MTL_VALIDATE_SPIRV")) req.flags |= REQ_VALIDATE;
+    if (!getenv("XEF_MTL_NO_VALIDATE")) req.flags |= REQ_VALIDATE;   // invalid SPIR-V can crash the driver
     CompileResult res;
     if (!compile_shaders(req, res)) { err = res.log; return 0; }
     auto p = std::make_unique<RenderPipeline>();
@@ -285,7 +285,7 @@ uint32_t create_compute_pipeline(const xef_mtl_compute_pipeline_desc* d, xef_mtl
     auto p = std::make_unique<ComputePipeline>();
     if (!function_source(d->function, STAGE_KERNEL, p->req, err)) return 0;
     if (Library* lib = library(d->function.library)) p->source = lib->source;
-    if (getenv("XEF_MTL_VALIDATE_SPIRV")) p->req.flags |= REQ_VALIDATE;
+    if (!getenv("XEF_MTL_NO_VALIDATE")) p->req.flags |= REQ_VALIDATE;
     p->max_threads = d->max_total_threads ? std::min(d->max_total_threads, g.max_tg_threads) : g.max_tg_threads;
     uint32_t tg[3] = {32, 1, 1};
     ComputeVariant* v = compute_variant(p.get(), tg, {}, err);
