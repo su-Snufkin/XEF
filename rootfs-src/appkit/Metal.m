@@ -2320,6 +2320,160 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   }
 }
 
+/* ------------------------------------------------------------------- MTLCounters */
+
+NSErrorDomain const MTLCounterErrorDomain = @"MTLCounterErrorDomain";
+MTLCommonCounter const MTLCommonCounterTimestamp = @"MTLCommonCounterTimestamp";
+MTLCommonCounter const MTLCommonCounterTessellationInputPatches = @"MTLCommonCounterTessellationInputPatches";
+MTLCommonCounter const MTLCommonCounterVertexInvocations = @"MTLCommonCounterVertexInvocations";
+MTLCommonCounter const MTLCommonCounterPostTessellationVertexInvocations = @"MTLCommonCounterPostTessellationVertexInvocations";
+MTLCommonCounter const MTLCommonCounterClipperInvocations = @"MTLCommonCounterClipperInvocations";
+MTLCommonCounter const MTLCommonCounterClipperPrimitivesOut = @"MTLCommonCounterClipperPrimitivesOut";
+MTLCommonCounter const MTLCommonCounterFragmentInvocations = @"MTLCommonCounterFragmentInvocations";
+MTLCommonCounter const MTLCommonCounterFragmentsPassed = @"MTLCommonCounterFragmentsPassed";
+MTLCommonCounter const MTLCommonCounterComputeKernelInvocations = @"MTLCommonCounterComputeKernelInvocations";
+MTLCommonCounter const MTLCommonCounterTotalCycles = @"MTLCommonCounterTotalCycles";
+MTLCommonCounter const MTLCommonCounterVertexCycles = @"MTLCommonCounterVertexCycles";
+MTLCommonCounter const MTLCommonCounterTessellationCycles = @"MTLCommonCounterTessellationCycles";
+MTLCommonCounter const MTLCommonCounterPostTessellationVertexCycles = @"MTLCommonCounterPostTessellationVertexCycles";
+MTLCommonCounter const MTLCommonCounterFragmentCycles = @"MTLCommonCounterFragmentCycles";
+MTLCommonCounter const MTLCommonCounterRenderTargetWriteCycles = @"MTLCommonCounterRenderTargetWriteCycles";
+
+MTLCommonCounterSet const MTLCommonCounterSetTimestamp = @"MTLCommonCounterSetTimestamp";
+MTLCommonCounterSet const MTLCommonCounterSetStageUtilization = @"MTLCommonCounterSetStageUtilization";
+MTLCommonCounterSet const MTLCommonCounterSetStatistic = @"MTLCommonCounterSetStatistic";
+
+@interface XEFMetalCounter : NSObject <MTLCounter> {
+  NSString *_name;
+}
+- (instancetype)initWithName:(NSString *)name;
+@end
+
+@implementation XEFMetalCounter
+- (instancetype)initWithName:(NSString *)name {
+  if ((self = [super init])) {
+    _name = [name copy];
+  }
+  return self;
+}
+- (NSString *)name { return _name; }
+- (void)dealloc {
+  [_name release];
+  [super dealloc];
+}
+@end
+
+@interface XEFMetalCounterSet : NSObject <MTLCounterSet> {
+  NSString *_name;
+  NSArray<id<MTLCounter>> *_counters;
+}
+- (instancetype)initWithName:(NSString *)name counters:(NSArray<id<MTLCounter>> *)counters;
+@end
+
+@implementation XEFMetalCounterSet
+- (instancetype)initWithName:(NSString *)name counters:(NSArray<id<MTLCounter>> *)counters {
+  if ((self = [super init])) {
+    _name = [name copy];
+    _counters = [counters retain];
+  }
+  return self;
+}
+- (NSString *)name { return _name; }
+- (NSArray<id<MTLCounter>> *)counters { return _counters; }
+- (void)dealloc {
+  [_name release];
+  [_counters release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLCounterSampleBufferDescriptor {
+  id<MTLCounterSet> _counterSet;
+  NSString *_label;
+  MTLStorageMode _storageMode;
+  NSUInteger _sampleCount;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _storageMode = MTLStorageModeShared;
+    _sampleCount = 0;
+  }
+  return self;
+}
+- (id<MTLCounterSet>)counterSet { return _counterSet; }
+- (void)setCounterSet:(id<MTLCounterSet>)cs { [cs retain]; [_counterSet release]; _counterSet = cs; }
+- (NSString *)label { return _label; }
+- (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (MTLStorageMode)storageMode { return _storageMode; }
+- (void)setStorageMode:(MTLStorageMode)sm { _storageMode = sm; }
+- (NSUInteger)sampleCount { return _sampleCount; }
+- (void)setSampleCount:(NSUInteger)sc { _sampleCount = sc; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLCounterSampleBufferDescriptor *c = [[MTLCounterSampleBufferDescriptor allocWithZone:zone] init];
+  c.counterSet = _counterSet;
+  c.label = _label;
+  c.storageMode = _storageMode;
+  c.sampleCount = _sampleCount;
+  return c;
+}
+- (void)dealloc {
+  [_counterSet release];
+  [_label release];
+  [super dealloc];
+}
+@end
+
+@interface XEFMetalCounterSampleBuffer : NSObject <MTLCounterSampleBuffer> {
+@public
+  id<MTLDevice> _device;
+  NSString *_label;
+  NSUInteger _sampleCount;
+  id<MTLCounterSet> _counterSet;
+  MTLStorageMode _storageMode;
+  uint64_t *_samples;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLCounterSampleBufferDescriptor *)descriptor;
+- (void)sampleAtIndex:(NSUInteger)index;
+@end
+
+@implementation XEFMetalCounterSampleBuffer
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLCounterSampleBufferDescriptor *)descriptor {
+  if ((self = [super init])) {
+    _device = device;
+    _label = [descriptor.label copy];
+    _sampleCount = descriptor.sampleCount > 0 ? descriptor.sampleCount : 1;
+    _counterSet = [descriptor.counterSet retain];
+    _storageMode = descriptor.storageMode;
+    _samples = (uint64_t *)calloc(_sampleCount, sizeof(uint64_t));
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (NSUInteger)sampleCount { return _sampleCount; }
+- (void)sampleAtIndex:(NSUInteger)index {
+  if (index < _sampleCount && _samples) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    _samples[index] = (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+  }
+}
+- (NSData *)resolveCounterRange:(NSRange)range {
+  if (!_samples) return nil;
+  NSUInteger start = range.location;
+  NSUInteger len = range.length;
+  if (start >= _sampleCount) return [NSData data];
+  if (start + len > _sampleCount) len = _sampleCount - start;
+  return [NSData dataWithBytes:&_samples[start] length:len * sizeof(uint64_t)];
+}
+- (void)dealloc {
+  [_label release];
+  [_counterSet release];
+  if (_samples) free(_samples);
+  [super dealloc];
+}
+@end
+
 /* ------------------------------------------------------------------- MTLIndirectCommandBuffer */
 
 @implementation MTLIndirectCommandBufferDescriptor {
@@ -2857,6 +3011,11 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
 - (void)waitForFence:(id<MTLFence>)fence beforeStages:(MTLRenderStages)stages {}
 - (void)memoryBarrierWithScope:(MTLBarrierScope)scope afterStages:(MTLRenderStages)after beforeStages:(MTLRenderStages)before {}
 - (void)memoryBarrierWithResources:(const id<MTLResource> *)resources count:(NSUInteger)count afterStages:(MTLRenderStages)after beforeStages:(MTLRenderStages)before {}
+- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer atSampleIndex:(NSUInteger)sampleIndex withBarrier:(BOOL)barrier {
+  if (sampleBuffer && [sampleBuffer isKindOfClass:[XEFMetalCounterSampleBuffer class]]) {
+    [(XEFMetalCounterSampleBuffer *)sampleBuffer sampleAtIndex:sampleIndex];
+  }
+}
 
 typedef struct {
   const uint8_t *attr_bases[3];
@@ -4197,6 +4356,11 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 - (void)useHeaps:(const id<MTLHeap> *)heaps count:(NSUInteger)count {}
 - (void)memoryBarrierWithScope:(MTLBarrierScope)scope {}
 - (void)memoryBarrierWithResources:(const id<MTLResource> *)resources count:(NSUInteger)count {}
+- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer atSampleIndex:(NSUInteger)sampleIndex withBarrier:(BOOL)barrier {
+  if (sampleBuffer && [sampleBuffer isKindOfClass:[XEFMetalCounterSampleBuffer class]]) {
+    [(XEFMetalCounterSampleBuffer *)sampleBuffer sampleAtIndex:sampleIndex];
+  }
+}
 - (void)pushDebugGroup:(NSString *)string {}
 - (void)popDebugGroup {}
 - (void)insertDebugSignpost:(NSString *)string {}
@@ -4293,6 +4457,26 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 - (void)optimizeIndirectCommandBuffer:(id<MTLIndirectCommandBuffer>)indirectCommandBuffer withRange:(NSRange)range {}
 - (void)updateFence:(id<MTLFence>)fence {}
 - (void)waitForFence:(id<MTLFence>)fence {}
+- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer atSampleIndex:(NSUInteger)sampleIndex withBarrier:(BOOL)barrier {
+  if (sampleBuffer && [sampleBuffer isKindOfClass:[XEFMetalCounterSampleBuffer class]]) {
+    [(XEFMetalCounterSampleBuffer *)sampleBuffer sampleAtIndex:sampleIndex];
+  }
+}
+- (void)resolveCounters:(id<MTLCounterSampleBuffer>)sampleBuffer inRange:(NSRange)range destinationBuffer:(id<MTLBuffer>)destinationBuffer destinationOffset:(NSUInteger)destinationOffset {
+  if (sampleBuffer && destinationBuffer && [sampleBuffer isKindOfClass:[XEFMetalCounterSampleBuffer class]]) {
+    NSData *data = [sampleBuffer resolveCounterRange:range];
+    if (data && [data length] > 0) {
+      NSUInteger len = [data length];
+      NSUInteger dstLen = [destinationBuffer length];
+      if (destinationOffset + len > dstLen) {
+        len = dstLen > destinationOffset ? (dstLen - destinationOffset) : 0;
+      }
+      if (len > 0) {
+        memcpy((uint8_t *)[destinationBuffer contents] + destinationOffset, [data bytes], len);
+      }
+    }
+  }
+}
 - (void)synchronizeResource:(id<MTLResource>)resource {}
 - (void)synchronizeTexture:(id<MTLTexture>)texture slice:(NSUInteger)slice level:(NSUInteger)level {}
 - (void)fillBuffer:(id<MTLBuffer>)buffer range:(NSRange)range value:(uint8_t)value {
@@ -4685,6 +4869,16 @@ typedef enum {
 - (BOOL)supportsFamily:(MTLGPUFamily)gpuFamily { return YES; }
 - (BOOL)supportsFeatureSet:(MTLFeatureSet)featureSet { return YES; }
 - (BOOL)supportsTextureSampleCount:(NSUInteger)sampleCount { return (sampleCount == 1 || sampleCount == 4); }
+- (BOOL)supportsCounterSampling:(MTLCounterSamplingPoint)samplingPoint { return YES; }
+- (NSArray<id<MTLCounterSet>> *)counterSets {
+  static NSArray *sets = nil;
+  if (!sets) {
+    XEFMetalCounter *cTs = [[[XEFMetalCounter alloc] initWithName:MTLCommonCounterTimestamp] autorelease];
+    XEFMetalCounterSet *csTs = [[[XEFMetalCounterSet alloc] initWithName:MTLCommonCounterSetTimestamp counters:@[cTs]] autorelease];
+    sets = [@[csTs] retain];
+  }
+  return sets;
+}
 - (NSUInteger)minimumLinearTextureAlignmentForPixelFormat:(MTLPixelFormat)format { return 16; }
 - (NSUInteger)minimumTextureBufferAlignmentForPixelFormat:(MTLPixelFormat)format { return 16; }
 
@@ -4878,6 +5072,11 @@ typedef enum {
 
 - (id<MTLIndirectCommandBuffer>)newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)descriptor maxCommandCount:(NSUInteger)maxCount options:(MTLResourceOptions)options {
   return [[[XEFMetalIndirectCommandBuffer alloc] initWithDescriptor:descriptor maxCommandCount:maxCount options:options device:self] autorelease];
+}
+
+- (id<MTLCounterSampleBuffer>)newCounterSampleBufferWithDescriptor:(MTLCounterSampleBufferDescriptor *)descriptor error:(NSError **)error {
+  if (error) *error = nil;
+  return [[[XEFMetalCounterSampleBuffer alloc] initWithDevice:self descriptor:descriptor] autorelease];
 }
 
 @end

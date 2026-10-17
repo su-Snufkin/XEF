@@ -348,6 +348,48 @@ int main(void) {
     }
     NSLog(@"PipelineBufferDescriptors verified: rpd_buf0_mut=%lu, cpd_buf0_mut=%lu", (unsigned long)rpd.vertexBuffers[0].mutability, (unsigned long)cpd.buffers[0].mutability);
 
+    /* 13. Test MTLCounterSampleBuffer, Command Encoder Sampling and Blit Resolving */
+    if (![device supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary]) {
+      NSLog(@"FAIL: supportsCounterSampling check failed");
+      return 31;
+    }
+    NSArray<id<MTLCounterSet>> *sets = device.counterSets;
+    if (!sets || sets.count == 0) {
+      NSLog(@"FAIL: device counterSets is empty");
+      return 32;
+    }
+    id<MTLCounterSet> timestampSet = sets[0];
+    MTLCounterSampleBufferDescriptor *csbDesc = [[[MTLCounterSampleBufferDescriptor alloc] init] autorelease];
+    csbDesc.counterSet = timestampSet;
+    csbDesc.label = @"TestCounterSampleBuffer";
+    csbDesc.storageMode = MTLStorageModeShared;
+    csbDesc.sampleCount = 4;
+
+    id<MTLCounterSampleBuffer> sampleBuffer = [device newCounterSampleBufferWithDescriptor:csbDesc error:nil];
+    if (!sampleBuffer || sampleBuffer.sampleCount != 4 || ![sampleBuffer.label isEqualToString:@"TestCounterSampleBuffer"]) {
+      NSLog(@"FAIL: newCounterSampleBufferWithDescriptor failed");
+      return 33;
+    }
+
+    id<MTLCommandBuffer> cmdBuf3 = [queue commandBuffer];
+    id<MTLBlitCommandEncoder> bce3 = [cmdBuf3 blitCommandEncoder];
+    [bce3 sampleCountersInBuffer:sampleBuffer atSampleIndex:0 withBarrier:YES];
+    id<MTLBuffer> resolveDstBuf = [device newBufferWithLength:32 options:MTLResourceStorageModeShared];
+    [bce3 resolveCounters:sampleBuffer inRange:NSMakeRange(0, 4) destinationBuffer:resolveDstBuf destinationOffset:0];
+    [bce3 endEncoding];
+
+    [cmdBuf3 commit];
+    [cmdBuf3 waitUntilCompleted];
+
+    uint64_t *resolvedTimestamps = (uint64_t *)[resolveDstBuf contents];
+    if (resolvedTimestamps[0] == 0) {
+      NSLog(@"FAIL: resolved timestamp is 0");
+      return 34;
+    }
+    NSLog(@"MTLCounterSampleBuffer verified: sampleCount=%lu, firstSample=%llu", (unsigned long)sampleBuffer.sampleCount, (unsigned long long)resolvedTimestamps[0]);
+
+    [resolveDstBuf release];
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }
