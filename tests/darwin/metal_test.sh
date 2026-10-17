@@ -63,6 +63,26 @@ if [ -f tests/darwin/heap_event_test ]; then
   fi
 fi
 
+# SDL3 GPU samples (github.com/TheSpydog/SDL_gpu_examples built on a Mac, installed with their Content/ and
+# libSDL3.0.dylib under darwin-rootfs): every sample must reach its 30th presented frame
+SGE=darwin-rootfs/Applications/SDL_gpu_examples
+if [ -x $SGE/SDL_gpu_examples ]; then
+  SHOT=$(mktemp -d)
+  for n in BasicTriangle BasicStencil BasicCompute Blit2DArray BlitCube Bloom Clear3DSlice ComputeSampler ComputeSpriteBatch \
+           CopyAndReadback Cubemap CustomSampling DepthSampler DrawIndirect GenerateMipmaps InstancedIndexed PullSpriteBatch \
+           Texture2DArray TexturedAnimatedQuad TextureTypeTest ToneMapping TriangleMSAA; do
+    OUT7=$(cd $SGE && XEF_MTL_SHOT=$SHOT/$n.ppm XEF_MTL_SHOT_FRAME=30 XEF_MTL_SHOT_EXIT=1 SDL_AUDIODRIVER=dummy \
+           timeout 30 ../../../$X -L ../.. ./SDL_gpu_examples -name $n 2>&1)
+    if [ ! -s $SHOT/$n.ppm ] || echo "$OUT7" | grep -qi "pipeline creation failed\|compilation failed\|fatal signal"; then
+      echo "FAIL metal_test (SDL_gpu_examples $n)"
+      echo "$OUT7" | tail -20
+      rm -rf $SHOT
+      exit 1
+    fi
+  done
+  rm -rf $SHOT
+fi
+
 echo "PASS metal_test"
 exit 0
 
