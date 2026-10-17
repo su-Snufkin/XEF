@@ -3778,6 +3778,29 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 - (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
+@implementation MTLCommandBufferDescriptor {
+  BOOL _retainedReferences;
+  MTLCommandBufferErrorOption _errorOptions;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _retainedReferences = YES;
+    _errorOptions = MTLCommandBufferErrorOptionNone;
+  }
+  return self;
+}
+- (BOOL)retainedReferences { return _retainedReferences; }
+- (void)setRetainedReferences:(BOOL)r { _retainedReferences = r; }
+- (MTLCommandBufferErrorOption)errorOptions { return _errorOptions; }
+- (void)setErrorOptions:(MTLCommandBufferErrorOption)o { _errorOptions = o; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLCommandBufferDescriptor *c = [[MTLCommandBufferDescriptor allocWithZone:zone] init];
+  c.retainedReferences = _retainedReferences;
+  c.errorOptions = _errorOptions;
+  return c;
+}
+@end
+
 typedef enum {
   XEF_CMD_ACTION_WAIT_EVENT,
   XEF_CMD_ACTION_SIGNAL_EVENT
@@ -3805,16 +3828,27 @@ typedef enum {
   NSMutableArray *_scheduledHandlers;
   NSMutableArray *_drawables;
   NSMutableArray *_eventActions;
+  BOOL _retainedReferences;
+  MTLCommandBufferErrorOption _errorOptions;
 }
+- (instancetype)initWithQueue:(id<MTLCommandQueue>)queue;
+- (instancetype)initWithQueue:(id<MTLCommandQueue>)queue descriptor:(MTLCommandBufferDescriptor *)desc;
 @end
 @implementation XEFMetalCommandBuffer
 - (instancetype)initWithQueue:(id<MTLCommandQueue>)queue {
+  return [self initWithQueue:queue descriptor:nil];
+}
+- (instancetype)initWithQueue:(id<MTLCommandQueue>)queue descriptor:(MTLCommandBufferDescriptor *)desc {
   if ((self = [super init])) {
     _commandQueue = queue;
     _status = MTLCommandBufferStatusNotEnqueued;
+    _retainedReferences = desc ? desc.retainedReferences : YES;
+    _errorOptions = desc ? desc.errorOptions : MTLCommandBufferErrorOptionNone;
   }
   return self;
 }
+- (BOOL)retainedReferences { return _retainedReferences; }
+- (MTLCommandBufferErrorOption)errorOptions { return _errorOptions; }
 - (id<MTLCommandQueue>)commandQueue { return _commandQueue; }
 - (id<MTLDevice>)device { return _commandQueue.device; }
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
@@ -3968,7 +4002,12 @@ typedef enum {
   return [[[XEFMetalCommandBuffer alloc] initWithQueue:self] autorelease];
 }
 - (id<MTLCommandBuffer>)commandBufferWithUnretainedReferences {
-  return [[[XEFMetalCommandBuffer alloc] initWithQueue:self] autorelease];
+  MTLCommandBufferDescriptor *desc = [[[MTLCommandBufferDescriptor alloc] init] autorelease];
+  desc.retainedReferences = NO;
+  return [[[XEFMetalCommandBuffer alloc] initWithQueue:self descriptor:desc] autorelease];
+}
+- (id<MTLCommandBuffer>)commandBufferWithDescriptor:(MTLCommandBufferDescriptor *)descriptor {
+  return [[[XEFMetalCommandBuffer alloc] initWithQueue:self descriptor:descriptor] autorelease];
 }
 - (void)insertDebugCaptureBoundary {}
 - (void)dealloc { [_label release]; [super dealloc]; }

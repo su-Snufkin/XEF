@@ -201,6 +201,22 @@ int main(void) {
     }
     NSLog(@"MTLSamplerState verified: label=%@, device=%@", sampState.label, [sampState.device name]);
 
+    /* 9. Test Command Buffer Descriptors */
+    MTLCommandBufferDescriptor *cbDesc = [[[MTLCommandBufferDescriptor alloc] init] autorelease];
+    cbDesc.retainedReferences = NO;
+    cbDesc.errorOptions = MTLCommandBufferErrorOptionEncoderExecutionStatus;
+    id<MTLCommandBuffer> descBuf = [queue commandBufferWithDescriptor:cbDesc];
+    if (!descBuf) {
+      NSLog(@"FAIL: commandBufferWithDescriptor returned nil");
+      return 18;
+    }
+    id<MTLCommandBuffer> unretBuf = [queue commandBufferWithUnretainedReferences];
+    if (!unretBuf) {
+      NSLog(@"FAIL: commandBufferWithUnretainedReferences returned nil");
+      return 19;
+    }
+    NSLog(@"MTLCommandBufferDescriptor verified: descBuf=%@, unretBuf=%@", descBuf, unretBuf);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }
