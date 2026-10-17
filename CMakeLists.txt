@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(xef CXX ASM)
+project(xef C CXX ASM)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,3 +35,4 @@ set_source_files_properties(
 target_link_libraries(xef PRIVATE pthread m ${CMAKE_DL_LIBS})
 add_custom_target(xef-osx ALL ${CMAKE_COMMAND} -E create_symlink xef xef-osx DEPENDS xef)
 
+add_subdirectory(mtlc)
