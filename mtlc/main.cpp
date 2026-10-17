@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
     std::vector<xef::metallib::Function> fns;
     bool is_lib = xef::metallib::is_metallib(data.data(), data.size());
     if (is_lib && !xef::metallib::parse(data.data(), data.size(), fns, &err)) { fprintf(stderr, "%s\n", err.c_str()); return 1; }
-    bool list = false, all = false, dump = false, noval = false;
+    bool list = false, all = false, dump = false, noval = false, refl = false;
     std::string fname, frag, out;
     uint32_t tg[3] = {0, 0, 0};
     for (int i = 2; i < argc; i++) {
@@ -120,6 +120,7 @@ int main(int argc, char** argv) {
         else if (a == "--all") all = true;
         else if (a == "--dump") dump = true;
         else if (a == "--noval") noval = true;
+        else if (a == "--refl") { refl = true; all = true; }
         else if (a == "--msl") {}
         else if (a == "--emit-lib") i++;
         else if (a == "-f" && i + 1 < argc) fname = argv[++i];
@@ -152,6 +153,17 @@ int main(int argc, char** argv) {
             if (f.type == xef::metallib::FN_KERNEL) { req.tg_size[0] = tg[0] ? tg[0] : 32; req.tg_size[1] = tg[1] ? tg[1] : 1; req.tg_size[2] = tg[2] ? tg[2] : 1; }
             CompileResult res;
             mtlc::compile(req, res);
+            if (res.ok && refl) {
+                // one line per function: interface and bindings, for comparing frontends
+                const StageResult& r = res.stages[0];
+                printf("REFL %s %s flags=%#x attribs=", xef::metallib::type_name(f.type), f.name.c_str(), r.flags);
+                for (auto& a : r.attribs) printf("%u:%u:%u,", a.location, a.base, a.comps);
+                printf(" colors=");
+                for (auto& c : r.colors) printf("%u:%u:%u:%u,", c.location, c.index, c.base, c.comps);
+                printf(" table=");
+                for (auto& t : r.table) printf("%u:%u,", t.kind, t.index);
+                printf(" tg=%u,%u,%u tgmem=%u consts=%zu\n", r.tg_size[0], r.tg_size[1], r.tg_size[2], r.tg_mem_size, r.const_samplers.size());
+            }
             if (res.ok) ok++;
             else { bad++; printf("FAIL %-9s %s\n%s", xef::metallib::type_name(f.type), f.name.c_str(), res.log.c_str()); }
         }

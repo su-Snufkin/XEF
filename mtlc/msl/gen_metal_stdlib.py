@@ -769,27 +769,33 @@ XEF_CINL ulong __xef_cmp_metal(compare_func c) {
                case compare_func::greater: return 4; case compare_func::not_equal: return 5; case compare_func::greater_equal: return 6;
                case compare_func::always: return 7; case compare_func::never: return 0; default: return 0; }
 }
+// 8 bytes like Metal's (argument buffers hold samplers): a runtime handle, or a constexpr sampler's AIR state
+// tagged with bit 63; the constexpr path folds away for runtime samplers
 struct sampler {
-  ulong state;
-  __xef_smp_h h;
-  XEF_CINL sampler() : state((1ul) | (1ul << 3) | (1ul << 6)), h(nullptr) {}
-  XEF_CINL sampler(__xef_smp_h hh) : state(0), h(hh) {}
-  template <class... A> XEF_CINL sampler(A... args) : state((1ul) | (1ul << 3) | (1ul << 6)), h(nullptr) { (apply(args), ...); }
-  XEF_CINL void apply(coord c) { state = (state & ~(1ul << 15)) | ((ulong)c << 15); }
-  XEF_CINL void apply(filter f) { state = (state & ~(15ul << 9)) | ((ulong)f << 9) | ((ulong)f << 11); }
-  XEF_CINL void apply(mag_filter f) { state = (state & ~(3ul << 9)) | ((ulong)f << 9); }
-  XEF_CINL void apply(min_filter f) { state = (state & ~(3ul << 11)) | ((ulong)f << 11); }
-  XEF_CINL void apply(mip_filter f) { state = (state & ~(3ul << 13)) | ((ulong)f << 13); }
-  XEF_CINL void apply(address a) { state = (state & ~511ul) | (ulong)a | ((ulong)a << 3) | ((ulong)a << 6); }
-  XEF_CINL void apply(s_address a) { state = (state & ~7ul) | (ulong)a; }
-  XEF_CINL void apply(t_address a) { state = (state & ~(7ul << 3)) | ((ulong)a << 3); }
-  XEF_CINL void apply(r_address a) { state = (state & ~(7ul << 6)) | ((ulong)a << 6); }
-  XEF_CINL void apply(compare_func c) { state = (state & ~(15ul << 16)) | (__xef_cmp_metal(c) << 16); }
-  XEF_CINL void apply(border_color b) { state = (state & ~(3ul << 24)) | ((ulong)b << 24); }
-  XEF_CINL void apply(max_anisotropy a) { state = (state & ~(15ul << 20)) | ((ulong)(a.v > 0 ? a.v - 1 : 0) << 20); }
+  ulong v;
+  static constexpr ulong k_const = 1ul << 63;
+  static constexpr ulong k_default = k_const | (1ul) | (1ul << 3) | (1ul << 6);
+  XEF_CINL sampler() : v(k_default) {}
+  XEF_INL sampler(__xef_smp_h hh) : v((ulong)hh) {}
+  template <class... A> XEF_CINL sampler(A... args) : v(k_default) { (apply(args), ...); }
+  XEF_CINL void apply(coord c) { v = (v & ~(1ul << 15)) | ((ulong)c << 15); }
+  XEF_CINL void apply(filter f) { v = (v & ~(15ul << 9)) | ((ulong)f << 9) | ((ulong)f << 11); }
+  XEF_CINL void apply(mag_filter f) { v = (v & ~(3ul << 9)) | ((ulong)f << 9); }
+  XEF_CINL void apply(min_filter f) { v = (v & ~(3ul << 11)) | ((ulong)f << 11); }
+  XEF_CINL void apply(mip_filter f) { v = (v & ~(3ul << 13)) | ((ulong)f << 13); }
+  XEF_CINL void apply(address a) { v = (v & ~511ul) | (ulong)a | ((ulong)a << 3) | ((ulong)a << 6); }
+  XEF_CINL void apply(s_address a) { v = (v & ~7ul) | (ulong)a; }
+  XEF_CINL void apply(t_address a) { v = (v & ~(7ul << 3)) | ((ulong)a << 3); }
+  XEF_CINL void apply(r_address a) { v = (v & ~(7ul << 6)) | ((ulong)a << 6); }
+  XEF_CINL void apply(compare_func c) { v = (v & ~(15ul << 16)) | (__xef_cmp_metal(c) << 16); }
+  XEF_CINL void apply(border_color b) { v = (v & ~(3ul << 24)) | ((ulong)b << 24); }
+  XEF_CINL void apply(max_anisotropy a) { v = (v & ~(15ul << 20)) | ((ulong)(a.v > 0 ? a.v - 1 : 0) << 20); }
   XEF_CINL void apply(lod_clamp) {}
   XEF_CINL void apply(reduction) {}
-  XEF_INL __xef_smp_h get() const { return h ? h : __xef_const_sampler(state); }
+  XEF_INL __xef_smp_h get() const {
+    if (__builtin_constant_p(v) && (v & k_const)) return __xef_const_sampler(v & ~k_const);
+    return (__xef_smp_h)v;
+  }
 };
 
 // ---------------- textures ----------------

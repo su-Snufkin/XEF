@@ -1201,7 +1201,7 @@ bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std:
         for (auto& o : pl.outputs) out_md.push_back(MDNode::get(ctx, resolve(o.second, ok)));
         if (!ok) { err_line(err, "attribute of " + e.name + " is not an integer constant expression"); return false; }
         std::vector<Metadata*> node = {ValueAsMetadata::get(f), MDNode::get(ctx, out_md), MDNode::get(ctx, in_md)};
-        if (find_attr(e.fn_attrs, "early_fragment_tests")) node.push_back(MDNode::get(ctx, {S(ctx, "air.early_fragment_tests")}));
+        if (find_attr(e.fn_attrs, "early_fragment_tests")) node.push_back(S(ctx, "early_fragment_tests"));
         int k = e.stage == "vertex" ? 0 : e.stage == "fragment" ? 1 : 2;
         mds[k]->addOperand(MDNode::get(ctx, node));
         fn_list.push_back({e.name, (uint8_t)k});
