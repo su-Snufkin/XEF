@@ -65,8 +65,29 @@ typedef __SIZE_TYPE__ size_t;
 typedef __PTRDIFF_TYPE__ ptrdiff_t;
 typedef __bf16 bfloat;
 
-namespace metal {
+namespace std {
+template <class E> class initializer_list {
+  const E* __b; size_t __n;
+  constexpr initializer_list(const E* b, size_t n) : __b(b), __n(n) {}
+public:
+  constexpr initializer_list() : __b(nullptr), __n(0) {}
+  constexpr size_t size() const { return __n; }
+  constexpr const E* begin() const { return __b; }
+  constexpr const E* end() const { return __b + __n; }
+};
+}
 
+// tessellation factor buffers (global names in Metal)
+struct MTLQuadTessellationFactorsHalf { _Float16 edgeTessellationFactor[4]; _Float16 insideTessellationFactor[2]; };
+struct MTLTriangleTessellationFactorsHalf { _Float16 edgeTessellationFactor[3]; _Float16 insideTessellationFactor; };
+
+#define coherent
+
+namespace metal {
+using std::initializer_list;
+
+template <class T> struct __xef_add_rref { typedef T&& type; };
+template <> struct __xef_add_rref<void> { typedef void type; };
 template <bool B, class T = void> struct __xef_enable_if_t {};
 template <class T> struct __xef_enable_if_t<true, T> { typedef T type; };
 #define XEF_INL inline __attribute__((always_inline))
@@ -342,6 +363,45 @@ template <class T> using remove_cv_t = typename remove_cv<T>::type;
 template <class T> struct remove_reference { typedef T type; };
 template <class T> struct remove_reference<T&> { typedef T type; };
 template <class T> struct remove_reference<T&&> { typedef T type; };
+template <class T> using remove_reference_t = typename remove_reference<T>::type;
+template <class T> typename __xef_add_rref<T>::type declval() noexcept;
+template <class T, T V> struct integral_constant { static constexpr T value = V; typedef T value_type; constexpr operator T() const { return V; } };
+typedef integral_constant<bool, true> true_type;
+typedef integral_constant<bool, false> false_type;
+template <bool B, class T, class F> struct conditional { typedef T type; };
+template <class T, class F> struct conditional<false, T, F> { typedef F type; };
+template <bool B, class T, class F> using conditional_t = typename conditional<B, T, F>::type;
+template <bool B, class T = void> struct enable_if {};
+template <class T> struct enable_if<true, T> { typedef T type; };
+template <class T> struct __xef_is_int : false_type {};
+#define XEF_INTTYPE(T) template <> struct __xef_is_int<T> : true_type {};
+XEF_INTTYPE(bool) XEF_INTTYPE(char) XEF_INTTYPE(signed char) XEF_INTTYPE(unsigned char) XEF_INTTYPE(short) XEF_INTTYPE(unsigned short)
+XEF_INTTYPE(int) XEF_INTTYPE(unsigned int) XEF_INTTYPE(long) XEF_INTTYPE(unsigned long) XEF_INTTYPE(long long) XEF_INTTYPE(unsigned long long)
+template <class T> struct __xef_is_fp : false_type {};
+template <> struct __xef_is_fp<float> : true_type {};
+template <> struct __xef_is_fp<double> : true_type {};
+template <> struct __xef_is_fp<_Float16> : true_type {};
+template <> struct __xef_is_fp<__bf16> : true_type {};
+template <class T> struct is_integral : __xef_is_int<remove_cv_t<T>> {};
+template <class T> struct is_floating_point : __xef_is_fp<remove_cv_t<T>> {};
+template <class T> struct is_arithmetic : integral_constant<bool, is_integral<T>::value || is_floating_point<T>::value> {};
+template <class T> struct is_signed : integral_constant<bool, is_arithmetic<T>::value && T(-1) < T(0)> {};
+template <class T> struct is_unsigned : integral_constant<bool, is_arithmetic<T>::value && T(0) < T(-1)> {};
+template <class T> struct is_scalar : integral_constant<bool, is_arithmetic<T>::value> {};
+template <class T> inline constexpr bool is_integral_v = is_integral<T>::value;
+template <class T> inline constexpr bool is_floating_point_v = is_floating_point<T>::value;
+template <class A, class B> inline constexpr bool is_same_v = is_same<A, B>::value;
+template <class T> struct make_unsigned { typedef T type; };
+template <> struct make_unsigned<char> { typedef uchar type; };
+template <> struct make_unsigned<signed char> { typedef uchar type; };
+template <> struct make_unsigned<short> { typedef ushort type; };
+template <> struct make_unsigned<int> { typedef uint type; };
+template <> struct make_unsigned<long> { typedef ulong type; };
+template <class T> struct make_signed { typedef T type; };
+template <> struct make_signed<uchar> { typedef char type; };
+template <> struct make_signed<ushort> { typedef short type; };
+template <> struct make_signed<uint> { typedef int type; };
+template <> struct make_signed<ulong> { typedef long type; };
 template <class T> XEF_CINL T&& forward(typename remove_reference<T>::type& t) { return static_cast<T&&>(t); }
 template <class T> XEF_CINL typename remove_reference<T>::type&& move(T&& t) { return static_cast<typename remove_reference<T>::type&&>(t); }
 template <class T> struct numeric_limits;
@@ -588,6 +648,10 @@ template <class T> XEF_INL T mul24(T a, T b) { return a * b; }
 #define XEF_IVEC2(f) template <class T, int N> XEF_INL vec<T, N> f(vec<T, N> x, vec<T, N> y) { vec<T, N> r; for (int i = 0; i < N; i++) r[i] = f((T)x[i], (T)y[i]); return r; }
 XEF_IVEC1(popcount) XEF_IVEC1(clz) XEF_IVEC1(ctz) XEF_IVEC1(reverse_bits) XEF_IVEC2(mul_hi) XEF_IVEC2(absdiff) XEF_IVEC2(hadd)
 XEF_IVEC2(rhadd) XEF_IVEC2(add_sat) XEF_IVEC2(sub_sat) XEF_IVEC2(rotate)
+// older spellings
+template <class T> XEF_INL T mulhi(T a, T b) { return mul_hi(a, b); }
+template <class T> XEF_INL T addsat(T a, T b) { return add_sat(a, b); }
+template <class T> XEF_INL T subsat(T a, T b) { return sub_sat(a, b); }
 template <class T, int N> XEF_INL vec<T, N> extract_bits(vec<T, N> x, uint off, uint bits) { vec<T, N> r; for (int i = 0; i < N; i++) r[i] = extract_bits((T)x[i], off, bits); return r; }
 template <class T, int N> XEF_INL vec<T, N> insert_bits(vec<T, N> b, vec<T, N> s, uint off, uint bits) { vec<T, N> r; for (int i = 0; i < N; i++) r[i] = insert_bits((T)b[i], (T)s[i], off, bits); return r; }
 
@@ -631,7 +695,7 @@ XEF_INL void simdgroup_barrier(mem_flags f) { __xef_sg_barrier((uint)f, 1); }
 enum class memory_order { memory_order_relaxed = 0, memory_order_seq_cst = 5 };
 constexpr memory_order memory_order_relaxed = memory_order::memory_order_relaxed;
 constexpr memory_order memory_order_seq_cst = memory_order::memory_order_seq_cst;
-enum class thread_scope { thread_scope_thread = 0, thread_scope_simdgroup = 4, thread_scope_threadgroup = 1, thread_scope_device = 2 };
+enum thread_scope { thread_scope_thread = 0, thread_scope_simdgroup = 4, thread_scope_threadgroup = 1, thread_scope_device = 2 };
 extern "C" void __xef_fence(uint flags, uint order, uint scope) XEF_AIR("air.atomic.fence");
 XEF_INL void atomic_thread_fence(mem_flags f, memory_order o, thread_scope s = thread_scope::thread_scope_device) { __xef_fence((uint)f, (uint)o, (uint)s); }
 
@@ -687,7 +751,14 @@ extern "C" ulong __xef_simd_active() XEF_AIR("air.simd_active_threads_mask.i64")
 XEF_INL bool simd_all(bool b) { return __xef_simd_all(b); }
 XEF_INL bool simd_any(bool b) { return __xef_simd_any(b); }
 XEF_INL bool simd_is_first() { return __xef_simd_is_first(); }
+extern "C" bool __xef_quad_all(bool) XEF_AIR("air.quad_all");
+extern "C" bool __xef_quad_any(bool) XEF_AIR("air.quad_any");
+XEF_INL bool quad_all(bool b) { return __xef_quad_all(b); }
+XEF_INL bool quad_any(bool b) { return __xef_quad_any(b); }
+extern "C" bool __xef_simd_is_helper_thread() XEF_AIR("air.simd_is_helper_thread");
+XEF_INL bool simd_is_helper_thread() { return __xef_simd_is_helper_thread(); }
 struct simd_vote {
+  typedef ulong vote_t;
   ulong __v;
   XEF_CINL explicit simd_vote(ulong v = 0) : __v(v) {}
   XEF_CINL explicit operator ulong() const { return __v; }
@@ -802,6 +873,7 @@ struct sampler {
 struct _texture_t;
 typedef _texture_t* __xef_tex_h;
 enum class access { sample = 0, read = 1, write = 2, read_write = 3 };
+enum memory_coherence { memory_coherence_threadgroup = 0, memory_coherence_device = 1 };
 struct bias { float value; XEF_CINL explicit bias(float b) : value(b) {} };
 struct level { float lod; XEF_CINL explicit level(float l) : lod(l) {} };
 struct min_lod_clamp { float value; XEF_CINL explicit min_lod_clamp(float l) : value(l) {} };
@@ -877,7 +949,7 @@ for cls, (kind, cdim, rdim, arr, ms, cube, depth, mips, odim) in TEX_KINDS.items
         w(f'extern "C" float __xef_lod_uncl_{cls}(__xef_tex_h, __xef_smp_h, {evt("float", cdim)}, int) XEF_AIR("air.calculate_unclamped_lod_{kind}");')
 
     # the class template
-    tparam = "class T, access A = access::sample" if not depth else "class T, access A = access::sample"
+    tparam = "class T, access A = access::sample, memory_coherence __MC = memory_coherence_threadgroup"
     w(f"template <{tparam}> struct {cls} {{")
     w("  __xef_tex_h h;")
     w(f"  XEF_CINL {cls}() : h(nullptr) {{}}")
@@ -991,7 +1063,7 @@ def expand(text):
             helpers.append(f"template <> struct {base}_sel<{v}> {{ template <class... A> static XEF_INL auto call(A... a) {{ return {base}_{v}(a...); }} }};")
     text = re.sub(r"(__xef_\w+?)_T__\(", r"\1_sel<T>::call(", text)
     # insert helpers before the first texture class template
-    marker = "template <class T, access A = access::sample> struct texture1d {"
+    marker = "template <class T, access A = access::sample, memory_coherence __MC = memory_coherence_threadgroup> struct texture1d {"
     i = text.index(marker)
     return text[:i] + "\n".join(helpers) + "\n" + text[i:]
 

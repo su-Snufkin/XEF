@@ -525,7 +525,7 @@ static Type* scalar_type(LLVMContext& c, const std::string& n, bool& is_signed) 
 }
 
 static std::string clean_type(std::string s) {
-    for (const char* q : {"const ", "volatile ", "metal::", "thread ", "device ", "constant "}) {
+    for (const char* q : {"const ", "volatile ", "metal::", "thread ", "device ", "constant ", "__restrict", "restrict "}) {
         size_t i;
         while ((i = s.find(q)) != std::string::npos) s.erase(i, strlen(q));
     }
@@ -873,6 +873,18 @@ bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std:
             pl.inputs.push_back(s);
             return pl.inputs.back().arg_expr;
         };
+        // array<T, N> parameter: element count (1 for anything else)
+        auto array_count = [](const std::string& ty) -> int {
+            if (ty.rfind("array<", 0) != 0) return 1;
+            int d = 0;
+            size_t comma = std::string::npos;
+            for (size_t i = 6; i < ty.size(); i++) {
+                if (ty[i] == '<') d++;
+                if (ty[i] == '>') { if (d == 0) break; d--; }
+                if (ty[i] == ',' && d == 0) comma = i;
+            }
+            return comma == std::string::npos ? 1 : std::max(1, atoi(ty.c_str() + comma + 1));
+        };
         for (Param& p : e.params) {
             std::string ty = clean_type(p.type);
             std::string arg;
@@ -901,14 +913,18 @@ bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std:
                 std::string acc = ty.find("access::read_write") != std::string::npos ? "air.read_write"
                                 : ty.find("access::write") != std::string::npos ? "air.write"
                                 : ty.find("access::read") != std::string::npos ? "air.read" : "air.sample";
-                std::vector<Metadata*> md = with_fc({S(ctx, "air.texture"), S(ctx, "air.location_index"), S(ctx, "@attr:" + loc), I(ctx, 1),
+                int n = array_count(ty);
+                std::vector<Metadata*> md = with_fc({S(ctx, "air.texture"), S(ctx, "air.location_index"), S(ctx, "@attr:" + loc), I(ctx, n),
                                                      S(ctx, acc), S(ctx, "air.arg_name"), S(ctx, p.name)});
-                arg = add_ptr(1, md, base + "((metal::__xef_tex_h)$)");
+                if (n > 1) arg = add_ptr(0, md, "(*(" + ty + "*)$)");   // pointer to [n x handle] built by the reader
+                else arg = add_ptr(1, md, base + "((metal::__xef_tex_h)$)");
             } else if ((a = find_attr(p.attrs, "sampler"))) {
                 std::string loc = a->args.empty() ? "0" : attr_value(a->args[0]);
-                std::vector<Metadata*> md = with_fc({S(ctx, "air.sampler"), S(ctx, "air.location_index"), S(ctx, "@attr:" + loc), I(ctx, 1),
+                int n = array_count(ty);
+                std::vector<Metadata*> md = with_fc({S(ctx, "air.sampler"), S(ctx, "air.location_index"), S(ctx, "@attr:" + loc), I(ctx, n),
                                                      S(ctx, "air.arg_name"), S(ctx, p.name)});
-                arg = add_ptr(2, md, "metal::sampler((metal::__xef_smp_h)$)");
+                if (n > 1) arg = add_ptr(0, md, "(*(" + ty + "*)$)");
+                else arg = add_ptr(2, md, "metal::sampler((metal::__xef_smp_h)$)");
             } else if ((a = find_attr(p.attrs, "threadgroup"))) {
                 std::string loc = a->args.empty() ? "0" : attr_value(a->args[0]);
                 std::vector<Metadata*> md = {S(ctx, "air.threadgroup"), S(ctx, "air.location_index"), S(ctx, "@attr:" + loc), I(ctx, 1),
