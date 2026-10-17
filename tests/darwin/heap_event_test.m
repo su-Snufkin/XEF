@@ -326,6 +326,28 @@ int main(void) {
 
     NSLog(@"MTLIndirectCommandBuffer and indirect execution verified: icb=%@, fence=%@", icb.label, fence.label);
 
+    /* 12. Test Pipeline Buffer Descriptors and Pipeline Configuration */
+    MTLRenderPipelineDescriptor *rpd = [[[MTLRenderPipelineDescriptor alloc] init] autorelease];
+    rpd.supportIndirectCommandBuffers = YES;
+    rpd.maxVertexCallStackDepth = 2;
+    rpd.maxFragmentCallStackDepth = 2;
+    rpd.vertexBuffers[0].mutability = MTLMutabilityImmutable;
+    rpd.fragmentBuffers[1].mutability = MTLMutabilityMutable;
+    if (!rpd.supportIndirectCommandBuffers || rpd.vertexBuffers[0].mutability != MTLMutabilityImmutable || rpd.fragmentBuffers[1].mutability != MTLMutabilityMutable) {
+      NSLog(@"FAIL: MTLRenderPipelineDescriptor buffer mutability check failed");
+      return 29;
+    }
+
+    MTLComputePipelineDescriptor *cpd = [[[MTLComputePipelineDescriptor alloc] init] autorelease];
+    cpd.supportIndirectCommandBuffers = YES;
+    cpd.buffers[0].mutability = MTLMutabilityImmutable;
+    cpd.maxTotalThreadsPerThreadgroup = 512;
+    if (!cpd.supportIndirectCommandBuffers || cpd.buffers[0].mutability != MTLMutabilityImmutable || cpd.maxTotalThreadsPerThreadgroup != 512) {
+      NSLog(@"FAIL: MTLComputePipelineDescriptor buffer mutability check failed");
+      return 30;
+    }
+    NSLog(@"PipelineBufferDescriptors verified: rpd_buf0_mut=%lu, cpd_buf0_mut=%lu", (unsigned long)rpd.vertexBuffers[0].mutability, (unsigned long)cpd.buffers[0].mutability);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

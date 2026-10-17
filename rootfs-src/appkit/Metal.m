@@ -297,12 +297,63 @@ static uint16_t xef_float_to_half(float v) {
 }
 @end
 
+/* ------------------------------------------------------------------- MTLPipelineBufferDescriptor */
+
+@implementation MTLPipelineBufferDescriptor {
+  MTLMutability _mutability;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _mutability = MTLMutabilityDefault;
+  }
+  return self;
+}
+- (MTLMutability)mutability { return _mutability; }
+- (void)setMutability:(MTLMutability)m { _mutability = m; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLPipelineBufferDescriptor *c = [[MTLPipelineBufferDescriptor allocWithZone:zone] init];
+  c.mutability = _mutability;
+  return c;
+}
+@end
+
+@implementation MTLPipelineBufferDescriptorArray {
+  MTLPipelineBufferDescriptor *_descriptors[31];
+}
+- (MTLPipelineBufferDescriptor *)objectAtIndexedSubscript:(NSUInteger)bufferIndex {
+  if (bufferIndex >= 31) return nil;
+  if (!_descriptors[bufferIndex]) {
+    _descriptors[bufferIndex] = [[MTLPipelineBufferDescriptor alloc] init];
+  }
+  return _descriptors[bufferIndex];
+}
+- (void)setObject:(MTLPipelineBufferDescriptor *)buffer atIndexedSubscript:(NSUInteger)bufferIndex {
+  if (bufferIndex >= 31) return;
+  MTLPipelineBufferDescriptor *c = [buffer copy];
+  [_descriptors[bufferIndex] release];
+  _descriptors[bufferIndex] = c;
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLPipelineBufferDescriptorArray *c = [[MTLPipelineBufferDescriptorArray allocWithZone:zone] init];
+  for (int i = 0; i < 31; i++) {
+    if (_descriptors[i]) c->_descriptors[i] = [_descriptors[i] copy];
+  }
+  return c;
+}
+- (void)dealloc {
+  for (int i = 0; i < 31; i++) [_descriptors[i] release];
+  [super dealloc];
+}
+@end
+
 @implementation MTLRenderPipelineDescriptor {
   NSString *_label;
   id<MTLFunction> _vertexFunction;
   id<MTLFunction> _fragmentFunction;
   MTLVertexDescriptor *_vertexDescriptor;
   MTLRenderPipelineColorAttachmentDescriptorArray *_colorAttachments;
+  MTLPipelineBufferDescriptorArray *_vertexBuffers;
+  MTLPipelineBufferDescriptorArray *_fragmentBuffers;
   MTLPixelFormat _depthAttachmentPixelFormat;
   MTLPixelFormat _stencilAttachmentPixelFormat;
   NSUInteger _sampleCount;
@@ -311,14 +362,24 @@ static uint16_t xef_float_to_half(float v) {
   BOOL _alphaToCoverageEnabled;
   BOOL _alphaToOneEnabled;
   MTLPrimitiveTopologyClass _inputPrimitiveTopology;
+  BOOL _supportIndirectCommandBuffers;
+  NSArray *_binaryArchives;
+  NSArray *_vertexPreloadedLibraries;
+  NSArray *_fragmentPreloadedLibraries;
+  NSUInteger _maxVertexCallStackDepth;
+  NSUInteger _maxFragmentCallStackDepth;
 }
 - (id)init {
   if ((self = [super init])) {
     _colorAttachments = [[MTLRenderPipelineColorAttachmentDescriptorArray alloc] init];
     _vertexDescriptor = [[MTLVertexDescriptor alloc] init];
+    _vertexBuffers = [[MTLPipelineBufferDescriptorArray alloc] init];
+    _fragmentBuffers = [[MTLPipelineBufferDescriptorArray alloc] init];
     _sampleCount = 1;
     _rasterSampleCount = 1;
     _rasterizationEnabled = YES;
+    _maxVertexCallStackDepth = 1;
+    _maxFragmentCallStackDepth = 1;
   }
   return self;
 }
@@ -327,6 +388,8 @@ static uint16_t xef_float_to_half(float v) {
 - (id<MTLFunction>)fragmentFunction { return _fragmentFunction; } - (void)setFragmentFunction:(id<MTLFunction>)f { [f retain]; [(id)_fragmentFunction release]; _fragmentFunction = f; }
 - (MTLVertexDescriptor *)vertexDescriptor { return _vertexDescriptor; } - (void)setVertexDescriptor:(MTLVertexDescriptor *)d { MTLVertexDescriptor *c = [d copy]; [_vertexDescriptor release]; _vertexDescriptor = c; }
 - (MTLRenderPipelineColorAttachmentDescriptorArray *)colorAttachments { return _colorAttachments; }
+- (MTLPipelineBufferDescriptorArray *)vertexBuffers { return _vertexBuffers; }
+- (MTLPipelineBufferDescriptorArray *)fragmentBuffers { return _fragmentBuffers; }
 - (MTLPixelFormat)depthAttachmentPixelFormat { return _depthAttachmentPixelFormat; } - (void)setDepthAttachmentPixelFormat:(MTLPixelFormat)f { _depthAttachmentPixelFormat = f; }
 - (MTLPixelFormat)stencilAttachmentPixelFormat { return _stencilAttachmentPixelFormat; } - (void)setStencilAttachmentPixelFormat:(MTLPixelFormat)f { _stencilAttachmentPixelFormat = f; }
 - (NSUInteger)sampleCount { return _sampleCount; } - (void)setSampleCount:(NSUInteger)c { _sampleCount = c; _rasterSampleCount = c; }
@@ -335,17 +398,29 @@ static uint16_t xef_float_to_half(float v) {
 - (BOOL)isAlphaToCoverageEnabled { return _alphaToCoverageEnabled; } - (void)setAlphaToCoverageEnabled:(BOOL)e { _alphaToCoverageEnabled = e; }
 - (BOOL)isAlphaToOneEnabled { return _alphaToOneEnabled; } - (void)setAlphaToOneEnabled:(BOOL)e { _alphaToOneEnabled = e; }
 - (MTLPrimitiveTopologyClass)inputPrimitiveTopology { return _inputPrimitiveTopology; } - (void)setInputPrimitiveTopology:(MTLPrimitiveTopologyClass)t { _inputPrimitiveTopology = t; }
+- (BOOL)supportIndirectCommandBuffers { return _supportIndirectCommandBuffers; } - (void)setSupportIndirectCommandBuffers:(BOOL)s { _supportIndirectCommandBuffers = s; }
+- (NSArray *)binaryArchives { return _binaryArchives; } - (void)setBinaryArchives:(NSArray *)a { [a retain]; [_binaryArchives release]; _binaryArchives = a; }
+- (NSArray *)vertexPreloadedLibraries { return _vertexPreloadedLibraries; } - (void)setVertexPreloadedLibraries:(NSArray *)a { [a retain]; [_vertexPreloadedLibraries release]; _vertexPreloadedLibraries = a; }
+- (NSArray *)fragmentPreloadedLibraries { return _fragmentPreloadedLibraries; } - (void)setFragmentPreloadedLibraries:(NSArray *)a { [a retain]; [_fragmentPreloadedLibraries release]; _fragmentPreloadedLibraries = a; }
+- (NSUInteger)maxVertexCallStackDepth { return _maxVertexCallStackDepth; } - (void)setMaxVertexCallStackDepth:(NSUInteger)d { _maxVertexCallStackDepth = d; }
+- (NSUInteger)maxFragmentCallStackDepth { return _maxFragmentCallStackDepth; } - (void)setMaxFragmentCallStackDepth:(NSUInteger)d { _maxFragmentCallStackDepth = d; }
 - (void)reset {
   [_label release]; _label = nil;
   [(id)_vertexFunction release]; _vertexFunction = nil;
   [(id)_fragmentFunction release]; _fragmentFunction = nil;
   [_vertexDescriptor release]; _vertexDescriptor = [[MTLVertexDescriptor alloc] init];
   [_colorAttachments release]; _colorAttachments = [[MTLRenderPipelineColorAttachmentDescriptorArray alloc] init];
+  [_vertexBuffers release]; _vertexBuffers = [[MTLPipelineBufferDescriptorArray alloc] init];
+  [_fragmentBuffers release]; _fragmentBuffers = [[MTLPipelineBufferDescriptorArray alloc] init];
+  [_binaryArchives release]; _binaryArchives = nil;
+  [_vertexPreloadedLibraries release]; _vertexPreloadedLibraries = nil;
+  [_fragmentPreloadedLibraries release]; _fragmentPreloadedLibraries = nil;
   _depthAttachmentPixelFormat = MTLPixelFormatInvalid;
   _stencilAttachmentPixelFormat = MTLPixelFormatInvalid;
   _sampleCount = 1;
   _rasterSampleCount = 1;
   _rasterizationEnabled = YES;
+  _supportIndirectCommandBuffers = NO;
 }
 - (id)copyWithZone:(NSZone *)zone {
   MTLRenderPipelineDescriptor *c = [[MTLRenderPipelineDescriptor allocWithZone:zone] init];
@@ -365,11 +440,19 @@ static uint16_t xef_float_to_half(float v) {
   c.alphaToCoverageEnabled = _alphaToCoverageEnabled;
   c.alphaToOneEnabled = _alphaToOneEnabled;
   c.inputPrimitiveTopology = _inputPrimitiveTopology;
+  c.supportIndirectCommandBuffers = _supportIndirectCommandBuffers;
+  c.binaryArchives = _binaryArchives;
+  c.vertexPreloadedLibraries = _vertexPreloadedLibraries;
+  c.fragmentPreloadedLibraries = _fragmentPreloadedLibraries;
+  c.maxVertexCallStackDepth = _maxVertexCallStackDepth;
+  c.maxFragmentCallStackDepth = _maxFragmentCallStackDepth;
   return c;
 }
 - (void)dealloc {
   [_label release]; [(id)_vertexFunction release]; [(id)_fragmentFunction release];
   [_vertexDescriptor release]; [_colorAttachments release];
+  [_vertexBuffers release]; [_fragmentBuffers release];
+  [_binaryArchives release]; [_vertexPreloadedLibraries release]; [_fragmentPreloadedLibraries release];
   [super dealloc];
 }
 @end
@@ -379,6 +462,16 @@ static uint16_t xef_float_to_half(float v) {
   id<MTLFunction> _computeFunction;
   BOOL _threadGroupSizeIsMultipleOfThreadExecutionWidth;
   NSUInteger _maxTotalThreadsPerThreadgroup;
+  MTLPipelineBufferDescriptorArray *_buffers;
+  BOOL _supportIndirectCommandBuffers;
+  NSArray *_binaryArchives;
+  NSArray *_preloadedLibraries;
+}
+- (id)init {
+  if ((self = [super init])) {
+    _buffers = [[MTLPipelineBufferDescriptorArray alloc] init];
+  }
+  return self;
 }
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (id<MTLFunction>)computeFunction { return _computeFunction; } - (void)setComputeFunction:(id<MTLFunction>)f { [f retain]; [(id)_computeFunction release]; _computeFunction = f; }
@@ -386,17 +479,33 @@ static uint16_t xef_float_to_half(float v) {
 - (void)setThreadGroupSizeIsMultipleOfThreadExecutionWidth:(BOOL)f { _threadGroupSizeIsMultipleOfThreadExecutionWidth = f; }
 - (NSUInteger)maxTotalThreadsPerThreadgroup { return _maxTotalThreadsPerThreadgroup; }
 - (void)setMaxTotalThreadsPerThreadgroup:(NSUInteger)m { _maxTotalThreadsPerThreadgroup = m; }
+- (MTLPipelineBufferDescriptorArray *)buffers { return _buffers; }
+- (BOOL)supportIndirectCommandBuffers { return _supportIndirectCommandBuffers; } - (void)setSupportIndirectCommandBuffers:(BOOL)s { _supportIndirectCommandBuffers = s; }
+- (NSArray *)binaryArchives { return _binaryArchives; } - (void)setBinaryArchives:(NSArray *)a { [a retain]; [_binaryArchives release]; _binaryArchives = a; }
+- (NSArray *)preloadedLibraries { return _preloadedLibraries; } - (void)setPreloadedLibraries:(NSArray *)a { [a retain]; [_preloadedLibraries release]; _preloadedLibraries = a; }
+- (NSArray *)insertLibraries { return _preloadedLibraries; } - (void)setInsertLibraries:(NSArray *)a { [self setPreloadedLibraries:a]; }
 - (void)reset {
   [_label release]; _label = nil;
   [(id)_computeFunction release]; _computeFunction = nil;
+  [_buffers release]; _buffers = [[MTLPipelineBufferDescriptorArray alloc] init];
+  [_binaryArchives release]; _binaryArchives = nil;
+  [_preloadedLibraries release]; _preloadedLibraries = nil;
+  _supportIndirectCommandBuffers = NO;
 }
 - (id)copyWithZone:(NSZone *)zone {
   MTLComputePipelineDescriptor *c = [[MTLComputePipelineDescriptor allocWithZone:zone] init];
-  c.label = _label; c.computeFunction = _computeFunction;
+  c.label = _label;
+  c.computeFunction = _computeFunction;
+  c.threadGroupSizeIsMultipleOfThreadExecutionWidth = _threadGroupSizeIsMultipleOfThreadExecutionWidth;
+  c.maxTotalThreadsPerThreadgroup = _maxTotalThreadsPerThreadgroup;
+  c.supportIndirectCommandBuffers = _supportIndirectCommandBuffers;
+  c.binaryArchives = _binaryArchives;
+  c.preloadedLibraries = _preloadedLibraries;
   return c;
 }
 - (void)dealloc {
   [_label release]; [(id)_computeFunction release];
+  [_buffers release]; [_binaryArchives release]; [_preloadedLibraries release];
   [super dealloc];
 }
 @end
