@@ -16,6 +16,7 @@
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
+#include "clang/Lex/PreprocessorOptions.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
@@ -24,7 +25,9 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cctype>
+#include <unistd.h>
 #include <cstring>
 #include <map>
 #include <set>
@@ -229,7 +232,23 @@ public:
             bool fn = false;
             while (k < e) {
                 if (t[k].text == "(" || t[k].text == "{" ) { if (d == 0 && t[k].text == "(") fn = true; }
-                if (t[k].text == "{" ) { k = match(k, "{", "}") + 1; if (fn || d == 0) { if (t[k].text == ";") k++; goto next; } continue; }
+                if (t[k].text == "{" ) {
+                    size_t be = match(k, "{", "}");
+                    if (fn) {
+                        // member function overloads that only differ by the address space of `this`: keep `thread`
+                        for (size_t q = k; q > s && t[q - 1].text != ")"; q--) {
+                            const std::string& x = t[q - 1].text;
+                            if (x == "device" || x == "constant" || x == "threadgroup" || x == "threadgroup_imageblock" ||
+                                x == "ray_data" || x == "object_data") {
+                                edits.push_back({t[s].pos, t[be].end, " "});
+                                break;
+                            }
+                        }
+                    }
+                    k = be + 1;
+                    if (fn || d == 0) { if (t[k].text == ";") k++; goto next; }
+                    continue;
+                }
                 if (t[k].text == "(") d++;
                 if (t[k].text == ")") d--;
                 if (d == 0 && t[k].text == ";") break;
@@ -436,7 +455,7 @@ public:
             if (k.text == "{") {
                 // function bodies: scan for threadgroup locals
                 size_t e = match(p, "{", "}");
-                if (t[p - 1].text == ")" || t[p - 1].text == "const") { scan_body(p, e); p = e + 1; continue; }
+                if (t[p - 1].text == ")" || t[p - 1].text == "const" || t[p - 1].text == "]]") { scan_body(p, e); p = e + 1; continue; }
                 brace++;
             }
             if (k.text == "}") brace--;
@@ -560,19 +579,18 @@ static bool run_clang(const std::string& source, bool preprocess, LLVMContext* c
     auto ci = std::make_unique<clang::CompilerInstance>();
     std::string dtext;
     raw_string_ostream dos(dtext);
-    clang::DiagnosticOptions dopts;
+    static clang::DiagnosticOptions dopts;
     auto printer = new clang::TextDiagnosticPrinter(dos, dopts);
-    auto vfs = llvm::vfs::getRealFileSystem();
-    ci->createDiagnostics(*vfs, printer, true);
+    ci->createDiagnostics(printer, true);
     std::string outpath;
     std::vector<std::string> args = {
         "-triple", "aarch64-unknown-linux-gnu", "-target-feature", "+neon", "-target-feature", "+fullfp16",
-        "-x", "c++", "-std=c++20", "-fms-extensions", "-fdeclspec", "-fno-exceptions", "-fno-rtti", "-O2",
+        "-x", "c++", "-std=c++20", "-fms-extensions", "-fdeclspec", "-fno-rtti", "-O2",
         "-Wno-everything", "-ffp-contract=on", "-fgnuc-version=4.2.1", "-I", "/xef-mtlc/include", "-nostdsysteminc",
-        "-nobuiltininc", "-disable-llvm-verifier", "-discard-value-names", "-fno-math-errno",
-        "-main-file-name", "shader.metal", "-o", "-",
+        "-nobuiltininc", "-disable-llvm-verifier", "-discard-value-names",
+        "-main-file-name", "shader.metal",
     };
-    if (preprocess) args.push_back("-E");
+    if (preprocess) { args.push_back("-E"); args.push_back("-D__XEF_MSL_PREPROCESS"); }
     else args.push_back("-emit-llvm-only");
     args.push_back("/xef-mtlc/shader.metal");
     std::vector<const char*> argv;
@@ -598,13 +616,16 @@ static bool run_clang(const std::string& source, bool preprocess, LLVMContext* c
     ppo.RetainRemappedFileBuffers = false;
     if (preprocess) {
         // -E writes to the output stream: capture it
-        std::string text;
-        auto os = std::make_unique<raw_string_ostream>(text);
-        ci->setOutputStream(std::move(os));
+        // -E goes to a temporary file (the frontend writes through the output-file machinery)
+        char tmpl[] = "/tmp/xef-mtlc-ppXXXXXX";
+        int fd = mkstemp(tmpl);
+        if (fd >= 0) close(fd);
+        ci->getFrontendOpts().OutputFile = tmpl;
         clang::PrintPreprocessedAction act;
         bool ok = ci->ExecuteAction(act);
         ci->clearOutputFiles(false);
-        out.text = text;
+        if (auto buf = MemoryBuffer::getFile(tmpl)) out.text = (*buf)->getBuffer().str();
+        unlink(tmpl);
         if (!ok || ci->getDiagnostics().hasErrorOccurred()) { diag = dtext; return false; }
         return true;
     }
@@ -1045,6 +1066,15 @@ bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std:
         }
     for (GlobalVariable& g : m.globals())
         if (g.getName().starts_with("__xef_attr_")) g.setLinkage(GlobalValue::InternalLinkage);
+    // drop host target attributes (they would block inlining into the AIR entries)
+    for (Function& fn : m) {
+        fn.removeFnAttr("target-cpu");
+        fn.removeFnAttr("target-features");
+        fn.removeFnAttr("tune-cpu");
+        fn.removeFnAttr(Attribute::NoInline);
+        fn.removeFnAttr(Attribute::OptimizeNone);
+    }
+    m.setTargetTriple(Triple("air64-apple-macosx14.0.0"));
 
     // 5. bitcode + metallib container
     SmallVector<char, 0> bc;

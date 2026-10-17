@@ -226,8 +226,14 @@ public:
                     uint8_t p = 0;
                     if (isa<AllocaInst>(i)) p = P_PRIV;
                     else if (auto* g = dyn_cast<GetElementPtrInst>(&i)) p = get_prov(g->getPointerOperand());
+                    else if (auto* li = dyn_cast<LoadInst>(&i)) {
+                        unsigned as = i.getType()->getPointerAddressSpace();
+                        if (as != 0) p = prov_of_as(as);
+                        // generic pointers (MSL frontend): loaded from device memory -> device, otherwise unknown
+                        else p = get_prov(li->getPointerOperand()) == P_GLOBAL ? P_GLOBAL : (P_GLOBAL | P_PRIV | P_TG);
+                    } else if (isa<CallInst>(i)) p = i.getType()->getPointerAddressSpace() == 0 ? P_GLOBAL : prov_of_as(i.getType()->getPointerAddressSpace());
                     else if (auto* c = dyn_cast<CastInst>(&i)) {
-                        if (isa<IntToPtrInst>(c)) p = prov_of_as(i.getType()->getPointerAddressSpace());
+                        if (isa<IntToPtrInst>(c)) p = i.getType()->getPointerAddressSpace() == 0 ? P_GLOBAL : prov_of_as(i.getType()->getPointerAddressSpace());
                         else p = get_prov(c->getOperand(0));
                     } else if (auto* phi = dyn_cast<PHINode>(&i)) {
                         for (Value* in : phi->incoming_values()) p |= get_prov(in);
@@ -571,7 +577,12 @@ public:
         Value* addr = get(ptr);
         uint8_t p = get_prov(ptr);
         bool local = name.contains(".local.");
-        if (local) p = P_TG; else if (p != P_PRIV) p = P_GLOBAL;
+        if (local) p = P_TG;
+        else if (p != P_PRIV && p != P_TG) {
+            if (p & P_TG) fail("atomic on a pointer of unknown memory kind: " + name.str());
+            p = P_GLOBAL;
+        }
+        local = p == P_TG;
         SmallVector<StringRef, 6> parts;
         name.split(parts, '.');
         StringRef op = parts.size() > 3 ? parts[3] : "";
@@ -806,6 +817,19 @@ public:
                 }
             }
             if (name.starts_with("air.atomic.")) { lower_air_atomic(ci, name); return; }
+            if (name == "xef.const_sampler") {
+                uint64_t st = 0;
+                if (auto* c = dyn_cast<ConstantInt>(ci->getArgOperand(0))) st = c->getZExtValue();
+                else { fail("non-constant constexpr sampler"); return; }
+                uint16_t idx = 0xffff;
+                ConstSampler cs = decode_sampler(st, 0);
+                auto& v = ps.res->const_samplers;
+                for (size_t k = 0; k < v.size(); k++) if (!memcmp(&v[k], &cs, sizeof cs)) idx = (uint16_t)k;
+                if (idx == 0xffff) { idx = (uint16_t)v.size(); v.push_back(cs); }
+                map[i] = load_table_entry(BIND_CONST_SAMPLER, idx);
+                dead.push_back(i);
+                return;
+            }
             if (name.starts_with("air.simdgroup_async_copy") || name.starts_with("air.get_null_simdgroup_event")) {
                 lower_async_copy(ci, name);
                 return;

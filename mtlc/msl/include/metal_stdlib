@@ -16,6 +16,8 @@
 #define __HAVE_SIMDGROUP_MATRIX__ 0
 #define __HAVE_TRIANGLE_FAN__ 0
 #define __HAVE_INDIRECT_ARGUMENT_BUFFER__ 1
+// (kept as keywords during the frontend's preprocessing pass so it can see threadgroup locals)
+#ifndef __XEF_MSL_PREPROCESS
 #define device
 #define constant const
 #define thread
@@ -23,6 +25,7 @@
 #define threadgroup_imageblock
 #define ray_data
 #define object_data
+#endif
 #define METAL_FUNC inline __attribute__((always_inline))
 #define METAL_INTERNAL
 #define METAL_ENABLE_IF(...)

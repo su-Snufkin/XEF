@@ -5,6 +5,7 @@
 //   xef-mtlc LIB.metallib -f NAME [-F FRAG] [-o out.spv] [--dump] [--tg X,Y,Z]
 #include "mtlc.h"
 #include "../src/metal/metallib.h"
+#include "msl/frontend.h"
 #include "llvm/Support/InitLLVM.h"
 #include <cerrno>
 #include <cstdio>
@@ -87,8 +88,17 @@ int main(int argc, char** argv) {
     const char* path = argv[1];
     std::vector<uint8_t> data = read_file(path);
     if (data.empty()) { fprintf(stderr, "cannot read %s\n", path); return 1; }
-    std::vector<xef::metallib::Function> fns;
     std::string err;
+    bool msl = false;
+    for (int i = 2; i < argc; i++) if (!strcmp(argv[i], "--msl")) msl = true;
+    if (msl) {
+        std::vector<uint8_t> lib;
+        if (!mtlc::msl::compile_msl(std::string(data.begin(), data.end()), lib, err)) { fprintf(stderr, "%s\n", err.c_str()); return 3; }
+        data = lib;
+        for (int i = 2; i < argc; i++)
+            if (!strcmp(argv[i], "--emit-lib") && i + 1 < argc) { FILE* f = fopen(argv[i + 1], "wb"); if (f) { fwrite(data.data(), 1, data.size(), f); fclose(f); } }
+    }
+    std::vector<xef::metallib::Function> fns;
     bool is_lib = xef::metallib::is_metallib(data.data(), data.size());
     if (is_lib && !xef::metallib::parse(data.data(), data.size(), fns, &err)) { fprintf(stderr, "%s\n", err.c_str()); return 1; }
     bool list = false, all = false, dump = false, noval = false;
@@ -100,6 +110,8 @@ int main(int argc, char** argv) {
         else if (a == "--all") all = true;
         else if (a == "--dump") dump = true;
         else if (a == "--noval") noval = true;
+        else if (a == "--msl") {}
+        else if (a == "--emit-lib") i++;
         else if (a == "-f" && i + 1 < argc) fname = argv[++i];
         else if (a == "-F" && i + 1 < argc) frag = argv[++i];
         else if (a == "-o" && i + 1 < argc) out = argv[++i];
