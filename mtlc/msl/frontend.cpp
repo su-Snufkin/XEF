@@ -231,6 +231,11 @@ public:
             int d = 0;
             bool fn = false;
             while (k < e) {
+                if (t[k].text == "[[") {   // attribute arguments are not a parameter list
+                    while (k < e && t[k].text != "]]") k++;
+                    k++;
+                    continue;
+                }
                 if (t[k].text == "(" || t[k].text == "{" ) { if (d == 0 && t[k].text == "(") fn = true; }
                 if (t[k].text == "{" ) {
                     size_t be = match(k, "{", "}");
@@ -575,7 +580,8 @@ struct ClangOut {
     std::unique_ptr<Module> mod;
 };
 
-static bool run_clang(const std::string& source, bool preprocess, LLVMContext* ctx, ClangOut& out, std::string& diag) {
+static bool run_clang(const std::string& source, bool preprocess, LLVMContext* ctx, ClangOut& out, std::string& diag,
+                      const std::vector<std::string>* defines = nullptr) {
     auto ci = std::make_unique<clang::CompilerInstance>();
     std::string dtext;
     raw_string_ostream dos(dtext);
@@ -591,6 +597,7 @@ static bool run_clang(const std::string& source, bool preprocess, LLVMContext* c
         "-main-file-name", "shader.metal",
     };
     if (preprocess) { args.push_back("-E"); args.push_back("-D__XEF_MSL_PREPROCESS"); }
+    if (defines) for (auto& d : *defines) args.push_back("-D" + d);
     else args.push_back("-emit-llvm-only");
     args.push_back("/xef-mtlc/shader.metal");
     std::vector<const char*> argv;
@@ -679,11 +686,12 @@ struct EntryPlan {
     std::string wrapper;              // C++ text
 };
 
-bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std::string& err) {
+bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std::string& err,
+                 const std::vector<std::string>& defines) {
     // 1. preprocess
     ClangOut pp;
     std::string diag;
-    if (!run_clang(source, true, nullptr, pp, diag)) { err = "MSL preprocessing failed:\n" + diag; return false; }
+    if (!run_clang(source, true, nullptr, pp, diag, &defines)) { err = "MSL preprocessing failed:\n" + diag; return false; }
     std::string user = main_file_text(pp.text);
     // 2. parse + rewrite
     Parser ps(user);

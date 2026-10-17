@@ -114,16 +114,30 @@ uint32_t xef_mtl_library_create(const void* data, uint64_t size, char* err, uint
     return (uint32_t)g.libraries.size() - 1;
 }
 
+// options: NUL-terminated list of "NAME" / "NAME=VALUE" preprocessor macros separated by newlines, or NULL
 uint32_t xef_mtl_library_create_source(const char* source, const void* options, char* err, uint32_t err_len) {
-    (void)options;
+    xef::mtlabi::SourceRequest req;
+    req.source = source ? source : "";
+    if (const char* o = (const char*)options) {
+        while (*o) {
+            const char* e = strchr(o, '\n');
+            size_t n = e ? (size_t)(e - o) : strlen(o);
+            if (n) req.defines.emplace_back(o, n);
+            o += n + (e ? 1 : 0);
+        }
+    }
     if (const char* dir = getenv("XEF_MTL_DUMP_LIBS")) {
         static int n = 0;
         char path[1024];
         snprintf(path, sizeof path, "%s/src%03d.metal", dir, n++);
-        if (FILE* f = fopen(path, "wb")) { fputs(source ? source : "", f); fclose(f); }
+        if (FILE* f = fopen(path, "wb")) { fputs(req.source.c_str(), f); fclose(f); }
     }
-    copy_err("compiling Metal Shading Language source is not supported yet", err, err_len);
-    return 0;
+    xef::mtlabi::SourceResult res;
+    if (!compile_source(req, res)) {
+        copy_err(res.log.empty() ? std::string("MSL compilation failed") : res.log, err, err_len);
+        return 0;
+    }
+    return xef_mtl_library_create(res.metallib.data(), res.metallib.size(), err, err_len);
 }
 
 uint32_t xef_mtl_library_function_count(uint32_t id) {

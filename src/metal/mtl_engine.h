@@ -201,6 +201,7 @@ void image_barrier_all(VkCommandBuffer cb);
 
 // shaders.cpp
 bool compile_shaders(const mtlabi::CompileRequest& req, mtlabi::CompileResult& res);
+bool compile_source(const mtlabi::SourceRequest& req, mtlabi::SourceResult& res);
 bool make_stage(const mtlabi::StageResult& r, StageModule& out, std::string& err);
 
 // pipelines.cpp

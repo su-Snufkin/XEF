@@ -6,6 +6,7 @@
 #include <vector>
 
 namespace mtlc::msl {
-bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std::string& err);
+bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std::string& err,
+                 const std::vector<std::string>& defines = {});
 std::vector<uint8_t> make_metallib(const std::vector<std::pair<std::string, uint8_t>>& fns, const std::vector<uint8_t>& bc);
 }

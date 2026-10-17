@@ -2465,7 +2465,7 @@ template <class T, int C, int R> struct matrix {
   template <class S, class = __xef_scalar_t<S>> XEF_CINL explicit matrix(S d) : columns{} {
     for (int c = 0; c < C; c++) for (int r = 0; r < R; r++) columns[c][r] = (c == r) ? (T)d : (T)0;
   }
-  template <class... A, class = typename __xef_enable_if_t<sizeof...(A) == C>::type>
+  template <class... A, class = typename __xef_enable_if_t<sizeof...(A) + 1 == C>::type>
   XEF_CINL matrix(vec<T, R> c0, A... rest) : columns{c0, vec<T, R>(rest)...} {}
   template <class... A, class = typename __xef_enable_if_t<sizeof...(A) == C * R && (C * R > C)>::type, class = void>
   XEF_CINL matrix(A... s) : columns{} {
@@ -2973,11 +2973,17 @@ template <class T, int N> XEF_INL vec<T, N> extract_bits(vec<T, N> x, uint off, 
 template <class T, int N> XEF_INL vec<T, N> insert_bits(vec<T, N> b, vec<T, N> s, uint off, uint bits) { vec<T, N> r; for (int i = 0; i < N; i++) r[i] = insert_bits((T)b[i], (T)s[i], off, bits); return r; }
 
 // fast:: / precise:: variants
-namespace fast { using metal::sin; using metal::cos; using metal::tan; using metal::asin; using metal::acos; using metal::atan; using metal::atan2;
-  using metal::exp; using metal::exp2; using metal::log; using metal::log2; using metal::pow; using metal::powr; using metal::sqrt; using metal::rsqrt;
-  using metal::normalize; using metal::length; using metal::distance; using metal::fmax; using metal::fmin; using metal::clamp; using metal::saturate;
-  using metal::fract; using metal::floor; using metal::ceil; using metal::round; using metal::trunc; using metal::fabs; using metal::sinh; using metal::cosh;
-  using metal::tanh; using metal::exp10; using metal::log10; using metal::fmod; using metal::sincos; using metal::divide; }
+namespace fast { using metal::acos; using metal::acosh; using metal::asin; using metal::asinh; using metal::atan;
+  using metal::atan2; using metal::atanh; using metal::ceil; using metal::copysign; using metal::cos; using metal::cosh;
+  using metal::cospi; using metal::divide; using metal::exp; using metal::exp10; using metal::exp2; using metal::fabs;
+  using metal::abs; using metal::fdim; using metal::floor; using metal::fma; using metal::fmax; using metal::fmax3;
+  using metal::fmedian3; using metal::fmin; using metal::fmin3; using metal::fmod; using metal::fract; using metal::ldexp;
+  using metal::log; using metal::log10; using metal::log2; using metal::max; using metal::max3; using metal::median3;
+  using metal::min; using metal::min3; using metal::modf; using metal::pow; using metal::powr; using metal::rint;
+  using metal::round; using metal::rsqrt; using metal::sin; using metal::sincos; using metal::sinh; using metal::sinpi;
+  using metal::sqrt; using metal::tan; using metal::tanh; using metal::tanpi; using metal::trunc; using metal::distance;
+  using metal::length; using metal::length_squared; using metal::normalize; using metal::clamp; using metal::saturate;
+  using metal::step; using metal::smoothstep; }
 namespace precise = fast;
 
 

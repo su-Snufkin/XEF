@@ -13,7 +13,7 @@
 namespace xef::mtlabi {
 
 constexpr uint32_t kProtoMagic = 0x43544D58;   // "XMTC"
-constexpr uint32_t kProtoVersion = 4;
+constexpr uint32_t kProtoVersion = 5;
 
 enum Stage : uint32_t { STAGE_VERTEX = 0, STAGE_FRAGMENT = 1, STAGE_KERNEL = 2 };
 
@@ -91,6 +91,7 @@ enum MsgType : uint32_t {
     MSG_RESULT = 2,
     MSG_PING = 3,
     MSG_QUIT = 4,
+    MSG_COMPILE_MSL = 5,    // request: SourceRequest, reply: SourceResult (MSL source -> metallib)
 };
 
 } // namespace xef::mtlabi

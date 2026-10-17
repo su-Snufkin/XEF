@@ -47,6 +47,16 @@ static int serve() {
         std::vector<uint8_t> payload(hdr[2]);
         if (hdr[2] && !read_full(0, payload.data(), payload.size())) return 1;
         if (hdr[1] == MSG_QUIT) return 0;
+        if (hdr[1] == MSG_COMPILE_MSL) {
+            SourceRequest req;
+            SourceResult sr;
+            if (!deserialize(payload.data(), payload.size(), req)) sr.log = "malformed request";
+            else sr.ok = mtlc::msl::compile_msl(req.source, sr.metallib, sr.log, req.defines);
+            std::vector<uint8_t> out = serialize(sr);
+            uint32_t rh[3] = {kProtoMagic, MSG_RESULT, (uint32_t)out.size()};
+            if (!write_full(1, rh, sizeof(rh)) || !write_full(1, out.data(), out.size())) return 1;
+            continue;
+        }
         CompileResult res;
         if (hdr[1] == MSG_COMPILE) {
             CompileRequest req;

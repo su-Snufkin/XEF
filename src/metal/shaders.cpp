@@ -125,69 +125,99 @@ static std::string compiler_stamp() {
     return s;
 }
 
+// one request/reply exchange with the compiler process; a crash is retried once with a fresh process
+static bool transact(uint32_t type, const std::vector<uint8_t>& msg, std::vector<uint8_t>& reply, std::string& err) {
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (!spawn_compiler()) { err = "shader compiler unavailable"; return false; }
+        uint32_t hdr[3] = {kProtoMagic, type, (uint32_t)msg.size()};
+        uint32_t rh[3];
+        bool io = write_all(g_to, hdr, sizeof hdr) && write_all(g_to, msg.data(), msg.size()) && read_all(g_from, rh, sizeof rh);
+        if (io && rh[0] == kProtoMagic) {
+            reply.resize(rh[2]);
+            io = read_all(g_from, reply.data(), reply.size());
+        } else io = false;
+        if (io) return true;
+        kill_compiler();
+        err = "shader compiler crashed";
+    }
+    return false;
+}
+
+static std::string cache_path(uint64_t key, const char* ext) {
+    if (getenv("XEF_MTL_NOCACHE")) return {};
+    std::string dir = cache_dir();
+    if (dir.empty()) return {};
+    char name[64];
+    snprintf(name, sizeof name, "/%016llx.%s", (unsigned long long)key, ext);
+    return dir + name;
+}
+
+// cached payload without the compiler stamp, or empty when missing/stale
+static std::vector<uint8_t> cache_load(const std::string& path) {
+    std::vector<uint8_t> data;
+    if (path.empty()) return data;
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) return data;
+    uint8_t buf[65536];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) data.insert(data.end(), buf, buf + n);
+    fclose(f);
+    const std::string& stamp = compiler_stamp();
+    if (data.size() <= stamp.size() || memcmp(data.data(), stamp.data(), stamp.size())) return {};
+    data.erase(data.begin(), data.begin() + (ptrdiff_t)stamp.size());
+    return data;
+}
+
+static void cache_store(const std::string& path, const std::vector<uint8_t>& data) {
+    if (path.empty()) return;
+    std::string tmp = path + ".tmp";
+    if (FILE* f = fopen(tmp.c_str(), "wb")) {
+        const std::string& stamp = compiler_stamp();
+        fwrite(stamp.data(), 1, stamp.size(), f);
+        fwrite(data.data(), 1, data.size(), f);
+        fclose(f);
+        rename(tmp.c_str(), path.c_str());
+    }
+}
+
 bool compile_shaders(const CompileRequest& req, CompileResult& res) {
     std::vector<uint8_t> msg = serialize(req);
     uint64_t key = hash64(msg.data(), msg.size());
     std::lock_guard<std::mutex> lk(g_cmtx);
     auto it = g_mem_cache.find(key);
     if (it != g_mem_cache.end()) { res = *it->second; return res.ok; }
-    std::string dir = getenv("XEF_MTL_NOCACHE") ? std::string() : cache_dir();
-    char name[64];
-    snprintf(name, sizeof name, "/%016llx.bin", (unsigned long long)key);
-    std::string stamp = compiler_stamp();
-    if (!dir.empty()) {
-        std::string path = dir + name;
-        if (FILE* f = fopen(path.c_str(), "rb")) {
-            std::vector<uint8_t> data;
-            uint8_t buf[65536];
-            size_t n;
-            while ((n = fread(buf, 1, sizeof buf, f)) > 0) data.insert(data.end(), buf, buf + n);
-            fclose(f);
-            size_t sl = stamp.size();
-            if (data.size() > sl && !memcmp(data.data(), stamp.data(), sl) &&
-                deserialize(data.data() + sl, data.size() - sl, res) && res.ok) {
-                g_mem_cache[key] = std::make_shared<CompileResult>(res);
-                return true;
-            }
-        }
+    std::string path = cache_path(key, "bin");
+    std::vector<uint8_t> cached = cache_load(path);
+    if (!cached.empty() && deserialize(cached.data(), cached.size(), res) && res.ok) {
+        g_mem_cache[key] = std::make_shared<CompileResult>(res);
+        return true;
     }
-    for (int attempt = 0; attempt < 2; attempt++) {
-        if (!spawn_compiler()) { res.ok = false; res.log = "shader compiler unavailable"; return false; }
-        uint32_t hdr[3] = {kProtoMagic, MSG_COMPILE, (uint32_t)msg.size()};
-        uint32_t rh[3];
-        std::vector<uint8_t> payload;
-        bool io = write_all(g_to, hdr, sizeof hdr) && write_all(g_to, msg.data(), msg.size()) && read_all(g_from, rh, sizeof rh);
-        if (io && rh[0] == kProtoMagic) {
-            payload.resize(rh[2]);
-            io = read_all(g_from, payload.data(), payload.size());
-        }
-        if (!io) {
-            int status = 0;
-            kill_compiler();
-            (void)status;
-            res.ok = false;
-            res.log = "shader compiler crashed";
-            continue;   // a crash on this request is retried once with a fresh process
-        }
-        if (!deserialize(payload.data(), payload.size(), res)) { res.ok = false; res.log = "bad compiler reply"; return false; }
-        break;
-    }
+    std::vector<uint8_t> reply;
+    res = CompileResult();
+    if (!transact(MSG_COMPILE, msg, reply, res.log)) return false;
+    if (!deserialize(reply.data(), reply.size(), res)) { res.ok = false; res.log = "bad compiler reply"; return false; }
     if (res.ok) {
         g_mem_cache[key] = std::make_shared<CompileResult>(res);
-        if (!dir.empty()) {
-            std::string path = dir + name;
-            std::string tmp = path + ".tmp";
-            if (FILE* f = fopen(tmp.c_str(), "wb")) {
-                std::vector<uint8_t> data = serialize(res);
-                fwrite(stamp.data(), 1, stamp.size(), f);
-                fwrite(data.data(), 1, data.size(), f);
-                fclose(f);
-                rename(tmp.c_str(), path.c_str());
-            }
-        }
+        cache_store(path, serialize(res));
     } else {
         XEF_LOG(1, "metal: shader compilation failed: %s", res.log.c_str());
     }
+    return res.ok;
+}
+
+bool compile_source(const SourceRequest& req, SourceResult& res) {
+    std::vector<uint8_t> msg = serialize(req);
+    uint64_t key = hash64(msg.data(), msg.size());
+    std::lock_guard<std::mutex> lk(g_cmtx);
+    std::string path = cache_path(key, "lib");
+    std::vector<uint8_t> cached = cache_load(path);
+    if (!cached.empty() && deserialize(cached.data(), cached.size(), res) && res.ok) return true;
+    std::vector<uint8_t> reply;
+    res = SourceResult();
+    if (!transact(MSG_COMPILE_MSL, msg, reply, res.log)) return false;
+    if (!deserialize(reply.data(), reply.size(), res)) { res.ok = false; res.log = "bad compiler reply"; return false; }
+    if (res.ok) cache_store(path, serialize(res));
+    else XEF_LOG(1, "metal: MSL compilation failed: %s", res.log.c_str());
     return res.ok;
 }
 

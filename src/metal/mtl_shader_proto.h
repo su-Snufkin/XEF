@@ -146,4 +146,53 @@ inline bool deserialize(const void* d, size_t n, CompileResult& r) {
     return !rd.bad;
 }
 
+struct SourceRequest {
+    std::string source;
+    std::vector<std::string> defines;   // "NAME" or "NAME=VALUE" (MTLCompileOptions.preprocessorMacros)
+};
+
+struct SourceResult {
+    bool ok = false;
+    std::string log;
+    std::vector<uint8_t> metallib;
+};
+
+inline std::vector<uint8_t> serialize(const SourceRequest& r) {
+    ByteWriter w;
+    w.u32(kProtoVersion);
+    w.str(r.source);
+    w.u32((uint32_t)r.defines.size());
+    for (auto& d : r.defines) w.str(d);
+    return std::move(w.buf);
+}
+
+inline bool deserialize(const void* d, size_t n, SourceRequest& r) {
+    ByteReader rd(d, n);
+    if (rd.u32() != kProtoVersion) return false;
+    r.source = rd.str();
+    uint32_t nd = rd.u32();
+    if (nd > 65536) return false;
+    r.defines.resize(nd);
+    for (auto& s : r.defines) s = rd.str();
+    return !rd.bad;
+}
+
+inline std::vector<uint8_t> serialize(const SourceResult& r) {
+    ByteWriter w;
+    w.u32(kProtoVersion);
+    w.u32(r.ok ? 1 : 0);
+    w.str(r.log);
+    w.vec(r.metallib);
+    return std::move(w.buf);
+}
+
+inline bool deserialize(const void* d, size_t n, SourceResult& r) {
+    ByteReader rd(d, n);
+    if (rd.u32() != kProtoVersion) return false;
+    r.ok = rd.u32() != 0;
+    r.log = rd.str();
+    r.metallib = rd.vec<uint8_t>();
+    return !rd.bad;
+}
+
 } // namespace xef::mtlabi

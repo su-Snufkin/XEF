@@ -1533,7 +1533,15 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
 }
 - (id<MTLLibrary>)newLibraryWithSource:(NSString *)source options:(MTLCompileOptions *)options error:(NSError **)error {
   char err[4096] = {0};
-  uint32_t id = xef_mtl_library_create_source([source UTF8String], NULL, err, sizeof err);
+  /* preprocessor macros travel as "NAME=VALUE" lines */
+  NSMutableString *defs = nil;
+  NSDictionary *macros = options ? [options preprocessorMacros] : nil;
+  for (id k in macros) {
+    if (!defs) defs = [NSMutableString string];
+    id v = [macros objectForKey:k];
+    [defs appendFormat:@"%@=%@\n", k, [v isKindOfClass:[NSNumber class]] ? [v stringValue] : [v description]];
+  }
+  uint32_t id = xef_mtl_library_create_source([source UTF8String], defs ? [defs UTF8String] : NULL, err, sizeof err);
   if (!id) {
     if (error) *error = xef_error(@"MTLLibraryErrorDomain", 3, err);
     return nil;
