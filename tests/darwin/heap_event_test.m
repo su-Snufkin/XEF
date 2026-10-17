@@ -744,6 +744,58 @@ int main(void) {
           (unsigned long long)rps.gpuResourceID._impl, (unsigned long long)cps.gpuResourceID._impl, (unsigned long long)dsState.gpuResourceID._impl,
           (unsigned long long)bufTest.gpuAddress);
 
+    // Stage 20: Render pass sample buffer attachments, resolve filters and tile/sample properties
+    MTLRenderPassDescriptor *rpdFull = [MTLRenderPassDescriptor renderPassDescriptor];
+    rpdFull.tileWidth = 16;
+    rpdFull.tileHeight = 16;
+    rpdFull.threadgroupMemoryLength = 4096;
+    rpdFull.defaultRasterSampleCount = 4;
+
+    MTLSamplePosition positionsIn[2] = { {0.25f, 0.25f}, {0.75f, 0.75f} };
+    [rpdFull setSamplePositions:positionsIn count:2];
+    MTLSamplePosition positionsOut[2] = { {0.0f, 0.0f}, {0.0f, 0.0f} };
+    NSUInteger posCount = [rpdFull getSamplePositions:positionsOut count:2];
+    if (posCount != 2 || positionsOut[0].x != 0.25f || positionsOut[1].y != 0.75f) {
+      NSLog(@"FAIL: getSamplePositions mismatch");
+      return 64;
+    }
+
+    rpdFull.colorAttachments[0].resolveLevel = 1;
+    rpdFull.colorAttachments[0].resolveSlice = 2;
+    rpdFull.colorAttachments[0].storeActionOptions = MTLStoreActionOptionCustomSamplePositions;
+    rpdFull.depthAttachment.depthResolveFilter = MTLMultisampleDepthResolveFilterMin;
+    rpdFull.stencilAttachment.stencilResolveFilter = MTLMultisampleStencilResolveFilterDepthResolvedSample;
+
+    rpdFull.sampleBufferAttachments[0].sampleBuffer = sampleBuffer;
+    rpdFull.sampleBufferAttachments[0].startOfVertexSampleIndex = 0;
+    rpdFull.sampleBufferAttachments[0].endOfFragmentSampleIndex = 1;
+
+    if (rpdFull.colorAttachments[0].resolveLevel != 1 ||
+        rpdFull.colorAttachments[0].resolveSlice != 2 ||
+        rpdFull.colorAttachments[0].storeActionOptions != MTLStoreActionOptionCustomSamplePositions ||
+        rpdFull.depthAttachment.depthResolveFilter != MTLMultisampleDepthResolveFilterMin ||
+        rpdFull.stencilAttachment.stencilResolveFilter != MTLMultisampleStencilResolveFilterDepthResolvedSample ||
+        rpdFull.sampleBufferAttachments[0].sampleBuffer != sampleBuffer ||
+        rpdFull.sampleBufferAttachments[0].startOfVertexSampleIndex != 0 ||
+        rpdFull.sampleBufferAttachments[0].endOfFragmentSampleIndex != 1 ||
+        rpdFull.tileWidth != 16 || rpdFull.threadgroupMemoryLength != 4096) {
+      NSLog(@"FAIL: render pass descriptor attachments or properties mismatch");
+      return 65;
+    }
+
+    MTLRenderPassDescriptor *rpdCopy = [[rpdFull copy] autorelease];
+    if (rpdCopy.colorAttachments[0].resolveLevel != 1 ||
+        rpdCopy.sampleBufferAttachments[0].sampleBuffer != sampleBuffer ||
+        rpdCopy.tileWidth != 16) {
+      NSLog(@"FAIL: render pass descriptor copy mismatch");
+      return 66;
+    }
+
+    NSLog(@"Render pass descriptor extensions verified: tile=%lux%lu, tgMem=%lu, posCount=%lu, resolveFilters=(%lu,%lu), sampleBuf=%@",
+          (unsigned long)rpdFull.tileWidth, (unsigned long)rpdFull.tileHeight, (unsigned long)rpdFull.threadgroupMemoryLength,
+          (unsigned long)posCount, (unsigned long)rpdFull.depthAttachment.depthResolveFilter, (unsigned long)rpdFull.stencilAttachment.stencilResolveFilter,
+          rpdFull.sampleBufferAttachments[0].sampleBuffer);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

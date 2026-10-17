@@ -926,16 +926,24 @@ static uint16_t xef_float_to_half(float v) {
   NSUInteger _level;
   NSUInteger _slice;
   NSUInteger _depthPlane;
+  NSUInteger _resolveLevel;
+  NSUInteger _resolveSlice;
+  NSUInteger _resolveDepthPlane;
   MTLLoadAction _loadAction;
   MTLStoreAction _storeAction;
+  MTLStoreActionOptions _storeActionOptions;
 }
 - (id<MTLTexture>)texture { return _texture; } - (void)setTexture:(id<MTLTexture>)t { [t retain]; [(id)_texture release]; _texture = t; }
 - (id<MTLTexture>)resolveTexture { return _resolveTexture; } - (void)setResolveTexture:(id<MTLTexture>)t { [t retain]; [(id)_resolveTexture release]; _resolveTexture = t; }
 - (NSUInteger)level { return _level; } - (void)setLevel:(NSUInteger)l { _level = l; }
 - (NSUInteger)slice { return _slice; } - (void)setSlice:(NSUInteger)s { _slice = s; }
 - (NSUInteger)depthPlane { return _depthPlane; } - (void)setDepthPlane:(NSUInteger)d { _depthPlane = d; }
+- (NSUInteger)resolveLevel { return _resolveLevel; } - (void)setResolveLevel:(NSUInteger)l { _resolveLevel = l; }
+- (NSUInteger)resolveSlice { return _resolveSlice; } - (void)setResolveSlice:(NSUInteger)s { _resolveSlice = s; }
+- (NSUInteger)resolveDepthPlane { return _resolveDepthPlane; } - (void)setResolveDepthPlane:(NSUInteger)d { _resolveDepthPlane = d; }
 - (MTLLoadAction)loadAction { return _loadAction; } - (void)setLoadAction:(MTLLoadAction)a { _loadAction = a; }
 - (MTLStoreAction)storeAction { return _storeAction; } - (void)setStoreAction:(MTLStoreAction)a { _storeAction = a; }
+- (MTLStoreActionOptions)storeActionOptions { return _storeActionOptions; } - (void)setStoreActionOptions:(MTLStoreActionOptions)o { _storeActionOptions = o; }
 - (void)dealloc {
   [(id)_texture release];
   [(id)_resolveTexture release];
@@ -957,7 +965,9 @@ static uint16_t xef_float_to_half(float v) {
   MTLRenderPassColorAttachmentDescriptor *c = [[MTLRenderPassColorAttachmentDescriptor allocWithZone:zone] init];
   c.texture = self.texture; c.resolveTexture = self.resolveTexture;
   c.level = self.level; c.slice = self.slice; c.depthPlane = self.depthPlane;
+  c.resolveLevel = self.resolveLevel; c.resolveSlice = self.resolveSlice; c.resolveDepthPlane = self.resolveDepthPlane;
   c.loadAction = self.loadAction; c.storeAction = self.storeAction;
+  c.storeActionOptions = self.storeActionOptions;
   c.clearColor = _clearColor;
   return c;
 }
@@ -986,6 +996,7 @@ static uint16_t xef_float_to_half(float v) {
 
 @implementation MTLRenderPassDepthAttachmentDescriptor {
   double _clearDepth;
+  MTLMultisampleDepthResolveFilter _depthResolveFilter;
 }
 - (id)init {
   if ((self = [super init])) {
@@ -994,27 +1005,100 @@ static uint16_t xef_float_to_half(float v) {
   return self;
 }
 - (double)clearDepth { return _clearDepth; } - (void)setClearDepth:(double)d { _clearDepth = d; }
+- (MTLMultisampleDepthResolveFilter)depthResolveFilter { return _depthResolveFilter; }
+- (void)setDepthResolveFilter:(MTLMultisampleDepthResolveFilter)f { _depthResolveFilter = f; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLRenderPassDepthAttachmentDescriptor *c = [[MTLRenderPassDepthAttachmentDescriptor allocWithZone:zone] init];
   c.texture = self.texture; c.resolveTexture = self.resolveTexture;
-  c.level = self.level; c.slice = self.slice;
+  c.level = self.level; c.slice = self.slice; c.depthPlane = self.depthPlane;
+  c.resolveLevel = self.resolveLevel; c.resolveSlice = self.resolveSlice; c.resolveDepthPlane = self.resolveDepthPlane;
   c.loadAction = self.loadAction; c.storeAction = self.storeAction;
+  c.storeActionOptions = self.storeActionOptions;
   c.clearDepth = _clearDepth;
+  c.depthResolveFilter = _depthResolveFilter;
   return c;
 }
 @end
 
 @implementation MTLRenderPassStencilAttachmentDescriptor {
   uint32_t _clearStencil;
+  MTLMultisampleStencilResolveFilter _stencilResolveFilter;
 }
 - (uint32_t)clearStencil { return _clearStencil; } - (void)setClearStencil:(uint32_t)s { _clearStencil = s; }
+- (MTLMultisampleStencilResolveFilter)stencilResolveFilter { return _stencilResolveFilter; }
+- (void)setStencilResolveFilter:(MTLMultisampleStencilResolveFilter)f { _stencilResolveFilter = f; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLRenderPassStencilAttachmentDescriptor *c = [[MTLRenderPassStencilAttachmentDescriptor allocWithZone:zone] init];
   c.texture = self.texture; c.resolveTexture = self.resolveTexture;
-  c.level = self.level; c.slice = self.slice;
+  c.level = self.level; c.slice = self.slice; c.depthPlane = self.depthPlane;
+  c.resolveLevel = self.resolveLevel; c.resolveSlice = self.resolveSlice; c.resolveDepthPlane = self.resolveDepthPlane;
   c.loadAction = self.loadAction; c.storeAction = self.storeAction;
+  c.storeActionOptions = self.storeActionOptions;
   c.clearStencil = _clearStencil;
+  c.stencilResolveFilter = _stencilResolveFilter;
   return c;
+}
+@end
+
+@implementation MTLRenderPassSampleBufferAttachmentDescriptor {
+  id<MTLCounterSampleBuffer> _sampleBuffer;
+  NSUInteger _startOfVertexSampleIndex;
+  NSUInteger _endOfVertexSampleIndex;
+  NSUInteger _startOfFragmentSampleIndex;
+  NSUInteger _endOfFragmentSampleIndex;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _startOfVertexSampleIndex = MTLCounterDontSample;
+    _endOfVertexSampleIndex = MTLCounterDontSample;
+    _startOfFragmentSampleIndex = MTLCounterDontSample;
+    _endOfFragmentSampleIndex = MTLCounterDontSample;
+  }
+  return self;
+}
+- (id<MTLCounterSampleBuffer>)sampleBuffer { return _sampleBuffer; }
+- (void)setSampleBuffer:(id<MTLCounterSampleBuffer>)b { [b retain]; [(id)_sampleBuffer release]; _sampleBuffer = b; }
+- (NSUInteger)startOfVertexSampleIndex { return _startOfVertexSampleIndex; }
+- (void)setStartOfVertexSampleIndex:(NSUInteger)i { _startOfVertexSampleIndex = i; }
+- (NSUInteger)endOfVertexSampleIndex { return _endOfVertexSampleIndex; }
+- (void)setEndOfVertexSampleIndex:(NSUInteger)i { _endOfVertexSampleIndex = i; }
+- (NSUInteger)startOfFragmentSampleIndex { return _startOfFragmentSampleIndex; }
+- (void)setStartOfFragmentSampleIndex:(NSUInteger)i { _startOfFragmentSampleIndex = i; }
+- (NSUInteger)endOfFragmentSampleIndex { return _endOfFragmentSampleIndex; }
+- (void)setEndOfFragmentSampleIndex:(NSUInteger)i { _endOfFragmentSampleIndex = i; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLRenderPassSampleBufferAttachmentDescriptor *c = [[MTLRenderPassSampleBufferAttachmentDescriptor allocWithZone:zone] init];
+  c.sampleBuffer = _sampleBuffer;
+  c.startOfVertexSampleIndex = _startOfVertexSampleIndex;
+  c.endOfVertexSampleIndex = _endOfVertexSampleIndex;
+  c.startOfFragmentSampleIndex = _startOfFragmentSampleIndex;
+  c.endOfFragmentSampleIndex = _endOfFragmentSampleIndex;
+  return c;
+}
+- (void)dealloc {
+  [(id)_sampleBuffer release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLRenderPassSampleBufferAttachmentDescriptorArray {
+@public
+  MTLRenderPassSampleBufferAttachmentDescriptor *_attachments[4];
+}
+- (MTLRenderPassSampleBufferAttachmentDescriptor *)objectAtIndexedSubscript:(NSUInteger)idx {
+  if (idx >= 4) return nil;
+  if (!_attachments[idx]) _attachments[idx] = [[MTLRenderPassSampleBufferAttachmentDescriptor alloc] init];
+  return _attachments[idx];
+}
+- (void)setObject:(MTLRenderPassSampleBufferAttachmentDescriptor *)attachment atIndexedSubscript:(NSUInteger)idx {
+  if (idx >= 4) return;
+  MTLRenderPassSampleBufferAttachmentDescriptor *c = [attachment copy];
+  [_attachments[idx] release];
+  _attachments[idx] = c;
+}
+- (void)dealloc {
+  for (int i = 0; i < 4; i++) [_attachments[i] release];
+  [super dealloc];
 }
 @end
 
@@ -1022,11 +1106,19 @@ static uint16_t xef_float_to_half(float v) {
   MTLRenderPassColorAttachmentDescriptorArray *_colorAttachments;
   MTLRenderPassDepthAttachmentDescriptor *_depthAttachment;
   MTLRenderPassStencilAttachmentDescriptor *_stencilAttachment;
+  MTLRenderPassSampleBufferAttachmentDescriptorArray *_sampleBufferAttachments;
   id<MTLBuffer> _visibilityResultBuffer;
   NSUInteger _renderTargetArrayLength;
   NSUInteger _renderTargetWidth;
   NSUInteger _renderTargetHeight;
+  NSUInteger _imageblockSampleLength;
+  NSUInteger _threadgroupMemoryLength;
+  NSUInteger _tileWidth;
+  NSUInteger _tileHeight;
+  NSUInteger _defaultRasterSampleCount;
   id<MTLRasterizationRateMap> _rasterizationRateMap;
+  MTLSamplePosition _samplePositions[4];
+  NSUInteger _samplePositionCount;
 }
 + (MTLRenderPassDescriptor *)renderPassDescriptor { return [[[self alloc] init] autorelease]; }
 - (id)init {
@@ -1034,16 +1126,34 @@ static uint16_t xef_float_to_half(float v) {
     _colorAttachments = [[MTLRenderPassColorAttachmentDescriptorArray alloc] init];
     _depthAttachment = [[MTLRenderPassDepthAttachmentDescriptor alloc] init];
     _stencilAttachment = [[MTLRenderPassStencilAttachmentDescriptor alloc] init];
+    _sampleBufferAttachments = [[MTLRenderPassSampleBufferAttachmentDescriptorArray alloc] init];
   }
   return self;
 }
 - (MTLRenderPassColorAttachmentDescriptorArray *)colorAttachments { return _colorAttachments; }
 - (MTLRenderPassDepthAttachmentDescriptor *)depthAttachment { return _depthAttachment; } - (void)setDepthAttachment:(MTLRenderPassDepthAttachmentDescriptor *)d { MTLRenderPassDepthAttachmentDescriptor *c = [d copy]; [_depthAttachment release]; _depthAttachment = c; }
 - (MTLRenderPassStencilAttachmentDescriptor *)stencilAttachment { return _stencilAttachment; } - (void)setStencilAttachment:(MTLRenderPassStencilAttachmentDescriptor *)s { MTLRenderPassStencilAttachmentDescriptor *c = [s copy]; [_stencilAttachment release]; _stencilAttachment = c; }
+- (MTLRenderPassSampleBufferAttachmentDescriptorArray *)sampleBufferAttachments { return _sampleBufferAttachments; }
 - (id<MTLBuffer>)visibilityResultBuffer { return _visibilityResultBuffer; } - (void)setVisibilityResultBuffer:(id<MTLBuffer>)b { [b retain]; [(id)_visibilityResultBuffer release]; _visibilityResultBuffer = b; }
 - (NSUInteger)renderTargetArrayLength { return _renderTargetArrayLength; } - (void)setRenderTargetArrayLength:(NSUInteger)l { _renderTargetArrayLength = l; }
 - (NSUInteger)renderTargetWidth { return _renderTargetWidth; } - (void)setRenderTargetWidth:(NSUInteger)w { _renderTargetWidth = w; }
 - (NSUInteger)renderTargetHeight { return _renderTargetHeight; } - (void)setRenderTargetHeight:(NSUInteger)h { _renderTargetHeight = h; }
+- (NSUInteger)imageblockSampleLength { return _imageblockSampleLength; } - (void)setImageblockSampleLength:(NSUInteger)l { _imageblockSampleLength = l; }
+- (NSUInteger)threadgroupMemoryLength { return _threadgroupMemoryLength; } - (void)setThreadgroupMemoryLength:(NSUInteger)l { _threadgroupMemoryLength = l; }
+- (NSUInteger)tileWidth { return _tileWidth; } - (void)setTileWidth:(NSUInteger)w { _tileWidth = w; }
+- (NSUInteger)tileHeight { return _tileHeight; } - (void)setTileHeight:(NSUInteger)h { _tileHeight = h; }
+- (NSUInteger)defaultRasterSampleCount { return _defaultRasterSampleCount; } - (void)setDefaultRasterSampleCount:(NSUInteger)c { _defaultRasterSampleCount = c; }
+- (NSUInteger)getSamplePositions:(MTLSamplePosition *)positions count:(NSUInteger)count {
+  NSUInteger n = (_samplePositionCount < count) ? _samplePositionCount : count;
+  if (positions && n > 0) memcpy(positions, _samplePositions, n * sizeof(MTLSamplePosition));
+  return _samplePositionCount;
+}
+- (void)setSamplePositions:(const MTLSamplePosition *)positions count:(NSUInteger)count {
+  _samplePositionCount = count > 4 ? 4 : count;
+  if (positions && _samplePositionCount > 0) {
+    memcpy(_samplePositions, positions, _samplePositionCount * sizeof(MTLSamplePosition));
+  }
+}
 - (id<MTLRasterizationRateMap>)rasterizationRateMap { return _rasterizationRateMap; }
 - (void)setRasterizationRateMap:(id<MTLRasterizationRateMap>)m { [m retain]; [(id)_rasterizationRateMap release]; _rasterizationRateMap = m; }
 - (id)copyWithZone:(NSZone *)zone {
@@ -1055,14 +1165,27 @@ static uint16_t xef_float_to_half(float v) {
   }
   c.depthAttachment = _depthAttachment;
   c.stencilAttachment = _stencilAttachment;
+  for (int i = 0; i < 4; i++) {
+    if (_sampleBufferAttachments->_attachments[i]) {
+      c->_sampleBufferAttachments->_attachments[i] = [_sampleBufferAttachments->_attachments[i] copy];
+    }
+  }
   c.visibilityResultBuffer = _visibilityResultBuffer;
+  c.renderTargetArrayLength = _renderTargetArrayLength;
   c.renderTargetWidth = _renderTargetWidth;
   c.renderTargetHeight = _renderTargetHeight;
+  c.imageblockSampleLength = _imageblockSampleLength;
+  c.threadgroupMemoryLength = _threadgroupMemoryLength;
+  c.tileWidth = _tileWidth;
+  c.tileHeight = _tileHeight;
+  c.defaultRasterSampleCount = _defaultRasterSampleCount;
   c.rasterizationRateMap = _rasterizationRateMap;
+  [c setSamplePositions:_samplePositions count:_samplePositionCount];
   return c;
 }
 - (void)dealloc {
   [_colorAttachments release]; [_depthAttachment release]; [_stencilAttachment release];
+  [_sampleBufferAttachments release];
   [(id)_visibilityResultBuffer release];
   [(id)_rasterizationRateMap release];
   [super dealloc];
