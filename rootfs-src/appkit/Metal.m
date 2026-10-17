@@ -2322,6 +2322,21 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   [_vertexSamplers[index] release];
   _vertexSamplers[index] = (XEFMetalSamplerState *)sampler;
 }
+- (void)setVertexSamplerState:(id<MTLSamplerState>)sampler lodMinClamp:(float)lodMinClamp lodMaxClamp:(float)lodMaxClamp atIndex:(NSUInteger)index {
+  [self setVertexSamplerState:sampler atIndex:index];
+}
+- (void)setVertexSamplerStates:(const id<MTLSamplerState> *)samplers withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    [self setVertexSamplerState:samplers ? samplers[i] : nil atIndex:range.location + i];
+  }
+}
+- (void)setVertexSamplerStates:(const id<MTLSamplerState> *)samplers lodMinClamps:(const float *)lodMinClamps lodMaxClamps:(const float *)lodMaxClamps withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    float minC = lodMinClamps ? lodMinClamps[i] : 0.0f;
+    float maxC = lodMaxClamps ? lodMaxClamps[i] : 1000.0f;
+    [self setVertexSamplerState:samplers ? samplers[i] : nil lodMinClamp:minC lodMaxClamp:maxC atIndex:range.location + i];
+  }
+}
 - (void)setVertexTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index {
   if (index >= 31) return;
   [texture retain];
@@ -2354,9 +2369,19 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   [_fragmentSamplers[index] release];
   _fragmentSamplers[index] = (XEFMetalSamplerState *)sampler;
 }
+- (void)setFragmentSamplerState:(id<MTLSamplerState>)sampler lodMinClamp:(float)lodMinClamp lodMaxClamp:(float)lodMaxClamp atIndex:(NSUInteger)index {
+  [self setFragmentSamplerState:sampler atIndex:index];
+}
 - (void)setFragmentSamplerStates:(const id<MTLSamplerState> *)samplers withRange:(NSRange)range {
   for (NSUInteger i = 0; i < range.length; i++) {
     [self setFragmentSamplerState:samplers ? samplers[i] : nil atIndex:range.location + i];
+  }
+}
+- (void)setFragmentSamplerStates:(const id<MTLSamplerState> *)samplers lodMinClamps:(const float *)lodMinClamps lodMaxClamps:(const float *)lodMaxClamps withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    float minC = lodMinClamps ? lodMinClamps[i] : 0.0f;
+    float maxC = lodMaxClamps ? lodMaxClamps[i] : 1000.0f;
+    [self setFragmentSamplerState:samplers ? samplers[i] : nil lodMinClamp:minC lodMaxClamp:maxC atIndex:range.location + i];
   }
 }
 - (void)setFragmentTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index {
@@ -3586,9 +3611,19 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   [sampler retain]; [_samplers[index] release];
   _samplers[index] = (XEFMetalSamplerState *)sampler;
 }
+- (void)setSamplerState:(id<MTLSamplerState>)sampler lodMinClamp:(float)lodMinClamp lodMaxClamp:(float)lodMaxClamp atIndex:(NSUInteger)index {
+  [self setSamplerState:sampler atIndex:index];
+}
 - (void)setSamplerStates:(const id<MTLSamplerState> *)samplers withRange:(NSRange)range {
   for (NSUInteger i = 0; i < range.length; i++) {
     [self setSamplerState:samplers ? samplers[i] : nil atIndex:range.location + i];
+  }
+}
+- (void)setSamplerStates:(const id<MTLSamplerState> *)samplers lodMinClamps:(const float *)lodMinClamps lodMaxClamps:(const float *)lodMaxClamps withRange:(NSRange)range {
+  for (NSUInteger i = 0; i < range.length; i++) {
+    float minC = lodMinClamps ? lodMinClamps[i] : 0.0f;
+    float maxC = lodMaxClamps ? lodMaxClamps[i] : 1000.0f;
+    [self setSamplerState:samplers ? samplers[i] : nil lodMinClamp:minC lodMaxClamp:maxC atIndex:range.location + i];
   }
 }
 - (void)setThreadgroupMemoryLength:(NSUInteger)length atIndex:(NSUInteger)index {}
