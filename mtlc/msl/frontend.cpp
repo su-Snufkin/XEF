@@ -686,6 +686,145 @@ struct EntryPlan {
     std::string wrapper;              // C++ text
 };
 
+// AIR intrinsics are declared in metal_stdlib as extern "C" functions. The AArch64 ABI passes and returns
+// 3-element vectors coerced to other types (float3 -> <4 x i32>), so their real vector types are taken from
+// the declarations and the calls are rewritten after code generation.
+struct EvType { std::string elem; int n = 0; };
+
+static std::vector<std::string> split_top(const std::string& s) {
+    std::vector<std::string> r(1);
+    int d = 0;
+    for (char c : s) {
+        if (c == '<' || c == '(') d++;
+        if (c == '>' || c == ')') d--;
+        if (c == ',' && d == 0) { r.emplace_back(); continue; }
+        r.back() += c;
+    }
+    return r;
+}
+
+static EvType ev_of(std::string t) {
+    while (!t.empty() && isspace((unsigned char)t.front())) t.erase(t.begin());
+    EvType e;
+    if (t.rfind("__xef_ev_t<", 0) != 0) return e;
+    size_t c = t.find(','), g = t.find('>');
+    if (c == std::string::npos || g == std::string::npos) return e;
+    e.elem = t.substr(11, c - 11);
+    e.n = atoi(t.c_str() + c + 1);
+    return e;
+}
+
+static const std::map<std::string, std::vector<EvType>>& air_sigs() {
+    static std::map<std::string, std::vector<EvType>> sigs;
+    if (!sigs.empty()) return sigs;
+    std::string h(k_metal_stdlib, k_metal_stdlib_size);
+    size_t pos = 0;
+    while ((pos = h.find("XEF_AIR(\"", pos)) != std::string::npos) {
+        size_t le = h.find('\n', pos), lb = h.rfind('\n', pos);
+        std::string line = h.substr(lb + 1, pos - lb - 1);
+        size_t q = pos + 9, qe = h.find('"', q);
+        std::string name = h.substr(q, qe - q);
+        pos = le == std::string::npos ? h.size() : le;
+        if (line.rfind("extern \"C\" ", 0) != 0) continue;
+        size_t close = line.rfind(')'), open = std::string::npos;
+        int d = 0;
+        for (size_t i = close + 1; i-- > 0;) {
+            if (line[i] == ')') d++;
+            if (line[i] == '(' && --d == 0) { open = i; break; }
+        }
+        if (open == std::string::npos) continue;
+        size_t ne = open;
+        while (ne > 0 && line[ne - 1] == ' ') ne--;
+        size_t nb = ne;
+        while (nb > 0 && (isalnum((unsigned char)line[nb - 1]) || line[nb - 1] == '_')) nb--;
+        std::vector<EvType> sig{ev_of(line.substr(11, nb - 11))};
+        std::string args = line.substr(open + 1, close - open - 1);
+        if (args.find_first_not_of(' ') != std::string::npos)
+            for (const std::string& a : split_top(args)) sig.push_back(ev_of(a));
+        sigs[name] = std::move(sig);
+    }
+    return sigs;
+}
+
+static Type* ev_elem(LLVMContext& c, const std::string& e) {
+    if (e == "float") return Type::getFloatTy(c);
+    if (e == "half") return Type::getHalfTy(c);
+    if (e == "int" || e == "uint") return Type::getInt32Ty(c);
+    if (e == "short" || e == "ushort") return Type::getInt16Ty(c);
+    if (e == "char" || e == "uchar") return Type::getInt8Ty(c);
+    if (e == "long" || e == "ulong") return Type::getInt64Ty(c);
+    return nullptr;
+}
+
+static void fix_coerced_air_calls(Module& m) {
+    LLVMContext& ctx = m.getContext();
+    const DataLayout& dl = m.getDataLayout();
+    const auto& sigs = air_sigs();
+    // value of coerced type `from` -> <3 x T>, and back
+    auto widen = [&](Type* v3, Type* coerced) -> Type* {
+        uint64_t bits = dl.getTypeSizeInBits(coerced), w = v3->getScalarSizeInBits();
+        if (coerced->isAggregateType() || bits % w || bits / w < 3) return nullptr;
+        return FixedVectorType::get(v3->getScalarType(), (unsigned)(bits / w));
+    };
+    std::vector<Function*> fns;
+    for (Function& f : m)
+        if (f.isDeclaration() && f.getName().starts_with("air.")) fns.push_back(&f);
+    for (Function* f : fns) {
+        auto it = sigs.find(f->getName().str());
+        if (it == sigs.end()) continue;
+        FunctionType* ft = f->getFunctionType();
+        const std::vector<EvType>& sig = it->second;
+        if (sig.size() != ft->getNumParams() + 1) continue;
+        auto want = [&](const EvType& e, Type* have) -> Type* {
+            if (e.n != 3) return have;
+            Type* et = ev_elem(ctx, e.elem);
+            if (!et) return have;
+            Type* w = FixedVectorType::get(et, 3);
+            return w == have || !widen(w, have) ? have : w;
+        };
+        Type* ret = ft->getReturnType();
+        Type* nret = want(sig[0], ret);
+        std::vector<Type*> params(ft->param_begin(), ft->param_end()), nparams;
+        bool change = nret != ret;
+        for (size_t i = 0; i < params.size(); i++) {
+            nparams.push_back(want(sig[i + 1], params[i]));
+            change |= nparams[i] != params[i];
+        }
+        if (!change) continue;
+        std::string name = f->getName().str();
+        f->setName(name + ".coerced");
+        FunctionType* nft = FunctionType::get(nret, nparams, false);
+        Function* nf = Function::Create(nft, f->getLinkage(), name, m);
+        nf->setAttributes(f->getAttributes());
+        std::vector<CallInst*> calls;
+        for (User* u : f->users())
+            if (auto* ci = dyn_cast<CallInst>(u)) calls.push_back(ci);
+        for (CallInst* ci : calls) {
+            IRBuilder<> b(ci);
+            std::vector<Value*> args;
+            for (unsigned i = 0; i < ci->arg_size(); i++) {
+                Value* a = ci->getArgOperand(i);
+                if (nparams[i] != params[i]) {
+                    Type* wide = widen(nparams[i], params[i]);
+                    a = b.CreateShuffleVector(b.CreateBitCast(a, wide), {0, 1, 2});
+                }
+                args.push_back(a);
+            }
+            CallInst* nc = b.CreateCall(nft, nf, args);
+            Value* r = nc;
+            if (nret != ret) {
+                Type* wide = widen(nret, ret);
+                std::vector<int> mask{0, 1, 2};
+                while (mask.size() < cast<FixedVectorType>(wide)->getNumElements()) mask.push_back(-1);
+                r = b.CreateBitCast(b.CreateShuffleVector(nc, mask), ret);
+            }
+            ci->replaceAllUsesWith(r);
+            ci->eraseFromParent();
+        }
+        if (f->use_empty()) f->eraseFromParent();
+    }
+}
+
 bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std::string& err,
                  const std::vector<std::string>& defines) {
     // 1. preprocess
@@ -921,6 +1060,7 @@ bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std:
     ClangOut co;
     if (!run_clang(full, false, &ctx, co, diag)) { err = "MSL compilation failed:\n" + diag; return false; }
     Module& m = *co.mod;
+    fix_coerced_air_calls(m);
     const DataLayout& dl = m.getDataLayout();
     (void)dl;
 
