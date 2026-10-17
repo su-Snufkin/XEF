@@ -1,0 +1,195 @@
+#include "mtl_formats.h"
+#include "mtl_shader_abi.h"
+
+namespace xef::mtl {
+
+static const PixelFormatInfo kFormats[] = {
+    {1, VK_FORMAT_R8_UNORM, 1, 1, 1, FMT_ALPHA_ONLY},                 // A8Unorm
+    {10, VK_FORMAT_R8_UNORM, 1, 1, 1, 0},                             // R8Unorm
+    {11, VK_FORMAT_R8_SRGB, 1, 1, 1, FMT_SRGB},
+    {12, VK_FORMAT_R8_SNORM, 1, 1, 1, 0},
+    {13, VK_FORMAT_R8_UINT, 1, 1, 1, FMT_UINT},
+    {14, VK_FORMAT_R8_SINT, 1, 1, 1, FMT_INT},
+    {20, VK_FORMAT_R16_UNORM, 2, 1, 1, 0},
+    {22, VK_FORMAT_R16_SNORM, 2, 1, 1, 0},
+    {23, VK_FORMAT_R16_UINT, 2, 1, 1, FMT_UINT},
+    {24, VK_FORMAT_R16_SINT, 2, 1, 1, FMT_INT},
+    {25, VK_FORMAT_R16_SFLOAT, 2, 1, 1, 0},
+    {30, VK_FORMAT_R8G8_UNORM, 2, 1, 1, 0},
+    {31, VK_FORMAT_R8G8_SRGB, 2, 1, 1, FMT_SRGB},
+    {32, VK_FORMAT_R8G8_SNORM, 2, 1, 1, 0},
+    {33, VK_FORMAT_R8G8_UINT, 2, 1, 1, FMT_UINT},
+    {34, VK_FORMAT_R8G8_SINT, 2, 1, 1, FMT_INT},
+    {40, VK_FORMAT_R5G6B5_UNORM_PACK16, 2, 1, 1, 0},                  // B5G6R5Unorm
+    {41, VK_FORMAT_R5G5B5A1_UNORM_PACK16, 2, 1, 1, 0},                // A1BGR5Unorm
+    {42, VK_FORMAT_R4G4B4A4_UNORM_PACK16, 2, 1, 1, 0},                // ABGR4Unorm
+    {43, VK_FORMAT_A1R5G5B5_UNORM_PACK16, 2, 1, 1, 0},                // BGR5A1Unorm
+    {53, VK_FORMAT_R32_UINT, 4, 1, 1, FMT_UINT},
+    {54, VK_FORMAT_R32_SINT, 4, 1, 1, FMT_INT},
+    {55, VK_FORMAT_R32_SFLOAT, 4, 1, 1, 0},
+    {60, VK_FORMAT_R16G16_UNORM, 4, 1, 1, 0},
+    {62, VK_FORMAT_R16G16_SNORM, 4, 1, 1, 0},
+    {63, VK_FORMAT_R16G16_UINT, 4, 1, 1, FMT_UINT},
+    {64, VK_FORMAT_R16G16_SINT, 4, 1, 1, FMT_INT},
+    {65, VK_FORMAT_R16G16_SFLOAT, 4, 1, 1, 0},
+    {70, VK_FORMAT_R8G8B8A8_UNORM, 4, 1, 1, 0},
+    {71, VK_FORMAT_R8G8B8A8_SRGB, 4, 1, 1, FMT_SRGB},
+    {72, VK_FORMAT_R8G8B8A8_SNORM, 4, 1, 1, 0},
+    {73, VK_FORMAT_R8G8B8A8_UINT, 4, 1, 1, FMT_UINT},
+    {74, VK_FORMAT_R8G8B8A8_SINT, 4, 1, 1, FMT_INT},
+    {80, VK_FORMAT_B8G8R8A8_UNORM, 4, 1, 1, 0},
+    {81, VK_FORMAT_B8G8R8A8_SRGB, 4, 1, 1, FMT_SRGB},
+    {90, VK_FORMAT_A2B10G10R10_UNORM_PACK32, 4, 1, 1, 0},             // RGB10A2Unorm
+    {91, VK_FORMAT_A2B10G10R10_UINT_PACK32, 4, 1, 1, FMT_UINT},
+    {92, VK_FORMAT_B10G11R11_UFLOAT_PACK32, 4, 1, 1, 0},              // RG11B10Float
+    {93, VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, 4, 1, 1, 0},               // RGB9E5Float
+    {94, VK_FORMAT_A2R10G10B10_UNORM_PACK32, 4, 1, 1, 0},             // BGR10A2Unorm
+    {103, VK_FORMAT_R32G32_UINT, 8, 1, 1, FMT_UINT},
+    {104, VK_FORMAT_R32G32_SINT, 8, 1, 1, FMT_INT},
+    {105, VK_FORMAT_R32G32_SFLOAT, 8, 1, 1, 0},
+    {110, VK_FORMAT_R16G16B16A16_UNORM, 8, 1, 1, 0},
+    {112, VK_FORMAT_R16G16B16A16_SNORM, 8, 1, 1, 0},
+    {113, VK_FORMAT_R16G16B16A16_UINT, 8, 1, 1, FMT_UINT},
+    {114, VK_FORMAT_R16G16B16A16_SINT, 8, 1, 1, FMT_INT},
+    {115, VK_FORMAT_R16G16B16A16_SFLOAT, 8, 1, 1, 0},
+    {123, VK_FORMAT_R32G32B32A32_UINT, 16, 1, 1, FMT_UINT},
+    {124, VK_FORMAT_R32G32B32A32_SINT, 16, 1, 1, FMT_INT},
+    {125, VK_FORMAT_R32G32B32A32_SFLOAT, 16, 1, 1, 0},
+    {130, VK_FORMAT_BC1_RGBA_UNORM_BLOCK, 8, 4, 4, FMT_COMPRESSED},
+    {131, VK_FORMAT_BC1_RGBA_SRGB_BLOCK, 8, 4, 4, FMT_COMPRESSED | FMT_SRGB},
+    {132, VK_FORMAT_BC2_UNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {133, VK_FORMAT_BC2_SRGB_BLOCK, 16, 4, 4, FMT_COMPRESSED | FMT_SRGB},
+    {134, VK_FORMAT_BC3_UNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {135, VK_FORMAT_BC3_SRGB_BLOCK, 16, 4, 4, FMT_COMPRESSED | FMT_SRGB},
+    {140, VK_FORMAT_BC4_UNORM_BLOCK, 8, 4, 4, FMT_COMPRESSED},
+    {141, VK_FORMAT_BC4_SNORM_BLOCK, 8, 4, 4, FMT_COMPRESSED},
+    {142, VK_FORMAT_BC5_UNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {143, VK_FORMAT_BC5_SNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {150, VK_FORMAT_BC6H_SFLOAT_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {151, VK_FORMAT_BC6H_UFLOAT_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {152, VK_FORMAT_BC7_UNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {153, VK_FORMAT_BC7_SRGB_BLOCK, 16, 4, 4, FMT_COMPRESSED | FMT_SRGB},
+    {170, VK_FORMAT_EAC_R11_UNORM_BLOCK, 8, 4, 4, FMT_COMPRESSED},
+    {172, VK_FORMAT_EAC_R11_SNORM_BLOCK, 8, 4, 4, FMT_COMPRESSED},
+    {174, VK_FORMAT_EAC_R11G11_UNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {176, VK_FORMAT_EAC_R11G11_SNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {178, VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {179, VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK, 16, 4, 4, FMT_COMPRESSED | FMT_SRGB},
+    {180, VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK, 8, 4, 4, FMT_COMPRESSED},
+    {181, VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK, 8, 4, 4, FMT_COMPRESSED | FMT_SRGB},
+    {182, VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK, 8, 4, 4, FMT_COMPRESSED},
+    {183, VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK, 8, 4, 4, FMT_COMPRESSED | FMT_SRGB},
+    {204, VK_FORMAT_ASTC_4x4_UNORM_BLOCK, 16, 4, 4, FMT_COMPRESSED},
+    {186, VK_FORMAT_ASTC_4x4_SRGB_BLOCK, 16, 4, 4, FMT_COMPRESSED | FMT_SRGB},
+    {208, VK_FORMAT_ASTC_6x6_UNORM_BLOCK, 16, 6, 6, FMT_COMPRESSED},
+    {190, VK_FORMAT_ASTC_6x6_SRGB_BLOCK, 16, 6, 6, FMT_COMPRESSED | FMT_SRGB},
+    {212, VK_FORMAT_ASTC_8x8_UNORM_BLOCK, 16, 8, 8, FMT_COMPRESSED},
+    {194, VK_FORMAT_ASTC_8x8_SRGB_BLOCK, 16, 8, 8, FMT_COMPRESSED | FMT_SRGB},
+    {240, VK_FORMAT_G8B8G8R8_422_UNORM, 4, 2, 1, 0},                  // GBGR422
+    {241, VK_FORMAT_B8G8R8G8_422_UNORM, 4, 2, 1, 0},                  // BGRG422
+    {250, VK_FORMAT_D16_UNORM, 2, 1, 1, FMT_DEPTH},
+    {252, VK_FORMAT_D32_SFLOAT, 4, 1, 1, FMT_DEPTH},
+    {253, VK_FORMAT_S8_UINT, 1, 1, 1, FMT_STENCIL | FMT_UINT},
+    {255, VK_FORMAT_D24_UNORM_S8_UINT, 4, 1, 1, FMT_DEPTH | FMT_STENCIL},
+    {260, VK_FORMAT_D32_SFLOAT_S8_UINT, 8, 1, 1, FMT_DEPTH | FMT_STENCIL},
+    {261, VK_FORMAT_D32_SFLOAT_S8_UINT, 8, 1, 1, FMT_STENCIL | FMT_UINT},   // X32_Stencil8 (stencil view)
+    {262, VK_FORMAT_D24_UNORM_S8_UINT, 4, 1, 1, FMT_STENCIL | FMT_UINT},    // X24_Stencil8
+    {552, VK_FORMAT_R16G16B16A16_SFLOAT, 8, 1, 1, 0},                 // BGRA10_XR (approximation)
+    {553, VK_FORMAT_R16G16B16A16_SFLOAT, 8, 1, 1, FMT_SRGB},
+    {554, VK_FORMAT_A2R10G10B10_UNORM_PACK32, 4, 1, 1, 0},            // BGR10_XR (approximation)
+    {555, VK_FORMAT_A2R10G10B10_UNORM_PACK32, 4, 1, 1, FMT_SRGB},
+};
+
+const PixelFormatInfo* pixel_format(uint32_t m) {
+    for (const PixelFormatInfo& f : kFormats) if (f.mtl == m) return &f;
+    return nullptr;
+}
+
+VkImageAspectFlags aspect_of(const PixelFormatInfo* f) {
+    if (!f) return VK_IMAGE_ASPECT_COLOR_BIT;
+    VkImageAspectFlags a = 0;
+    if (f->flags & FMT_DEPTH) a |= VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (f->flags & FMT_STENCIL) a |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    return a ? a : VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
+uint32_t comp_class(const PixelFormatInfo* f) {
+    if (!f) return mtlabi::COMP_FLOAT;
+    if ((f->flags & FMT_STENCIL) && !(f->flags & FMT_DEPTH)) return mtlabi::COMP_UINT;
+    if (f->flags & FMT_UINT) return mtlabi::COMP_UINT;
+    if (f->flags & FMT_INT) return mtlabi::COMP_SINT;
+    return mtlabi::COMP_FLOAT;
+}
+
+VkFormat resolve_depth_format(VkPhysicalDevice pd, VkFormat want) {
+    auto ok = [&](VkFormat f) {
+        VkFormatProperties p{};
+        vk.GetPhysicalDeviceFormatProperties(pd, f, &p);
+        return (p.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0;
+    };
+    if (ok(want)) return want;
+    if (want == VK_FORMAT_D24_UNORM_S8_UINT || want == VK_FORMAT_S8_UINT) return VK_FORMAT_D32_SFLOAT_S8_UINT;
+    if (want == VK_FORMAT_D16_UNORM) return VK_FORMAT_D32_SFLOAT;
+    return want;
+}
+
+VkFormat vertex_format(uint32_t f) {
+    switch (f) {
+    case 1: return VK_FORMAT_R8G8_UINT;
+    case 2: return VK_FORMAT_R8G8B8_UINT;
+    case 3: return VK_FORMAT_R8G8B8A8_UINT;
+    case 4: return VK_FORMAT_R8G8_SINT;
+    case 5: return VK_FORMAT_R8G8B8_SINT;
+    case 6: return VK_FORMAT_R8G8B8A8_SINT;
+    case 7: return VK_FORMAT_R8G8_UNORM;
+    case 8: return VK_FORMAT_R8G8B8_UNORM;
+    case 9: return VK_FORMAT_R8G8B8A8_UNORM;
+    case 10: return VK_FORMAT_R8G8_SNORM;
+    case 11: return VK_FORMAT_R8G8B8_SNORM;
+    case 12: return VK_FORMAT_R8G8B8A8_SNORM;
+    case 13: return VK_FORMAT_R16G16_UINT;
+    case 14: return VK_FORMAT_R16G16B16_UINT;
+    case 15: return VK_FORMAT_R16G16B16A16_UINT;
+    case 16: return VK_FORMAT_R16G16_SINT;
+    case 17: return VK_FORMAT_R16G16B16_SINT;
+    case 18: return VK_FORMAT_R16G16B16A16_SINT;
+    case 19: return VK_FORMAT_R16G16_UNORM;
+    case 20: return VK_FORMAT_R16G16B16_UNORM;
+    case 21: return VK_FORMAT_R16G16B16A16_UNORM;
+    case 22: return VK_FORMAT_R16G16_SNORM;
+    case 23: return VK_FORMAT_R16G16B16_SNORM;
+    case 24: return VK_FORMAT_R16G16B16A16_SNORM;
+    case 25: return VK_FORMAT_R16G16_SFLOAT;
+    case 26: return VK_FORMAT_R16G16B16_SFLOAT;
+    case 27: return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case 28: return VK_FORMAT_R32_SFLOAT;
+    case 29: return VK_FORMAT_R32G32_SFLOAT;
+    case 30: return VK_FORMAT_R32G32B32_SFLOAT;
+    case 31: return VK_FORMAT_R32G32B32A32_SFLOAT;
+    case 32: return VK_FORMAT_R32_SINT;
+    case 33: return VK_FORMAT_R32G32_SINT;
+    case 34: return VK_FORMAT_R32G32B32_SINT;
+    case 35: return VK_FORMAT_R32G32B32A32_SINT;
+    case 36: return VK_FORMAT_R32_UINT;
+    case 37: return VK_FORMAT_R32G32_UINT;
+    case 38: return VK_FORMAT_R32G32B32_UINT;
+    case 39: return VK_FORMAT_R32G32B32A32_UINT;
+    case 40: return VK_FORMAT_A2B10G10R10_SNORM_PACK32;
+    case 41: return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+    case 42: return VK_FORMAT_B8G8R8A8_UNORM;
+    case 45: return VK_FORMAT_R8_UINT;
+    case 46: return VK_FORMAT_R8_SINT;
+    case 47: return VK_FORMAT_R8_UNORM;
+    case 48: return VK_FORMAT_R8_SNORM;
+    case 49: return VK_FORMAT_R16_UINT;
+    case 50: return VK_FORMAT_R16_SINT;
+    case 51: return VK_FORMAT_R16_UNORM;
+    case 52: return VK_FORMAT_R16_SNORM;
+    case 53: return VK_FORMAT_R16_SFLOAT;
+    case 54: return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+    case 55: return VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
+    default: return VK_FORMAT_UNDEFINED;
+    }
+}
+
+} // namespace xef::mtl

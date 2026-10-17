@@ -1555,6 +1555,13 @@ const Fn kFns[] = {
 
 } // namespace
 
+// X11 window id of an AppKit-lite window (the Metal engine creates its own Vulkan surface on it)
+unsigned long darwin_appkit_host_window_xid(int h) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    HWin* w = find(h);
+    return w ? (unsigned long)w->win : 0;
+}
+
 uint64_t darwin_appkit_host_resolve(const char* name) {
     for (const Fn& f : kFns)
         if (!strcmp(name, f.name)) return darwin_hle_register_function(name, f.fn);
@@ -1562,3 +1569,5 @@ uint64_t darwin_appkit_host_resolve(const char* name) {
 }
 
 } // namespace xef
+
+extern "C" unsigned long xef_host_window_xid(int h) { return xef::darwin_appkit_host_window_xid(h); }

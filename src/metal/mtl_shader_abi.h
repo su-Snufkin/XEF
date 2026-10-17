@@ -13,7 +13,7 @@
 namespace xef::mtlabi {
 
 constexpr uint32_t kProtoMagic = 0x43544D58;   // "XMTC"
-constexpr uint32_t kProtoVersion = 3;
+constexpr uint32_t kProtoVersion = 4;
 
 enum Stage : uint32_t { STAGE_VERTEX = 0, STAGE_FRAGMENT = 1, STAGE_KERNEL = 2 };
 

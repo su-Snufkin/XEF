@@ -128,7 +128,7 @@ static Constant* constant_from_bytes(Type* t, const uint8_t* p, size_t n, const 
     return Constant::getNullValue(t);
 }
 
-static void resolve_function_constants(Module& m, const CompileRequest& req) {
+static void resolve_function_constants(Module& m, const std::vector<FnConstant>& consts) {
     const DataLayout& dl = m.getDataLayout();
     std::vector<std::pair<GlobalVariable*, bool>> fcs;
     if (NamedMDNode* nm = m.getNamedMetadata("air.function_constants")) {
@@ -140,10 +140,10 @@ static void resolve_function_constants(Module& m, const CompileRequest& req) {
             std::string name = md_str(n->getOperand(2));
             int64_t index = -1; md_int(n->getOperand(3), index);
             const FnConstant* found = nullptr;
-            for (auto& c : req.constants)
+            for (auto& c : consts)
                 if ((index >= 0 && c.index == (uint32_t)index && c.name.empty()) || (!c.name.empty() && c.name == name)) { found = &c; break; }
             if (!found)
-                for (auto& c : req.constants)
+                for (auto& c : consts)
                     if (index >= 0 && c.index == (uint32_t)index) { found = &c; break; }
             Type* vt = g->getValueType();
             Constant* init = found ? constant_from_bytes(vt, found->value.data(), found->value.size(), dl) : Constant::getNullValue(vt);
@@ -516,7 +516,12 @@ bool prepare_stage(Module& m, AirEntry& e, const CompileRequest& req, LinkInfo& 
         memcpy(res.tg_size, ps.tg_size, sizeof(ps.tg_size));
     }
 
-    resolve_function_constants(m, req);
+    {
+        std::vector<FnConstant> consts = req.constants;
+        for (auto& st : req.stages)
+            if (st.function == e.fn->getName() && !st.constants.empty()) consts = st.constants;
+        resolve_function_constants(m, consts);
+    }
 
     Function* entry = e.fn;
     // build the wrapper

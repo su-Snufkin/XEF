@@ -66,6 +66,9 @@ inline bool parse(const void* data, size_t size, std::vector<Function>& out, std
             else if (!memcmp(q, "TESS", 4) && tsz >= 1) { f.tess_patch = v[0] & 3; f.tess_cp = v[0] >> 2; }
             q = v + tsz;
         }
+        // older libraries have no MDSZ tag: the size comes from the bitcode wrapper header
+        if (bc_rel != ~0ull && bc_len == 0 && bc_rel + 20 <= bc_size && rd32(d + bc_off + bc_rel) == 0x0B17C0DEu)
+            bc_len = (uint64_t)rd32(d + bc_off + bc_rel + 8) + rd32(d + bc_off + bc_rel + 12);
         if (bc_rel != ~0ull && bc_rel <= bc_size && bc_len <= bc_size - bc_rel) {
             f.bitcode = d + bc_off + bc_rel;
             f.bitcode_size = (size_t)bc_len;

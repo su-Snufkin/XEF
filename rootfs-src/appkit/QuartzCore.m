@@ -268,6 +268,10 @@ NSString *const kCAMediaTimingFunctionDefault = @"default";
   id _layer;
   NSUInteger _drawableID;
   NSMutableArray *_handlers;
+  uint32_t _xefLayerId;       /* host layer (0 = offscreen fallback) */
+  uint32_t _xefDrawable;      /* host drawable index */
+  BOOL _presented;
+  CFTimeInterval _presentedTime;
 }
 @property(readonly) id<MTLTexture> texture;
 @property(readonly) id layer;
@@ -280,86 +284,47 @@ NSString *const kCAMediaTimingFunctionDefault = @"default";
 @end
 
 
+extern id xef_metal_present_queue(void);
+#include "xef_mtl.h"
+
+/* implemented by XEFMetalTexture in Metal.framework (declared so the call is not variadic) */
+@interface NSObject (XEFMetalTextureWrap)
++ (id)wrapHostTexture:(uint32_t)tex resourceID:(uint64_t)rid width:(NSUInteger)w height:(NSUInteger)h pixelFormat:(NSUInteger)pf;
+@end
+
 @implementation CAMetalDrawable
 - (id<MTLTexture>)texture { return _texture; }
 - (id)layer { return _layer; }
 - (NSUInteger)drawableID { return _drawableID; }
-- (CFTimeInterval)presentedTime { return CACurrentMediaTime(); }
+- (CFTimeInterval)presentedTime { return _presentedTime; }
+- (uint32_t)_xefLayer { return _xefLayerId; }
+- (uint32_t)_xefIndex { return _xefDrawable; }
+- (void)_xefMarkPresented { _presented = YES; }
+- (void)_xefRunPresentedHandlers {
+  _presentedTime = CACurrentMediaTime();
+  NSArray *hs = nil;
+  @synchronized (self) { hs = [_handlers copy]; [_handlers removeAllObjects]; }
+  for (void (^blk)(id) in hs) blk(self);
+  [hs release];
+}
 - (void)addPresentedHandler:(void (^)(id))block {
   if (!block) return;
-  if (!_handlers) _handlers = [[NSMutableArray alloc] init];
-  [_handlers addObject:[[block copy] autorelease]];
+  @synchronized (self) {
+    if (!_handlers) _handlers = [[NSMutableArray alloc] init];
+    [_handlers addObject:[[block copy] autorelease]];
+  }
 }
 - (void)present {
-  if (_layer) {
-    CALayer *cur = (CALayer *)_layer;
-    id win = nil;
-    while (cur && !win) {
-      id delegate = [cur delegate];
-      if (delegate) {
-        if ([delegate respondsToSelector:@selector(window)]) {
-          win = [delegate performSelector:@selector(window)];
-        }
-        if (!win && [delegate isKindOfClass:NSClassFromString(@"NSWindow")]) {
-          win = delegate;
-        }
-        if (!win && [delegate respondsToSelector:@selector(superview)]) {
-          id sv = [delegate performSelector:@selector(superview)];
-          while (sv && !win) {
-            if ([sv respondsToSelector:@selector(window)]) win = [sv performSelector:@selector(window)];
-            sv = [sv respondsToSelector:@selector(superview)] ? [sv performSelector:@selector(superview)] : nil;
-          }
-        }
-      }
-      cur = [cur superlayer];
-    }
-    if (!win) {
-      Class appCls = NSClassFromString(@"NSApplication");
-      if (appCls && [appCls respondsToSelector:@selector(sharedApplication)]) {
-        id app = [appCls performSelector:@selector(sharedApplication)];
-        if (app && [app respondsToSelector:@selector(mainWindow)]) win = [app performSelector:@selector(mainWindow)];
-        if (!win && app && [app respondsToSelector:@selector(keyWindow)]) win = [app performSelector:@selector(keyWindow)];
-      }
-    }
-    if (win) {
-      Ivar iv = class_getInstanceVariable([win class], "_handle");
-      if (iv) {
-        ptrdiff_t offset = ivar_getOffset(iv);
-        int handle = *(int *)((uint8_t *)win + offset);
-        if (handle > 0) {
-          uint32_t hostTex = 0;
-          if (_texture && [(id)_texture respondsToSelector:@selector(_hostTexId)]) {
-            hostTex = (uint32_t)[(id)_texture _hostTexId];
-          }
-          if (hostTex > 0) {
-            extern void xef_host_metal_present_gpu(int handle, uint32_t tex_id);
-            xef_host_metal_present_gpu(handle, hostTex);
-          } else {
-            const void *pixels = NULL;
-            int tw = 0, th = 0, tfmt = 80;
-            if (_texture && [(id)_texture respondsToSelector:@selector(_rawBytes)]) {
-              pixels = [(id)_texture _rawBytes];
-              tw = (int)[(id)_texture width];
-              th = (int)[(id)_texture height];
-              tfmt = (int)[(id)_texture pixelFormat];
-            }
-            extern void xef_host_present_pixels(int handle, const void *pixels, int w, int h, int format);
-            xef_host_present_pixels(handle, pixels, tw, th, tfmt);
-          }
-        }
-      }
-    }
-  }
-  if (_handlers) {
-    for (void (^blk)(id) in _handlers) {
-      blk(self);
-    }
-    [_handlers removeAllObjects];
-  }
+  /* present once all previously scheduled work is done: a command buffer on an internal queue */
+  id q = xef_metal_present_queue();
+  id cb = [q commandBuffer];
+  [cb presentDrawable:self];
+  [cb commit];
 }
 - (void)presentAtTime:(CFTimeInterval)presentationTime { [self present]; }
 - (void)presentAfterMinimumDuration:(CFTimeInterval)duration { [self present]; }
 - (void)dealloc {
+  if (_xefLayerId && !_presented) xef_mtl_layer_release_drawable(_xefLayerId, _xefDrawable);
   [(id)_texture release];
   [_handlers release];
   [super dealloc];
@@ -408,6 +373,8 @@ static id qc_stub(id self, SEL _cmd, ...) {
   CGColorSpaceRef _colorspace;
   id<MTLTexture> _cachedTexture;
   NSUInteger _nextDrawableID;
+  uint32_t _hostLayer;
+  int _hostWindow;
 }
 @property(strong) id<MTLDevice> device;
 @property(readonly) id<MTLDevice> preferredDevice;
@@ -491,30 +458,76 @@ static id qc_stub(id self, SEL _cmd, ...) {
 - (void)setMaximumDrawableCount:(NSUInteger)c { _maximumDrawableCount = c; }
 - (CGColorSpaceRef)colorspace { return _colorspace; }
 - (void)setColorspace:(CGColorSpaceRef)cs { _colorspace = cs; }
+/* AppKit-lite window handle (NSWindow ivar _handle) of the window showing this layer, 0 if none */
+static int xef_layer_window_handle(CALayer *layer) {
+  CALayer *cur = layer;
+  id win = nil;
+  while (cur && !win) {
+    id delegate = [cur delegate];
+    if (delegate) {
+      if ([delegate respondsToSelector:@selector(window)]) win = [delegate performSelector:@selector(window)];
+      if (!win && [delegate isKindOfClass:NSClassFromString(@"NSWindow")]) win = delegate;
+      if (!win && [delegate respondsToSelector:@selector(superview)]) {
+        id sv = [delegate performSelector:@selector(superview)];
+        while (sv && !win) {
+          if ([sv respondsToSelector:@selector(window)]) win = [sv performSelector:@selector(window)];
+          sv = [sv respondsToSelector:@selector(superview)] ? [sv performSelector:@selector(superview)] : nil;
+        }
+      }
+    }
+    cur = [cur superlayer];
+  }
+  if (!win) {
+    Class appCls = NSClassFromString(@"NSApplication");
+    if (appCls && [appCls respondsToSelector:@selector(sharedApplication)]) {
+      id app = [appCls performSelector:@selector(sharedApplication)];
+      if (app && [app respondsToSelector:@selector(mainWindow)]) win = [app performSelector:@selector(mainWindow)];
+      if (!win && app && [app respondsToSelector:@selector(keyWindow)]) win = [app performSelector:@selector(keyWindow)];
+    }
+  }
+  if (!win) return 0;
+  Ivar iv = class_getInstanceVariable([win class], "_handle");
+  if (!iv) return 0;
+  return *(int *)((uint8_t *)win + ivar_getOffset(iv));
+}
+
 - (id<CAMetalDrawable>)nextDrawable {
-  CAMetalDrawable *d = [[[CAMetalDrawable alloc] init] autorelease];
-  d->_layer = self;
-  d->_drawableID = ++_nextDrawableID;
-  id<MTLDevice> dev = [self device];
   CGSize ds = [self drawableSize];
   NSUInteger w = (NSUInteger)(ds.width > 0 ? ds.width : 800);
   NSUInteger h = (NSUInteger)(ds.height > 0 ? ds.height : 600);
   NSUInteger pf = [self pixelFormat];
-  if (_cachedTexture &&
-      [(id)_cachedTexture width] == w &&
-      [(id)_cachedTexture height] == h &&
-      [(id)_cachedTexture pixelFormat] == pf) {
-    d->_texture = [_cachedTexture retain];
-  } else if (dev && [dev respondsToSelector:@selector(newTextureWithDescriptor:)]) {
-    Class tc = NSClassFromString(@"MTLTextureDescriptor");
-    if (tc) {
-      id desc = [tc texture2DDescriptorWithPixelFormat:pf width:w height:h mipmapped:NO];
-      [desc setUsage:5];
-      [(id)_cachedTexture release];
-      _cachedTexture = [(id)dev newTextureWithDescriptor:desc];
-      d->_texture = [_cachedTexture retain];
+  int handle = xef_layer_window_handle(self);
+  CAMetalDrawable *d = [[[CAMetalDrawable alloc] init] autorelease];
+  d->_layer = self;
+  d->_drawableID = ++_nextDrawableID;
+  if (handle > 0) {
+    if (!_hostLayer || _hostWindow != handle) {
+      if (_hostLayer) xef_mtl_layer_destroy(_hostLayer);
+      [self device];   /* initializes the engine */
+      _hostLayer = xef_mtl_layer_create(handle);
+      _hostWindow = handle;
     }
+    xef_mtl_layer_configure(_hostLayer, (uint32_t)w, (uint32_t)h, (uint32_t)pf, _displaySyncEnabled ? 0 : 1);
+    uint32_t tex = 0;
+    uint64_t rid = 0;
+    uint32_t idx = xef_mtl_layer_next_drawable(_hostLayer, &tex, &rid);
+    if (!idx) return nil;   /* timed out */
+    Class tc = NSClassFromString(@"XEFMetalTexture");
+    d->_texture = [[tc wrapHostTexture:tex resourceID:rid width:w height:h pixelFormat:pf] retain];
+    d->_xefLayerId = _hostLayer;
+    d->_xefDrawable = idx - 1;
+    return d;
   }
+  /* offscreen layer: a plain texture, presenting it is a no-op */
+  id<MTLDevice> dev = [self device];
+  if (!(_cachedTexture && [(id)_cachedTexture width] == w && [(id)_cachedTexture height] == h && [(id)_cachedTexture pixelFormat] == pf)) {
+    Class tc = NSClassFromString(@"MTLTextureDescriptor");
+    id desc = [tc texture2DDescriptorWithPixelFormat:pf width:w height:h mipmapped:NO];
+    [desc setUsage:5];
+    [(id)_cachedTexture release];
+    _cachedTexture = [(id)dev newTextureWithDescriptor:desc];
+  }
+  d->_texture = [_cachedTexture retain];
   return d;
 }
 - (void)dealloc {

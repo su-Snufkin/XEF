@@ -20,6 +20,7 @@ struct StageSource {
     uint32_t stage = STAGE_VERTEX;
     std::string function;           // entry name inside the module
     std::vector<uint8_t> bitcode;   // AIR bitcode (with or without the 0x0B17C0DE wrapper)
+    std::vector<FnConstant> constants;   // MTLFunctionConstantValues of this function
 };
 
 enum RequestFlags : uint32_t { REQ_RASTER_DISABLED = 1, REQ_VALIDATE = 2, REQ_DUMP = 4 };
@@ -79,7 +80,11 @@ inline std::vector<uint8_t> serialize(const CompileRequest& r) {
     ByteWriter w;
     w.u32(kProtoVersion);
     w.u32((uint32_t)r.stages.size());
-    for (auto& s : r.stages) { w.u32(s.stage); w.str(s.function); w.vec(s.bitcode); }
+    for (auto& s : r.stages) {
+        w.u32(s.stage); w.str(s.function); w.vec(s.bitcode);
+        w.u32((uint32_t)s.constants.size());
+        for (auto& c : s.constants) { w.u32(c.index); w.str(c.name); w.u32(c.type); w.vec(c.value); }
+    }
     w.u32((uint32_t)r.constants.size());
     for (auto& c : r.constants) { w.u32(c.index); w.str(c.name); w.u32(c.type); w.vec(c.value); }
     w.raw(r.tg_size, sizeof(r.tg_size));
@@ -94,7 +99,13 @@ inline bool deserialize(const void* d, size_t n, CompileRequest& r) {
     uint32_t ns = rd.u32();
     if (ns > 8) return false;
     r.stages.resize(ns);
-    for (auto& s : r.stages) { s.stage = rd.u32(); s.function = rd.str(); s.bitcode = rd.vec<uint8_t>(); }
+    for (auto& s : r.stages) {
+        s.stage = rd.u32(); s.function = rd.str(); s.bitcode = rd.vec<uint8_t>();
+        uint32_t snc = rd.u32();
+        if (snc > 65536) return false;
+        s.constants.resize(snc);
+        for (auto& c : s.constants) { c.index = rd.u32(); c.name = rd.str(); c.type = rd.u32(); c.value = rd.vec<uint8_t>(); }
+    }
     uint32_t nc = rd.u32();
     if (nc > 65536) return false;
     r.constants.resize(nc);
