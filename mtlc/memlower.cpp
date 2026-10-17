@@ -302,6 +302,19 @@ public:
             if (ce->getOpcode() == Instruction::IntToPtr) {
                 if (auto* ci = dyn_cast<ConstantInt>(ce->getOperand(0))) return ConstantInt::get(i64, ci->getZExtValue());
             }
+            // address space casts keep the (tagged) address; constant GEPs add their offset
+            if (ce->getOpcode() == Instruction::AddrSpaceCast || ce->getOpcode() == Instruction::BitCast)
+                return map[v] = get(ce->getOperand(0));
+            if (auto* gep = dyn_cast<GEPOperator>(ce)) {
+                APInt off(64, 0);
+                if (gep->accumulateConstantOffset(m.getDataLayout(), off)) {
+                    Value* base = get(gep->getPointerOperand());
+                    if (off.isZero()) return map[v] = base;
+                    if (auto* cb = dyn_cast<ConstantInt>(base)) return map[v] = ConstantInt::get(i64, cb->getZExtValue() + off.getZExtValue());
+                    IRBuilder<> b(entry_pt);
+                    return map[v] = b.CreateAdd(base, b.getInt64(off.getZExtValue()));
+                }
+            }
             fail("unsupported pointer constant expression");
             return ConstantInt::get(i64, 0);
         }

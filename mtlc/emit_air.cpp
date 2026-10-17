@@ -1222,6 +1222,15 @@ bool Emitter::emit_air_simd(CallInst* ci, StringRef name) {
         } else result(ci, convert_numeric_ids(lo, Type::getInt32Ty(m.getContext()), t, false));
         return true;
     }
+    if (op == "simd_is_helper_thread") {
+        Id r = sb.const_bool(false);
+        if (fragment) {
+            sb.cap(spv::CapabilityDemoteToHelperInvocation);
+            r = emit_r(spv::OpIsHelperInvocationEXT, sb.t_bool(), {});
+        }
+        result(ci, convert_numeric_ids(r, Type::getInt1Ty(m.getContext()), t, false));
+        return true;
+    }
     if (op == "simd_is_first") {
         Id r = emit_r(spv::OpGroupNonUniformElect, sb.t_bool(), {sub});
         result(ci, convert_numeric_ids(r, Type::getInt1Ty(m.getContext()), t, false));
