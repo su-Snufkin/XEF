@@ -1,13 +1,13 @@
 #!/bin/bash
-# Builds all system frameworks (arm64 Mach-O) from rootfs-src/appkit on the remote Mac
+# Builds all system frameworks and dylibs (arm64 Mach-O) from rootfs-src/appkit on the remote Mac
 # and installs them into ./darwin-rootfs.
 set -e
 cd "$(dirname "$0")/.."
 ssh mac 'mkdir -p ~/xef-remote/src/appkit'; rsync -a --delete rootfs-src/appkit/ mac:xef-remote/src/appkit/
 ssh mac 'bash -s' <<'REMOTE'
 set -e
-S=$HOME/xef-remote/src/appkit; R=$HOME/xef-remote/out/rootfs; F=$R/System/Library/Frameworks; O=$HOME/xef-remote/src/appkit-build
-mkdir -p $O; rm -rf $O/*
+S=$HOME/xef-remote/src/appkit; R=$HOME/xef-remote/out/rootfs; F=$R/System/Library/Frameworks; L=$R/usr/lib; O=$HOME/xef-remote/src/appkit-build
+mkdir -p $O $L; rm -rf $O/*
 SDK=$(xcrun --show-sdk-path)
 COMMON="-arch arm64 -mmacosx-version-min=12.0"
 LIBS="$F/Foundation.framework/Versions/C/Foundation $F/CoreFoundation.framework/Versions/A/CoreFoundation -L$R/usr/lib -lobjc"
@@ -83,13 +83,10 @@ build_objcfw() { # name version srcfile
   codesign -f -s - $F/$NAME.framework/Versions/$VER/$NAME
 }
 
-# QuartzCore
+# QuartzCore, Metal, MetalKit, ModelIO, ImageIO, IOSurface, CoreData
 build_objcfw QuartzCore A QuartzCore.m
-
-# Metal
 build_objcfw Metal A Metal.m
 
-# MetalKit
 mk MetalKit A
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/MetalKit.m -o $O/MetalKit.o
 clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/MetalKit.framework/Versions/A/MetalKit \
@@ -99,62 +96,19 @@ ln -sfn A $F/MetalKit.framework/Versions/Current
 ln -sfn Versions/Current/MetalKit $F/MetalKit.framework/MetalKit
 codesign -f -s - $F/MetalKit.framework/Versions/A/MetalKit
 
-# ModelIO
 build_objcfw ModelIO A ModelIO.m
-
-# ImageIO
 build_objcfw ImageIO A ImageIO.m
-
-# IOSurface
 build_objcfw IOSurface A IOSurface.m
-
-# CoreData
 build_objcfw CoreData A CoreData.m
 
-# CoreImage
-build_objcfw CoreImage A CoreImage.m
+# All remaining Darling frameworks
+FW_LIST="AGL AVFAudio AVFoundation AVKit Accelerate Accounts AddressBook AudioVideoBridging AuthenticationServices Automator CalendarStore CloudKit Collaboration ColorSync Contacts ContactsUI CoreAudioKit CoreBluetooth CoreImage CoreLocation CoreMIDI CoreMedia CoreMediaIO CoreTelephony CoreWLAN CryptoTokenKit DirectoryServices DiscRecording DiscRecordingUI DrawSprocket EventKit ExceptionHandling ForceFeedback GLKit GameController IOBluetooth IOBluetoothUI ImageCaptureCore InputMethodKit InstantMessage JavaRuntimeSupport JavaVM LocalAuthentication MapKit MediaAccessibility MediaToolbox Message MultipeerConnectivity NetFS Network OSAKit OpenAL OpenCL OpenDirectory PDFKit Photos QTKit Quartz QuickLook QuickTime SceneKit ScreenSaver ScriptingBridge SecurityFoundation SecurityInterface ShazamKit Speech SpriteKit StoreKit SyncServices UniformTypeIdentifiers UserNotifications VideoDecodeAcceleration VideoToolbox Vision WebKit"
 
-# WebKit
-build_objcfw WebKit A WebKit.m
-
-# SecurityFoundation
-build_objcfw SecurityFoundation A SecurityFoundation.m
-
-# AVFoundation
-build_objcfw AVFoundation A AVFoundation.m
-
-# SceneKit
-build_objcfw SceneKit A SceneKit.m
-
-# SpriteKit
-build_objcfw SpriteKit A SpriteKit.m
-
-# MapKit
-build_objcfw MapKit A MapKit.m
-
-# Photos
-build_objcfw Photos A Photos.m
-
-# CloudKit
-build_objcfw CloudKit A CloudKit.m
-
-# Contacts
-build_objcfw Contacts A Contacts.m
-
-# EventKit
-build_objcfw EventKit A EventKit.m
-
-# GameController
-build_objcfw GameController A GameController.m
-
-# StoreKit
-build_objcfw StoreKit A StoreKit.m
-
-# UserNotifications
-build_objcfw UserNotifications A UserNotifications.m
-
-# Vision
-build_objcfw Vision A Vision.m
+for fw in $FW_LIST; do
+  if [ -f "$S/$fw.m" ]; then
+    build_objcfw $fw A $fw.m
+  fi
+done
 
 # symlinks + ad-hoc signature for AppKit, OpenGL, Cocoa
 ln -sfn C $F/AppKit.framework/Versions/Current; ln -sfn C $F/AppKit.framework/Versions/A
@@ -163,14 +117,28 @@ ln -sfn A $F/OpenGL.framework/Versions/Current; ln -sfn Versions/Current/OpenGL 
 ln -sfn A $F/Cocoa.framework/Versions/Current; ln -sfn Versions/Current/Cocoa $F/Cocoa.framework/Cocoa
 codesign -f -s - $F/AppKit.framework/Versions/C/AppKit $F/OpenGL.framework/Versions/A/OpenGL $F/Cocoa.framework/Versions/A/Cocoa
 
+# System dylibs (/usr/lib)
+clang $COMMON -O2 -w -c $S/libsystem_shims.c -o $O/libsystem_shims.o
+for dlib in libcompression libcache libDiagnosticMessagesClient libMobileGestalt libsandbox libsystem_coreservices; do
+  clang $COMMON -dynamiclib -install_name /usr/lib/$dlib.dylib \
+    -Wl,-compatibility_version,1 -Wl,-current_version,1 -Wl,-not_for_dyld_shared_cache \
+    $O/libsystem_shims.o -o $L/$dlib.dylib
+  codesign -f -s - $L/$dlib.dylib
+done
+
 echo "Remote build complete!"
 REMOTE
 
-FRAMEWORKS="AppKit Cocoa OpenGL CoreGraphics IOKit CoreServices Carbon CoreVideo AudioToolbox CoreText QuartzCore Metal MetalKit ModelIO ImageIO IOSurface CoreData CoreImage WebKit SecurityFoundation AVFoundation SceneKit SpriteKit MapKit Photos CloudKit Contacts EventKit GameController StoreKit UserNotifications Vision"
+FRAMEWORKS="AppKit Cocoa OpenGL CoreGraphics IOKit CoreServices Carbon CoreVideo AudioToolbox CoreText QuartzCore Metal MetalKit ModelIO ImageIO IOSurface CoreData CoreImage WebKit SecurityFoundation AVFoundation SceneKit SpriteKit MapKit Photos CloudKit Contacts EventKit GameController StoreKit UserNotifications Vision AGL AVFAudio AVKit Accelerate Accounts AddressBook AudioVideoBridging AuthenticationServices Automator CalendarStore Collaboration ColorSync ContactsUI CoreAudioKit CoreBluetooth CoreLocation CoreMIDI CoreMedia CoreMediaIO CoreTelephony CoreWLAN CryptoTokenKit DirectoryServices DiscRecording DiscRecordingUI DrawSprocket ExceptionHandling ForceFeedback GLKit IOBluetooth IOBluetoothUI ImageCaptureCore InputMethodKit InstantMessage JavaRuntimeSupport JavaVM LocalAuthentication MediaAccessibility MediaToolbox Message MultipeerConnectivity NetFS Network OSAKit OpenAL OpenCL OpenDirectory PDFKit QTKit Quartz QuickLook QuickTime ScreenSaver ScriptingBridge SecurityInterface ShazamKit Speech SyncServices UniformTypeIdentifiers VideoDecodeAcceleration VideoToolbox"
 
 for f in $FRAMEWORKS; do
   rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/$f.framework darwin-rootfs/System/Library/Frameworks/
 done
 
-echo "Successfully installed all frameworks into darwin-rootfs/System/Library/Frameworks"
+DYLIBS="libcompression.dylib libcache.dylib libDiagnosticMessagesClient.dylib libMobileGestalt.dylib libsandbox.dylib libsystem_coreservices.dylib"
+for d in $DYLIBS; do
+  rsync -a mac:xef-remote/out/rootfs/usr/lib/$d darwin-rootfs/usr/lib/
+done
+
+echo "Successfully installed all frameworks and system dylibs into darwin-rootfs!"
 

@@ -137,13 +137,6 @@
 
 
 
-@interface NSImage : NSObject @end
-@implementation NSImage
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector {
-    return [NSMethodSignature signatureWithObjCTypes: "v@:"];
-}
-- (void)forwardInvocation:(NSInvocation *)anInvocation {}
-@end
 
 @interface NSImageRep : NSObject @end
 @implementation NSImageRep

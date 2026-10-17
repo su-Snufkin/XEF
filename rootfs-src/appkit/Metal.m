@@ -1443,8 +1443,11 @@ static id metal_stub(id self, SEL _cmd, ...) {
   id<MTLHeap> _heap;
   NSUInteger _heapOffset;
   MTLTextureSwizzleChannels _swizzle;
+  IOSurfaceRef _iosurface;
+  NSUInteger _iosurfacePlane;
 }
 - (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc device:(id<MTLDevice>)device;
+- (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc iosurface:(IOSurfaceRef)iosurface plane:(NSUInteger)plane device:(id<MTLDevice>)device;
 - (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices;
 - (instancetype)initWithParent:(XEFMetalTexture *)parent pixelFormat:(MTLPixelFormat)fmt textureType:(MTLTextureType)ttype levels:(NSRange)levels slices:(NSRange)slices swizzle:(MTLTextureSwizzleChannels)swizzle;
 - (uint32_t)_hostTexId;
@@ -1455,6 +1458,9 @@ static id metal_stub(id self, SEL _cmd, ...) {
 
 @implementation XEFMetalTexture
 - (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc device:(id<MTLDevice>)device {
+  return [self initWithDescriptor:desc iosurface:NULL plane:0 device:device];
+}
+- (instancetype)initWithDescriptor:(MTLTextureDescriptor *)desc iosurface:(IOSurfaceRef)iosurface plane:(NSUInteger)plane device:(id<MTLDevice>)device {
   if ((self = [super init])) {
     _width = desc.width > 0 ? desc.width : 1;
     _height = desc.height > 0 ? desc.height : 1;
@@ -1470,6 +1476,8 @@ static id metal_stub(id self, SEL _cmd, ...) {
     _resourceOptions = desc.resourceOptions;
     _device = device;
     _swizzle = desc.swizzle;
+    _iosurface = iosurface ? (IOSurfaceRef)CFRetain(iosurface) : NULL;
+    _iosurfacePlane = plane;
     NSUInteger slices = _arrayLength * ((_textureType == MTLTextureTypeCube || _textureType == MTLTextureTypeCubeArray) ? 6 : 1);
     _storage = [[XEFMetalTextureStorage alloc] initWithWidth:_width height:_height depth:_depth arrayLength:slices bpp:xef_mtl_bpp(_pixelFormat)];
     _hostTexId = xef_host_metal_tex_create_ex((int)_width, (int)_height, (int)_depth, (int)_arrayLength, (int)_textureType, (int)_pixelFormat, (_usage & MTLTextureUsageRenderTarget) != 0);
@@ -1536,8 +1544,8 @@ static id metal_stub(id self, SEL _cmd, ...) {
 - (id<MTLBuffer>)buffer { return nil; }
 - (NSUInteger)bufferOffset { return 0; }
 - (NSUInteger)bufferBytesPerRow { return 0; }
-- (IOSurfaceRef)iosurface { return NULL; }
-- (NSUInteger)iosurfacePlane { return 0; }
+- (IOSurfaceRef)iosurface { return _iosurface; }
+- (NSUInteger)iosurfacePlane { return _iosurfacePlane; }
 - (id<MTLResource>)rootResource { return _parentTexture ? _parentTexture : nil; }
 - (id<MTLHeap>)heap { return _heap; }
 - (NSUInteger)heapOffset { return _heapOffset; }
@@ -6446,7 +6454,7 @@ typedef enum {
 }
 
 - (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor iosurface:(IOSurfaceRef)iosurface plane:(NSUInteger)plane {
-  return [[XEFMetalTexture alloc] initWithDescriptor:descriptor device:self];
+  return [[XEFMetalTexture alloc] initWithDescriptor:descriptor iosurface:iosurface plane:plane device:self];
 }
 
 - (id<MTLSamplerState>)newSamplerStateWithDescriptor:(MTLSamplerDescriptor *)descriptor {
