@@ -8,7 +8,7 @@ add_custom_command(OUTPUT ${MTLC_STDLIB}
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/metal_stdlib_data.inc
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/msl/embed.py ${MTLC_STDLIB} ${CMAKE_CURRENT_BINARY_DIR}/metal_stdlib_data.inc
   DEPENDS ${MTLC_STDLIB} ${CMAKE_CURRENT_SOURCE_DIR}/msl/embed.py)
-add_executable(xef-mtlc main.cpp compile.cpp prepare.cpp memlower.cpp structurize.cpp emit.cpp emit_air.cpp msl/frontend.cpp
+add_executable(xef-mtlc main.cpp compile.cpp prepare.cpp memlower.cpp structurize.cpp intlegal.cpp emit.cpp emit_air.cpp msl/frontend.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/metal_stdlib_data.inc)
 target_include_directories(xef-mtlc PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 separate_arguments(LLVM_DEFS NATIVE_COMMAND ${LLVM_DEFINITIONS})

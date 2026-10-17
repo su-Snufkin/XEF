@@ -49,6 +49,7 @@ struct PreparedStage {
 bool prepare_stage(llvm::Module& m, AirEntry& e, const CompileRequest& req, LinkInfo& link, PreparedStage& ps, std::string& err);
 bool lower_memory(PreparedStage& ps, std::string& err);
 bool structurize(llvm::Function& f, std::string& err);
+bool legalize_ints(llvm::Function& f, std::string& err);
 bool emit_spirv(PreparedStage& ps, std::vector<uint32_t>& out, std::string& err);
 
 // structured order + merge/continue targets of a structurized function (clspv algorithm)

@@ -75,6 +75,7 @@ bool compile(const CompileRequest& req, CompileResult& res) {
         if (dump) { fprintf(stderr, "=== prepared %s\n", src.function.c_str()); ps.main->print(errs()); }
         if (!lower_memory(ps, err)) return stage_fail("memory");
         if (!structurize(*ps.main, err)) return stage_fail("structurize");
+        if (!legalize_ints(*ps.main, err)) return stage_fail("legalize");
         if (dump) { fprintf(stderr, "=== lowered %s\n", src.function.c_str()); ps.main->print(errs()); }
         {
             std::string verr;
