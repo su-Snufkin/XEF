@@ -103,6 +103,7 @@ typedef struct {
 } xef_host_metal_vertex_t;
 
 uint32_t xef_host_metal_tex_create(int w, int h, int fmt, int is_render_target);
+uint32_t xef_host_metal_tex_create_ex(int w, int h, int depth, int layers, int texture_type, int fmt, int is_render_target);
 uint32_t xef_host_metal_tex_create_view(uint32_t parent_id, int fmt,
                                         int swizzle_r, int swizzle_g, int swizzle_b, int swizzle_a,
                                         int base_mip, int mip_count, int base_layer, int layer_count);

@@ -1128,9 +1128,9 @@ static id metal_stub(id self, SEL _cmd, ...) {
     _resourceOptions = desc.resourceOptions;
     _device = device;
     _swizzle = desc.swizzle;
-    NSUInteger slices = _arrayLength * (_textureType == MTLTextureTypeCube ? 6 : 1);
+    NSUInteger slices = _arrayLength * ((_textureType == MTLTextureTypeCube || _textureType == MTLTextureTypeCubeArray) ? 6 : 1);
     _storage = [[XEFMetalTextureStorage alloc] initWithWidth:_width height:_height depth:_depth arrayLength:slices bpp:xef_mtl_bpp(_pixelFormat)];
-    _hostTexId = xef_host_metal_tex_create((int)_width, (int)_height, (int)_pixelFormat, (_usage & MTLTextureUsageRenderTarget) != 0);
+    _hostTexId = xef_host_metal_tex_create_ex((int)_width, (int)_height, (int)_depth, (int)_arrayLength, (int)_textureType, (int)_pixelFormat, (_usage & MTLTextureUsageRenderTarget) != 0);
   }
   return self;
 }
@@ -1214,8 +1214,7 @@ static id metal_stub(id self, SEL _cmd, ...) {
 }
 
 - (void)replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level slice:(NSUInteger)slice withBytes:(const void *)pixelBytes bytesPerRow:(NSUInteger)bytesPerRow bytesPerImage:(NSUInteger)bytesPerImage {
-  if (!_storage || !_storage->_data || !pixelBytes) return;
-  if (level > 0) return; /* base level used for sampling/display */
+  if (!_storage || !pixelBytes) return;
   NSUInteger bpp = _storage->_bpp;
   NSUInteger dstBpr = _storage->_bytesPerRow;
   NSUInteger srcBpr = bytesPerRow > 0 ? bytesPerRow : region.size.width * bpp;
@@ -1225,19 +1224,22 @@ static id metal_stub(id self, SEL _cmd, ...) {
   NSUInteger w = region.size.width;
   NSUInteger h = region.size.height;
   NSUInteger d = region.size.depth > 0 ? region.size.depth : 1;
-  if (x0 >= _width || y0 >= _height) return;
-  if (x0 + w > _width) w = _width - x0;
-  if (y0 + h > _height) h = _height - y0;
-  NSUInteger rowBytes = w * bpp;
   NSUInteger srcBpi = bytesPerImage > 0 ? bytesPerImage : srcBpr * region.size.height;
-  for (NSUInteger z = 0; z < d; z++) {
-    size_t sliceOffset = (size_t)(z0 + z) * _storage->_bytesPerImage;
-    if (sliceOffset >= _storage->_dataSize) break;
-    const uint8_t *srcSlice = (const uint8_t *)pixelBytes + (size_t)z * srcBpi;
-    for (NSUInteger y = 0; y < h; y++) {
-      size_t dstOff = sliceOffset + (size_t)(y0 + y) * dstBpr + (size_t)x0 * bpp;
-      if (dstOff + rowBytes <= _storage->_dataSize) {
-        memcpy(_storage->_data + dstOff, srcSlice + (size_t)y * srcBpr, rowBytes);
+  if (level == 0 && _storage->_data) {
+    if (x0 < _width && y0 < _height) {
+      NSUInteger copyW = (x0 + w > _width) ? (_width - x0) : w;
+      NSUInteger copyH = (y0 + h > _height) ? (_height - y0) : h;
+      NSUInteger rowBytes = copyW * bpp;
+      for (NSUInteger z = 0; z < d; z++) {
+        size_t sliceOffset = (size_t)(z0 + z) * _storage->_bytesPerImage;
+        if (sliceOffset >= _storage->_dataSize) break;
+        const uint8_t *srcSlice = (const uint8_t *)pixelBytes + (size_t)z * srcBpi;
+        for (NSUInteger y = 0; y < copyH; y++) {
+          size_t dstOff = sliceOffset + (size_t)(y0 + y) * dstBpr + (size_t)x0 * bpp;
+          if (dstOff + rowBytes <= _storage->_dataSize) {
+            memcpy(_storage->_data + dstOff, srcSlice + (size_t)y * srcBpr, rowBytes);
+          }
+        }
       }
     }
   }

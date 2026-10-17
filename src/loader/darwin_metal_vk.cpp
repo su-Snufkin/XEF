@@ -151,6 +151,8 @@ struct MetalVkTex {
     VkFramebuffer framebuffer_load = VK_NULL_HANDLE;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
     bool owns_image = true;
+    int array_layers = 1;
+    int texture_type = 2;
     VkDescriptorSet desc_set_linear = VK_NULL_HANDLE;
     VkDescriptorSet desc_set_nearest = VK_NULL_HANDLE;
     VkDescriptorSet desc_set_linear_repeat = VK_NULL_HANDLE;
@@ -980,7 +982,7 @@ const char* get_device_name() {
     return g_device_name.empty() ? "MetalVK Vulkan Device" : g_device_name.c_str();
 }
 
-uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
+uint32_t tex_create_ex(int w, int h, int depth, int layers, int texture_type, int fmt, int is_render_target) {
     if (!is_available()) return 0;
     std::lock_guard<std::mutex> lk(g_metal_vk_lock);
 
@@ -992,13 +994,25 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     t.fmt = fmt;
     t.is_rt = (is_render_target != 0);
     t.vk_fmt = map_metal_fmt_to_vk(fmt);
+    t.texture_type = texture_type;
+
+    int actual_layers = (layers > 0) ? layers : 1;
+    if (texture_type == 5 /* MTLTextureTypeCube */ || texture_type == 6 /* MTLTextureTypeCubeArray */) {
+        if (texture_type == 5) actual_layers = 6;
+        else actual_layers = 6 * actual_layers;
+    }
+    t.array_layers = actual_layers;
 
     VkImageCreateInfo ici = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
-    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.imageType = (texture_type == 7 /* 3D */) ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
     ici.format = t.vk_fmt;
     ici.extent.width = t.w;
     ici.extent.height = t.h;
-    ici.extent.depth = 1;
+    ici.extent.depth = (texture_type == 7 && depth > 0) ? (uint32_t)depth : 1;
+    if (texture_type == 5 || texture_type == 6) {
+        ici.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    }
+
     bool is_depth = (t.vk_fmt == VK_FORMAT_D32_SFLOAT || t.vk_fmt == VK_FORMAT_D16_UNORM);
     int mipLevels = 1;
     if (!is_depth && t.w > 1 && t.h > 1) {
@@ -1010,7 +1024,7 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     }
     t.mip_levels = mipLevels;
     ici.mipLevels = mipLevels;
-    ici.arrayLayers = 1;
+    ici.arrayLayers = (ici.imageType == VK_IMAGE_TYPE_3D) ? 1 : (uint32_t)actual_layers;
     ici.samples = VK_SAMPLE_COUNT_1_BIT;
     ici.tiling = VK_IMAGE_TILING_OPTIMAL;
     ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -1038,13 +1052,23 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
 
     VkImageViewCreateInfo ivci = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
     ivci.image = t.image;
-    ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    if (texture_type == 5) {
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+    } else if (texture_type == 6) {
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    } else if (texture_type == 7) {
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_3D;
+    } else if (actual_layers > 1) {
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    } else {
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    }
     ivci.format = t.vk_fmt;
     ivci.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     ivci.subresourceRange.baseMipLevel = 0;
     ivci.subresourceRange.levelCount = mipLevels;
     ivci.subresourceRange.baseArrayLayer = 0;
-    ivci.subresourceRange.layerCount = 1;
+    ivci.subresourceRange.layerCount = (ici.imageType == VK_IMAGE_TYPE_3D) ? 1 : (uint32_t)actual_layers;
 
     if (vkCreateImageView(g_device, &ivci, nullptr, &t.view) != VK_SUCCESS) {
         vkFreeMemory(g_device, t.memory, nullptr);
@@ -1086,6 +1110,10 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     return id;
 }
 
+uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
+    return tex_create_ex(w, h, 1, 1, 2 /* 2D */, fmt, is_render_target);
+}
+
 static VkComponentSwizzle map_vk_swizzle(int s) {
     switch (s) {
         case 0: return VK_COMPONENT_SWIZZLE_ZERO;
@@ -1117,11 +1145,18 @@ uint32_t tex_create_view(uint32_t parent_id, int fmt,
     t.h = std::max(1, parent.h >> base_mip);
     t.mip_levels = (mip_count > 0) ? mip_count : 1;
     t.is_rt = parent.is_rt;
-    t.layout = parent.layout;
+    uint32_t layers = (uint32_t)((layer_count > 0) ? layer_count : 1);
+    t.array_layers = layers;
 
     VkImageViewCreateInfo ivci = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
     ivci.image = t.image;
-    ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    if (layers == 6) {
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+    } else if (layers > 1) {
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    } else {
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    }
     ivci.format = t.vk_fmt;
     ivci.components.r = map_vk_swizzle(swizzle_r);
     ivci.components.g = map_vk_swizzle(swizzle_g);
@@ -1401,12 +1436,13 @@ void tex_generate_mipmaps(uint32_t tex_id) {
 
     // 1. Transition all mip levels to TRANSFER_DST_OPTIMAL
     VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    uint32_t layers = (uint32_t)std::max(1, tex.array_layers);
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = tex.image;
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.layerCount = layers;
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = tex.mip_levels;
     barrier.oldLayout = tex.layout;
@@ -1419,6 +1455,7 @@ void tex_generate_mipmaps(uint32_t tex_id) {
     int32_t mipWidth = tex.w;
     int32_t mipHeight = tex.h;
 
+    barrier.subresourceRange.layerCount = layers;
     barrier.subresourceRange.levelCount = 1;
 
     for (int i = 1; i < tex.mip_levels; ++i) {
@@ -1440,14 +1477,14 @@ void tex_generate_mipmaps(uint32_t tex_id) {
         blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         blit.srcSubresource.mipLevel = (uint32_t)(i - 1);
         blit.srcSubresource.baseArrayLayer = 0;
-        blit.srcSubresource.layerCount = 1;
+        blit.srcSubresource.layerCount = layers;
 
         blit.dstOffsets[0] = { 0, 0, 0 };
         blit.dstOffsets[1] = { nextWidth, nextHeight, 1 };
         blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         blit.dstSubresource.mipLevel = (uint32_t)i;
         blit.dstSubresource.baseArrayLayer = 0;
-        blit.dstSubresource.layerCount = 1;
+        blit.dstSubresource.layerCount = layers;
 
         vkCmdBlitImage(cmd, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                             tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

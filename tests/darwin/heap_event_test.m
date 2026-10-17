@@ -563,6 +563,88 @@ int main(void) {
     [scratchBuf release];
     [compactSizeBuf release];
 
+    // Stage 17: Cube texture and mipmap generation / views
+    MTLTextureDescriptor *cubeDesc = [MTLTextureDescriptor textureCubeDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm size:64 mipmapped:YES];
+    if (cubeDesc.textureType != MTLTextureTypeCube || cubeDesc.width != 64 || cubeDesc.height != 64 || cubeDesc.mipmapLevelCount <= 1) {
+      NSLog(@"FAIL: textureCubeDescriptor properties mismatch");
+      return 52;
+    }
+    id<MTLTexture> cubeTex = [device newTextureWithDescriptor:cubeDesc];
+    if (!cubeTex || cubeTex.textureType != MTLTextureTypeCube || cubeTex.mipmapLevelCount <= 1) {
+      NSLog(@"FAIL: newTextureWithDescriptor for cube failed");
+      return 53;
+    }
+    [cubeTex setLabel:@"TestCubeTexture"];
+
+    // Fill each of 6 faces with distinct colors
+    uint32_t faceColors[6] = {
+      0xFF0000FF, // Face 0: Red
+      0xFF00FF00, // Face 1: Green
+      0xFFFF0000, // Face 2: Blue
+      0xFFFFFF00, // Face 3: Cyan
+      0xFFFF00FF, // Face 4: Magenta
+      0xFF00FFFF  // Face 5: Yellow
+    };
+    uint32_t faceData[64 * 64];
+    for (int f = 0; f < 6; f++) {
+      for (int i = 0; i < 64 * 64; i++) {
+        faceData[i] = faceColors[f];
+      }
+      [cubeTex replaceRegion:MTLRegionMake2D(0, 0, 64, 64)
+                 mipmapLevel:0
+                       slice:f
+                   withBytes:faceData
+                 bytesPerRow:64 * 4
+              bytesPerImage:64 * 64 * 4];
+    }
+
+    // Generate mipmaps
+    id<MTLCommandBuffer> blitCb = [queue commandBuffer];
+    id<MTLBlitCommandEncoder> blitEnc = [blitCb blitCommandEncoder];
+    [blitEnc generateMipmapsForTexture:cubeTex];
+    [blitEnc endEncoding];
+    [blitCb commit];
+    [blitCb waitUntilCompleted];
+
+    // Verify face 2 mip level 0
+    uint32_t readbackFace2[64 * 64] = {0};
+    [cubeTex getBytes:readbackFace2
+          bytesPerRow:64 * 4
+        bytesPerImage:64 * 64 * 4
+           fromRegion:MTLRegionMake2D(0, 0, 64, 64)
+          mipmapLevel:0
+                slice:2];
+    if (readbackFace2[0] != 0xFFFF0000) {
+      NSLog(@"FAIL: cube face 2 readback mismatch: got 0x%08X expected 0xFFFF0000", readbackFace2[0]);
+      return 54;
+    }
+
+    // Verify face 4 mip level 1 (size 32x32)
+    uint32_t readbackFace4Mip1[32 * 32] = {0};
+    [cubeTex getBytes:readbackFace4Mip1
+          bytesPerRow:32 * 4
+        bytesPerImage:32 * 32 * 4
+           fromRegion:MTLRegionMake2D(0, 0, 32, 32)
+          mipmapLevel:1
+                slice:4];
+    if (readbackFace4Mip1[0] != 0xFFFF00FF) {
+      NSLog(@"FAIL: cube face 4 mip 1 readback mismatch: got 0x%08X expected 0xFFFF00FF", readbackFace4Mip1[0]);
+      return 55;
+    }
+
+    // Texture view for cube texture
+    id<MTLTexture> cubeView = [cubeTex newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                         textureType:MTLTextureTypeCube
+                                                              levels:NSMakeRange(0, cubeTex.mipmapLevelCount)
+                                                              slices:NSMakeRange(0, 6)];
+    if (!cubeView || cubeView.textureType != MTLTextureTypeCube || cubeView.parentTexture != cubeTex) {
+      NSLog(@"FAIL: newTextureViewWithPixelFormat for cube failed");
+      return 56;
+    }
+
+    NSLog(@"MTLTextureCube verified: %@ (size 64x64, mips=%lu, faces=6), mip readback verified, cubeView=%@",
+          cubeTex.label, (unsigned long)cubeTex.mipmapLevelCount, cubeView);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }
