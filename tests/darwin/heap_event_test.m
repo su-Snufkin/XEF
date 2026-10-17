@@ -165,6 +165,25 @@ int main(void) {
     }
     NSLog(@"Subresource update/readback verified: pixel[0]=0x%08X", readPixels[0]);
 
+    /* 7. Test Command Buffer Deferred Event Signal & Wait */
+    id<MTLSharedEvent> cmdEvent = [device newSharedEvent];
+    id<MTLCommandBuffer> sigBuf = [queue commandBuffer];
+    [sigBuf encodeSignalEvent:cmdEvent value:100];
+    if (cmdEvent.signaledValue != 0) {
+      NSLog(@"FAIL: encodeSignalEvent prematurely signaled value before commit");
+      return 15;
+    }
+    [sigBuf commit];
+    if (cmdEvent.signaledValue != 100) {
+      NSLog(@"FAIL: encodeSignalEvent did not signal value on commit");
+      return 16;
+    }
+
+    id<MTLCommandBuffer> waitBuf = [queue commandBuffer];
+    [waitBuf encodeWaitForEvent:cmdEvent value:100];
+    [waitBuf commit];
+    NSLog(@"Command buffer event synchronization verified: val=%llu", (unsigned long long)cmdEvent.signaledValue);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

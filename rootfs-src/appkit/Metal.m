@@ -2377,12 +2377,12 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
 - (void)useHeaps:(const id<MTLHeap> *)heaps count:(NSUInteger)count {}
 
 typedef struct {
-  const uint8_t *attr_base;
-  size_t attr_len;
-  size_t stride;
-  int pos_off; MTLVertexFormat pos_fmt;
-  int col_off; MTLVertexFormat col_fmt;
-  int uv_off;  MTLVertexFormat uv_fmt;
+  const uint8_t *attr_bases[3];
+  size_t attr_lens[3];
+  size_t strides[3];
+  int attr_offs[3];
+  MTLVertexFormat attr_fmts[3];
+  BOOL attr_active[3];
   BOOL has_attr;
   BOOL is_custom_vert;
   int custom_count;
@@ -2398,7 +2398,7 @@ typedef struct {
 
 static void xef_init_vertex_fetcher(XEFVertexFetcher *vf, XEFMetalRenderCommandEncoder *enc) {
   memset(vf, 0, sizeof(*vf));
-  vf->pos_off = -1; vf->col_off = -1; vf->uv_off = -1;
+  for (int i = 0; i < 3; i++) vf->attr_offs[i] = -1;
 
   XEFMetalFunction *vfn = enc->_pipelineState && enc->_pipelineState->_desc ? (XEFMetalFunction *)enc->_pipelineState->_desc.vertexFunction : nil;
   XEFMetalFunction *ffn = enc->_pipelineState && enc->_pipelineState->_desc ? (XEFMetalFunction *)enc->_pipelineState->_desc.fragmentFunction : nil;
@@ -2411,9 +2411,9 @@ static void xef_init_vertex_fetcher(XEFVertexFetcher *vf, XEFMetalRenderCommandE
     vf->is_fullscreen_vert = YES;
   } else {
     MTLVertexDescriptor *vd = enc->_pipelineState && enc->_pipelineState->_desc ? enc->_pipelineState->_desc.vertexDescriptor : nil;
-    int usedAttrBuf = -1;
+    uint32_t usedAttrMask = 0;
     if (vd) {
-      for (int a = 0; a < 4; a++) {
+      for (int a = 0; a < 3; a++) {
         MTLVertexAttributeDescriptor *ad = vd.attributes->_attributes[a];
         if (!ad || ad.format == MTLVertexFormatInvalid) continue;
         NSUInteger bIdx = ad.bufferIndex;
@@ -2422,14 +2422,14 @@ static void xef_init_vertex_fetcher(XEFVertexFetcher *vf, XEFMetalRenderCommandE
         NSUInteger stride = ld ? ld.stride : 0;
         if (stride == 0) continue;
         vf->has_attr = YES;
-        usedAttrBuf = (int)bIdx;
+        usedAttrMask |= (1u << (uint32_t)bIdx);
         XEFMetalBuffer *buf = enc->_vertexBuffers[bIdx];
-        vf->attr_base = (const uint8_t *)buf->_data + enc->_vertexBufferOffsets[bIdx];
-        vf->attr_len = buf->_length > enc->_vertexBufferOffsets[bIdx] ? buf->_length - enc->_vertexBufferOffsets[bIdx] : 0;
-        vf->stride = stride;
-        if (a == 0) { vf->pos_off = (int)ad.offset; vf->pos_fmt = ad.format; }
-        else if (a == 1) { vf->col_off = (int)ad.offset; vf->col_fmt = ad.format; }
-        else if (a == 2) { vf->uv_off = (int)ad.offset; vf->uv_fmt = ad.format; }
+        vf->attr_bases[a] = (const uint8_t *)buf->_data + enc->_vertexBufferOffsets[bIdx];
+        vf->attr_lens[a] = buf->_length > enc->_vertexBufferOffsets[bIdx] ? buf->_length - enc->_vertexBufferOffsets[bIdx] : 0;
+        vf->strides[a] = stride;
+        vf->attr_offs[a] = (int)ad.offset;
+        vf->attr_fmts[a] = ad.format;
+        vf->attr_active[a] = YES;
       }
     }
     if (!vf->has_attr) {
@@ -2440,7 +2440,7 @@ static void xef_init_vertex_fetcher(XEFVertexFetcher *vf, XEFMetalRenderCommandE
     } else {
       /* Check buffers for 4x4 matrix uniforms (64 bytes) */
       for (int b = 0; b < 4; b++) {
-        if (b != usedAttrBuf && enc->_vertexBuffers[b]) {
+        if (!(usedAttrMask & (1u << (uint32_t)b)) && enc->_vertexBuffers[b]) {
           XEFMetalBuffer *ubuf = enc->_vertexBuffers[b];
           size_t uoff = enc->_vertexBufferOffsets[b];
           if (uoff + 64 <= ubuf->_length) {
@@ -2455,11 +2455,10 @@ static void xef_init_vertex_fetcher(XEFVertexFetcher *vf, XEFMetalRenderCommandE
     if (!vf->has_attr && enc->_vertexBuffers[0] && enc->_vertexBuffers[0]->_length >= 32) {
       vf->has_attr = YES;
       XEFMetalBuffer *buf = enc->_vertexBuffers[0];
-      vf->attr_base = (const uint8_t *)buf->_data + enc->_vertexBufferOffsets[0];
-      vf->attr_len = buf->_length > enc->_vertexBufferOffsets[0] ? buf->_length - enc->_vertexBufferOffsets[0] : 0;
-      vf->stride = 32;
-      vf->pos_off = 0; vf->pos_fmt = MTLVertexFormatFloat4;
-      vf->col_off = 16; vf->col_fmt = MTLVertexFormatFloat4;
+      const uint8_t *bptr = (const uint8_t *)buf->_data + enc->_vertexBufferOffsets[0];
+      size_t blen = buf->_length > enc->_vertexBufferOffsets[0] ? buf->_length - enc->_vertexBufferOffsets[0] : 0;
+      vf->attr_bases[0] = bptr; vf->attr_lens[0] = blen; vf->strides[0] = 32; vf->attr_offs[0] = 0; vf->attr_fmts[0] = MTLVertexFormatFloat4; vf->attr_active[0] = YES;
+      vf->attr_bases[1] = bptr; vf->attr_lens[1] = blen; vf->strides[1] = 32; vf->attr_offs[1] = 16; vf->attr_fmts[1] = MTLVertexFormatFloat4; vf->attr_active[1] = YES;
       for (int b = 1; b < 4; b++) {
         if (enc->_vertexBuffers[b]) {
           XEFMetalBuffer *ubuf = enc->_vertexBuffers[b];
@@ -2506,14 +2505,26 @@ static inline void xef_fetch_vertex_fast(const XEFVertexFetcher *vf, NSInteger v
     v->pos[0] = u * 2.0f - 1.0f; v->pos[1] = 1.0f - vt * 2.0f;
     v->pos[2] = 0.0f; v->pos[3] = 1.0f;
   } else if (vf->has_attr) {
-    size_t off = (size_t)vIdx * vf->stride;
-    if (off < vf->attr_len) {
-      const uint8_t *p = vf->attr_base + off;
-      if (vf->pos_off >= 0) xef_read_vertex_attr(p + vf->pos_off, vf->pos_fmt, v->pos, 1.0f);
-      if (vf->col_off >= 0) xef_read_vertex_attr(p + vf->col_off, vf->col_fmt, v->col, 1.0f);
-      if (vf->uv_off >= 0) {
+    /* Attribute 0: Position */
+    if (vf->attr_active[0] && vf->attr_offs[0] >= 0) {
+      size_t off = (size_t)vIdx * vf->strides[0];
+      if (off < vf->attr_lens[0]) {
+        xef_read_vertex_attr(vf->attr_bases[0] + off + vf->attr_offs[0], vf->attr_fmts[0], v->pos, 1.0f);
+      }
+    }
+    /* Attribute 1: Color */
+    if (vf->attr_active[1] && vf->attr_offs[1] >= 0) {
+      size_t off = (size_t)vIdx * vf->strides[1];
+      if (off < vf->attr_lens[1]) {
+        xef_read_vertex_attr(vf->attr_bases[1] + off + vf->attr_offs[1], vf->attr_fmts[1], v->col, 1.0f);
+      }
+    }
+    /* Attribute 2: UV */
+    if (vf->attr_active[2] && vf->attr_offs[2] >= 0) {
+      size_t off = (size_t)vIdx * vf->strides[2];
+      if (off < vf->attr_lens[2]) {
         float tmp[4];
-        xef_read_vertex_attr(p + vf->uv_off, vf->uv_fmt, tmp, 0.0f);
+        xef_read_vertex_attr(vf->attr_bases[2] + off + vf->attr_offs[2], vf->attr_fmts[2], tmp, 0.0f);
         v->uv[0] = tmp[0]; v->uv[1] = tmp[1];
       }
     }
@@ -3704,6 +3715,25 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 - (void)dealloc { [_label release]; [super dealloc]; }
 @end
 
+typedef enum {
+  XEF_CMD_ACTION_WAIT_EVENT,
+  XEF_CMD_ACTION_SIGNAL_EVENT
+} XEFCommandEventActionType;
+
+@interface XEFMetalCommandEventAction : NSObject {
+@public
+  XEFCommandEventActionType _type;
+  id<MTLEvent> _event;
+  uint64_t _value;
+}
+@end
+@implementation XEFMetalCommandEventAction
+- (void)dealloc {
+  [_event release];
+  [super dealloc];
+}
+@end
+
 @interface XEFMetalCommandBuffer : XEFMetalObject <MTLCommandBuffer> {
   id<MTLCommandQueue> _commandQueue;
   MTLCommandBufferStatus _status;
@@ -3711,6 +3741,7 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   NSMutableArray *_completedHandlers;
   NSMutableArray *_scheduledHandlers;
   NSMutableArray *_drawables;
+  NSMutableArray *_eventActions;
 }
 @end
 @implementation XEFMetalCommandBuffer
@@ -3756,6 +3787,28 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 }
 - (void)commit {
   _status = MTLCommandBufferStatusCommitted;
+
+  /* Process deferred event actions (wait before execution, signal after) */
+  NSMutableArray *signalActions = nil;
+  if (_eventActions) {
+    for (XEFMetalCommandEventAction *act in _eventActions) {
+      if (act->_type == XEF_CMD_ACTION_WAIT_EVENT) {
+        if ([(id)act->_event respondsToSelector:@selector(waitUntilSignaledValue:timeoutMS:)]) {
+          [(id)act->_event waitUntilSignaledValue:act->_value timeoutMS:1000];
+        } else if ([(id)act->_event respondsToSelector:@selector(signaledValue)]) {
+          uint64_t waited = 0;
+          while ([(XEFMetalEvent *)act->_event signaledValue] < act->_value && waited < 1000) {
+            usleep(1000);
+            waited++;
+          }
+        }
+      } else if (act->_type == XEF_CMD_ACTION_SIGNAL_EVENT) {
+        if (!signalActions) signalActions = [NSMutableArray array];
+        [signalActions addObject:act];
+      }
+    }
+  }
+
   if (_scheduledHandlers) {
     for (MTLCommandBufferHandler blk in _scheduledHandlers) blk(self);
     [_scheduledHandlers removeAllObjects];
@@ -3764,6 +3817,19 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
     for (id<MTLDrawable> d in _drawables) [d present];
     [_drawables removeAllObjects];
   }
+
+  /* Signal events upon command completion */
+  if (signalActions) {
+    for (XEFMetalCommandEventAction *act in signalActions) {
+      if ([(id)act->_event respondsToSelector:@selector(setSignaledValue:)]) {
+        [(XEFMetalEvent *)act->_event setSignaledValue:act->_value];
+      }
+    }
+  }
+  if (_eventActions) {
+    [_eventActions removeAllObjects];
+  }
+
   _status = MTLCommandBufferStatusCompleted;
   if (_completedHandlers) {
     for (MTLCommandBufferHandler blk in _completedHandlers) blk(self);
@@ -3793,14 +3859,31 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
 - (void)pushDebugGroup:(NSString *)string {}
 - (void)popDebugGroup {}
 - (void)encodeSignalEvent:(id<MTLEvent>)event value:(uint64_t)value {
-  if ([(id)event respondsToSelector:@selector(setSignaledValue:)]) [(XEFMetalEvent *)event setSignaledValue:value];
+  if (!event) return;
+  if (!_eventActions) _eventActions = [[NSMutableArray alloc] init];
+  XEFMetalCommandEventAction *act = [[XEFMetalCommandEventAction alloc] init];
+  act->_type = XEF_CMD_ACTION_SIGNAL_EVENT;
+  act->_event = [event retain];
+  act->_value = value;
+  [_eventActions addObject:act];
+  [act release];
 }
-- (void)encodeWaitForEvent:(id<MTLEvent>)event value:(uint64_t)value {}
+- (void)encodeWaitForEvent:(id<MTLEvent>)event value:(uint64_t)value {
+  if (!event) return;
+  if (!_eventActions) _eventActions = [[NSMutableArray alloc] init];
+  XEFMetalCommandEventAction *act = [[XEFMetalCommandEventAction alloc] init];
+  act->_type = XEF_CMD_ACTION_WAIT_EVENT;
+  act->_event = [event retain];
+  act->_value = value;
+  [_eventActions addObject:act];
+  [act release];
+}
 - (void)dealloc {
   [_label release];
   [_completedHandlers release];
   [_scheduledHandlers release];
   [_drawables release];
+  [_eventActions release];
   [super dealloc];
 }
 @end
