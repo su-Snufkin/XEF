@@ -256,6 +256,76 @@ int main(void) {
     }
     NSLog(@"MTLBinaryArchive and MTLDynamicLibrary verified: archive=%@, dynLib=%@", archive.label, dynLib.label);
 
+    /* 11. Test Indirect Command Buffer, Indirect Drawing/Dispatch, and Fences */
+    id<MTLFence> fence = [device newFence];
+    if (!fence || [fence device] != device) {
+      NSLog(@"FAIL: newFence failed");
+      return 26;
+    }
+    [fence setLabel:@"TestFence"];
+
+    MTLIndirectCommandBufferDescriptor *icbDesc = [[[MTLIndirectCommandBufferDescriptor alloc] init] autorelease];
+    icbDesc.commandTypes = MTLIndirectCommandTypeDraw | MTLIndirectCommandTypeDrawIndexed;
+    icbDesc.inheritBuffers = NO;
+    icbDesc.inheritPipelineState = NO;
+    icbDesc.maxVertexBufferBindCount = 4;
+    icbDesc.maxFragmentBufferBindCount = 4;
+
+    id<MTLIndirectCommandBuffer> icb = [device newIndirectCommandBufferWithDescriptor:icbDesc maxCommandCount:8 options:MTLResourceStorageModeShared];
+    if (!icb || icb.size != 8 || [icb device] != device) {
+      NSLog(@"FAIL: newIndirectCommandBufferWithDescriptor failed");
+      return 27;
+    }
+    [icb setLabel:@"TestICB"];
+
+    id<MTLIndirectRenderCommand> irc = [icb indirectRenderCommandAtIndex:0];
+    if (!irc) {
+      NSLog(@"FAIL: indirectRenderCommandAtIndex failed");
+      return 28;
+    }
+    [irc setVertexBuffer:hbuf offset:0 atIndex:0];
+    [irc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3 instanceCount:1 baseInstance:0];
+
+    /* Test indirect buffer encoding */
+    MTLDrawPrimitivesIndirectArguments primArgs = { 3, 1, 0, 0 };
+    MTLDrawIndexedPrimitivesIndirectArguments idxArgs = { 3, 1, 0, 0, 0 };
+    MTLDispatchThreadgroupsIndirectArguments tgArgs = { { 1, 1, 1 } };
+    NSMutableData *indData = [NSMutableData dataWithBytes:&primArgs length:sizeof(primArgs)];
+    [indData appendBytes:&idxArgs length:sizeof(idxArgs)];
+    [indData appendBytes:&tgArgs length:sizeof(tgArgs)];
+    id<MTLBuffer> indirectArgsBuf = [device newBufferWithBytes:[indData bytes] length:[indData length] options:MTLResourceStorageModeShared];
+
+    id<MTLCommandBuffer> cmdBuf2 = [queue commandBuffer];
+    id<MTLRenderCommandEncoder> rce2 = [cmdBuf2 renderCommandEncoderWithDescriptor:passDesc];
+    [rce2 updateFence:fence afterStages:MTLRenderStageFragment];
+    [rce2 waitForFence:fence beforeStages:MTLRenderStageVertex];
+    [rce2 useResource:htex usage:MTLResourceUsageRead stages:MTLRenderStageFragment];
+    [rce2 useHeap:heap stages:MTLRenderStageFragment];
+    [rce2 memoryBarrierWithScope:MTLBarrierScopeBuffers afterStages:MTLRenderStageFragment beforeStages:MTLRenderStageVertex];
+    [rce2 drawPrimitives:MTLPrimitiveTypeTriangle indirectBuffer:indirectArgsBuf indirectBufferOffset:0];
+    [rce2 drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexType:MTLIndexTypeUInt16 indexBuffer:hbuf indexBufferOffset:0 indirectBuffer:indirectArgsBuf indirectBufferOffset:sizeof(MTLDrawPrimitivesIndirectArguments)];
+    [rce2 executeCommandsInBuffer:icb withRange:NSMakeRange(0, 1)];
+    [rce2 endEncoding];
+
+    id<MTLComputeCommandEncoder> cce2 = [cmdBuf2 computeCommandEncoder];
+    [cce2 updateFence:fence];
+    [cce2 waitForFence:fence];
+    [cce2 useResource:hbuf usage:MTLResourceUsageRead];
+    [cce2 useHeap:heap];
+    [cce2 dispatchThreadgroupsWithIndirectBuffer:indirectArgsBuf indirectBufferOffset:sizeof(primArgs)+sizeof(idxArgs) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+    [cce2 endEncoding];
+
+    id<MTLBlitCommandEncoder> bce2 = [cmdBuf2 blitCommandEncoder];
+    [bce2 updateFence:fence];
+    [bce2 waitForFence:fence];
+    [bce2 resetCommandsInBuffer:icb withRange:NSMakeRange(0, 1)];
+    [bce2 endEncoding];
+
+    [cmdBuf2 commit];
+    [cmdBuf2 waitUntilCompleted];
+
+    NSLog(@"MTLIndirectCommandBuffer and indirect execution verified: icb=%@, fence=%@", icb.label, fence.label);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }

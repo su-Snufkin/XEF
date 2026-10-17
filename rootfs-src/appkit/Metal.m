@@ -2211,6 +2211,318 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
   }
 }
 
+/* ------------------------------------------------------------------- MTLIndirectCommandBuffer */
+
+@implementation MTLIndirectCommandBufferDescriptor {
+  MTLIndirectCommandType _commandTypes;
+  BOOL _inheritPipelineState;
+  BOOL _inheritBuffers;
+  NSUInteger _maxVertexBufferBindCount;
+  NSUInteger _maxFragmentBufferBindCount;
+  NSUInteger _maxKernelBufferBindCount;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _commandTypes = MTLIndirectCommandTypeDraw;
+    _inheritPipelineState = NO;
+    _inheritBuffers = NO;
+    _maxVertexBufferBindCount = 31;
+    _maxFragmentBufferBindCount = 31;
+    _maxKernelBufferBindCount = 31;
+  }
+  return self;
+}
+- (MTLIndirectCommandType)commandTypes { return _commandTypes; }
+- (void)setCommandTypes:(MTLIndirectCommandType)c { _commandTypes = c; }
+- (BOOL)inheritPipelineState { return _inheritPipelineState; }
+- (void)setInheritPipelineState:(BOOL)p { _inheritPipelineState = p; }
+- (BOOL)inheritBuffers { return _inheritBuffers; }
+- (void)setInheritBuffers:(BOOL)b { _inheritBuffers = b; }
+- (NSUInteger)maxVertexBufferBindCount { return _maxVertexBufferBindCount; }
+- (void)setMaxVertexBufferBindCount:(NSUInteger)c { _maxVertexBufferBindCount = c; }
+- (NSUInteger)maxFragmentBufferBindCount { return _maxFragmentBufferBindCount; }
+- (void)setMaxFragmentBufferBindCount:(NSUInteger)c { _maxFragmentBufferBindCount = c; }
+- (NSUInteger)maxKernelBufferBindCount { return _maxKernelBufferBindCount; }
+- (void)setMaxKernelBufferBindCount:(NSUInteger)c { _maxKernelBufferBindCount = c; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLIndirectCommandBufferDescriptor *c = [[MTLIndirectCommandBufferDescriptor allocWithZone:zone] init];
+  c.commandTypes = _commandTypes;
+  c.inheritPipelineState = _inheritPipelineState;
+  c.inheritBuffers = _inheritBuffers;
+  c.maxVertexBufferBindCount = _maxVertexBufferBindCount;
+  c.maxFragmentBufferBindCount = _maxFragmentBufferBindCount;
+  c.maxKernelBufferBindCount = _maxKernelBufferBindCount;
+  return c;
+}
+@end
+
+@interface XEFMetalIndirectRenderCommand : NSObject <MTLIndirectRenderCommand> {
+@public
+  id<MTLRenderPipelineState> _pipelineState;
+  id<MTLBuffer> _vertexBuffers[31];
+  NSUInteger _vertexBufferOffsets[31];
+  id<MTLBuffer> _fragmentBuffers[31];
+  NSUInteger _fragmentBufferOffsets[31];
+  BOOL _isDrawIndexed;
+  BOOL _hasDraw;
+  MTLPrimitiveType _primitiveType;
+  NSUInteger _vertexStart;
+  NSUInteger _vertexCount;
+  NSUInteger _instanceCount;
+  NSUInteger _baseInstance;
+  MTLIndexType _indexType;
+  id<MTLBuffer> _indexBuffer;
+  NSUInteger _indexBufferOffset;
+  NSInteger _baseVertex;
+}
+- (void)executeOnEncoder:(id<MTLRenderCommandEncoder>)encoder;
+@end
+
+@implementation XEFMetalIndirectRenderCommand
+- (void)setRenderPipelineState:(id<MTLRenderPipelineState>)pipelineState {
+  [pipelineState retain];
+  [_pipelineState release];
+  _pipelineState = pipelineState;
+}
+- (void)setVertexBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index < 31) {
+    [buffer retain];
+    [_vertexBuffers[index] release];
+    _vertexBuffers[index] = buffer;
+    _vertexBufferOffsets[index] = offset;
+  }
+}
+- (void)setVertexBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset attributeStride:(NSUInteger)stride atIndex:(NSUInteger)index {
+  [self setVertexBuffer:buffer offset:offset atIndex:index];
+}
+- (void)setFragmentBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index < 31) {
+    [buffer retain];
+    [_fragmentBuffers[index] release];
+    _fragmentBuffers[index] = buffer;
+    _fragmentBufferOffsets[index] = offset;
+  }
+}
+- (void)drawPrimitives:(MTLPrimitiveType)primitiveType vertexStart:(NSUInteger)vertexStart vertexCount:(NSUInteger)vertexCount instanceCount:(NSUInteger)instanceCount baseInstance:(NSUInteger)baseInstance {
+  _hasDraw = YES;
+  _isDrawIndexed = NO;
+  _primitiveType = primitiveType;
+  _vertexStart = vertexStart;
+  _vertexCount = vertexCount;
+  _instanceCount = instanceCount;
+  _baseInstance = baseInstance;
+}
+- (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType indexCount:(NSUInteger)indexCount indexType:(MTLIndexType)indexType indexBuffer:(id<MTLBuffer>)indexBuffer indexBufferOffset:(NSUInteger)indexBufferOffset instanceCount:(NSUInteger)instanceCount baseVertex:(NSInteger)baseVertex baseInstance:(NSUInteger)baseInstance {
+  _hasDraw = YES;
+  _isDrawIndexed = YES;
+  _primitiveType = primitiveType;
+  _vertexCount = indexCount;
+  _indexType = indexType;
+  [indexBuffer retain];
+  [_indexBuffer release];
+  _indexBuffer = indexBuffer;
+  _indexBufferOffset = indexBufferOffset;
+  _instanceCount = instanceCount;
+  _baseVertex = baseVertex;
+  _baseInstance = baseInstance;
+}
+- (void)drawPatches:(NSUInteger)numberOfPatchControlPoints patchStart:(NSUInteger)patchStart patchCount:(NSUInteger)patchCount patchIndexBuffer:(id<MTLBuffer>)patchIndexBuffer patchIndexBufferOffset:(NSUInteger)patchIndexBufferOffset instanceCount:(NSUInteger)instanceCount baseInstance:(NSUInteger)baseInstance tessellationFactorBuffer:(id<MTLBuffer>)buffer tessellationFactorBufferOffset:(NSUInteger)offset tessellationFactorBufferInstanceStride:(NSUInteger)instanceStride {}
+- (void)drawIndexedPatches:(NSUInteger)numberOfPatchControlPoints patchStart:(NSUInteger)patchStart patchCount:(NSUInteger)patchCount patchIndexBuffer:(id<MTLBuffer>)patchIndexBuffer patchIndexBufferOffset:(NSUInteger)patchIndexBufferOffset controlPointIndexBuffer:(id<MTLBuffer>)controlPointIndexBuffer controlPointIndexBufferOffset:(NSUInteger)controlPointIndexBufferOffset instanceCount:(NSUInteger)instanceCount baseInstance:(NSUInteger)baseInstance tessellationFactorBuffer:(id<MTLBuffer>)buffer tessellationFactorBufferOffset:(NSUInteger)offset tessellationFactorBufferInstanceStride:(NSUInteger)instanceStride {}
+- (void)setObjectThreadgroupMemoryLength:(NSUInteger)length atIndex:(NSUInteger)index {}
+- (void)setObjectBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {}
+- (void)setMeshBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {}
+- (void)drawMeshThreadgroups:(MTLSize)threadgroupsPerGrid threadsPerObjectThreadgroup:(MTLSize)threadsPerObjectThreadgroup threadsPerMeshThreadgroup:(MTLSize)threadsPerMeshThreadgroup {}
+- (void)drawMeshThreads:(MTLSize)threadsPerGrid threadsPerObjectThreadgroup:(MTLSize)threadsPerObjectThreadgroup threadsPerMeshThreadgroup:(MTLSize)threadsPerMeshThreadgroup {}
+- (void)setBarrier {}
+- (void)clearBarrier {}
+- (void)setDepthStencilState:(id<MTLDepthStencilState>)depthStencilState {}
+- (void)setDepthBias:(float)depthBias slopeScale:(float)slopeScale clamp:(float)clamp {}
+- (void)setDepthClipMode:(MTLDepthClipMode)depthClipMode {}
+- (void)setCullMode:(MTLCullMode)cullMode {}
+- (void)setFrontFacingWinding:(MTLWinding)frontFacingWindning {}
+- (void)setTriangleFillMode:(MTLTriangleFillMode)fillMode {}
+
+- (void)reset {
+  [_pipelineState release]; _pipelineState = nil;
+  for (int i = 0; i < 31; i++) {
+    [_vertexBuffers[i] release]; _vertexBuffers[i] = nil; _vertexBufferOffsets[i] = 0;
+    [_fragmentBuffers[i] release]; _fragmentBuffers[i] = nil; _fragmentBufferOffsets[i] = 0;
+  }
+  [_indexBuffer release]; _indexBuffer = nil;
+  _hasDraw = NO;
+  _isDrawIndexed = NO;
+}
+
+- (void)executeOnEncoder:(id<MTLRenderCommandEncoder>)encoder {
+  if (_pipelineState) [encoder setRenderPipelineState:_pipelineState];
+  for (int i = 0; i < 31; i++) {
+    if (_vertexBuffers[i]) [encoder setVertexBuffer:_vertexBuffers[i] offset:_vertexBufferOffsets[i] atIndex:i];
+    if (_fragmentBuffers[i]) [encoder setFragmentBuffer:_fragmentBuffers[i] offset:_fragmentBufferOffsets[i] atIndex:i];
+  }
+  if (_hasDraw) {
+    if (_isDrawIndexed) {
+      [encoder drawIndexedPrimitives:_primitiveType indexCount:_vertexCount indexType:_indexType indexBuffer:_indexBuffer indexBufferOffset:_indexBufferOffset instanceCount:_instanceCount baseVertex:_baseVertex baseInstance:_baseInstance];
+    } else {
+      [encoder drawPrimitives:_primitiveType vertexStart:_vertexStart vertexCount:_vertexCount instanceCount:_instanceCount baseInstance:_baseInstance];
+    }
+  }
+}
+
+- (void)dealloc {
+  [self reset];
+  [super dealloc];
+}
+@end
+
+@interface XEFMetalIndirectComputeCommand : NSObject <MTLIndirectComputeCommand> {
+@public
+  id<MTLComputePipelineState> _pipelineState;
+  id<MTLBuffer> _kernelBuffers[31];
+  NSUInteger _kernelBufferOffsets[31];
+  BOOL _hasDispatch;
+  BOOL _isDispatchThreads;
+  MTLSize _threadsPerGrid;
+  MTLSize _threadgroupsPerGrid;
+  MTLSize _threadsPerThreadgroup;
+}
+- (void)executeOnEncoder:(id<MTLComputeCommandEncoder>)encoder;
+@end
+
+@implementation XEFMetalIndirectComputeCommand
+- (void)setComputePipelineState:(id<MTLComputePipelineState>)pipelineState {
+  [pipelineState retain];
+  [_pipelineState release];
+  _pipelineState = pipelineState;
+}
+- (void)setKernelBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index {
+  if (index < 31) {
+    [buffer retain];
+    [_kernelBuffers[index] release];
+    _kernelBuffers[index] = buffer;
+    _kernelBufferOffsets[index] = offset;
+  }
+}
+- (void)setKernelBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset attributeStride:(NSUInteger)stride atIndex:(NSUInteger)index {
+  [self setKernelBuffer:buffer offset:offset atIndex:index];
+}
+- (void)concurrentDispatchThreadgroups:(MTLSize)threadgroupsPerGrid threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {
+  _hasDispatch = YES;
+  _isDispatchThreads = NO;
+  _threadgroupsPerGrid = threadgroupsPerGrid;
+  _threadsPerThreadgroup = threadsPerThreadgroup;
+}
+- (void)concurrentDispatchThreads:(MTLSize)threadsPerGrid threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {
+  _hasDispatch = YES;
+  _isDispatchThreads = YES;
+  _threadsPerGrid = threadsPerGrid;
+  _threadsPerThreadgroup = threadsPerThreadgroup;
+}
+- (void)setBarrier {}
+- (void)clearBarrier {}
+- (void)setImageblockWidth:(NSUInteger)width height:(NSUInteger)height {}
+- (void)setThreadgroupMemoryLength:(NSUInteger)length atIndex:(NSUInteger)index {}
+- (void)setStageInRegion:(MTLRegion)region {}
+- (void)reset {
+  [_pipelineState release]; _pipelineState = nil;
+  for (int i = 0; i < 31; i++) {
+    [_kernelBuffers[i] release]; _kernelBuffers[i] = nil; _kernelBufferOffsets[i] = 0;
+  }
+  _hasDispatch = NO;
+  _isDispatchThreads = NO;
+}
+- (void)executeOnEncoder:(id<MTLComputeCommandEncoder>)encoder {
+  if (_pipelineState) [encoder setComputePipelineState:_pipelineState];
+  for (int i = 0; i < 31; i++) {
+    if (_kernelBuffers[i]) [encoder setBuffer:_kernelBuffers[i] offset:_kernelBufferOffsets[i] atIndex:i];
+  }
+  if (_hasDispatch) {
+    if (_isDispatchThreads) {
+      [encoder dispatchThreads:_threadsPerGrid threadsPerThreadgroup:_threadsPerThreadgroup];
+    } else {
+      [encoder dispatchThreadgroups:_threadgroupsPerGrid threadsPerThreadgroup:_threadsPerThreadgroup];
+    }
+  }
+}
+- (void)dealloc {
+  [self reset];
+  [super dealloc];
+}
+@end
+
+@interface XEFMetalIndirectCommandBuffer : XEFMetalObject <MTLIndirectCommandBuffer> {
+@public
+  id<MTLDevice> _device;
+  MTLIndirectCommandBufferDescriptor *_descriptor;
+  NSUInteger _maxCommandCount;
+  MTLResourceOptions _options;
+  NSMutableArray *_renderCommands;
+  NSMutableArray *_computeCommands;
+  NSString *_label;
+  id<MTLHeap> _heap;
+  NSUInteger _heapOffset;
+}
+- (instancetype)initWithDescriptor:(MTLIndirectCommandBufferDescriptor *)descriptor maxCommandCount:(NSUInteger)count options:(MTLResourceOptions)options device:(id<MTLDevice>)device;
+@end
+
+@implementation XEFMetalIndirectCommandBuffer
+- (instancetype)initWithDescriptor:(MTLIndirectCommandBufferDescriptor *)descriptor maxCommandCount:(NSUInteger)count options:(MTLResourceOptions)options device:(id<MTLDevice>)device {
+  if ((self = [super init])) {
+    _device = device;
+    _descriptor = [descriptor copy];
+    _maxCommandCount = count;
+    _options = options;
+    _renderCommands = [[NSMutableArray alloc] initWithCapacity:count];
+    _computeCommands = [[NSMutableArray alloc] initWithCapacity:count];
+    for (NSUInteger i = 0; i < count; i++) {
+      XEFMetalIndirectRenderCommand *rc = [[XEFMetalIndirectRenderCommand alloc] init];
+      [_renderCommands addObject:rc];
+      [rc release];
+      XEFMetalIndirectComputeCommand *cc = [[XEFMetalIndirectComputeCommand alloc] init];
+      [_computeCommands addObject:cc];
+      [cc release];
+    }
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (NSUInteger)size { return _maxCommandCount; }
+- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
+- (void)resetWithRange:(NSRange)range {
+  NSUInteger end = range.location + range.length;
+  if (end > _maxCommandCount) end = _maxCommandCount;
+  for (NSUInteger i = range.location; i < end; i++) {
+    [_renderCommands[i] reset];
+    [_computeCommands[i] reset];
+  }
+}
+- (id<MTLIndirectRenderCommand>)indirectRenderCommandAtIndex:(NSUInteger)commandIndex {
+  if (commandIndex < _maxCommandCount) return _renderCommands[commandIndex];
+  return nil;
+}
+- (id<MTLIndirectComputeCommand>)indirectComputeCommandAtIndex:(NSUInteger)commandIndex {
+  if (commandIndex < _maxCommandCount) return _computeCommands[commandIndex];
+  return nil;
+}
+- (MTLStorageMode)storageMode { return (MTLStorageMode)((_options >> MTLResourceStorageModeShift) & 0xf); }
+- (MTLCPUCacheMode)cpuCacheMode { return (MTLCPUCacheMode)((_options >> MTLResourceCPUCacheModeShift) & 0xf); }
+- (MTLHazardTrackingMode)hazardTrackingMode { return (MTLHazardTrackingMode)((_options >> MTLResourceHazardTrackingModeShift) & 0x3); }
+- (MTLResourceOptions)resourceOptions { return _options; }
+- (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state { return MTLPurgeableStateNonVolatile; }
+- (void)makeAliasable {}
+- (BOOL)isAliasable { return NO; }
+- (id<MTLHeap>)heap { return _heap; }
+- (NSUInteger)heapOffset { return _heapOffset; }
+- (void)dealloc {
+  [_descriptor release];
+  [_renderCommands release];
+  [_computeCommands release];
+  [_label release];
+  [super dealloc];
+}
+@end
+
 @interface XEFMetalRenderCommandEncoder : XEFMetalObject <MTLRenderCommandEncoder> {
 @public
   id<MTLDevice> _device;
@@ -2426,8 +2738,16 @@ static void xef_read_vertex_attr(const uint8_t *ptr, MTLVertexFormat fmt, float 
 - (void)insertDebugSignpost:(NSString *)string {}
 - (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage {}
 - (void)useResources:(const id<MTLResource> *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {}
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage stages:(MTLRenderStages)stages {}
+- (void)useResources:(const id<MTLResource> *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage stages:(MTLRenderStages)stages {}
 - (void)useHeap:(id<MTLHeap>)heap {}
 - (void)useHeaps:(const id<MTLHeap> *)heaps count:(NSUInteger)count {}
+- (void)useHeap:(id<MTLHeap>)heap stages:(MTLRenderStages)stages {}
+- (void)useHeaps:(const id<MTLHeap> *)heaps count:(NSUInteger)count stages:(MTLRenderStages)stages {}
+- (void)updateFence:(id<MTLFence>)fence afterStages:(MTLRenderStages)stages {}
+- (void)waitForFence:(id<MTLFence>)fence beforeStages:(MTLRenderStages)stages {}
+- (void)memoryBarrierWithScope:(MTLBarrierScope)scope afterStages:(MTLRenderStages)after beforeStages:(MTLRenderStages)before {}
+- (void)memoryBarrierWithResources:(const id<MTLResource> *)resources count:(NSUInteger)count afterStages:(MTLRenderStages)after beforeStages:(MTLRenderStages)before {}
 
 typedef struct {
   const uint8_t *attr_bases[3];
@@ -3522,6 +3842,58 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
   [self drawIndexedPrimitives:primitiveType indexCount:indexCount indexType:indexType indexBuffer:indexBuffer indexBufferOffset:indexBufferOffset instanceCount:1 baseVertex:0 baseInstance:0];
 }
 
+- (void)drawPrimitives:(MTLPrimitiveType)primitiveType indirectBuffer:(id<MTLBuffer>)indirectBuffer indirectBufferOffset:(NSUInteger)indirectBufferOffset {
+  if (!indirectBuffer) return;
+  XEFMetalBuffer *ibuf = (XEFMetalBuffer *)indirectBuffer;
+  if (indirectBufferOffset + sizeof(MTLDrawPrimitivesIndirectArguments) > ibuf->_length) return;
+  const MTLDrawPrimitivesIndirectArguments *args = (const MTLDrawPrimitivesIndirectArguments *)((const uint8_t *)ibuf->_data + indirectBufferOffset);
+  [self drawPrimitives:primitiveType
+           vertexStart:args->vertexStart
+           vertexCount:args->vertexCount
+         instanceCount:args->instanceCount
+          baseInstance:args->baseInstance];
+}
+
+- (void)drawIndexedPrimitives:(MTLPrimitiveType)primitiveType
+                    indexType:(MTLIndexType)indexType
+                  indexBuffer:(id<MTLBuffer>)indexBuffer
+            indexBufferOffset:(NSUInteger)indexBufferOffset
+               indirectBuffer:(id<MTLBuffer>)indirectBuffer
+         indirectBufferOffset:(NSUInteger)indirectBufferOffset {
+  if (!indexBuffer || !indirectBuffer) return;
+  XEFMetalBuffer *ibuf = (XEFMetalBuffer *)indirectBuffer;
+  if (indirectBufferOffset + sizeof(MTLDrawIndexedPrimitivesIndirectArguments) > ibuf->_length) return;
+  const MTLDrawIndexedPrimitivesIndirectArguments *args = (const MTLDrawIndexedPrimitivesIndirectArguments *)((const uint8_t *)ibuf->_data + indirectBufferOffset);
+  NSUInteger indexSize = (indexType == MTLIndexTypeUInt16) ? sizeof(uint16_t) : sizeof(uint32_t);
+  [self drawIndexedPrimitives:primitiveType
+                   indexCount:args->indexCount
+                    indexType:indexType
+                  indexBuffer:indexBuffer
+            indexBufferOffset:indexBufferOffset + (NSUInteger)args->indexStart * indexSize
+                instanceCount:args->instanceCount
+                   baseVertex:args->baseVertex
+                 baseInstance:args->baseInstance];
+}
+
+- (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)indirectCommandBuffer withRange:(NSRange)executionRange {
+  if (!indirectCommandBuffer || ![indirectCommandBuffer isKindOfClass:[XEFMetalIndirectCommandBuffer class]]) return;
+  XEFMetalIndirectCommandBuffer *icb = (XEFMetalIndirectCommandBuffer *)indirectCommandBuffer;
+  NSUInteger end = executionRange.location + executionRange.length;
+  if (end > icb->_maxCommandCount) end = icb->_maxCommandCount;
+  for (NSUInteger i = executionRange.location; i < end; i++) {
+    XEFMetalIndirectRenderCommand *cmd = icb->_renderCommands[i];
+    [cmd executeOnEncoder:self];
+  }
+}
+
+- (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)indirectCommandBuffer indirectBuffer:(id<MTLBuffer>)indirectRangeBuffer indirectBufferOffset:(NSUInteger)indirectBufferOffset {
+  if (!indirectCommandBuffer || !indirectRangeBuffer) return;
+  XEFMetalBuffer *ibuf = (XEFMetalBuffer *)indirectRangeBuffer;
+  if (indirectBufferOffset + sizeof(MTLIndirectCommandBufferExecutionRange) > ibuf->_length) return;
+  const MTLIndirectCommandBufferExecutionRange *range = (const MTLIndirectCommandBufferExecutionRange *)((const uint8_t *)ibuf->_data + indirectBufferOffset);
+  [self executeCommandsInBuffer:indirectCommandBuffer withRange:NSMakeRange(range->location, range->length)];
+}
+
 - (void)endEncoding {
   if (_passDesc) {
     MTLRenderPassColorAttachmentDescriptor *att0 = _passDesc.colorAttachments->_attachments[0];
@@ -3683,6 +4055,37 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
     return;
   }
 }
+- (void)dispatchThreadgroupsWithIndirectBuffer:(id<MTLBuffer>)indirectBuffer indirectBufferOffset:(NSUInteger)indirectBufferOffset threadsPerThreadgroup:(MTLSize)threadsPerThreadgroup {
+  if (!indirectBuffer) return;
+  XEFMetalBuffer *ibuf = (XEFMetalBuffer *)indirectBuffer;
+  if (indirectBufferOffset + sizeof(MTLDispatchThreadgroupsIndirectArguments) > ibuf->_length) return;
+  const MTLDispatchThreadgroupsIndirectArguments *args = (const MTLDispatchThreadgroupsIndirectArguments *)((const uint8_t *)ibuf->_data + indirectBufferOffset);
+  MTLSize tg = MTLSizeMake(args->threadgroupsPerGrid[0], args->threadgroupsPerGrid[1], args->threadgroupsPerGrid[2]);
+  [self dispatchThreadgroups:tg threadsPerThreadgroup:threadsPerThreadgroup];
+}
+- (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)indirectCommandBuffer withRange:(NSRange)executionRange {
+  if (!indirectCommandBuffer || ![indirectCommandBuffer isKindOfClass:[XEFMetalIndirectCommandBuffer class]]) return;
+  XEFMetalIndirectCommandBuffer *icb = (XEFMetalIndirectCommandBuffer *)indirectCommandBuffer;
+  NSUInteger end = executionRange.location + executionRange.length;
+  if (end > icb->_maxCommandCount) end = icb->_maxCommandCount;
+  for (NSUInteger i = executionRange.location; i < end; i++) {
+    XEFMetalIndirectComputeCommand *cmd = icb->_computeCommands[i];
+    [cmd executeOnEncoder:self];
+  }
+}
+- (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)indirectCommandBuffer indirectBuffer:(id<MTLBuffer>)indirectRangeBuffer indirectBufferOffset:(NSUInteger)indirectBufferOffset {
+  if (!indirectCommandBuffer || !indirectRangeBuffer) return;
+  XEFMetalBuffer *ibuf = (XEFMetalBuffer *)indirectRangeBuffer;
+  if (indirectBufferOffset + sizeof(MTLIndirectCommandBufferExecutionRange) > ibuf->_length) return;
+  const MTLIndirectCommandBufferExecutionRange *range = (const MTLIndirectCommandBufferExecutionRange *)((const uint8_t *)ibuf->_data + indirectBufferOffset);
+  [self executeCommandsInBuffer:indirectCommandBuffer withRange:NSMakeRange(range->location, range->length)];
+}
+- (void)updateFence:(id<MTLFence>)fence {}
+- (void)waitForFence:(id<MTLFence>)fence {}
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage {}
+- (void)useResources:(const id<MTLResource> *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {}
+- (void)useHeap:(id<MTLHeap>)heap {}
+- (void)useHeaps:(const id<MTLHeap> *)heaps count:(NSUInteger)count {}
 - (void)memoryBarrierWithScope:(MTLBarrierScope)scope {}
 - (void)memoryBarrierWithResources:(const id<MTLResource> *)resources count:(NSUInteger)count {}
 - (void)pushDebugGroup:(NSString *)string {}
@@ -3764,6 +4167,23 @@ static void xef_init_raster_context(XEFRasterContext *ctx, XEFMetalRenderCommand
     }
   }
 }
+- (void)copyFromBuffer:(id<MTLBuffer>)sourceBuffer sourceOffset:(NSUInteger)sourceOffset sourceBytesPerRow:(NSUInteger)sourceBytesPerRow sourceBytesPerImage:(NSUInteger)sourceBytesPerImage sourceSize:(MTLSize)sourceSize toTexture:(id<MTLTexture>)destinationTexture destinationSlice:(NSUInteger)destinationSlice destinationLevel:(NSUInteger)destinationLevel destinationOrigin:(MTLOrigin)destinationOrigin options:(MTLBlitOption)options {
+  [self copyFromBuffer:sourceBuffer sourceOffset:sourceOffset sourceBytesPerRow:sourceBytesPerRow sourceBytesPerImage:sourceBytesPerImage sourceSize:sourceSize toTexture:destinationTexture destinationSlice:destinationSlice destinationLevel:destinationLevel destinationOrigin:destinationOrigin];
+}
+- (void)copyFromTexture:(id<MTLTexture>)sourceTexture sourceSlice:(NSUInteger)sourceSlice sourceLevel:(NSUInteger)sourceLevel sourceOrigin:(MTLOrigin)sourceOrigin sourceSize:(MTLSize)sourceSize toBuffer:(id<MTLBuffer>)destinationBuffer destinationOffset:(NSUInteger)destinationOffset destinationBytesPerRow:(NSUInteger)destinationBytesPerRow destinationBytesPerImage:(NSUInteger)destinationBytesPerImage options:(MTLBlitOption)options {
+  [self copyFromTexture:sourceTexture sourceSlice:sourceSlice sourceLevel:sourceLevel sourceOrigin:sourceOrigin sourceSize:sourceSize toBuffer:destinationBuffer destinationOffset:destinationOffset destinationBytesPerRow:destinationBytesPerRow destinationBytesPerImage:destinationBytesPerImage];
+}
+- (void)optimizeContentsForGPUAccess:(id<MTLTexture>)texture {}
+- (void)optimizeContentsForGPUAccess:(id<MTLTexture>)texture slice:(NSUInteger)slice level:(NSUInteger)level {}
+- (void)optimizeContentsForCPUAccess:(id<MTLTexture>)texture {}
+- (void)optimizeContentsForCPUAccess:(id<MTLTexture>)texture slice:(NSUInteger)slice level:(NSUInteger)level {}
+- (void)resetCommandsInBuffer:(id<MTLIndirectCommandBuffer>)buffer withRange:(NSRange)range {
+  if (buffer) [buffer resetWithRange:range];
+}
+- (void)copyIndirectCommandBuffer:(id<MTLIndirectCommandBuffer>)source sourceRange:(NSRange)sourceRange destination:(id<MTLIndirectCommandBuffer>)destination destinationIndex:(NSUInteger)destinationIndex {}
+- (void)optimizeIndirectCommandBuffer:(id<MTLIndirectCommandBuffer>)indirectCommandBuffer withRange:(NSRange)range {}
+- (void)updateFence:(id<MTLFence>)fence {}
+- (void)waitForFence:(id<MTLFence>)fence {}
 - (void)synchronizeResource:(id<MTLResource>)resource {}
 - (void)synchronizeTexture:(id<MTLTexture>)texture slice:(NSUInteger)slice level:(NSUInteger)level {}
 - (void)fillBuffer:(id<MTLBuffer>)buffer range:(NSRange)range value:(uint8_t)value {
@@ -4345,6 +4765,10 @@ typedef enum {
 - (id<MTLBinaryArchive>)newBinaryArchiveWithDescriptor:(MTLBinaryArchiveDescriptor *)descriptor error:(NSError **)error {
   if (error) *error = nil;
   return [[[XEFMetalBinaryArchive alloc] initWithDescriptor:descriptor device:self] autorelease];
+}
+
+- (id<MTLIndirectCommandBuffer>)newIndirectCommandBufferWithDescriptor:(MTLIndirectCommandBufferDescriptor *)descriptor maxCommandCount:(NSUInteger)maxCount options:(MTLResourceOptions)options {
+  return [[[XEFMetalIndirectCommandBuffer alloc] initWithDescriptor:descriptor maxCommandCount:maxCount options:options device:self] autorelease];
 }
 
 @end
