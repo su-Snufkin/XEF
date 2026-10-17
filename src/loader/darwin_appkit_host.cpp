@@ -830,6 +830,18 @@ void xef_host_metal_tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh
     glBindFramebuffer_fn(0x8D40, 0);
 }
 
+void xef_host_metal_tex_copy_ex(uint32_t src_tex_id, int src_slice, int src_level, int sx, int sy, int sz,
+                                uint32_t dst_tex_id, int dst_slice, int dst_level, int dx, int dy, int dz,
+                                int sw, int sh, int sd) {
+    if (xef::metal_vk::is_available()) {
+        xef::metal_vk::tex_copy_ex(src_tex_id, src_slice, src_level, sx, sy, sz,
+                                   dst_tex_id, dst_slice, dst_level, dx, dy, dz,
+                                   sw, sh, sd);
+        return;
+    }
+    xef_host_metal_tex_copy(src_tex_id, sx, sy, sw, sh, dst_tex_id, dx, dy);
+}
+
 void xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, int pitch) {
     if (xef::metal_vk::is_available()) {
         xef::metal_vk::tex_readback(tex_id, x, y, w, h, out_data, pitch);
@@ -1448,6 +1460,7 @@ const Fn kFns[] = {
     {"_xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
     {"_xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
     {"_xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
+    {"_xef_host_metal_tex_copy_ex", (void*)&xef_host_metal_tex_copy_ex},
     {"_xef_host_metal_tex_readback", (void*)&xef_host_metal_tex_readback},
     {"_xef_host_metal_tex_generate_mipmaps", (void*)&xef_host_metal_tex_generate_mipmaps},
     {"_xef_host_metal_tex_destroy", (void*)&xef_host_metal_tex_destroy},
@@ -1460,6 +1473,7 @@ const Fn kFns[] = {
     {"xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
     {"xef_host_metal_tex_update", (void*)&xef_host_metal_tex_update},
     {"xef_host_metal_tex_copy", (void*)&xef_host_metal_tex_copy},
+    {"xef_host_metal_tex_copy_ex", (void*)&xef_host_metal_tex_copy_ex},
     {"xef_host_metal_tex_readback", (void*)&xef_host_metal_tex_readback},
     {"xef_host_metal_tex_generate_mipmaps", (void*)&xef_host_metal_tex_generate_mipmaps},
     {"xef_host_metal_tex_destroy", (void*)&xef_host_metal_tex_destroy},

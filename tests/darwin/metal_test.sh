@@ -53,6 +53,16 @@ if [ -f tests/darwin/cube_test ] && [ -f tests/darwin/cube_shaders.metallib ]; t
   fi
 fi
 
+if [ -f tests/darwin/heap_event_test ]; then
+  OUT6=$(timeout 15 $X -L darwin-rootfs tests/darwin/heap_event_test 2>&1)
+  RC6=$?
+  if [ $RC6 -ne 0 ] || ! echo "$OUT6" | grep -q "PASS heap_event_test"; then
+    echo "FAIL metal_test (heap_event_test): rc=$RC6"
+    echo "$OUT6"
+    exit 1
+  fi
+fi
+
 echo "PASS metal_test"
 exit 0
 

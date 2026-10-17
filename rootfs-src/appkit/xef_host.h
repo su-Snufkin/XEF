@@ -82,6 +82,11 @@ typedef struct {
     uint32_t depth_tex_id;
     int      cull_mode;             /* 0=none, 1=front, 2=back */
     int      front_facing_winding;  /* 0=cw, 1=ccw */
+    int      triangle_fill_mode;    /* 0=fill, 1=lines */
+    float    depth_bias;
+    float    depth_bias_slope_scale;
+    float    depth_bias_clamp;
+    float    blend_color[4];
 } xef_host_metal_pipeline_t;
 
 typedef struct {
@@ -93,6 +98,9 @@ typedef struct {
 uint32_t xef_host_metal_tex_create(int w, int h, int fmt, int is_render_target);
 void     xef_host_metal_tex_update(uint32_t tex_id, int x, int y, int w, int h, const void *data, int pitch);
 void     xef_host_metal_tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy);
+void     xef_host_metal_tex_copy_ex(uint32_t src_tex_id, int src_slice, int src_level, int sx, int sy, int sz,
+                                    uint32_t dst_tex_id, int dst_slice, int dst_level, int dx, int dy, int dz,
+                                    int sw, int sh, int sd);
 void     xef_host_metal_tex_readback(uint32_t tex_id, int x, int y, int w, int h, void *out_data, int pitch);
 void     xef_host_metal_tex_generate_mipmaps(uint32_t tex_id);
 void     xef_host_metal_tex_destroy(uint32_t tex_id);

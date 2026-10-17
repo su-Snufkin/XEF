@@ -16,6 +16,9 @@ const char* get_device_name();
 uint32_t    tex_create(int w, int h, int fmt, int is_render_target);
 void        tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, int pitch);
 void        tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy);
+void        tex_copy_ex(uint32_t src_tex_id, int src_slice, int src_level, int sx, int sy, int sz,
+                        uint32_t dst_tex_id, int dst_slice, int dst_level, int dx, int dy, int dz,
+                        int sw, int sh, int sd);
 void        tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, int pitch);
 void        tex_generate_mipmaps(uint32_t tex_id);
 void        tex_destroy(uint32_t tex_id);

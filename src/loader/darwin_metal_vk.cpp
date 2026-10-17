@@ -28,6 +28,7 @@ static PFN_vkCreateInstance vkCreateInstance = nullptr;
 static PFN_vkDestroyInstance vkDestroyInstance = nullptr;
 static PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices = nullptr;
 static PFN_vkGetPhysicalDeviceProperties vkGetPhysicalDeviceProperties = nullptr;
+static PFN_vkGetPhysicalDeviceFeatures vkGetPhysicalDeviceFeatures = nullptr;
 static PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties = nullptr;
 static PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties = nullptr;
 static PFN_vkCreateDevice vkCreateDevice = nullptr;
@@ -72,6 +73,9 @@ static PFN_vkCmdEndRenderPass vkCmdEndRenderPass = nullptr;
 static PFN_vkCmdBindPipeline vkCmdBindPipeline = nullptr;
 static PFN_vkCmdSetViewport vkCmdSetViewport = nullptr;
 static PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
+static PFN_vkCmdSetDepthBias vkCmdSetDepthBias = nullptr;
+static PFN_vkCmdSetStencilReference vkCmdSetStencilReference = nullptr;
+static PFN_vkCmdSetBlendConstants vkCmdSetBlendConstants = nullptr;
 static PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers = nullptr;
 static PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer = nullptr;
 static PFN_vkCmdDraw vkCmdDraw = nullptr;
@@ -177,6 +181,8 @@ struct PipelineKey {
     uint32_t stencil_write_mask;
     int cull_mode;
     int front_face;
+    int fill_mode;
+    int has_depth_bias;
 
     bool operator==(const PipelineKey& o) const {
         return blend_enable == o.blend_enable &&
@@ -196,7 +202,9 @@ struct PipelineKey {
                stencil_read_mask == o.stencil_read_mask &&
                stencil_write_mask == o.stencil_write_mask &&
                cull_mode == o.cull_mode &&
-               front_face == o.front_face;
+               front_face == o.front_face &&
+               fill_mode == o.fill_mode &&
+               has_depth_bias == o.has_depth_bias;
     }
 };
 
@@ -216,6 +224,8 @@ struct PipelineKeyHash {
         h ^= std::hash<int>()(k.stencil_test_enable) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.cull_mode) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(k.front_face) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.fill_mode) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(k.has_depth_bias) + 0x9e3779b9 + (h << 6) + (h >> 2);
         return h;
     }
 };
@@ -537,11 +547,12 @@ static VkPipeline get_or_create_pipeline(const PipelineKey& key, VkRenderPass re
     VkPipelineRasterizationStateCreateInfo rasterizer = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
     rasterizer.depthClampEnable = VK_FALSE;
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.polygonMode = (key.fill_mode == 1) ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = (key.cull_mode == 1) ? VK_CULL_MODE_FRONT_BIT :
                           (key.cull_mode == 2) ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     rasterizer.frontFace = (key.front_face == 1) ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.depthBiasEnable = (key.has_depth_bias) ? VK_TRUE : VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
     multisampling.sampleShadingEnable = VK_FALSE;
@@ -571,7 +582,13 @@ static VkPipeline get_or_create_pipeline(const PipelineKey& key, VkRenderPass re
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
 
-    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_DEPTH_BIAS,
+        VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+        VK_DYNAMIC_STATE_BLEND_CONSTANTS
+    };
     VkPipelineDepthStencilStateCreateInfo depthStencil = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
     depthStencil.depthTestEnable = key.depth_test_enable ? VK_TRUE : VK_FALSE;
     depthStencil.depthWriteEnable = key.depth_write_enable ? VK_TRUE : VK_FALSE;
@@ -590,7 +607,7 @@ static VkPipeline get_or_create_pipeline(const PipelineKey& key, VkRenderPass re
     }
 
     VkPipelineDynamicStateCreateInfo dynamicState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
-    dynamicState.dynamicStateCount = 2;
+    dynamicState.dynamicStateCount = sizeof(dynamicStates) / sizeof(dynamicStates[0]);
     dynamicState.pDynamicStates = dynamicStates;
 
     VkGraphicsPipelineCreateInfo pipelineInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
@@ -680,6 +697,7 @@ bool init() {
     LOAD_VK_INST(vkDestroyInstance);
     LOAD_VK_INST(vkEnumeratePhysicalDevices);
     LOAD_VK_INST(vkGetPhysicalDeviceProperties);
+    LOAD_VK_INST(vkGetPhysicalDeviceFeatures);
     LOAD_VK_INST(vkGetPhysicalDeviceQueueFamilyProperties);
     LOAD_VK_INST(vkGetPhysicalDeviceMemoryProperties);
     LOAD_VK_INST(vkCreateDevice);
@@ -733,9 +751,17 @@ bool init() {
     qci.queueCount = 1;
     qci.pQueuePriorities = &priority;
 
+    VkPhysicalDeviceFeatures supportedFeatures = {};
+    vkGetPhysicalDeviceFeatures(g_physical_device, &supportedFeatures);
+    VkPhysicalDeviceFeatures enabledFeatures = {};
+    if (supportedFeatures.fillModeNonSolid) enabledFeatures.fillModeNonSolid = VK_TRUE;
+    if (supportedFeatures.samplerAnisotropy) enabledFeatures.samplerAnisotropy = VK_TRUE;
+    if (supportedFeatures.depthClamp) enabledFeatures.depthClamp = VK_TRUE;
+
     VkDeviceCreateInfo dci = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
+    dci.pEnabledFeatures = &enabledFeatures;
 
     if (vkCreateDevice(g_physical_device, &dci, nullptr, &g_device) != VK_SUCCESS) return false;
     vkGetDeviceQueue(g_device, g_queue_family, 0, &g_queue);
@@ -780,6 +806,9 @@ bool init() {
     LOAD_VK_DEV(vkCmdBindPipeline);
     LOAD_VK_DEV(vkCmdSetViewport);
     LOAD_VK_DEV(vkCmdSetScissor);
+    LOAD_VK_DEV(vkCmdSetDepthBias);
+    LOAD_VK_DEV(vkCmdSetStencilReference);
+    LOAD_VK_DEV(vkCmdSetBlendConstants);
     LOAD_VK_DEV(vkCmdBindVertexBuffers);
     LOAD_VK_DEV(vkCmdBindIndexBuffer);
     LOAD_VK_DEV(vkCmdDraw);
@@ -964,7 +993,11 @@ uint32_t tex_create(int w, int h, int fmt, int is_render_target) {
     ici.samples = VK_SAMPLE_COUNT_1_BIT;
     ici.tiling = VK_IMAGE_TILING_OPTIMAL;
     ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if (t.is_rt) ici.usage |= is_depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (is_depth) {
+        ici.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    } else {
+        ici.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    }
     ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -1100,7 +1133,9 @@ void tex_update(uint32_t tex_id, int x, int y, int w, int h, const void* data, i
     vkDestroyBuffer(g_device, stagingBuffer, nullptr);
 }
 
-void tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy) {
+void tex_copy_ex(uint32_t src_tex_id, int src_slice, int src_level, int sx, int sy, int sz,
+                 uint32_t dst_tex_id, int dst_slice, int dst_level, int dx, int dy, int dz,
+                 int sw, int sh, int sd) {
     if (!is_available() || sw <= 0 || sh <= 0) return;
     std::lock_guard<std::mutex> lk(g_metal_vk_lock);
     auto it_src = g_textures.find(src_tex_id);
@@ -1111,30 +1146,78 @@ void tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_
     MetalVkTex& dst = it_dst->second;
 
     VkCommandBuffer cmd = begin_single_time_commands();
-    transition_image_layout(cmd, src.image, src.vk_fmt, src.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    transition_image_layout(cmd, dst.image, dst.vk_fmt, dst.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    VkImageMemoryBarrier barrier_src = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    barrier_src.oldLayout = src.layout;
+    barrier_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier_src.image = src.image;
+    barrier_src.subresourceRange.aspectMask = (src.vk_fmt == VK_FORMAT_D32_SFLOAT || src.vk_fmt == VK_FORMAT_D16_UNORM) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier_src.subresourceRange.baseMipLevel = (uint32_t)src_level;
+    barrier_src.subresourceRange.levelCount = 1;
+    barrier_src.subresourceRange.baseArrayLayer = (uint32_t)src_slice;
+    barrier_src.subresourceRange.layerCount = 1;
+    barrier_src.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier_src.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+    VkImageMemoryBarrier barrier_dst = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    barrier_dst.oldLayout = dst.layout;
+    barrier_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier_dst.image = dst.image;
+    barrier_dst.subresourceRange.aspectMask = (dst.vk_fmt == VK_FORMAT_D32_SFLOAT || dst.vk_fmt == VK_FORMAT_D16_UNORM) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier_dst.subresourceRange.baseMipLevel = (uint32_t)dst_level;
+    barrier_dst.subresourceRange.levelCount = 1;
+    barrier_dst.subresourceRange.baseArrayLayer = (uint32_t)dst_slice;
+    barrier_dst.subresourceRange.layerCount = 1;
+    barrier_dst.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    VkImageMemoryBarrier pre_barriers[2] = { barrier_src, barrier_dst };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, pre_barriers);
 
     VkImageCopy copyRegion = {};
-    copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.srcSubresource.aspectMask = barrier_src.subresourceRange.aspectMask;
+    copyRegion.srcSubresource.mipLevel = (uint32_t)src_level;
+    copyRegion.srcSubresource.baseArrayLayer = (uint32_t)src_slice;
     copyRegion.srcSubresource.layerCount = 1;
-    copyRegion.srcOffset = { sx, sy, 0 };
-    copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.srcOffset = { sx, sy, sz };
+    copyRegion.dstSubresource.aspectMask = barrier_dst.subresourceRange.aspectMask;
+    copyRegion.dstSubresource.mipLevel = (uint32_t)dst_level;
+    copyRegion.dstSubresource.baseArrayLayer = (uint32_t)dst_slice;
     copyRegion.dstSubresource.layerCount = 1;
-    copyRegion.dstOffset = { dx, dy, 0 };
-    copyRegion.extent = { (uint32_t)sw, (uint32_t)sh, 1 };
+    copyRegion.dstOffset = { dx, dy, dz };
+    copyRegion.extent = { (uint32_t)sw, (uint32_t)sh, (uint32_t)(sd > 0 ? sd : 1) };
 
     vkCmdCopyImage(cmd, src.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                         dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                         1, &copyRegion);
 
-    VkImageLayout src_final = src.is_rt ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkImageLayout dst_final = dst.is_rt ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    transition_image_layout(cmd, src.image, src.vk_fmt, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, src_final);
-    transition_image_layout(cmd, dst.image, dst.vk_fmt, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dst_final);
+    VkImageLayout src_final = src.is_rt ? (barrier_src.subresourceRange.aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkImageLayout dst_final = dst.is_rt ? (barrier_dst.subresourceRange.aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    barrier_src.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier_src.newLayout = src_final;
+    barrier_src.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier_src.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+
+    barrier_dst.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier_dst.newLayout = dst_final;
+    barrier_dst.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier_dst.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+
+    VkImageMemoryBarrier post_barriers[2] = { barrier_src, barrier_dst };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 2, post_barriers);
     end_single_time_commands(cmd);
 
     src.layout = src_final;
     dst.layout = dst_final;
+}
+
+void tex_copy(uint32_t src_tex_id, int sx, int sy, int sw, int sh, uint32_t dst_tex_id, int dx, int dy) {
+    tex_copy_ex(src_tex_id, 0, 0, sx, sy, 0, dst_tex_id, 0, 0, dx, dy, 0, sw, sh, 1);
 }
 
 void tex_readback(uint32_t tex_id, int x, int y, int w, int h, void* out_data, int pitch) {
@@ -1378,6 +1461,26 @@ void pass_begin_ex(int handle, uint32_t rt_tex_id, uint32_t depth_tex_id, int cl
     VkFramebuffer fb = VK_NULL_HANDLE;
 
     if (!has_depth) {
+        if (!tex.render_pass_clear || !tex.framebuffer_clear) {
+            if (!tex.render_pass_clear) tex.render_pass_clear = create_render_pass(tex.vk_fmt, VK_FORMAT_UNDEFINED, true);
+            if (!tex.render_pass_load)  tex.render_pass_load  = create_render_pass(tex.vk_fmt, VK_FORMAT_UNDEFINED, false);
+
+            VkFramebufferCreateInfo fbInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+            fbInfo.attachmentCount = 1;
+            fbInfo.pAttachments = &tex.view;
+            fbInfo.width = tex.w;
+            fbInfo.height = tex.h;
+            fbInfo.layers = 1;
+
+            if (!tex.framebuffer_clear) {
+                fbInfo.renderPass = tex.render_pass_clear;
+                vkCreateFramebuffer(g_device, &fbInfo, nullptr, &tex.framebuffer_clear);
+            }
+            if (!tex.framebuffer_load) {
+                fbInfo.renderPass = tex.render_pass_load;
+                vkCreateFramebuffer(g_device, &fbInfo, nullptr, &tex.framebuffer_load);
+            }
+        }
         rp = clear ? tex.render_pass_clear : tex.render_pass_load;
         fb = clear ? tex.framebuffer_clear : tex.framebuffer_load;
     } else {
@@ -1499,6 +1602,8 @@ void draw(int handle,
     key.stencil_write_mask = pipe->stencil_write_mask;
     key.cull_mode = pipe->cull_mode;
     key.front_face = pipe->front_facing_winding;
+    key.fill_mode = pipe->triangle_fill_mode;
+    key.has_depth_bias = (pipe->depth_bias != 0.0f || pipe->depth_bias_slope_scale != 0.0f || pipe->depth_bias_clamp != 0.0f) ? 1 : 0;
 
     VkRenderPass pass_for_pipeline = (g_active_render_pass != VK_NULL_HANDLE) ? g_active_render_pass : rt.render_pass_load;
     VkPipeline pipeline = get_or_create_pipeline(key, pass_for_pipeline);
@@ -1550,6 +1655,17 @@ void draw(int handle,
         sc.extent.height = (uint32_t)rt.h;
     }
     vkCmdSetScissor(g_active_cmd, 0, 1, &sc);
+
+    if (vkCmdSetDepthBias) {
+        vkCmdSetDepthBias(g_active_cmd, pipe->depth_bias, pipe->depth_bias_clamp, pipe->depth_bias_slope_scale);
+    }
+    if (vkCmdSetStencilReference) {
+        vkCmdSetStencilReference(g_active_cmd, VK_STENCIL_FRONT_AND_BACK, pipe->stencil_ref);
+    }
+    if (vkCmdSetBlendConstants) {
+        float blendConst[4] = { pipe->blend_color[0], pipe->blend_color[1], pipe->blend_color[2], pipe->blend_color[3] };
+        vkCmdSetBlendConstants(g_active_cmd, blendConst);
+    }
 
     // Dynamic vertex buffer
     size_t vb_size = vertex_count * sizeof(xef_host_metal_vertex_t);
