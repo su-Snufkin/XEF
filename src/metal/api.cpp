@@ -137,7 +137,12 @@ uint32_t xef_mtl_library_create_source(const char* source, const void* options, 
         copy_err(res.log.empty() ? std::string("MSL compilation failed") : res.log, err, err_len);
         return 0;
     }
-    return xef_mtl_library_create(res.metallib.data(), res.metallib.size(), err, err_len);
+    uint32_t id = xef_mtl_library_create(res.metallib.data(), res.metallib.size(), err, err_len);
+    if (id) {
+        std::lock_guard<std::recursive_mutex> lk(g.mtx);
+        if (Library* l = library(id)) l->source = req.source;
+    }
+    return id;
 }
 
 uint32_t xef_mtl_library_function_count(uint32_t id) {

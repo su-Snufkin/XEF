@@ -91,6 +91,11 @@ struct Recorder {
     std::vector<std::pair<uint32_t, uint64_t>> signals, waits;
     std::vector<uint32_t> release;
     std::string err;
+    // XEF_MTL_CAPTURE: buffers of one dispatch copied before/after it, written out after the submission
+    struct CaptureFile { std::string name; uint32_t staging; uint64_t size; };
+    struct Capture { std::string dir, meta, source; std::vector<CaptureFile> files; std::map<uint32_t, std::vector<uint8_t>> bytes; };
+    std::vector<Capture> captures;
+    std::map<uint32_t, std::vector<uint8_t>> kernel_bytes;
 
     void barrier() { image_barrier_all(cb); }
 
@@ -160,6 +165,7 @@ struct Recorder {
         s.bytes_buf[index] = c->buf;
         s.bytes_off[index] = off;
         s.bytes_len[index] = len;
+        if (stage == XEF_MTL_STAGE_KERNEL && capture_wanted()) kernel_bytes[index].assign((const uint8_t*)data, (const uint8_t*)data + len);
     }
 
     // ---------------- render ----------------
@@ -379,11 +385,83 @@ struct Recorder {
         tg_mem.clear();
     }
 
+    static bool capture_wanted() { static int w = getenv("XEF_MTL_CAPTURE") ? 1 : 0; return w; }
+
+    // XEF_MTL_CAPTURE=dir, XEF_MTL_CAPTURE_MATCH=text in the MSL source, XEF_MTL_CAPTURE_AT=n-th matching dispatch
+    Capture* capture_begin(ComputeVariant* v, const xef_mtl_dispatch* d, const uint32_t tg[3]) {
+        static int seen = 0;
+        static bool done = false;
+        if (done || !capture_wanted()) return nullptr;
+        const char* match = getenv("XEF_MTL_CAPTURE_MATCH");
+        if (cp->source.empty() || (match && cp->source.find(match) == std::string::npos)) return nullptr;
+        const char* at = getenv("XEF_MTL_CAPTURE_AT");
+        if (seen++ != (at ? atoi(at) : 0)) return nullptr;
+        done = true;
+        Capture c;
+        c.dir = getenv("XEF_MTL_CAPTURE");
+        c.source = cp->source;
+        char line[256];
+        std::string& m = c.meta;
+        m += "function " + cp->req.stages[0].function + "\n";
+        snprintf(line, sizeof line, "tg %u %u %u\ngroups %u %u %u\nby_threads %u\n", tg[0], tg[1], tg[2], d->groups[0], d->groups[1], d->groups[2], d->by_threads);
+        m += line;
+        for (size_t i = 0; i < tg_mem.size(); i++) { snprintf(line, sizeof line, "tgmem %zu %u\n", i, tg_mem[i]); m += line; }
+        for (const FnConstant& fc : cp->req.stages[0].constants) {
+            snprintf(line, sizeof line, "const %u %u ", fc.index, fc.type);
+            m += line;
+            for (uint8_t b : fc.value) { snprintf(line, sizeof line, "%02x", b); m += line; }
+            m += "\n";
+        }
+        StageBind& sb = st[XEF_MTL_STAGE_KERNEL];
+        barrier();
+        for (const TableEntry& te : v->cs.refl.table) {
+            uint32_t i = te.index;
+            if (te.kind != BIND_BUFFER || i > XEF_MTL_MAX_BUFFERS) continue;
+            if (sb.bytes_addr[i]) {
+                auto it = kernel_bytes.find(i);
+                if (it == kernel_bytes.end()) continue;
+                snprintf(line, sizeof line, "bytes %u bytes%u.bin\n", i, i);
+                m += line;
+                c.bytes[i] = it->second;
+                continue;
+            }
+            Buffer* b = buffer(sb.buffer[i]);
+            if (!b) continue;
+            snprintf(line, sizeof line, "buffer %u buf%u %llu %llu\n", i, i, (unsigned long long)sb.offset[i], (unsigned long long)b->size);
+            m += line;
+            void* map = nullptr;
+            uint32_t sid = create_buffer_internal(b->size, true, &map);
+            VkBufferCopy r{0, 0, b->size};
+            vk.CmdCopyBuffer(cb, b->buf, buffer(sid)->buf, 1, &r);
+            c.files.push_back({"buf" + std::to_string(i) + ".in", sid, b->size});
+            c.files.push_back({"buf" + std::to_string(i) + ".out", sb.buffer[i], b->size});   // staging made after the dispatch
+        }
+        barrier();
+        captures.push_back(std::move(c));
+        return &captures.back();
+    }
+
+    void capture_end(Capture* c) {
+        barrier();
+        for (CaptureFile& f : c->files) {
+            if (f.name.size() < 4 || f.name.compare(f.name.size() - 4, 4, ".out")) continue;
+            Buffer* b = buffer(f.staging);
+            void* map = nullptr;
+            uint32_t sid = create_buffer_internal(f.size, true, &map);
+            VkBufferCopy r{0, 0, f.size};
+            vk.CmdCopyBuffer(cb, b->buf, buffer(sid)->buf, 1, &r);
+            f.staging = sid;
+        }
+        barrier();
+    }
+
     void dispatch(const xef_mtl_dispatch* d) {
         if (!cp) { err = "dispatch without a compute pipeline"; return; }
         uint32_t tg[3] = {std::max(1u, d->threads[0]), std::max(1u, d->threads[1]), std::max(1u, d->threads[2])};
         ComputeVariant* v = compute_variant(cp, tg, tg_mem, err);
         if (!v) return;
+        Capture* cap = capture_begin(v, d, tg);
+        if (cap) bound_pipe = VK_NULL_HANDLE;
         if (v->pipe != bound_pipe) { vk.CmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, v->pipe); bound_pipe = v->pipe; }
         if (barrier_pending) barrier();
         PushConstants pc{};
@@ -402,6 +480,7 @@ struct Recorder {
         vk.CmdPushConstants(cb, g.pipe_layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
         if (groups[0] && groups[1] && groups[2]) vk.CmdDispatch(cb, groups[0], groups[1], groups[2]);
         barrier_pending = true;
+        if (cap) capture_end(cap);
     }
 
     // ---------------- blit ----------------
@@ -516,7 +595,88 @@ struct Recorder {
             fprintf(stderr, "mtl: draw_indexed prim %u n%u i%u ib=%u rp=%p rendering=%d\n", c->primitive, c->index_count, c->instance_count, c->index_buffer, (void*)rp, rendering);
             break;
         }
-        default: fprintf(stderr, "mtl: op %u size\n", op); break;
+        case XEF_MTL_CMD_BEGIN_RENDER: {
+            auto* b = (const xef_mtl_begin_render*)d;
+            static int npass = 0;
+            const char* tid = getenv("XEF_MTL_TRACE_TEX");
+            Texture* tt = tid ? texture((uint32_t)atoi(tid)) : nullptr;
+            if (tt && (npass++ % 200) == 100 && getenv("XEF_MTL_TRACE_DUMP")) {
+                end_encoder();
+                uint32_t bb = tt->fmt->block_bytes;
+                void* map = nullptr;
+                uint64_t size = (uint64_t)tt->width * tt->height * bb;
+                uint32_t sid = create_buffer_internal(size, true, &map);
+                xef_mtl_copy_buf_tex c{};
+                c.buffer = sid; c.texture = (uint32_t)atoi(tid);
+                c.bytes_per_row = tt->width * bb; c.bytes_per_image = (uint32_t)size;
+                c.w = tt->width; c.h = tt->height; c.d = 1;
+                barrier();
+                copy_buf_tex(&c, false);
+                barrier();
+                Capture cap;
+                cap.dir = getenv("XEF_MTL_TRACE_DUMP");
+                char name[64];
+                snprintf(name, sizeof name, "tex%s_%05d_%ux%u.raw", tid, npass, tt->width, tt->height);
+                cap.files.push_back({name, sid, size});
+                captures.push_back(std::move(cap));
+            }
+            Texture* t = texture(b->colors[0].texture);
+            fprintf(stderr, "mtl: begin_render c0=%u fmt %u %ux%u load %u clear %.2f %.2f %.2f %.2f depth=%u\n", b->colors[0].texture,
+                    t ? t->mtl_format : 0, t ? t->width : 0, t ? t->height : 0, b->colors[0].load_action,
+                    b->colors[0].clear[0], b->colors[0].clear[1], b->colors[0].clear[2], b->colors[0].clear[3], b->depth.texture);
+            break;
+        }
+        case XEF_MTL_CMD_COPY_BUFFER_TO_TEXTURE: case XEF_MTL_CMD_COPY_TEXTURE_TO_BUFFER: {
+            auto* c = (const xef_mtl_copy_buf_tex*)d;
+            Texture* t = texture(c->texture);
+            fprintf(stderr, "mtl: %s buf %u+%llu bpr %u tex %u fmt %u (%ux%u) region %u,%u %ux%u\n", op == XEF_MTL_CMD_COPY_BUFFER_TO_TEXTURE ? "buf->tex" : "tex->buf",
+                    c->buffer, (unsigned long long)c->buffer_offset, c->bytes_per_row, c->texture, t ? t->mtl_format : 0, t ? t->width : 0, t ? t->height : 0,
+                    c->x, c->y, c->w, c->h);
+            Buffer* b = buffer(c->buffer);
+            if (b && b->map && op == XEF_MTL_CMD_COPY_BUFFER_TO_TEXTURE) {
+                const uint8_t* px = (const uint8_t*)b->map + c->buffer_offset;
+                uint64_t n = (uint64_t)c->bytes_per_row * c->h, h = 1469598103934665603ull, white = 0;
+                for (uint64_t i = 0; i < n && i + c->buffer_offset < b->size; i += 4) { h = (h ^ *(const uint32_t*)(px + i)) * 1099511628211ull; white += *(const uint32_t*)(px + i) == 0xffffffffu; }
+                fprintf(stderr, "mtl:   data hash %016llx white %llu/%llu first %08x mid %08x imported %d\n", (unsigned long long)h, (unsigned long long)white,
+                        (unsigned long long)(n / 4), *(const uint32_t*)px, *(const uint32_t*)(px + n / 2), (int)b->imported);
+                static int nup = 0;
+                const char* dd = getenv("XEF_MTL_TRACE_DUMP");
+                if (dd && t && t->width == c->w && (nup++ % 100) == 0) {
+                    char path[512];
+                    snprintf(path, sizeof path, "%s/up%05d.ppm", dd, nup);
+                    if (FILE* f = fopen(path, "wb")) {
+                        fprintf(f, "P6\n%u %u\n255\n", c->w, c->h);
+                        for (uint32_t y = 0; y < c->h; y++)
+                            for (uint32_t x = 0; x < c->w; x++) {
+                                const uint8_t* q = px + (uint64_t)y * c->bytes_per_row + x * 4;
+                                uint8_t rgb[3] = {q[2], q[1], q[0]};
+                                fwrite(rgb, 1, 3, f);
+                            }
+                        fclose(f);
+                    }
+                }
+            }
+            break;
+        }
+        case XEF_MTL_CMD_SET_TEXTURE: {
+            auto* c = (const xef_mtl_set_texture*)d;
+            Texture* t = texture(c->texture);
+            fprintf(stderr, "mtl: set_texture stage %u idx %u tex %u fmt %u %ux%u\n", c->stage, c->index, c->texture, t ? t->mtl_format : 0, t ? t->width : 0, t ? t->height : 0);
+            break;
+        }
+        case XEF_MTL_CMD_SET_BYTES: {
+            auto* c = (const xef_mtl_set_bytes*)d;
+            const float* f = (const float*)(c + 1);
+            fprintf(stderr, "mtl: set_bytes stage %u idx %u len %u:", c->stage, c->index, c->length);
+            for (uint32_t i = 0; i < c->length / 4 && i < 24; i++) fprintf(stderr, " %g", f[i]);
+            fprintf(stderr, "\n");
+            break;
+        }
+        case XEF_MTL_CMD_SET_SAMPLER: { auto* c = (const xef_mtl_set_sampler*)d; fprintf(stderr, "mtl: set_sampler stage %u idx %u smp %u\n", c->stage, c->index, c->sampler); break; }
+        case XEF_MTL_CMD_SET_SCISSOR: { auto* c = (const xef_mtl_scissor*)d; fprintf(stderr, "mtl: scissor %u,%u %ux%u\n", c->x, c->y, c->w, c->h); break; }
+        case XEF_MTL_CMD_SET_VIEWPORT: { auto* c = (const xef_mtl_viewport*)d; fprintf(stderr, "mtl: viewport %g,%g %gx%g\n", c->x, c->y, c->w, c->h); break; }
+        case XEF_MTL_CMD_SET_RENDER_PIPELINE: fprintf(stderr, "mtl: set_render_pipeline %u\n", ((const xef_mtl_set_pipeline*)d)->pipeline); break;
+        default: fprintf(stderr, "mtl: op %u\n", op); break;
         }
     }
 
@@ -534,7 +694,7 @@ struct Recorder {
             case XEF_MTL_CMD_BEGIN_COMPUTE: begin_compute(); break;
             case XEF_MTL_CMD_BEGIN_BLIT: end_encoder(); kind = BLIT; barrier(); break;
             case XEF_MTL_CMD_END_ENCODER: end_encoder(); break;
-            case XEF_MTL_CMD_SET_RENDER_PIPELINE: {
+        case XEF_MTL_CMD_SET_RENDER_PIPELINE: {
                 auto* s = (const xef_mtl_set_pipeline*)d;
                 Pipeline* pp = s->pipeline < g.pipelines.size() ? g.pipelines[s->pipeline].get() : nullptr;
                 rp = pp ? pp->render.get() : nullptr;
@@ -762,6 +922,22 @@ uint64_t commit(uint32_t qid, const uint8_t* stream, uint64_t len) {
     for (PendingPresent& pp : presents) s.release_drawables.push_back((pp.layer_id << 16) | pp.drawable);
     q->inflight.push_back(std::move(s));
     if (!presents.empty()) present_after_submit(presents);
+    for (Recorder::Capture& c : rec->captures) {
+        vk.QueueWaitIdle(g.queue);
+        auto put = [&](const std::string& name, const void* data, size_t n) {
+            std::string path = c.dir + "/" + name;
+            if (FILE* f = fopen(path.c_str(), "wb")) { fwrite(data, 1, n, f); fclose(f); }
+        };
+        if (!c.meta.empty()) put("meta.txt", c.meta.data(), c.meta.size());
+        if (!c.source.empty()) put("source.metal", c.source.data(), c.source.size());
+        for (auto& [i, bytes] : c.bytes) put("bytes" + std::to_string(i) + ".bin", bytes.data(), bytes.size());
+        for (Recorder::CaptureFile& f : c.files) {
+            Buffer* b = buffer(f.staging);
+            if (b && b->map) put(f.name, b->map, f.size);
+            buffer_destroy(f.staging);
+        }
+        if (!c.meta.empty()) fprintf(stderr, "xef-metal: captured dispatch to %s\n", c.dir.c_str());
+    }
     return seq;
 }
 

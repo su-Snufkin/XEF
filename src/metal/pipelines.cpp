@@ -284,6 +284,7 @@ ComputeVariant* compute_variant(ComputePipeline* p, const uint32_t tg[3], const 
 uint32_t create_compute_pipeline(const xef_mtl_compute_pipeline_desc* d, xef_mtl_pipeline_info* info, std::string& err) {
     auto p = std::make_unique<ComputePipeline>();
     if (!function_source(d->function, STAGE_KERNEL, p->req, err)) return 0;
+    if (Library* lib = library(d->function.library)) p->source = lib->source;
     if (getenv("XEF_MTL_VALIDATE_SPIRV")) p->req.flags |= REQ_VALIDATE;
     p->max_threads = d->max_total_threads ? std::min(d->max_total_threads, g.max_tg_threads) : g.max_tg_threads;
     uint32_t tg[3] = {32, 1, 1};
