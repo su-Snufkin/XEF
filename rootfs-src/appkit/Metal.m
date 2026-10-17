@@ -368,6 +368,8 @@ static uint16_t xef_float_to_half(float v) {
   NSArray *_fragmentPreloadedLibraries;
   NSUInteger _maxVertexCallStackDepth;
   NSUInteger _maxFragmentCallStackDepth;
+  MTLLinkedFunctions *_vertexLinkedFunctions;
+  MTLLinkedFunctions *_fragmentLinkedFunctions;
 }
 - (id)init {
   if ((self = [super init])) {
@@ -390,6 +392,10 @@ static uint16_t xef_float_to_half(float v) {
 - (MTLRenderPipelineColorAttachmentDescriptorArray *)colorAttachments { return _colorAttachments; }
 - (MTLPipelineBufferDescriptorArray *)vertexBuffers { return _vertexBuffers; }
 - (MTLPipelineBufferDescriptorArray *)fragmentBuffers { return _fragmentBuffers; }
+- (MTLLinkedFunctions *)vertexLinkedFunctions { return _vertexLinkedFunctions; }
+- (void)setVertexLinkedFunctions:(MTLLinkedFunctions *)lf { MTLLinkedFunctions *c = [lf copy]; [_vertexLinkedFunctions release]; _vertexLinkedFunctions = c; }
+- (MTLLinkedFunctions *)fragmentLinkedFunctions { return _fragmentLinkedFunctions; }
+- (void)setFragmentLinkedFunctions:(MTLLinkedFunctions *)lf { MTLLinkedFunctions *c = [lf copy]; [_fragmentLinkedFunctions release]; _fragmentLinkedFunctions = c; }
 - (MTLPixelFormat)depthAttachmentPixelFormat { return _depthAttachmentPixelFormat; } - (void)setDepthAttachmentPixelFormat:(MTLPixelFormat)f { _depthAttachmentPixelFormat = f; }
 - (MTLPixelFormat)stencilAttachmentPixelFormat { return _stencilAttachmentPixelFormat; } - (void)setStencilAttachmentPixelFormat:(MTLPixelFormat)f { _stencilAttachmentPixelFormat = f; }
 - (NSUInteger)sampleCount { return _sampleCount; } - (void)setSampleCount:(NSUInteger)c { _sampleCount = c; _rasterSampleCount = c; }
@@ -415,6 +421,8 @@ static uint16_t xef_float_to_half(float v) {
   [_binaryArchives release]; _binaryArchives = nil;
   [_vertexPreloadedLibraries release]; _vertexPreloadedLibraries = nil;
   [_fragmentPreloadedLibraries release]; _fragmentPreloadedLibraries = nil;
+  [_vertexLinkedFunctions release]; _vertexLinkedFunctions = nil;
+  [_fragmentLinkedFunctions release]; _fragmentLinkedFunctions = nil;
   _depthAttachmentPixelFormat = MTLPixelFormatInvalid;
   _stencilAttachmentPixelFormat = MTLPixelFormatInvalid;
   _sampleCount = 1;
@@ -446,6 +454,8 @@ static uint16_t xef_float_to_half(float v) {
   c.fragmentPreloadedLibraries = _fragmentPreloadedLibraries;
   c.maxVertexCallStackDepth = _maxVertexCallStackDepth;
   c.maxFragmentCallStackDepth = _maxFragmentCallStackDepth;
+  c.vertexLinkedFunctions = _vertexLinkedFunctions;
+  c.fragmentLinkedFunctions = _fragmentLinkedFunctions;
   return c;
 }
 - (void)dealloc {
@@ -453,6 +463,7 @@ static uint16_t xef_float_to_half(float v) {
   [_vertexDescriptor release]; [_colorAttachments release];
   [_vertexBuffers release]; [_fragmentBuffers release];
   [_binaryArchives release]; [_vertexPreloadedLibraries release]; [_fragmentPreloadedLibraries release];
+  [_vertexLinkedFunctions release]; [_fragmentLinkedFunctions release];
   [super dealloc];
 }
 @end
@@ -466,6 +477,7 @@ static uint16_t xef_float_to_half(float v) {
   BOOL _supportIndirectCommandBuffers;
   NSArray *_binaryArchives;
   NSArray *_preloadedLibraries;
+  MTLLinkedFunctions *_linkedFunctions;
 }
 - (id)init {
   if ((self = [super init])) {
@@ -484,12 +496,15 @@ static uint16_t xef_float_to_half(float v) {
 - (NSArray *)binaryArchives { return _binaryArchives; } - (void)setBinaryArchives:(NSArray *)a { [a retain]; [_binaryArchives release]; _binaryArchives = a; }
 - (NSArray *)preloadedLibraries { return _preloadedLibraries; } - (void)setPreloadedLibraries:(NSArray *)a { [a retain]; [_preloadedLibraries release]; _preloadedLibraries = a; }
 - (NSArray *)insertLibraries { return _preloadedLibraries; } - (void)setInsertLibraries:(NSArray *)a { [self setPreloadedLibraries:a]; }
+- (MTLLinkedFunctions *)linkedFunctions { return _linkedFunctions; }
+- (void)setLinkedFunctions:(MTLLinkedFunctions *)lf { MTLLinkedFunctions *c = [lf copy]; [_linkedFunctions release]; _linkedFunctions = c; }
 - (void)reset {
   [_label release]; _label = nil;
   [(id)_computeFunction release]; _computeFunction = nil;
   [_buffers release]; _buffers = [[MTLPipelineBufferDescriptorArray alloc] init];
   [_binaryArchives release]; _binaryArchives = nil;
   [_preloadedLibraries release]; _preloadedLibraries = nil;
+  [_linkedFunctions release]; _linkedFunctions = nil;
   _supportIndirectCommandBuffers = NO;
 }
 - (id)copyWithZone:(NSZone *)zone {
@@ -501,11 +516,13 @@ static uint16_t xef_float_to_half(float v) {
   c.supportIndirectCommandBuffers = _supportIndirectCommandBuffers;
   c.binaryArchives = _binaryArchives;
   c.preloadedLibraries = _preloadedLibraries;
+  c.linkedFunctions = _linkedFunctions;
   return c;
 }
 - (void)dealloc {
   [_label release]; [(id)_computeFunction release];
   [_buffers release]; [_binaryArchives release]; [_preloadedLibraries release];
+  [_linkedFunctions release];
   [super dealloc];
 }
 @end
@@ -827,6 +844,7 @@ static uint16_t xef_float_to_half(float v) {
   NSUInteger _renderTargetArrayLength;
   NSUInteger _renderTargetWidth;
   NSUInteger _renderTargetHeight;
+  id<MTLRasterizationRateMap> _rasterizationRateMap;
 }
 + (MTLRenderPassDescriptor *)renderPassDescriptor { return [[[self alloc] init] autorelease]; }
 - (id)init {
@@ -844,6 +862,8 @@ static uint16_t xef_float_to_half(float v) {
 - (NSUInteger)renderTargetArrayLength { return _renderTargetArrayLength; } - (void)setRenderTargetArrayLength:(NSUInteger)l { _renderTargetArrayLength = l; }
 - (NSUInteger)renderTargetWidth { return _renderTargetWidth; } - (void)setRenderTargetWidth:(NSUInteger)w { _renderTargetWidth = w; }
 - (NSUInteger)renderTargetHeight { return _renderTargetHeight; } - (void)setRenderTargetHeight:(NSUInteger)h { _renderTargetHeight = h; }
+- (id<MTLRasterizationRateMap>)rasterizationRateMap { return _rasterizationRateMap; }
+- (void)setRasterizationRateMap:(id<MTLRasterizationRateMap>)m { [m retain]; [(id)_rasterizationRateMap release]; _rasterizationRateMap = m; }
 - (id)copyWithZone:(NSZone *)zone {
   MTLRenderPassDescriptor *c = [[MTLRenderPassDescriptor allocWithZone:zone] init];
   for (int i = 0; i < 8; i++) {
@@ -856,11 +876,13 @@ static uint16_t xef_float_to_half(float v) {
   c.visibilityResultBuffer = _visibilityResultBuffer;
   c.renderTargetWidth = _renderTargetWidth;
   c.renderTargetHeight = _renderTargetHeight;
+  c.rasterizationRateMap = _rasterizationRateMap;
   return c;
 }
 - (void)dealloc {
   [_colorAttachments release]; [_depthAttachment release]; [_stencilAttachment release];
   [(id)_visibilityResultBuffer release];
+  [(id)_rasterizationRateMap release];
   [super dealloc];
 }
 @end
@@ -2470,6 +2492,272 @@ MTLCommonCounterSet const MTLCommonCounterSetStatistic = @"MTLCommonCounterSetSt
   [_label release];
   [_counterSet release];
   if (_samples) free(_samples);
+  [super dealloc];
+}
+@end
+
+/* ------------------------------------------------------------------- MTLLinkedFunctions */
+
+@implementation MTLLinkedFunctions {
+  NSArray<id<MTLFunction>> *_functions;
+  NSArray<id<MTLFunction>> *_binaryFunctions;
+  NSDictionary<NSString *, NSArray<id<MTLFunction>> *> *_groups;
+  NSArray<id<MTLFunction>> *_privateFunctions;
+}
++ (instancetype)linkedFunctions {
+  return [[[self alloc] init] autorelease];
+}
+- (NSArray<id<MTLFunction>> *)functions { return _functions; }
+- (void)setFunctions:(NSArray<id<MTLFunction>> *)funcs { [funcs retain]; [_functions release]; _functions = funcs; }
+- (NSArray<id<MTLFunction>> *)binaryFunctions { return _binaryFunctions; }
+- (void)setBinaryFunctions:(NSArray<id<MTLFunction>> *)bfuncs { [bfuncs retain]; [_binaryFunctions release]; _binaryFunctions = bfuncs; }
+- (NSDictionary<NSString *, NSArray<id<MTLFunction>> *> *)groups { return _groups; }
+- (void)setGroups:(NSDictionary<NSString *, NSArray<id<MTLFunction>> *> *)grps { [grps retain]; [_groups release]; _groups = grps; }
+- (NSArray<id<MTLFunction>> *)privateFunctions { return _privateFunctions; }
+- (void)setPrivateFunctions:(NSArray<id<MTLFunction>> *)priv { [priv retain]; [_privateFunctions release]; _privateFunctions = priv; }
+- (id)copyWithZone:(NSZone *)zone {
+  MTLLinkedFunctions *c = [[MTLLinkedFunctions allocWithZone:zone] init];
+  c.functions = _functions;
+  c.binaryFunctions = _binaryFunctions;
+  c.groups = _groups;
+  c.privateFunctions = _privateFunctions;
+  return c;
+}
+- (BOOL)isEqual:(id)object {
+  if (self == object) return YES;
+  if (![object isKindOfClass:[MTLLinkedFunctions class]]) return NO;
+  MTLLinkedFunctions *other = (MTLLinkedFunctions *)object;
+  BOOL funcsEq = (!_functions && !other->_functions) || [_functions isEqual:other->_functions];
+  BOOL bfuncsEq = (!_binaryFunctions && !other->_binaryFunctions) || [_binaryFunctions isEqual:other->_binaryFunctions];
+  BOOL grpsEq = (!_groups && !other->_groups) || [_groups isEqual:other->_groups];
+  BOOL privEq = (!_privateFunctions && !other->_privateFunctions) || [_privateFunctions isEqual:other->_privateFunctions];
+  return funcsEq && bfuncsEq && grpsEq && privEq;
+}
+- (NSUInteger)hash {
+  return [_functions hash] ^ [_binaryFunctions hash] ^ [_groups hash] ^ [_privateFunctions hash];
+}
+- (void)dealloc {
+  [_functions release];
+  [_binaryFunctions release];
+  [_groups release];
+  [_privateFunctions release];
+  [super dealloc];
+}
+@end
+
+/* ------------------------------------------------------------------- MTLRasterizationRate */
+
+@implementation MTLRasterizationRateSampleArray {
+  float _storage[256];
+  NSUInteger _count;
+}
+- (instancetype)initWithCount:(NSUInteger)count {
+  if ((self = [super init])) {
+    _count = count < 256 ? count : 256;
+    memset(_storage, 0, sizeof(_storage));
+  }
+  return self;
+}
+- (NSNumber *)objectAtIndexedSubscript:(NSUInteger)index {
+  if (index < _count) return [NSNumber numberWithFloat:_storage[index]];
+  return [NSNumber numberWithFloat:0.0f];
+}
+- (void)setObject:(NSNumber *)value atIndexedSubscript:(NSUInteger)index {
+  if (index < _count) _storage[index] = [value floatValue];
+}
+@end
+
+@implementation MTLRasterizationRateLayerDescriptor {
+  MTLSize _sampleCount;
+  MTLSize _maxSampleCount;
+  float *_horizontalStorage;
+  float *_verticalStorage;
+  MTLRasterizationRateSampleArray *_horizontal;
+  MTLRasterizationRateSampleArray *_vertical;
+}
+- (instancetype)initWithSampleCount:(MTLSize)sampleCount {
+  return [self initWithSampleCount:sampleCount horizontal:NULL vertical:NULL];
+}
+- (instancetype)initWithSampleCount:(MTLSize)sampleCount horizontal:(const float *)horizontal vertical:(const float *)vertical {
+  if ((self = [super init])) {
+    _sampleCount = sampleCount;
+    _maxSampleCount = sampleCount;
+    NSUInteger w = sampleCount.width > 0 ? sampleCount.width : 1;
+    NSUInteger h = sampleCount.height > 0 ? sampleCount.height : 1;
+    _horizontalStorage = (float *)calloc(w, sizeof(float));
+    _verticalStorage = (float *)calloc(h, sizeof(float));
+    if (horizontal) memcpy(_horizontalStorage, horizontal, w * sizeof(float));
+    else for (NSUInteger i = 0; i < w; i++) _horizontalStorage[i] = 1.0f;
+    if (vertical) memcpy(_verticalStorage, vertical, h * sizeof(float));
+    else for (NSUInteger i = 0; i < h; i++) _verticalStorage[i] = 1.0f;
+    _horizontal = [[MTLRasterizationRateSampleArray alloc] initWithCount:w];
+    _vertical = [[MTLRasterizationRateSampleArray alloc] initWithCount:h];
+    for (NSUInteger i = 0; i < w; i++) [_horizontal setObject:[NSNumber numberWithFloat:_horizontalStorage[i]] atIndexedSubscript:i];
+    for (NSUInteger i = 0; i < h; i++) [_vertical setObject:[NSNumber numberWithFloat:_verticalStorage[i]] atIndexedSubscript:i];
+  }
+  return self;
+}
+- (MTLSize)sampleCount { return _sampleCount; }
+- (void)setSampleCount:(MTLSize)sc { _sampleCount = sc; }
+- (MTLSize)maxSampleCount { return _maxSampleCount; }
+- (float *)horizontalSampleStorage { return _horizontalStorage; }
+- (float *)verticalSampleStorage { return _verticalStorage; }
+- (MTLRasterizationRateSampleArray *)horizontal { return _horizontal; }
+- (MTLRasterizationRateSampleArray *)vertical { return _vertical; }
+- (id)copyWithZone:(NSZone *)zone {
+  return [[MTLRasterizationRateLayerDescriptor allocWithZone:zone] initWithSampleCount:_sampleCount horizontal:_horizontalStorage vertical:_verticalStorage];
+}
+- (void)dealloc {
+  if (_horizontalStorage) free(_horizontalStorage);
+  if (_verticalStorage) free(_verticalStorage);
+  [_horizontal release];
+  [_vertical release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLRasterizationRateLayerArray {
+  NSMutableArray<MTLRasterizationRateLayerDescriptor *> *_layers;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _layers = [[NSMutableArray alloc] init];
+  }
+  return self;
+}
+- (MTLRasterizationRateLayerDescriptor *)objectAtIndexedSubscript:(NSUInteger)layerIndex {
+  if (layerIndex < _layers.count) {
+    id obj = [_layers objectAtIndex:layerIndex];
+    if (obj != [NSNull null]) return obj;
+  }
+  return nil;
+}
+- (void)setObject:(MTLRasterizationRateLayerDescriptor *)layer atIndexedSubscript:(NSUInteger)layerIndex {
+  while (_layers.count <= layerIndex) {
+    [_layers addObject:(id)[NSNull null]];
+  }
+  if (layer) {
+    [_layers replaceObjectAtIndex:layerIndex withObject:layer];
+  } else {
+    [_layers replaceObjectAtIndex:layerIndex withObject:(id)[NSNull null]];
+  }
+}
+- (void)dealloc {
+  [_layers release];
+  [super dealloc];
+}
+@end
+
+@implementation MTLRasterizationRateMapDescriptor {
+  MTLRasterizationRateLayerArray *_layers;
+  MTLSize _screenSize;
+  NSString *_label;
+}
++ (MTLRasterizationRateMapDescriptor *)rasterizationRateMapDescriptorWithScreenSize:(MTLSize)screenSize {
+  MTLRasterizationRateMapDescriptor *d = [[[self alloc] init] autorelease];
+  d.screenSize = screenSize;
+  return d;
+}
++ (MTLRasterizationRateMapDescriptor *)rasterizationRateMapDescriptorWithScreenSize:(MTLSize)screenSize layer:(MTLRasterizationRateLayerDescriptor *)layer {
+  MTLRasterizationRateMapDescriptor *d = [self rasterizationRateMapDescriptorWithScreenSize:screenSize];
+  [d setLayer:layer atIndex:0];
+  return d;
+}
++ (MTLRasterizationRateMapDescriptor *)rasterizationRateMapDescriptorWithScreenSize:(MTLSize)screenSize layerCount:(NSUInteger)layerCount layers:(MTLRasterizationRateLayerDescriptor * const *)layers {
+  MTLRasterizationRateMapDescriptor *d = [self rasterizationRateMapDescriptorWithScreenSize:screenSize];
+  for (NSUInteger i = 0; i < layerCount; i++) {
+    [d setLayer:layers[i] atIndex:i];
+  }
+  return d;
+}
+- (instancetype)init {
+  if ((self = [super init])) {
+    _layers = [[MTLRasterizationRateLayerArray alloc] init];
+    _screenSize = MTLSizeMake(0, 0, 0);
+  }
+  return self;
+}
+- (MTLRasterizationRateLayerDescriptor *)layerAtIndex:(NSUInteger)layerIndex {
+  return [_layers objectAtIndexedSubscript:layerIndex];
+}
+- (void)setLayer:(MTLRasterizationRateLayerDescriptor *)layer atIndex:(NSUInteger)layerIndex {
+  [_layers setObject:layer atIndexedSubscript:layerIndex];
+}
+- (MTLRasterizationRateLayerArray *)layers { return _layers; }
+- (MTLSize)screenSize { return _screenSize; }
+- (void)setScreenSize:(MTLSize)s { _screenSize = s; }
+- (NSString *)label { return _label; }
+- (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (NSUInteger)layerCount {
+  NSUInteger count = 0;
+  while ([self layerAtIndex:count] != nil) {
+    count++;
+  }
+  return count;
+}
+- (id)copyWithZone:(NSZone *)zone {
+  MTLRasterizationRateMapDescriptor *c = [[MTLRasterizationRateMapDescriptor allocWithZone:zone] init];
+  c.screenSize = _screenSize;
+  c.label = _label;
+  NSUInteger cnt = self.layerCount;
+  for (NSUInteger i = 0; i < cnt; i++) {
+    [c setLayer:[self layerAtIndex:i] atIndex:i];
+  }
+  return c;
+}
+- (void)dealloc {
+  [_layers release];
+  [_label release];
+  [super dealloc];
+}
+@end
+
+@interface XEFMetalRasterizationRateMap : NSObject <MTLRasterizationRateMap> {
+  id<MTLDevice> _device;
+  NSString *_label;
+  MTLSize _screenSize;
+  NSUInteger _layerCount;
+}
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLRasterizationRateMapDescriptor *)descriptor;
+@end
+
+@implementation XEFMetalRasterizationRateMap
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLRasterizationRateMapDescriptor *)descriptor {
+  if ((self = [super init])) {
+    _device = device;
+    _label = [descriptor.label copy];
+    _screenSize = descriptor.screenSize;
+    _layerCount = descriptor.layerCount > 0 ? descriptor.layerCount : 1;
+  }
+  return self;
+}
+- (id<MTLDevice>)device { return _device; }
+- (NSString *)label { return _label; }
+- (MTLSize)screenSize { return _screenSize; }
+- (MTLSize)physicalGranularity { return MTLSizeMake(1, 1, 0); }
+- (NSUInteger)layerCount { return _layerCount; }
+- (MTLSizeAndAlign)parameterBufferSizeAndAlign {
+  MTLSizeAndAlign sa;
+  sa.size = 256;
+  sa.align = 256;
+  return sa;
+}
+- (void)copyParameterDataToBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset {
+  if (buffer && offset + 256 <= [buffer length]) {
+    memset((uint8_t *)[buffer contents] + offset, 0, 256);
+  }
+}
+- (MTLSize)physicalSizeForLayer:(NSUInteger)layerIndex {
+  return _screenSize;
+}
+- (MTLCoordinate2D)mapScreenToPhysicalCoordinates:(MTLCoordinate2D)screenCoordinates forLayer:(NSUInteger)layerIndex {
+  return screenCoordinates;
+}
+- (MTLCoordinate2D)mapPhysicalToScreenCoordinates:(MTLCoordinate2D)physicalCoordinates forLayer:(NSUInteger)layerIndex {
+  return physicalCoordinates;
+}
+- (void)dealloc {
+  [_label release];
   [super dealloc];
 }
 @end
@@ -4870,6 +5158,7 @@ typedef enum {
 - (BOOL)supportsFeatureSet:(MTLFeatureSet)featureSet { return YES; }
 - (BOOL)supportsTextureSampleCount:(NSUInteger)sampleCount { return (sampleCount == 1 || sampleCount == 4); }
 - (BOOL)supportsCounterSampling:(MTLCounterSamplingPoint)samplingPoint { return YES; }
+- (BOOL)supportsRasterizationRateMapWithLayerCount:(NSUInteger)layerCount { return layerCount <= 8; }
 - (NSArray<id<MTLCounterSet>> *)counterSets {
   static NSArray *sets = nil;
   if (!sets) {
@@ -5077,6 +5366,11 @@ typedef enum {
 - (id<MTLCounterSampleBuffer>)newCounterSampleBufferWithDescriptor:(MTLCounterSampleBufferDescriptor *)descriptor error:(NSError **)error {
   if (error) *error = nil;
   return [[[XEFMetalCounterSampleBuffer alloc] initWithDevice:self descriptor:descriptor] autorelease];
+}
+
+- (id<MTLRasterizationRateMap>)newRasterizationRateMapWithDescriptor:(MTLRasterizationRateMapDescriptor *)descriptor {
+  if (!descriptor || descriptor.screenSize.width == 0 || descriptor.screenSize.height == 0) return nil;
+  return [[[XEFMetalRasterizationRateMap alloc] initWithDevice:self descriptor:descriptor] autorelease];
 }
 
 @end

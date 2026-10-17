@@ -390,6 +390,44 @@ int main(void) {
 
     [resolveDstBuf release];
 
+    /* 14. Test MTLLinkedFunctions and MTLRasterizationRateMap */
+    MTLLinkedFunctions *lf = [MTLLinkedFunctions linkedFunctions];
+    if (!lf) {
+      NSLog(@"FAIL: linkedFunctions returned nil");
+      return 35;
+    }
+    rpd.vertexLinkedFunctions = lf;
+    cpd.linkedFunctions = lf;
+    if (rpd.vertexLinkedFunctions != lf && ![rpd.vertexLinkedFunctions isEqual:lf]) {
+      NSLog(@"FAIL: rpd vertexLinkedFunctions mismatch");
+      return 36;
+    }
+    if (cpd.linkedFunctions != lf && ![cpd.linkedFunctions isEqual:lf]) {
+      NSLog(@"FAIL: cpd linkedFunctions mismatch");
+      return 37;
+    }
+    NSLog(@"MTLLinkedFunctions verified on render and compute pipeline descriptors");
+
+    if (![device supportsRasterizationRateMapWithLayerCount:1]) {
+      NSLog(@"FAIL: supportsRasterizationRateMapWithLayerCount failed");
+      return 38;
+    }
+    float hQual[2] = { 1.0f, 0.5f };
+    float vQual[2] = { 1.0f, 0.5f };
+    MTLRasterizationRateLayerDescriptor *layerDesc = [[[MTLRasterizationRateLayerDescriptor alloc] initWithSampleCount:MTLSizeMake(2, 2, 1) horizontal:hQual vertical:vQual] autorelease];
+    MTLRasterizationRateMapDescriptor *rrmDesc = [MTLRasterizationRateMapDescriptor rasterizationRateMapDescriptorWithScreenSize:MTLSizeMake(1920, 1080, 1) layer:layerDesc];
+    rrmDesc.label = @"TestRateMap";
+
+    id<MTLRasterizationRateMap> rateMap = [device newRasterizationRateMapWithDescriptor:rrmDesc];
+    if (!rateMap || rateMap.screenSize.width != 1920 || rateMap.screenSize.height != 1080 || rateMap.layerCount != 1) {
+      NSLog(@"FAIL: newRasterizationRateMapWithDescriptor failed");
+      return 39;
+    }
+    id<MTLBuffer> paramBuf = [device newBufferWithLength:256 options:MTLResourceStorageModeShared];
+    [rateMap copyParameterDataToBuffer:paramBuf offset:0];
+    NSLog(@"MTLRasterizationRateMap verified: label=%@, screenSize=%lux%lu, paramAlign=%lu", rateMap.label, (unsigned long)rateMap.screenSize.width, (unsigned long)rateMap.screenSize.height, (unsigned long)rateMap.parameterBufferSizeAndAlign.align);
+    [paramBuf release];
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }
