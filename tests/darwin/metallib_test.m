@@ -54,6 +54,20 @@ int main(int argc, char** argv) {
     }
     NSLog(@"Successfully created MTLRenderPipelineState with metallib functions!");
 
+    if ([lib respondsToSelector:@selector(spirvData)]) {
+      NSData *spv = [(id)lib performSelector:@selector(spirvData)];
+      if (spv && [spv length] >= 4) {
+        const uint32_t *spvWords = (const uint32_t *)[spv bytes];
+        if (spvWords[0] == 0x07230203) {
+          NSLog(@"PASS: JIT translated metallib to valid Vulkan SPIR-V binary (%lu bytes, magic=0x%08X)",
+                (unsigned long)[spv length], spvWords[0]);
+        } else {
+          NSLog(@"FAIL: invalid SPIR-V magic: 0x%08X", spvWords[0]);
+          return 6;
+        }
+      }
+    }
+
     [pd release];
     [lib release];
     [d release];

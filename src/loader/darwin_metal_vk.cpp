@@ -2034,3 +2034,54 @@ void present(int handle, uint32_t tex_id) {
 }
 
 } // namespace xef::metal_vk
+
+#include "iridium/iridium.hpp"
+
+namespace xef::metal_vk {
+
+void* shader_translate_metallib(const void* data, size_t size, size_t* out_size) {
+    if (out_size) *out_size = 0;
+    if (!data || size < 4) return nullptr;
+
+    const uint8_t* b = (const uint8_t*)data;
+    if (memcmp(b, "MTLB", 4) != 0) return nullptr;
+
+    static bool s_iridium_inited = false;
+    static bool s_iridium_ok = false;
+    static std::mutex s_iridium_mtx;
+    {
+        std::lock_guard<std::mutex> lk(s_iridium_mtx);
+        if (!s_iridium_inited) {
+            s_iridium_ok = Iridium::init();
+            s_iridium_inited = true;
+            if (s_iridium_ok) {
+                fprintf(stderr, "[xef-metal] Iridium AIR-to-SPIRV JIT translator initialized\n");
+            } else {
+                fprintf(stderr, "[xef-metal] Warning: Failed to initialize Iridium (LLVM library missing or incompatible)\n");
+            }
+        }
+    }
+
+    if (!s_iridium_ok) return nullptr;
+
+    try {
+        size_t spv_sz = 0;
+        Iridium::OutputInfo outInfo;
+        void* spv = Iridium::translate(data, size, spv_sz, outInfo);
+        if (spv && spv_sz > 0) {
+            if (out_size) *out_size = spv_sz;
+            return spv;
+        }
+    } catch (const std::exception& e) {
+        fprintf(stderr, "[xef-metal] Iridium translation exception: %s\n", e.what());
+    } catch (...) {
+        fprintf(stderr, "[xef-metal] Iridium translation unknown exception\n");
+    }
+    return nullptr;
+}
+
+void shader_free(void* ptr) {
+    if (ptr) free(ptr);
+}
+
+} // namespace xef::metal_vk

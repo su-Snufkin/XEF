@@ -49,4 +49,7 @@ void        draw(int handle,
 
 void        present(int handle, uint32_t tex_id);
 
+void*       shader_translate_metallib(const void* data, size_t size, size_t* out_size);
+void        shader_free(void* ptr);
+
 } // namespace xef::metal_vk

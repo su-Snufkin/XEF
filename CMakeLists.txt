@@ -20,7 +20,18 @@ endif()
 
 file(GLOB_RECURSE XEF_SRC CONFIGURE_DEPENDS src/*.cpp src/*.S)
 add_executable(xef ${XEF_SRC})
-target_include_directories(xef PRIVATE src)
+target_include_directories(xef PRIVATE src src/loader/iridium)
+
+# Enable exceptions for iridium (AIR-to-SPIRV translator)
+set_source_files_properties(
+    src/loader/iridium/air.cpp
+    src/loader/iridium/spirv.cpp
+    src/loader/iridium/iridium.cpp
+    src/loader/iridium/dynamic-llvm.cpp
+    src/loader/darwin_metal_vk.cpp
+    PROPERTIES COMPILE_OPTIONS "-fexceptions;-Wno-deprecated-declarations"
+)
+
 target_link_libraries(xef PRIVATE pthread m ${CMAKE_DL_LIBS})
 add_custom_target(xef-osx ALL ${CMAKE_COMMAND} -E create_symlink xef xef-osx DEPENDS xef)
 

@@ -139,6 +139,8 @@ void     xef_host_metal_draw(int handle,
 
 void     xef_host_metal_present_gpu(int handle, uint32_t tex_id);
 const char *xef_host_metal_backend_name(void);
+void    *xef_host_metal_translate_metallib(const void *data, size_t size, size_t *out_size);
+void     xef_host_metal_shader_free(void *ptr);
 #ifdef __cplusplus
 }
 #endif

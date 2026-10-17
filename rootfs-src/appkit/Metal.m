@@ -2103,9 +2103,11 @@ enum {
   NSString *_source;
   NSData *_data;
   NSMutableDictionary *_functions;
+  NSData *_spirvData;
 }
 - (instancetype)initWithDevice:(id<MTLDevice>)device source:(NSString *)source data:(NSData *)data;
 - (void)_parseMetallib:(NSData *)data;
+- (NSData *)spirvData;
 @end
 
 @implementation XEFMetalLibrary
@@ -2227,7 +2229,21 @@ enum {
   return [self newFunctionWithName:name];
 }
 - (NSArray<NSString *> *)functionNames { return [_functions allKeys]; }
+- (NSData *)spirvData {
+  if (!_spirvData && _data && [_data length] >= 4) {
+    size_t outSize = 0;
+    void *spv = xef_host_metal_translate_metallib([_data bytes], [_data length], &outSize);
+    if (spv && outSize > 0) {
+      _spirvData = [[NSData alloc] initWithBytesNoCopy:spv length:outSize freeWhenDone:NO];
+    }
+  }
+  return _spirvData;
+}
 - (void)dealloc {
+  if (_spirvData) {
+    xef_host_metal_shader_free((void *)[_spirvData bytes]);
+    [_spirvData release];
+  }
   [_label release]; [_source release]; [_data release]; [_functions release];
   [super dealloc];
 }

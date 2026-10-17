@@ -1487,6 +1487,14 @@ const char* xef_host_metal_backend_name() {
     return "Host OpenGL 3.3";
 }
 
+void* xef_host_metal_translate_metallib(const void* data, size_t size, size_t* out_size) {
+    return xef::metal_vk::shader_translate_metallib(data, size, out_size);
+}
+
+void xef_host_metal_shader_free(void* ptr) {
+    xef::metal_vk::shader_free(ptr);
+}
+
 struct Fn { const char* name; void* fn; };
 const Fn kFns[] = {
     {"_xef_host_window_create", (void*)&xef_host_window_create}, {"_xef_host_window_show", (void*)&xef_host_window_show}, {"_xef_host_window_hide", (void*)&xef_host_window_hide},
@@ -1520,6 +1528,8 @@ const Fn kFns[] = {
     {"_xef_host_metal_draw", (void*)&xef_host_metal_draw},
     {"_xef_host_metal_present_gpu", (void*)&xef_host_metal_present_gpu},
     {"_xef_host_metal_backend_name", (void*)&xef_host_metal_backend_name},
+    {"_xef_host_metal_translate_metallib", (void*)&xef_host_metal_translate_metallib},
+    {"_xef_host_metal_shader_free", (void*)&xef_host_metal_shader_free},
     {"xef_host_metal_sampler_create", (void*)&xef_host_metal_sampler_create},
     {"xef_host_metal_sampler_destroy", (void*)&xef_host_metal_sampler_destroy},
     {"xef_host_metal_tex_create", (void*)&xef_host_metal_tex_create},
@@ -1539,6 +1549,8 @@ const Fn kFns[] = {
     {"xef_host_metal_draw", (void*)&xef_host_metal_draw},
     {"xef_host_metal_present_gpu", (void*)&xef_host_metal_present_gpu},
     {"xef_host_metal_backend_name", (void*)&xef_host_metal_backend_name},
+    {"xef_host_metal_translate_metallib", (void*)&xef_host_metal_translate_metallib},
+    {"xef_host_metal_shader_free", (void*)&xef_host_metal_shader_free},
 };
 
 } // namespace
