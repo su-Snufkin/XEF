@@ -645,6 +645,68 @@ int main(void) {
     NSLog(@"MTLTextureCube verified: %@ (size 64x64, mips=%lu, faces=6), mip readback verified, cubeView=%@",
           cubeTex.label, (unsigned long)cubeTex.mipmapLevelCount, cubeView);
 
+    // Stage 18: Stage input descriptor, vertex amplification and depth clip mode
+    MTLStageInputOutputDescriptor *siod = [MTLStageInputOutputDescriptor stageInputOutputDescriptor];
+    siod.layouts[0].stride = 32;
+    siod.layouts[0].stepFunction = MTLStepFunctionThreadPositionInGridX;
+    siod.layouts[0].stepRate = 1;
+    siod.attributes[0].format = MTLAttributeFormatFloat4;
+    siod.attributes[0].offset = 0;
+    siod.attributes[0].bufferIndex = 0;
+    siod.indexType = MTLIndexTypeUInt32;
+    siod.indexBufferIndex = 1;
+
+    MTLComputePipelineDescriptor *cpd2 = [[[MTLComputePipelineDescriptor alloc] init] autorelease];
+    cpd2.stageInputDescriptor = siod;
+    cpd2.maxCallStackDepth = 4;
+    cpd2.supportAddingBinaryFunctions = YES;
+    if (cpd2.stageInputDescriptor.layouts[0].stride != 32 ||
+        cpd2.stageInputDescriptor.indexType != MTLIndexTypeUInt32 ||
+        cpd2.maxCallStackDepth != 4 ||
+        !cpd2.supportAddingBinaryFunctions) {
+      NSLog(@"FAIL: compute pipeline stageInputDescriptor or properties mismatch");
+      return 57;
+    }
+
+    MTLRenderPipelineDescriptor *rpd2 = [[[MTLRenderPipelineDescriptor alloc] init] autorelease];
+    rpd2.maxVertexAmplificationCount = 4;
+    rpd2.supportAddingVertexBinaryFunctions = YES;
+    rpd2.supportAddingFragmentBinaryFunctions = YES;
+    rpd2.maxTessellationFactor = 32;
+    rpd2.tessellationFactorScaleEnabled = YES;
+    rpd2.tessellationFactorFormat = MTLTessellationFactorFormatHalf;
+    rpd2.tessellationControlPointIndexType = MTLTessellationControlPointIndexTypeUInt32;
+    rpd2.tessellationFactorStepFunction = MTLTessellationFactorStepFunctionPerPatch;
+    rpd2.tessellationOutputWindingOrder = MTLWindingClockwise;
+    rpd2.tessellationPartitionMode = MTLTessellationPartitionModeFractionalEven;
+
+    if (rpd2.maxVertexAmplificationCount != 4 ||
+        !rpd2.supportAddingVertexBinaryFunctions ||
+        !rpd2.supportAddingFragmentBinaryFunctions ||
+        rpd2.maxTessellationFactor != 32 ||
+        !rpd2.isTessellationFactorScaleEnabled ||
+        rpd2.tessellationFactorFormat != MTLTessellationFactorFormatHalf ||
+        rpd2.tessellationControlPointIndexType != MTLTessellationControlPointIndexTypeUInt32 ||
+        rpd2.tessellationFactorStepFunction != MTLTessellationFactorStepFunctionPerPatch ||
+        rpd2.tessellationOutputWindingOrder != MTLWindingClockwise ||
+        rpd2.tessellationPartitionMode != MTLTessellationPartitionModeFractionalEven) {
+      NSLog(@"FAIL: render pipeline amplification or tessellation properties mismatch");
+      return 58;
+    }
+
+    MTLRenderPassDescriptor *rpdTest = [MTLRenderPassDescriptor renderPassDescriptor];
+    rpdTest.colorAttachments[0].texture = [device newTextureWithDescriptor:[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:64 height:64 mipmapped:NO]];
+    id<MTLCommandBuffer> renCb = [queue commandBuffer];
+    id<MTLRenderCommandEncoder> renEnc = [renCb renderCommandEncoderWithDescriptor:rpdTest];
+    [renEnc setDepthClipMode:MTLDepthClipModeClamp];
+    [renEnc setVertexAmplificationCount:2 viewMappings:NULL];
+    [renEnc endEncoding];
+    [renCb commit];
+    [renCb waitUntilCompleted];
+
+    NSLog(@"StageInputOutputDescriptor and pipeline extensions verified: stageInput=%@, vertAmp=%lu, depthClipClamp verified",
+          cpd2.stageInputDescriptor, (unsigned long)rpd2.maxVertexAmplificationCount);
+
     NSLog(@"PASS heap_event_test");
     return 0;
   }
