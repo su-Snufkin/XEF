@@ -503,6 +503,23 @@ struct Recorder {
         barrier_pending = false;
     }
 
+    static bool trace_on() { static int t = getenv("XEF_MTL_TRACE") ? 1 : 0; return t; }
+    void trace_op(uint32_t op, const uint8_t* d) {
+        switch (op) {
+        case XEF_MTL_CMD_DRAW: {
+            auto* c = (const xef_mtl_draw*)d;
+            fprintf(stderr, "mtl: draw prim %u v%u+%u i%u rp=%p rendering=%d\n", c->primitive, c->vertex_start, c->vertex_count, c->instance_count, (void*)rp, rendering);
+            break;
+        }
+        case XEF_MTL_CMD_DRAW_INDEXED: {
+            auto* c = (const xef_mtl_draw_indexed*)d;
+            fprintf(stderr, "mtl: draw_indexed prim %u n%u i%u ib=%u rp=%p rendering=%d\n", c->primitive, c->index_count, c->instance_count, c->index_buffer, (void*)rp, rendering);
+            break;
+        }
+        default: fprintf(stderr, "mtl: op %u size\n", op); break;
+        }
+    }
+
     bool run(const uint8_t* p, uint64_t len) {
         const uint8_t* end = p + len;
         while (p + sizeof(xef_mtl_cmd) <= end) {
@@ -511,6 +528,7 @@ struct Recorder {
             const uint8_t* d = p + sizeof h;
             if (d + h.size > end) { err = "truncated command stream"; return false; }
             p = d + h.size;
+            if (trace_on()) trace_op(h.op, d);
             switch (h.op) {
             case XEF_MTL_CMD_BEGIN_RENDER: begin_render((const xef_mtl_begin_render*)d); break;
             case XEF_MTL_CMD_BEGIN_COMPUTE: begin_compute(); break;
