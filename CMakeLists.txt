@@ -28,7 +28,6 @@ set_source_files_properties(
     src/loader/iridium/spirv.cpp
     src/loader/iridium/iridium.cpp
     src/loader/iridium/dynamic-llvm.cpp
-    src/loader/darwin_metal_vk.cpp
     PROPERTIES COMPILE_OPTIONS "-fexceptions;-Wno-deprecated-declarations"
 )
 
