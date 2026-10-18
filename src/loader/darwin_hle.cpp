@@ -221,13 +221,14 @@ static void* darwin_memcpy_chk_wrapper(void* dst, const void* src, size_t len, s
     return memmove(dst, src, len);
 }
 
-struct GuestAtExit { u64 fn, arg; bool cxa; };
+enum class AtExitKind { Normal, Cxa, Block };
+struct GuestAtExit { u64 fn, arg; AtExitKind kind; };
 static std::vector<GuestAtExit> g_guest_atexit;
 static std::mutex g_atexit_lock;
 static int darwin_atexit_wrapper(u64 fn) {
     if (fn) {
         std::lock_guard<std::mutex> lk(g_atexit_lock);
-        g_guest_atexit.push_back({fn, 0, false});
+        g_guest_atexit.push_back({fn, 0, AtExitKind::Normal});
     }
     return 0;
 }
@@ -235,7 +236,14 @@ static int darwin_cxa_atexit(u64 fn, u64 arg, u64 dso) {
     (void)dso;
     if (fn) {
         std::lock_guard<std::mutex> lk(g_atexit_lock);
-        g_guest_atexit.push_back({fn, arg, true});
+        g_guest_atexit.push_back({fn, arg, AtExitKind::Cxa});
+    }
+    return 0;
+}
+static int darwin_atexit_b(u64 block) {
+    if (block) {
+        std::lock_guard<std::mutex> lk(g_atexit_lock);
+        g_guest_atexit.push_back({block, 0, AtExitKind::Block});
     }
     return 0;
 }
@@ -250,8 +258,16 @@ void darwin_run_exit_handlers() {
             e = g_guest_atexit.back();
             g_guest_atexit.pop_back();
         }
-        if (e.cxa) { u64 a[1] = {e.arg}; guest_call(e.fn, 1, a); }
-        else guest_call(e.fn, 0, nullptr);
+        if (e.kind == AtExitKind::Cxa) {
+            u64 a[1] = {e.arg};
+            guest_call(e.fn, 1, a);
+        } else if (e.kind == AtExitKind::Block) {
+            u64 invoke_fn = *(u64*)(uintptr_t)(e.fn + 16);
+            u64 a[1] = {e.fn};
+            guest_call(invoke_fn, 1, a);
+        } else {
+            guest_call(e.fn, 0, nullptr);
+        }
     }
 }
 
@@ -1986,8 +2002,7 @@ static int darwin_sscanf(const char* str, const char* format, const uint64_t* ap
     return ((sscanf8_t)&sscanf)(str, format, (void*)ap[0], (void*)ap[1], (void*)ap[2], (void*)ap[3],
                                 (void*)ap[4], (void*)ap[5], (void*)ap[6], (void*)ap[7]);
 }
-static int darwin_sscanf_l(const char* str, void* loc, const char* format, const uint64_t* ap) {
-    (void)loc;
+static int darwin_vsscanf(const char* str, const char* format, const uint64_t* ap) {
     return darwin_sscanf(str, format, ap);
 }
 typedef int (*fscanf8_t)(FILE*, const char*, void*, void*, void*, void*, void*, void*, void*, void*);
@@ -2295,7 +2310,8 @@ static const ShimEntry kShims[] = {
     {"_asprintf", (void*)&darwin_asprintf, 2}, {"_asprintf_l", (void*)&darwin_asprintf_l, 3},
     {"_dprintf", (void*)&darwin_dprintf, 2}, {"_vasprintf", (void*)&darwin_vasprintf, -1},
     {"_vsprintf", (void*)&darwin_vsprintf, -1}, {"_vprintf", (void*)&darwin_vprintf, -1}, {"_vdprintf", (void*)&darwin_vdprintf, -1}, {"_sscanf", (void*)&darwin_sscanf, 2},
-    {"_sscanf_l", (void*)&darwin_sscanf_l, 3}, {"_fscanf", (void*)&darwin_fscanf, 2},
+    {"_vsscanf", (void*)&darwin_vsscanf, -1},
+    {"_fscanf", (void*)&darwin_fscanf, 2},
     {"___tolower", (void*)&darwin_tolower, -1}, {"___toupper", (void*)&darwin_toupper, -1},
     {"____tolower_l", (void*)&darwin_tolower_l, -1}, {"____toupper_l", (void*)&darwin_toupper_l, -1},
     {"___maskrune_l", (void*)&darwin_maskrune_l, -1}, {"____mb_cur_max_l", (void*)&darwin_mb_cur_max_l, -1},
@@ -3676,6 +3692,8 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         host_fn = (void*)&darwin_memcpy_chk_wrapper;
     } else if (strcmp(name, "_atexit") == 0 || strcmp(name, "atexit") == 0) {
         host_fn = (void*)&darwin_atexit_wrapper;
+    } else if (strcmp(name, "_atexit_b") == 0 || strcmp(name, "atexit_b") == 0) {
+        host_fn = (void*)&darwin_atexit_b;
     } else if (strcmp(name, "_memset_pattern16") == 0 || strcmp(name, "memset_pattern16") == 0) {
         host_fn = (void*)&darwin_memset_pattern16_wrapper;
     } else if (strcmp(name, "___exp10") == 0 || strcmp(name, "exp10") == 0) {

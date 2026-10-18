@@ -86,13 +86,24 @@ build_objcfw() { # name version srcfile
 
 # QuartzCore, Metal, MetalKit, ModelIO, ImageIO, IOSurface, CoreData
 build_objcfw QuartzCore A QuartzCore.m
-build_objcfw Metal A Metal.m
+
+mk Metal A
+clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/Metal.m -o $O/Metal1.o
+clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/MetalCore.m -o $O/MetalCore.o
+clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/MetalExtras.m -o $O/MetalExtras.o
+clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/Metal.framework/Versions/A/Metal \
+  -Wl,-compatibility_version,1 -Wl,-current_version,1 -Wl,-not_for_dyld_shared_cache \
+  $O/Metal1.o $O/MetalCore.o $O/MetalExtras.o $LIBS $F/CoreGraphics.framework/Versions/A/CoreGraphics -Wl,-undefined,dynamic_lookup -o $F/Metal.framework/Versions/A/Metal
+ln -sfn A $F/Metal.framework/Versions/Current
+ln -sfn Versions/Current/Metal $F/Metal.framework/Metal
+codesign -f -s - $F/Metal.framework/Versions/A/Metal
 
 mk MetalKit A
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/MetalKit.m -o $O/MetalKit.o
+clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/MetalKitAssets.m -o $O/MetalKitAssets.o
 clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/MetalKit.framework/Versions/A/MetalKit \
   -Wl,-compatibility_version,1 -Wl,-current_version,1 -Wl,-not_for_dyld_shared_cache \
-  $O/MetalKit.o $LIBS $F/CoreGraphics.framework/Versions/A/CoreGraphics $F/AppKit.framework/Versions/C/AppKit $F/QuartzCore.framework/Versions/A/QuartzCore $F/Metal.framework/Versions/A/Metal -Wl,-undefined,dynamic_lookup -o $F/MetalKit.framework/Versions/A/MetalKit
+  $O/MetalKit.o $O/MetalKitAssets.o $LIBS $F/CoreGraphics.framework/Versions/A/CoreGraphics $F/AppKit.framework/Versions/C/AppKit $F/QuartzCore.framework/Versions/A/QuartzCore $F/Metal.framework/Versions/A/Metal -Wl,-undefined,dynamic_lookup -o $F/MetalKit.framework/Versions/A/MetalKit
 ln -sfn A $F/MetalKit.framework/Versions/Current
 ln -sfn Versions/Current/MetalKit $F/MetalKit.framework/MetalKit
 codesign -f -s - $F/MetalKit.framework/Versions/A/MetalKit

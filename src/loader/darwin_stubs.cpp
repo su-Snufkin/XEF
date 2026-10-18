@@ -733,8 +733,6 @@ static const StubEntry kStubs2[] = {
     {"_xpc_dictionary_get_uint64", (void*)&st_zero2}, {"_xpc_dictionary_get_value", (void*)&st_null2},
     {"_xpc_dictionary_set_string", (void*)&st_noop2}, {"_xpc_dictionary_set_uint64", (void*)&st_noop2}, {"_xpc_dictionary_set_value", (void*)&st_noop2},
     {"_strnstr", (void*)&st_strnstr},
-    {"_MTLCreateSystemDefaultDevice", (void*)&st_null2},
-    {"_MTLCopyAllDevices", (void*)&st_null2},
     {"_UTTypeCopyPreferredTagWithClass", (void*)&st_null2},
     {"_UTTypeCreatePreferredIdentifierForTag", (void*)&st_null2},
     {"_FFCreateDevice", (void*)&st_null2},

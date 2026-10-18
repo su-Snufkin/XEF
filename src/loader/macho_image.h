@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace xef {
 
@@ -41,6 +42,7 @@ struct MachImage {
     std::vector<std::string> rpaths;
     const uint8_t* exports = nullptr;
     size_t exports_size = 0;
+    std::unordered_map<std::string, uint64_t> symtab_exports;
     std::vector<uint64_t> inits;        // initializer addresses, run in order
     uint64_t unwind_info = 0, unwind_info_size = 0;   // __TEXT,__unwind_info
     uint64_t eh_frame = 0, eh_frame_size = 0;         // __TEXT,__eh_frame

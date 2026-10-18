@@ -147,6 +147,10 @@ static uint64_t dyld_lookup_rec(MachImage* img, const char* name, int depth) {
         if ((flags & EXPORT_KIND_MASK) == EXPORT_KIND_ABSOLUTE) return value;
         return img->header + value;
     }
+    if (!img->symtab_exports.empty()) {
+        auto it = img->symtab_exports.find(name);
+        if (it != img->symtab_exports.end()) return it->second;
+    }
     // names exported through a re-exported dependency (umbrella libraries)
     for (MachDep& d : img->deps) {
         if (!d.reexport || !d.image) continue;
@@ -796,6 +800,27 @@ static MachImage* map_image(const std::string& guest_path, const std::string& ho
             if (d->bind_size) { im->bind = le_ptr(d->bind_off); im->bind_size = d->bind_size; }
             if (d->lazy_bind_size) { im->lazy_bind = le_ptr(d->lazy_bind_off); im->lazy_bind_size = d->lazy_bind_size; }
             if (d->export_size && !im->exports) { im->exports = le_ptr(d->export_off); im->exports_size = d->export_size; }
+        } else if (lc->cmd == LC_SYMTAB) {
+            const symtab_command* st = (const symtab_command*)lc;
+            const nlist_64* nl = (const nlist_64*)le_ptr(st->symoff);
+            const char* strs = (const char*)le_ptr(st->stroff);
+            if (nl && strs) {
+                for (uint32_t j = 0; j < st->nsyms; j++) {
+                    uint8_t type = nl[j].n_type;
+                    if ((type & N_STAB) == 0 && (type & N_EXT)) {
+                        if (nl[j].n_un.n_strx < st->strsize) {
+                            const char* sname = strs + nl[j].n_un.n_strx;
+                            if (*sname) {
+                                if ((type & N_TYPE) == N_SECT) {
+                                    im->symtab_exports[sname] = nl[j].n_value + slide;
+                                } else if ((type & N_TYPE) == N_ABS) {
+                                    im->symtab_exports[sname] = nl[j].n_value;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         off += lc->cmdsize;
     }
@@ -969,6 +994,83 @@ static void objc_notify_init(MachImage* im) {
     }
 }
 
+static void fixup_tagged_pointer_classes() {
+    uint64_t fn_register = dyld_flat_lookup("__objc_registerTaggedPointerClass");
+    if (!fn_register) return;
+
+    uint64_t fn_objc_getclass = dyld_flat_lookup("_objc_getClass");
+    auto get_objc_class = [&](const char* name) -> uint64_t {
+        std::string sym = std::string("_OBJC_CLASS_$_") + name;
+        uint64_t c = dyld_flat_lookup(sym.c_str());
+        if (!c) c = dyld_flat_lookup((std::string("OBJC_CLASS_$_") + name).c_str());
+        if (!c && fn_objc_getclass) {
+            uint64_t a[1] = {(uint64_t)(uintptr_t)name};
+            c = guest_call(fn_objc_getclass, 1, a);
+        }
+        return c;
+    };
+
+    uint64_t cls_ind_str = get_objc_class("NSIndirectTaggedPointerString");
+    uint64_t cls_tag_str = get_objc_class("NSTaggedPointerString");
+    uint64_t cls_cf_num  = get_objc_class("__NSCFNumber");
+    uint64_t cls_tag_date = get_objc_class("__NSTaggedDate");
+
+    uint64_t fn_getclass_tag = dyld_flat_lookup("__objc_getClassForTag");
+
+    auto try_register = [&](uint64_t tag, uint64_t cls) {
+        if (!cls) return;
+        if (fn_getclass_tag) {
+            uint64_t a[1] = {tag};
+            if (guest_call(fn_getclass_tag, 1, a) != 0) return;
+        }
+        uint64_t args[2] = {tag, cls};
+        guest_call(fn_register, 2, args);
+    };
+
+    // In addition, populate objc_debug_taggedpointer_classes slots directly:
+    // _objc_msgSend on ARM64 directly indexes objc_debug_taggedpointer_classes[x0 & 7]
+    uint64_t dbg_classes = dyld_flat_lookup("_objc_debug_taggedpointer_classes");
+    uint64_t dbg_perms   = dyld_flat_lookup("_objc_debug_tag60_permutations");
+
+    if (dbg_perms) {
+        // Set identity permutation so tag == slot
+        for (int i = 0; i < 8; i++) {
+            ((uint8_t*)(uintptr_t)dbg_perms)[i] = (uint8_t)i;
+        }
+    }
+
+    try_register(0, cls_ind_str ? cls_ind_str : cls_cf_num);
+    try_register(1, cls_cf_num);
+    try_register(2, cls_tag_str ? cls_tag_str : cls_cf_num);
+    try_register(3, cls_cf_num);
+    if (cls_tag_date) try_register(4, cls_tag_date);
+    try_register(5, cls_cf_num);
+    try_register(6, cls_cf_num);
+
+    if (dbg_classes && cls_cf_num) {
+        uint64_t* slots = (uint64_t*)(uintptr_t)dbg_classes;
+        if (cls_ind_str) slots[0] = cls_ind_str;
+        if (!slots[1]) slots[1] = cls_cf_num;
+        if (cls_tag_str) slots[2] = cls_tag_str;
+        if (!slots[3]) slots[3] = cls_cf_num;
+        if (cls_tag_date) slots[4] = cls_tag_date;
+        for (int i = 0; i < 8; i++) {
+            if (!slots[i]) slots[i] = cls_cf_num;
+        }
+    }
+
+    uint64_t dbg_ext = dyld_flat_lookup("_objc_debug_taggedpointer_ext_classes");
+    if (dbg_ext && cls_cf_num) {
+        uint64_t* ext_slots = (uint64_t*)(uintptr_t)dbg_ext;
+        for (int i = 0; i < 256; i++) {
+            if (!ext_slots[i]) ext_slots[i] = cls_cf_num;
+        }
+    }
+
+    XEF_LOG(1, "xef-osx: registered tagged pointer classes (str=%#lx, num=%#lx, dbg_classes=%#lx)",
+            (unsigned long)cls_tag_str, (unsigned long)cls_cf_num, (unsigned long)dbg_classes);
+}
+
 static void objc_registered() {
     std::vector<MachImage*> all(g_images.begin(), g_images.end());
     objc_map_images(all);
@@ -1003,6 +1105,10 @@ static void run_inits_of(MachImage* im, std::vector<MachImage*>& seen, const u64
         guest_call(f, 4, args);
     }
     if (im->install_name == "/usr/lib/libobjc.A.dylib") {
+        // Disable tagged pointer obfuscation so tags and pointers are standard and predictable
+        if (uint64_t dis = dyld_image_lookup(im, "_DisableTaggedPointerObfuscation")) {
+            *(uint32_t*)(uintptr_t)dis = 1;
+        }
         // libSystem's initializer would call _objc_init(); it registers the dyld notifications
         if (uint64_t f = dyld_image_lookup(im, "__objc_init")) guest_call(f, 0, nullptr);
     }
@@ -1015,6 +1121,7 @@ void dyld_run_initializers(uint64_t argc, uint64_t argv, uint64_t envp, uint64_t
     // implicit images (libunwind) first, then the executable's tree
     for (size_t i = g_images.size(); i-- > 1;) run_inits_of(g_images[i], seen, args);
     if (!g_images.empty()) run_inits_of(g_images[0], seen, args);
+    fixup_tagged_pointer_classes();
 }
 
 MachImage* dyld_dlopen(const char* path) {
@@ -1026,6 +1133,7 @@ MachImage* dyld_dlopen(const char* path) {
     if (g_images.size() > before || !im->bound) {
         for (size_t i = before; i < g_images.size(); i++) load_dependencies(g_images[i]);
         link_all();
+        fixup_tagged_pointer_classes();
         u64 args[4] = {(u64)g_darwin_argc, (u64)(uintptr_t)g_darwin_argv, (u64)(uintptr_t)g_darwin_envp, 0};
         std::vector<MachImage*> seen;
         objc_map_images(std::vector<MachImage*>(g_images.begin() + before, g_images.end()));

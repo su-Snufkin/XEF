@@ -155,11 +155,14 @@ void xef_host_window_show(int h) {
     if (HWin* w = find(h)) {
         X<int (*)(Display*, ::Window)>("XMapWindow")(g_dpy, w->win);
         X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
-        // wait for MapNotify so the first swap is not dropped by a not-yet-mapped drawable
-        // (only this window's StructureNotify events are consumed; no other event kind)
-        XEvent ev;
-        do { X<int (*)(Display*, ::Window, long, XEvent*)>("XWindowEvent")(g_dpy, w->win, StructureNotifyMask, &ev); }
-        while (ev.type != MapNotify);
+        auto check = X<int (*)(Display*, ::Window, int, XEvent*)>("XCheckTypedWindowEvent");
+        if (check) {
+            XEvent ev;
+            for (int i = 0; i < 100; i++) {
+                if (check(g_dpy, w->win, MapNotify, &ev)) break;
+                usleep(1000);
+            }
+        }
     }
 }
 

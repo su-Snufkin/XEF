@@ -59,6 +59,19 @@ BOOL NSMouseInRect(NSPoint p, NSRect r, BOOL flipped) {
   return NSPointInRect(p, r);
 }
 
+static id lite_stub(id self, SEL _cmd, ...) {
+  static NSMutableSet *seen;
+  @synchronized ([NSObject class]) {
+    if (!seen) seen = [[NSMutableSet alloc] init];
+    NSString *k = [NSString stringWithFormat:@"%s %s", class_getName(object_getClass(self)), sel_getName(_cmd)];
+    if (![seen containsObject:k]) {
+      [seen addObject:k];
+      fprintf(stderr, "STUB -[%s %s]\n", class_getName(object_getClass(self)), sel_getName(_cmd));
+    }
+  }
+  return nil;
+}
+
 NSString *const GCControllerDidConnectNotification = @"GCControllerDidConnectNotification";
 NSString *const GCControllerDidDisconnectNotification = @"GCControllerDidDisconnectNotification";
 NSString *const GCHapticDurationInfinite = @"GCHapticDurationInfinite";
@@ -329,22 +342,163 @@ static unichar key_char(int kc, int shift) {
 - (NSRect)convertRectToBacking:(NSRect)r { return r; }
 - (NSString *)localizedName { return @"XEF Display"; }
 - (CGFloat)maximumExtendedDynamicRangeColorComponentValue { return 1.0; }
-- (CGFloat)maximumPotentialExtendedDynamicRangeColorComponentValue { return 1.0; }
-- (CGFloat)maximumReferenceExtendedDynamicRangeColorComponentValue { return 1.0; }
+- (NSInteger)depth { return 0x208; /* NSWindowDepthTwentyfourBitRGB */ }
 - (id)colorSpace { return nil; }
++ (BOOL)resolveInstanceMethod:(SEL)sel {
+  const char *n = sel_getName(sel);
+  if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
+  class_addMethod(self, sel, (IMP)lite_stub, "@@:");
+  return YES;
+}
 @end
+
+NSInteger NSBitsPerPixelFromDepth(int32_t depth) {
+  if (depth == 0x210) return 64;
+  if (depth == 0x220) return 128;
+  return 32;
+}
+
+NSInteger NSBitsPerSampleFromDepth(int32_t depth) {
+  if (depth == 0x210) return 16;
+  if (depth == 0x220) return 32;
+  return 8;
+}
+
+BOOL NSPlanarFromDepth(int32_t depth) {
+  return NO;
+}
+
+id NSColorSpaceFromDepth(int32_t depth) {
+  return NSCalibratedRGBColorSpace;
+}
+
+NSInteger NSNumberOfColorComponents(id colorSpaceName) {
+  return 3;
+}
 
 /* ------------------------------------------------------------ color / cursor */
 @implementation NSColor
 + (NSColor *)colorWithCalibratedRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a {
   NSColor *c = [[[NSColor alloc] init] autorelease]; c->r = r; c->g = g; c->b = b; c->a = a; return c; }
 + (NSColor *)colorWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a { return [self colorWithCalibratedRed:r green:g blue:b alpha:a]; }
++ (NSColor *)colorWithCalibratedWhite:(CGFloat)w alpha:(CGFloat)a { return [self colorWithCalibratedRed:w green:w blue:w alpha:a]; }
++ (NSColor *)colorWithWhite:(CGFloat)w alpha:(CGFloat)a { return [self colorWithCalibratedWhite:w alpha:a]; }
 + (NSColor *)blackColor { return [self colorWithRed:0 green:0 blue:0 alpha:1]; }
 + (NSColor *)whiteColor { return [self colorWithRed:1 green:1 blue:1 alpha:1]; }
 + (NSColor *)clearColor { return [self colorWithRed:0 green:0 blue:0 alpha:0]; }
++ (NSColor *)controlTextColor { return [self blackColor]; }
++ (NSColor *)disabledControlTextColor { return [self colorWithRed:0.5 green:0.5 blue:0.5 alpha:1]; }
++ (NSColor *)textColor { return [self blackColor]; }
++ (NSColor *)labelColor { return [self blackColor]; }
++ (NSColor *)secondaryLabelColor { return [self colorWithRed:0.5 green:0.5 blue:0.5 alpha:1]; }
++ (NSColor *)tertiaryLabelColor { return [self colorWithRed:0.6 green:0.6 blue:0.6 alpha:1]; }
++ (NSColor *)quaternaryLabelColor { return [self colorWithRed:0.7 green:0.7 blue:0.7 alpha:1]; }
++ (NSColor *)windowBackgroundColor { return [self colorWithRed:0.9 green:0.9 blue:0.9 alpha:1]; }
++ (NSColor *)controlColor { return [self colorWithRed:0.9 green:0.9 blue:0.9 alpha:1]; }
++ (NSColor *)controlBackgroundColor { return [self whiteColor]; }
++ (NSColor *)selectedControlColor { return [self colorWithRed:0.2 green:0.5 blue:0.9 alpha:1]; }
++ (NSColor *)selectedControlTextColor { return [self whiteColor]; }
++ (NSColor *)gridColor { return [self colorWithRed:0.8 green:0.8 blue:0.8 alpha:1]; }
++ (NSColor *)separatorColor { return [self colorWithRed:0.85 green:0.85 blue:0.85 alpha:1]; }
++ (NSColor *)linkColor { return [self colorWithRed:0.0 green:0.4 blue:0.8 alpha:1]; }
++ (NSColor *)placeholderTextColor { return [self colorWithRed:0.6 green:0.6 blue:0.6 alpha:1]; }
+
+static id dynamic_nscolor_class_imp(id self, SEL _cmd) {
+  return [NSColor colorWithCalibratedRed:0.5 green:0.5 blue:0.5 alpha:1.0];
+}
+
++ (BOOL)resolveClassMethod:(SEL)sel {
+  Class meta = object_getClass((id)self);
+  class_addMethod(meta, sel, (IMP)dynamic_nscolor_class_imp, "@@:");
+  return YES;
+}
+
 - (CGFloat)redComponent { return r; } - (CGFloat)greenComponent { return g; } - (CGFloat)blueComponent { return b; } - (CGFloat)alphaComponent { return a; }
 - (void)set {}
+- (void)setFill {}
+- (void)setStroke {}
+- (void *)CGColor { return NULL; }
+- (NSColor *)colorUsingColorSpace:(id)s { return self; }
+- (NSColor *)colorWithAlphaComponent:(CGFloat)alpha { return [NSColor colorWithCalibratedRed:r green:g blue:b alpha:alpha]; }
+
++ (BOOL)resolveInstanceMethod:(SEL)sel {
+  const char *n = sel_getName(sel);
+  if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
+  class_addMethod(self, sel, (IMP)lite_stub, "@@:");
+  return YES;
+}
 @end
+
+static const char *swizzled_objCType(id self, SEL _cmd) {
+  return "q";
+}
+static long long swizzled_longLongValue(id self, SEL _cmd) {
+  intptr_t v = (intptr_t)self;
+  if (v & 1) return (long long)(v >> 3);
+  return 0;
+}
+static double swizzled_doubleValue(id self, SEL _cmd) {
+  return (double)swizzled_longLongValue(self, _cmd);
+}
+static int swizzled_intValue(id self, SEL _cmd) {
+  return (int)swizzled_longLongValue(self, _cmd);
+}
+static void swizzled_getValue(id self, SEL _cmd, void *p) {
+  if (p) *(long long *)p = swizzled_longLongValue(self, _cmd);
+}
+static NSUInteger swizzled_hash(id self, SEL _cmd) {
+  return (NSUInteger)swizzled_longLongValue(self, _cmd);
+}
+static id swizzled_copy(id self, SEL _cmd) {
+  return [self retain];
+}
+static id swizzled_copyWithZone(id self, SEL _cmd, void *z) {
+  return [self retain];
+}
+static BOOL swizzled_boolValue(id self, SEL _cmd) {
+  return swizzled_longLongValue(self, _cmd) != 0;
+}
+static NSString *swizzled_stringValue(id self, SEL _cmd) {
+  return [NSString stringWithFormat:@"%lld", swizzled_longLongValue(self, _cmd)];
+}
+static NSString *swizzled_description(id self, SEL _cmd) {
+  return swizzled_stringValue(self, _cmd);
+}
+static BOOL swizzled_isEqualToNumber(id self, SEL _cmd, NSNumber *o) {
+  if (!o) return NO;
+  return swizzled_longLongValue(self, _cmd) == [o longLongValue];
+}
+static NSComparisonResult swizzled_compare(id self, SEL _cmd, NSNumber *o) {
+  if (!o) return NSOrderedDescending;
+  long long a = swizzled_longLongValue(self, _cmd);
+  long long b = [o longLongValue];
+  if (a < b) return NSOrderedAscending;
+  if (a > b) return NSOrderedDescending;
+  return NSOrderedSame;
+}
+
+__attribute__((constructor))
+static void fixup_nsnumber_methods(void) {
+  const char *classes[] = {"NSNumber", "__NSCFNumber", "NSConstantIntegerNumber", "__NSUnrecognizedTaggedPointer"};
+  for (int i = 0; i < 4; i++) {
+    Class cls = objc_getClass(classes[i]);
+    if (cls) {
+      class_replaceMethod(cls, @selector(objCType), (IMP)swizzled_objCType, "r*@:");
+      class_replaceMethod(cls, @selector(longLongValue), (IMP)swizzled_longLongValue, "q@:");
+      class_replaceMethod(cls, @selector(doubleValue), (IMP)swizzled_doubleValue, "d@:");
+      class_replaceMethod(cls, @selector(intValue), (IMP)swizzled_intValue, "i@:");
+      class_replaceMethod(cls, @selector(getValue:), (IMP)swizzled_getValue, "v@:^v");
+      class_replaceMethod(cls, @selector(hash), (IMP)swizzled_hash, "Q@:");
+      class_replaceMethod(cls, @selector(copy), (IMP)swizzled_copy, "@@:");
+      class_replaceMethod(cls, @selector(copyWithZone:), (IMP)swizzled_copyWithZone, "@@:^v");
+      class_replaceMethod(cls, @selector(boolValue), (IMP)swizzled_boolValue, "c@:");
+      class_replaceMethod(cls, @selector(stringValue), (IMP)swizzled_stringValue, "@@:");
+      class_replaceMethod(cls, @selector(description), (IMP)swizzled_description, "@@:");
+      class_replaceMethod(cls, @selector(isEqualToNumber:), (IMP)swizzled_isEqualToNumber, "c@:@");
+      class_replaceMethod(cls, @selector(compare:), (IMP)swizzled_compare, "q@:@");
+    }
+  }
+}
 
 @implementation NSCursor
 + (NSCursor *)arrowCursor { static NSCursor *c; if (!c) c = [[NSCursor alloc] init]; return c; }
@@ -1304,12 +1458,6 @@ void NSBeep(void) {}
 /* Anything else AppKit has and AppKit-lite does not: windows, views and the application answer unknown selectors with a
  * logged no-op returning 0/nil (setters of cosmetic state such as setOneShot: dominate). Selectors that SDL/GLFW probe
  * with respondsToSelector: are unaffected: resolveInstanceMethod: is only reached when a message is actually sent. */
-static id lite_stub(id self, SEL _cmd, ...) {
-  static NSMutableSet *seen; @synchronized ([NSResponder class]) {
-    if (!seen) seen = [[NSMutableSet alloc] init];
-    NSString *k = [NSString stringWithFormat:@"%s %s", class_getName(object_getClass(self)), sel_getName(_cmd)];
-    if (![seen containsObject:k]) { [seen addObject:k]; fprintf(stderr, "STUB -[%s %s]\n", class_getName(object_getClass(self)), sel_getName(_cmd)); } }
-  return nil; }
 @implementation NSResponder (XefStubs)
 + (BOOL)resolveInstanceMethod:(SEL)sel {
   const char *n = sel_getName(sel);
@@ -1321,6 +1469,24 @@ static id lite_stub(id self, SEL _cmd, ...) {
   if (!appkit) return NO;
   class_addMethod(self, sel, (IMP)lite_stub, "@@:");
   return YES; }
+@end
+
+@implementation NSMenuItem (XefStubs)
++ (BOOL)resolveInstanceMethod:(SEL)sel {
+  const char *n = sel_getName(sel);
+  if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
+  class_addMethod(self, sel, (IMP)lite_stub, "@@:");
+  return YES;
+}
+@end
+
+@implementation NSMenu (XefMenuStubs)
++ (BOOL)resolveInstanceMethod:(SEL)sel {
+  const char *n = sel_getName(sel);
+  if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
+  class_addMethod(self, sel, (IMP)lite_stub, "@@:");
+  return YES;
+}
 @end
 
 @implementation NSBitmapImageRep (XefSDL)

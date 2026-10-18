@@ -233,6 +233,32 @@ struct dyld_info_command {
     uint32_t export_size;
 };
 
+struct symtab_command {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint32_t symoff;
+    uint32_t nsyms;
+    uint32_t stroff;
+    uint32_t strsize;
+};
+
+struct nlist_64 {
+    union {
+        uint32_t n_strx;
+    } n_un;
+    uint8_t n_type;
+    uint8_t n_sect;
+    uint16_t n_desc;
+    uint64_t n_value;
+};
+
+constexpr uint8_t N_STAB = 0xe0;
+constexpr uint8_t N_TYPE = 0x0e;
+constexpr uint8_t N_EXT  = 0x01;
+constexpr uint8_t N_UNDF = 0x0;
+constexpr uint8_t N_ABS  = 0x2;
+constexpr uint8_t N_SECT = 0xe;
+
 // Rebase constants
 constexpr uint8_t REBASE_OPCODE_MASK                           = 0xF0;
 constexpr uint8_t REBASE_IMMEDIATE_MASK                        = 0x0F;
