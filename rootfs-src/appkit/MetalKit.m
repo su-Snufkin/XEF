@@ -621,6 +621,22 @@ typedef void (^MTKTextureLoaderCallback)(id<MTLTexture> texture, NSError *error)
   id<MTLTexture> tex = [_device newTextureWithDescriptor:td];
   if (tex && pixelBuffer) {
     [tex replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:pixelBuffer bytesPerRow:width * 4];
+    if (options && [options[MTKTextureLoaderOptionGenerateMipmaps] boolValue]) {
+      id<MTLCommandQueue> q = [_device newCommandQueue];
+      if (q) {
+        id<MTLCommandBuffer> cb = [q commandBuffer];
+        if (cb) {
+          id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+          if (blit) {
+            [blit generateMipmapsForTexture:tex];
+            [blit endEncoding];
+          }
+          [cb commit];
+          [cb waitUntilCompleted];
+        }
+        [q release];
+      }
+    }
   }
 
   if (allocatedPixels && pixelBuffer) free(pixelBuffer);
