@@ -1816,8 +1816,10 @@ static void* darwin_dlsym(void* handle, const char* symbol) {
 static std::string g_dlerror;
 static void* darwin_dlopen(const char* path, int mode) {
     (void)mode;
+    XEF_LOG(1, "xef_hle: dlopen('%s', mode=0x%x)", path ? path : "(null)", mode);
     MachImage* im = dyld_dlopen(path);
     if (!im && path) {
+        XEF_LOG(1, "xef_hle: dlopen('%s') FAILED", path);
         g_dlerror = std::string("dlopen(") + path + "): image not found";
         return nullptr;
     }
@@ -2760,7 +2762,8 @@ static void darwin_os_unfair_lock_lock(os_unfair_lock_s* lock) {
     if (!lock) return;
     uint32_t me = unfair_self(), expected = 0;
     while (!lock->_os_unfair_lock_opaque.compare_exchange_weak(expected, me, std::memory_order_acquire, std::memory_order_relaxed)) {
-        if (expected != 0 && expected != me)
+        if (expected == me) return;
+        if (expected != 0)
             syscall(SYS_futex, &lock->_os_unfair_lock_opaque, FUTEX_WAIT_PRIVATE, expected, nullptr, nullptr, 0);
         expected = 0;
     }

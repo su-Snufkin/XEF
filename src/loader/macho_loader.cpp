@@ -798,6 +798,7 @@ static MachImage* map_image(const std::string& guest_path, const std::string& ho
             const dyld_info_command* d = (const dyld_info_command*)lc;
             if (d->rebase_size) { im->rebase = le_ptr(d->rebase_off); im->rebase_size = d->rebase_size; }
             if (d->bind_size) { im->bind = le_ptr(d->bind_off); im->bind_size = d->bind_size; }
+            if (d->weak_bind_size) { im->weak_bind = le_ptr(d->weak_bind_off); im->weak_bind_size = d->weak_bind_size; }
             if (d->lazy_bind_size) { im->lazy_bind = le_ptr(d->lazy_bind_off); im->lazy_bind_size = d->lazy_bind_size; }
             if (d->export_size && !im->exports) { im->exports = le_ptr(d->export_off); im->exports_size = d->export_size; }
         } else if (lc->cmd == LC_SYMTAB) {
@@ -856,6 +857,7 @@ static void link_image(MachImage* im) {
 
     apply_rebase_opcodes(im);
     apply_bind_opcodes(im, im->bind, im->bind_size);
+    apply_bind_opcodes(im, im->weak_bind, im->weak_bind_size);
     apply_bind_opcodes(im, im->lazy_bind, im->lazy_bind_size);
     apply_chained_fixups(im);
 
@@ -1012,6 +1014,9 @@ static void fixup_tagged_pointer_classes() {
 
     uint64_t cls_ind_str = get_objc_class("NSIndirectTaggedPointerString");
     uint64_t cls_tag_str = get_objc_class("NSTaggedPointerString");
+    if (!cls_tag_str) cls_tag_str = get_objc_class("__NSCFConstantString");
+    if (!cls_tag_str) cls_tag_str = get_objc_class("__NSCFString");
+    if (!cls_ind_str) cls_ind_str = cls_tag_str;
     uint64_t cls_cf_num  = get_objc_class("__NSCFNumber");
     uint64_t cls_tag_date = get_objc_class("__NSTaggedDate");
 

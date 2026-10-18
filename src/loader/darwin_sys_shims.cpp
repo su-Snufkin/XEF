@@ -285,8 +285,8 @@ static int32_t sh_OSAtomicIncrement32(volatile int32_t* p) { return __atomic_add
 static int32_t sh_OSAtomicDecrement32(volatile int32_t* p) { return __atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST); }
 static int64_t sh_OSAtomicIncrement64(volatile int64_t* p) { return __atomic_add_fetch(p, 1, __ATOMIC_SEQ_CST); }
 static int64_t sh_OSAtomicDecrement64(volatile int64_t* p) { return __atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST); }
-static bool sh_OSAtomicCAS32(int32_t o, int32_t n, volatile int32_t* p) { return __atomic_compare_exchange_n(p, &o, n, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); }
-static bool sh_OSAtomicCAS64(int64_t o, int64_t n, volatile int64_t* p) { return __atomic_compare_exchange_n(p, &o, n, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); }
+static uint32_t sh_OSAtomicCAS32(int32_t o, int32_t n, volatile int32_t* p) { return __atomic_compare_exchange_n(p, &o, n, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST) ? 1 : 0; }
+static uint32_t sh_OSAtomicCAS64(int64_t o, int64_t n, volatile int64_t* p) { return __atomic_compare_exchange_n(p, &o, n, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST) ? 1 : 0; }
 static int32_t sh_OSAtomicOr32(uint32_t m, volatile uint32_t* p) { return __atomic_or_fetch(p, m, __ATOMIC_SEQ_CST); }
 static int32_t sh_OSAtomicAnd32(uint32_t m, volatile uint32_t* p) { return __atomic_and_fetch(p, m, __ATOMIC_SEQ_CST); }
 static int32_t sh_OSAtomicXor32(uint32_t m, volatile uint32_t* p) { return __atomic_xor_fetch(p, m, __ATOMIC_SEQ_CST); }

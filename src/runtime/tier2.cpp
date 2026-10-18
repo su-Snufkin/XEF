@@ -9,6 +9,7 @@
 // head block's incoming links to the region entry.
 #include "os/syscalls.h"
 #include "runtime/tier2.h"
+#include "loader/macho_image.h"
 #include "os/signals.h"
 #include "os/thread.h"
 #include <sys/syscall.h>
@@ -592,7 +593,8 @@ static void demote_region(RegionInfo* ri) {
     for (int i = 0; i < ri->nblocks; i++)
         if (BlockMeta* m = g_cache.lookup(ri->blocks[i]->start); m && m != hm && m->tier == 1) m->tier = 4;
     if (g_opt.stats) g_stats.regions_demoted++;
-    XEF_LOG(1, "tier2: demoted region %#lx (exits=%lu samples=%lu)", (unsigned long)hm->start,
+    XEF_LOG(1, "tier2: demoted region %#lx (%s) (exits=%lu samples=%lu)", (unsigned long)hm->start,
+            dyld_describe(hm->start).c_str(),
             (unsigned long)*ri->exit_counter, (unsigned long)ri->samples);
 }
 

@@ -41,6 +41,8 @@ uint32_t CGDisplayModelNumber(CGDirectDisplayID d) { return 0xFFFFFFFFu; }    /*
 CGRect CGDisplayBounds(CGDirectDisplayID d) { int w, h; screen(&w, &h, 0, 0); return CGRectMake(0, 0, w, h); }
 CGSize CGDisplayScreenSize(CGDirectDisplayID d) { int mw, mh; screen(0, 0, &mw, &mh); return CGSizeMake(mw, mh); }
 uint32_t CGOpenGLDisplayMaskToDisplayID(uint32_t mask) { return (mask & 1) ? DISPLAY_ID : 0; }
+extern void *MTLCreateSystemDefaultDevice(void);
+void *CGDirectDisplayCopyCurrentMetalDevice(CGDirectDisplayID d) { return MTLCreateSystemDefaultDevice(); }
 
 /* ---- display modes: exactly one (the host screen), 60 Hz assumed (X11 core protocol has no refresh rate) ----- */
 static CGDisplayModeRef make_mode(void) {

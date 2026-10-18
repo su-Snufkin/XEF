@@ -4,6 +4,7 @@
 #include "loader/darwin_appkit_host.h"
 #include "loader/darwin_gl.h"
 #include "loader/darwin_hle.h"
+#include "loader/macho_image.h"
 #include "common/common.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -107,6 +108,9 @@ int mac_flags(unsigned st) {
 
 int xef_host_window_create(int x, int y, int w, int h, const char* title) {
     std::lock_guard<std::mutex> lk(g_lock);
+    const char* cname = nullptr; u64 clr = 0;
+    darwin_hle_current(&cname, &clr);
+    XEF_LOG(1, "xef_host: xef_host_window_create %dx%d title='%s' caller=%s", w, h, title ? title : "", dyld_describe(clr).c_str());
     if (!open_display()) return 0;
     auto chooseVisual = G<XVisualInfo* (*)(Display*, int, int*)>("glXChooseVisual");
     auto createContext = G<void* (*)(Display*, XVisualInfo*, void*, int)>("glXCreateContext");
@@ -143,6 +147,7 @@ int xef_host_window_create(int x, int y, int w, int h, const char* title) {
     memset(&sh, 0, sizeof sh);
     sh.flags = PPosition | PSize; sh.x = x; sh.y = y; sh.width = w; sh.height = h;
     X<void (*)(Display*, ::Window, XSizeHints*)>("XSetWMNormalHints")(g_dpy, win, &sh);
+    X<int (*)(Display*, ::Window)>("XMapWindow")(g_dpy, win);
     X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
     int id = g_next++;
     HWin hw; hw.win = win; hw.ctx = ctx; hw.w = w; hw.h = h; hw.x = x; hw.y = y; hw.visid = visid;
@@ -152,6 +157,7 @@ int xef_host_window_create(int x, int y, int w, int h, const char* title) {
 
 void xef_host_window_show(int h) {
     std::lock_guard<std::mutex> lk(g_lock);
+    XEF_LOG(1, "xef_host: xef_host_window_show handle=%d", h);
     if (HWin* w = find(h)) {
         X<int (*)(Display*, ::Window)>("XMapWindow")(g_dpy, w->win);
         X<int (*)(Display*, int)>("XSync")(g_dpy, 0);

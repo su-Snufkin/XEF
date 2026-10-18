@@ -55,6 +55,7 @@ struct MachImage {
     const uint8_t* chained = nullptr; size_t chained_size = 0;
     const uint8_t* rebase = nullptr;  size_t rebase_size = 0;
     const uint8_t* bind = nullptr;    size_t bind_size = 0;
+    const uint8_t* weak_bind = nullptr; size_t weak_bind_size = 0;
     const uint8_t* lazy_bind = nullptr; size_t lazy_bind_size = 0;
     struct InitSection { uint64_t addr, size; uint32_t type; };
     std::vector<InitSection> init_sections;

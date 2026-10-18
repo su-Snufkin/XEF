@@ -84,9 +84,6 @@ build_objcfw() { # name version srcfile
   codesign -f -s - $F/$NAME.framework/Versions/$VER/$NAME
 }
 
-# QuartzCore, Metal, MetalKit, ModelIO, ImageIO, IOSurface, CoreData
-build_objcfw QuartzCore A QuartzCore.m
-
 mk Metal A
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/Metal.m -o $O/Metal1.o
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/MetalCore.m -o $O/MetalCore.o
@@ -97,6 +94,16 @@ clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/Metal.framewo
 ln -sfn A $F/Metal.framework/Versions/Current
 ln -sfn Versions/Current/Metal $F/Metal.framework/Metal
 codesign -f -s - $F/Metal.framework/Versions/A/Metal
+
+# QuartzCore, Metal, MetalKit, ModelIO, ImageIO, IOSurface, CoreData
+mk QuartzCore A
+clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/QuartzCore.m -o $O/QuartzCore.o
+clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore \
+  -Wl,-compatibility_version,1 -Wl,-current_version,1 -Wl,-not_for_dyld_shared_cache \
+  $O/QuartzCore.o $LIBS $F/CoreGraphics.framework/Versions/A/CoreGraphics $F/Metal.framework/Versions/A/Metal -Wl,-undefined,dynamic_lookup -o $F/QuartzCore.framework/Versions/A/QuartzCore
+ln -sfn A $F/QuartzCore.framework/Versions/Current
+ln -sfn Versions/Current/QuartzCore $F/QuartzCore.framework/QuartzCore
+codesign -f -s - $F/QuartzCore.framework/Versions/A/QuartzCore
 
 mk MetalKit A
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/MetalKit.m -o $O/MetalKit.o

@@ -109,13 +109,19 @@ static int cond_destroy(XCond* c) { c->sig = 0x99999999; return 0; }
 static int cond_signal(XCond* c) {
     cond_ready(c);
     __atomic_add_fetch(&c->seq, 1, __ATOMIC_SEQ_CST);
-    if (__atomic_load_n(&c->waiters, __ATOMIC_SEQ_CST)) futex(&c->seq, FUTEX_WAKE_PRIVATE, 1);
+    if (__atomic_load_n(&c->waiters, __ATOMIC_SEQ_CST)) {
+        futex(&c->seq, FUTEX_WAKE_BITSET_PRIVATE, 1, nullptr, FUTEX_BITSET_MATCH_ANY);
+        futex(&c->seq, FUTEX_WAKE_PRIVATE, 1);
+    }
     return 0;
 }
 static int cond_broadcast(XCond* c) {
     cond_ready(c);
     __atomic_add_fetch(&c->seq, 1, __ATOMIC_SEQ_CST);
-    if (__atomic_load_n(&c->waiters, __ATOMIC_SEQ_CST)) futex(&c->seq, FUTEX_WAKE_PRIVATE, INT_MAX);
+    if (__atomic_load_n(&c->waiters, __ATOMIC_SEQ_CST)) {
+        futex(&c->seq, FUTEX_WAKE_BITSET_PRIVATE, INT_MAX, nullptr, FUTEX_BITSET_MATCH_ANY);
+        futex(&c->seq, FUTEX_WAKE_PRIVATE, INT_MAX);
+    }
     return 0;
 }
 static int cond_wait_impl(XCond* c, XMutex* m, const struct timespec* abs_realtime) {
@@ -124,7 +130,12 @@ static int cond_wait_impl(XCond* c, XMutex* m, const struct timespec* abs_realti
     __atomic_add_fetch(&c->waiters, 1, __ATOMIC_SEQ_CST);
     mutex_unlock(m);
     int ret = 0;
-    long r = futex(&c->seq, FUTEX_WAIT_BITSET_PRIVATE | FUTEX_CLOCK_REALTIME, seq, abs_realtime, FUTEX_BITSET_MATCH_ANY);
+    long r;
+    if (abs_realtime) {
+        r = futex(&c->seq, FUTEX_WAIT_BITSET_PRIVATE | FUTEX_CLOCK_REALTIME, seq, abs_realtime, FUTEX_BITSET_MATCH_ANY);
+    } else {
+        r = futex(&c->seq, FUTEX_WAIT_PRIVATE, seq);
+    }
     if (r < 0 && errno == ETIMEDOUT) ret = ETIMEDOUT;
     __atomic_sub_fetch(&c->waiters, 1, __ATOMIC_SEQ_CST);
     mutex_lock(m);
