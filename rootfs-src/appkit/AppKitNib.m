@@ -2,6 +2,7 @@
    compiled .nib files and the scenes of .storyboardc bundles), NSIBObjectData connections, NSViewController,
    NSWindowController, NSStoryboard and NSApplicationMain. MRC (no ARC). */
 #import "AppKitLite.h"
+#import "AppKitDocument.h"
 #include <objc/message.h>
 #include <objc/runtime.h>
 #include <stdio.h>
@@ -16,12 +17,6 @@
 - (id)initWithNibName:(NSString *)n bundle:(NSBundle *)b;
 - (NSView *)view; - (void)setView:(NSView *)v; - (void)loadView; - (void)viewDidLoad; - (BOOL)isViewLoaded;
 - (void)viewWillAppear; - (void)viewDidAppear;
-@end
-@interface NSWindowController : NSResponder <NSCoding> {
-@public
-  NSWindow *_window; NSViewController *_content; NSStoryboard *_storyboard; NSString *_nibName; id _owner; BOOL _loaded;
-}
-- (void)showWindow:(id)sender;
 @end
 @interface NSWindow (XEFControllers)
 - (void)setContentViewController:(NSViewController *)vc; - (NSViewController *)contentViewController;
@@ -313,8 +308,9 @@ bad:
   NSRect f = NSZeroRect;
   if ([c containsValueForKey:@"NSFrame"]) f = [c decodeRectForKey:@"NSFrame"];
   else if ([c containsValueForKey:@"NSFrameSize"]) f.size = [c decodeSizeForKey:@"NSFrameSize"];
-  if (!(self = [self initWithFrame:f])) return nil;
+  if (!(self = [self _xefInitWithFrame:f])) return nil;
   NSUInteger flags = (NSUInteger)[c decodeIntegerForKey:@"NSvFlags"];
+  _hidden = (flags & 0x80000000u) != 0;
   _autoresizingMask = flags & 0x3f;
   _autoresizesSubviews = (flags & 0x100) != 0;
   if ([c decodeBoolForKey:@"NSViewWantsBestResolutionOpenGLSurface"]) [self setWantsBestResolutionOpenGLSurface:YES];
@@ -325,28 +321,7 @@ bad:
 }
 @end
 
-@implementation NSMenu (XEFNib)
-- (id)initWithCoder:(NSCoder *)c {
-  if ((self = [self initWithTitle:[c decodeObjectForKey:@"NSTitle"] ?: @""])) {
-    for (id i in [c decodeObjectForKey:@"NSMenuItems"])
-      if ([i isKindOfClass:[NSMenuItem class]]) [self addItem:i];
-  }
-  return self;
-}
-- (void)encodeWithCoder:(NSCoder *)c {}
-@end
 
-@implementation NSMenuItem (XEFNib)
-- (id)initWithCoder:(NSCoder *)c {
-  if ((self = [self initWithTitle:[c decodeObjectForKey:@"NSTitle"] ?: @"" action:NULL keyEquivalent:[c decodeObjectForKey:@"NSKeyEquiv"] ?: @""])) {
-    id sub = [c decodeObjectForKey:@"NSSubmenu"];
-    if (sub) [self setSubmenu:sub];
-  }
-  return self;
-}
-- (void)encodeWithCoder:(NSCoder *)c {}
-- (void)setAction:(SEL)a { _action = a; }
-@end
 
 /* ------------------------------------------------------------------ loading */
 
@@ -435,6 +410,16 @@ static NSArray *xef_nib_instantiate(NSData *data, id owner, NSDictionary *extern
     id p = i < [parents count] ? [parents objectAtIndex:i] : nil;
     if (p == ownerObj && o != ownerObj && ![o isKindOfClass:[NSApplication class]] && ![top containsObject:o]) [top addObject:o];
   }
+  /* named objects: the application's main, windows and services menus */
+  XNVal *nk = [d _val:@"NSNamesKeys"], *nv = [d _val:@"NSNamesValues"];
+  if (nk && nv && nk->type == NV_OBJ && nv->type == NV_OBJ) {
+    NSArray *objs = [d _anonymousObjectsOf:(uint32_t)nk->i], *names = [d _anonymousObjectsOf:(uint32_t)nv->i];
+    for (NSUInteger i = 0; i < [objs count] && i < [names count]; i++) {
+      id o = RESOLVE([objs objectAtIndex:i]); NSString *n = [names objectAtIndex:i];
+      if (![n isKindOfClass:[NSString class]] || ![o isKindOfClass:[NSMenu class]]) continue;
+      if ([n isEqualToString:@"_NSMainMenu"]) [NSApp setMainMenu:o];
+      else if ([n isEqualToString:@"_NSWindowsMenu"]) [NSApp setWindowsMenu:o];
+      else if ([n isEqualToString:@"_NSServicesMenu"]) [NSApp setServicesMenu:o]; } }
   for (id o in all)
     if ([o respondsToSelector:@selector(awakeFromNib)]) [o awakeFromNib];
   for (id w in visible) {
@@ -601,7 +586,14 @@ static NSStoryboard *g_main_storyboard;
 - (void)loadWindow {
   if (_nibName) {
     NSData *data = [NSData dataWithContentsOfFile:[[NSBundle mainBundle] pathForResource:_nibName ofType:@"nib"]];
+    id doc = [self document];
+    BOOL docOwner = [_owner isKindOfClass:[NSDocument class]];
+    if (docOwner) [_owner _xefSetLoadingWindowController:self];
+    if (doc) [doc windowControllerWillLoadNib:self];
     if (data) xef_nib_instantiate(data, _owner ? _owner : self, nil);
+    else NSLog(@"xef: window nib %@ not found", _nibName);
+    if (docOwner) [_owner _xefSetLoadingWindowController:nil];
+    if (doc) [doc windowControllerDidLoadNib:self];
   }
 }
 - (NSWindow *)window {
@@ -630,7 +622,6 @@ static NSStoryboard *g_main_storyboard;
   if (_content) [_content viewDidAppear];
 }
 - (void)close { [_window close]; }
-- (id)document { return nil; }
 - (void)dealloc { [_window release]; [_content release]; [_nibName release]; [super dealloc]; }
 @end
 

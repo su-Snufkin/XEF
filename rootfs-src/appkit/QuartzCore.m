@@ -201,13 +201,15 @@ CATransform3D CATransform3DInvert(CATransform3D t) {
 - (id)delegate { return _delegate; }
 - (void)setDelegate:(id)d { _delegate = d; }
 - (CGColorRef)backgroundColor { return _backgroundColor; }
-- (void)setBackgroundColor:(CGColorRef)c { _backgroundColor = c; }
+- (void)setBackgroundColor:(CGColorRef)c { if (c) CFRetain(c); if (_backgroundColor) CFRelease(_backgroundColor); _backgroundColor = c; [self _xefChanged]; }
 - (CGFloat)cornerRadius { return _cornerRadius; }
-- (void)setCornerRadius:(CGFloat)r { _cornerRadius = r; }
+- (void)setCornerRadius:(CGFloat)r { _cornerRadius = r; [self _xefChanged]; }
 - (CGFloat)borderWidth { return _borderWidth; }
-- (void)setBorderWidth:(CGFloat)w { _borderWidth = w; }
+- (void)setBorderWidth:(CGFloat)w { _borderWidth = w; [self _xefChanged]; }
 - (CGColorRef)borderColor { return _borderColor; }
-- (void)setBorderColor:(CGColorRef)c { _borderColor = c; }
+- (void)setBorderColor:(CGColorRef)c { if (c) CFRetain(c); if (_borderColor) CFRelease(_borderColor); _borderColor = c; [self _xefChanged]; }
+/* AppKit-lite draws layer-backed views itself: a visual change redraws the owning view */
+- (void)_xefChanged { id d = [self delegate]; if ([d respondsToSelector:@selector(setNeedsDisplay:)] && ![d isKindOfClass:[CALayer class]]) [d setNeedsDisplay:YES]; }
 - (float)opacity { return _opacity; }
 - (void)setOpacity:(float)o { _opacity = o; }
 - (void)addAnimation:(id)anim forKey:(NSString *)key {}

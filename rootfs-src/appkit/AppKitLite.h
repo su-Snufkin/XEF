@@ -74,7 +74,7 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 
 @interface NSEvent : NSObject {
 @public
-  NSEventType _type; unsigned short _keyCode; NSPoint _loc; NSEventModifierFlags _flags; NSString *_chars;
+  NSEventType _type; unsigned short _keyCode; NSPoint _loc; NSEventModifierFlags _flags; NSString *_chars, *_charsIgnoring; NSInteger _clicks;
   id _window; double _ts; NSInteger _button; double _dx, _dy;
 }
 - (NSEventType)type; - (unsigned short)keyCode; - (NSPoint)locationInWindow; - (NSEventModifierFlags)modifierFlags;
@@ -93,7 +93,7 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (NSRect)rect; - (NSTrackingAreaOptions)options; - (id)owner; - (NSDictionary *)userInfo;
 @end
 
-@interface NSBitmapImageRep : NSObject { @public unsigned char *_data; NSInteger _w, _h, _bps, _spp, _bpr, _bpp; BOOL _alpha, _planar; NSBitmapFormat _fmt; NSString *_cs; }
+@interface NSBitmapImageRep : NSObject { @public unsigned char *_data; NSInteger _w, _h, _bps, _spp, _bpr, _bpp; BOOL _alpha, _planar, _owns; NSBitmapFormat _fmt; NSString *_cs; }
 - (id)initWithBitmapDataPlanes:(unsigned char **)planes pixelsWide:(NSInteger)w pixelsHigh:(NSInteger)h bitsPerSample:(NSInteger)bps
     samplesPerPixel:(NSInteger)spp hasAlpha:(BOOL)a isPlanar:(BOOL)p colorSpaceName:(NSString *)cs bitmapFormat:(NSBitmapFormat)f
     bytesPerRow:(NSInteger)bpr bitsPerPixel:(NSInteger)bpp;
@@ -112,7 +112,7 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (NSData *)dataForType:(NSString *)t;
 @end
 
-@interface NSPasteboard : NSObject { @public NSMutableArray *_types; NSMutableDictionary *_data; NSInteger _change; }
+@interface NSPasteboard : NSObject { @public NSMutableArray *_types; NSMutableDictionary *_data; NSInteger _change; NSString *_name; }
 + (NSPasteboard *)generalPasteboard;
 - (NSInteger)declareTypes:(NSArray *)types owner:(id)owner; - (BOOL)setString:(NSString *)s forType:(NSString *)t;
 - (NSString *)stringForType:(NSString *)t; - (NSArray *)types;
@@ -141,7 +141,7 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (NSDictionary *)deviceDescription; - (NSRect)convertRectToBacking:(NSRect)r; - (NSString *)localizedName;
 @end
 
-@interface NSColor : NSObject { @public CGFloat r, g, b, a; }
+@interface NSColor : NSObject <NSCopying, NSSecureCoding> { @public CGFloat r, g, b, a; }
 + (NSColor *)colorWithCalibratedRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a;
 + (NSColor *)colorWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a;
 + (NSColor *)blackColor; + (NSColor *)whiteColor; + (NSColor *)clearColor;
@@ -156,13 +156,21 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (id)initWithImage:(NSImage *)i hotSpot:(NSPoint)p;
 @end
 
-@interface NSMenuItem : NSObject { @public NSString *_title; id _sub; SEL _action; NSString *_key; id _target; }
+@class NSMenu;
+@interface NSMenuItem : NSObject {
+@public
+  NSString *_title, *_key, *_toolTip; id _sub; SEL _action; id _target, _rep, _image, _onImage, _view; NSAttributedString *_attrTitle;
+  NSUInteger _mask; NSInteger _state, _tag, _indent; BOOL _disabled, _hidden, _separator, _alternate, _sectionHeader; NSMenu *_menu;
+}
 - (id)initWithTitle:(NSString *)t action:(SEL)a keyEquivalent:(NSString *)k;
 - (void)setSubmenu:(id)m; - (id)submenu; - (NSString *)title; - (void)setTitle:(NSString *)t;
-- (void)setTarget:(id)t; - (id)target; - (SEL)action; - (void)setKeyEquivalentModifierMask:(NSUInteger)m;
+- (void)setTarget:(id)t; - (id)target; - (SEL)action; - (void)setAction:(SEL)a; - (void)setKeyEquivalentModifierMask:(NSUInteger)m;
 + (NSMenuItem *)separatorItem;
 @end
-@interface NSMenu : NSObject { @public NSString *_title; NSMutableArray *_items; }
+@interface NSMenu : NSObject {
+@public
+  NSString *_title; NSMutableArray *_items; NSMenu *_supermenu; id _delegate; BOOL _autoenables; CGFloat _minWidth; id _font;
+}
 - (id)initWithTitle:(NSString *)t; - (void)addItem:(NSMenuItem *)i;
 - (NSMenuItem *)addItemWithTitle:(NSString *)t action:(SEL)a keyEquivalent:(NSString *)k;
 - (NSArray *)itemArray; - (NSString *)title;
@@ -175,10 +183,11 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
   NSRect _frame, _bounds; NSWindow *_window; NSView *_superview; NSMutableArray *_subviews; BOOL _needsDisplay, _bestRes;
   NSMutableArray *_tracking; id _layer; BOOL _wantsLayer; NSArray *_dragTypes;
   NSUInteger _autoresizingMask; BOOL _autoresizesSubviews;
+  BOOL _hidden, _glUsed; NSInteger _tag; id _toolTip;
 }
 + (Class)layerClass;
 - (id)makeBackingLayer;
-- (id)initWithFrame:(NSRect)f;
+- (id)initWithFrame:(NSRect)f; - (id)_xefInitWithFrame:(NSRect)f;
 - (NSRect)frame; - (NSRect)bounds; - (void)setFrame:(NSRect)f; - (void)setFrameSize:(NSSize)s; - (void)setBounds:(NSRect)b;
 - (NSWindow *)window; - (NSView *)superview; - (NSArray *)subviews; - (void)addSubview:(NSView *)v; - (void)removeFromSuperview;
 - (void)setNeedsDisplay:(BOOL)f; - (BOOL)needsDisplay; - (void)display; - (void)displayIfNeeded;
@@ -203,6 +212,7 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
   id _delegate; NSResponder *_first; id _bg;
   NSInteger _level; NSUInteger _collection; NSString *_miniTitle; BOOL _mini, _zoomed, _opaque, _shadow, _ignoresMouse; CGFloat _alpha;
   NSRect _unzoomed; NSSize _minSize, _maxSize, _aspect; BOOL _inside;
+  void *_backing; BOOL _dirty2D, _no2D; NSResponder *_initialFirst; id _defaultButtonCell;
 }
 - (id)initWithContentRect:(NSRect)r styleMask:(NSWindowStyleMask)s backing:(NSBackingStoreType)b defer:(BOOL)d;
 - (void)makeKeyAndOrderFront:(id)s; - (void)orderFront:(id)s; - (void)orderOut:(id)s; - (void)makeKeyWindow; - (BOOL)isKeyWindow;
@@ -224,6 +234,8 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (void)setIgnoresMouseEvents:(BOOL)f; - (CGFloat)alphaValue; - (void)setAlphaValue:(CGFloat)a; - (NSWindowOcclusionState)occlusionState; - (BOOL)isOpaque;
 - (NSRect)convertRectToScreen:(NSRect)r; - (NSPoint)mouseLocationOutsideOfEventStream; - (void)toggleFullScreen:(id)s;
 + (NSInteger)windowNumberAtPoint:(NSPoint)p belowWindowWithWindowNumber:(NSInteger)n;
+/* AppKit-lite 2D: YES when the window is presented from its own bitmap (no GL/Metal content); redraws the view tree */
+- (BOOL)_xef2D; - (void)_xefRedraw; - (NSColor *)backgroundColor;
 @end
 
 enum {

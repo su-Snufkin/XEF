@@ -15,6 +15,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <dlfcn.h>
 #include <vector>
 #include <string>
 #include <mutex>
@@ -29,7 +30,7 @@ namespace {
 #define XEF_EV_RESIZE 1001
 #define XEF_EV_FOCUS_IN 1002
 #define XEF_EV_FOCUS_OUT 1003
-struct HostEvent { int type, keycode, x, y, flags, handle; };
+struct HostEvent { int type, keycode, x, y, flags, handle, ch; };
 
 struct HWin { ::Window win = 0; void* ctx = nullptr; int w = 0, h = 0, x = 0, y = 0; unsigned long visid = 0; bool core = false; unsigned int metal_tex = 0; int metal_tex_w = 0, metal_tex_h = 0; };
 std::mutex g_lock;
@@ -63,6 +64,21 @@ int find_handle(::Window w) {
     for (auto& kv : g_wins)
         if (kv.second.win == w) return kv.first;
     return 0;
+}
+
+// typed character of a key press (keysym after modifiers, i.e. shift / AltGr levels) as a Unicode code point; 0 = none
+unsigned key_unicode(XKeyEvent* ke) {
+    static auto lookup_string = X<int (*)(XKeyEvent*, char*, int, KeySym*, void*)>("XLookupString");
+    static auto to_utf32 = (uint32_t (*)(uint32_t))[] {
+        void* h = dlopen("libxkbcommon.so.0", RTLD_NOW | RTLD_GLOBAL);
+        return h ? dlsym(h, "xkb_keysym_to_utf32") : nullptr; }();
+    if (!lookup_string) return 0;
+    char buf[16]; KeySym ks = 0;
+    int n = lookup_string(ke, buf, sizeof buf, &ks, nullptr);
+    if (to_utf32 && ks) { uint32_t u = to_utf32((uint32_t)ks); if (u) return u; }
+    if (ks >= 0x20 && ks <= 0xff) return (unsigned)ks;          // Latin-1 keysyms are their code points
+    if ((ks & 0xff000000) == 0x01000000) return ks & 0x00ffffff;   // direct Unicode keysyms
+    return n == 1 ? (unsigned char)buf[0] : 0;
 }
 
 // X keysym -> macOS virtual key code (kVK_*); -1 = unknown
@@ -272,8 +288,10 @@ int xef_host_pump(void* out) {
         case KeyPress: case KeyRelease: {
             KeySym ks = lookup ? lookup(g_dpy, ev.xkey.keycode, 0, 0) : 0;
             int mk = mac_key(ks);
-            if (mk < 0) continue;
-            o->type = ev.type == KeyPress ? 10 : 11; o->keycode = mk; o->flags = mac_flags(ev.xkey.state);
+            unsigned uc = ev.type == KeyPress ? key_unicode(&ev.xkey) : 0;
+            if (mk < 0 && !uc) continue;
+            o->type = ev.type == KeyPress ? 10 : 11; o->keycode = mk < 0 ? 0xffff : mk; o->flags = mac_flags(ev.xkey.state);
+            o->ch = (int)uc;
             o->x = ev.xkey.x; o->y = ev.xkey.y;
             o->handle = find_handle(ev.xkey.window);
             // modifier keys are NSEventTypeFlagsChanged on macOS, carrying the flags AFTER the change
@@ -415,6 +433,33 @@ extern "C" void xef_host_present_pixels(int h, const void* pixels, int pw, int p
     }
     if (glDisable_fn) glDisable_fn(0x0DE1 /*GL_TEXTURE_2D*/);
     if (swap) swap(g_dpy, w->win);
+}
+
+// Pop-up windows (menus, tool tips): override-redirect, so the window manager neither decorates nor moves them.
+// The flag only takes effect on the next map, so a mapped window is unmapped and mapped again.
+extern "C" void xef_host_window_set_popup(int h, int popup) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    HWin* w = find(h);
+    if (!w || !g_dpy) return;
+    XSetWindowAttributes a;
+    memset(&a, 0, sizeof a);
+    a.override_redirect = popup ? True : False;
+    X<int (*)(Display*, ::Window)>("XUnmapWindow")(g_dpy, w->win);
+    X<int (*)(Display*, ::Window, unsigned long, XSetWindowAttributes*)>("XChangeWindowAttributes")(g_dpy, w->win, CWOverrideRedirect, &a);
+    X<int (*)(Display*, int)>("XSync")(g_dpy, 0);
+}
+// Pointer grab for menu tracking: every pointer event goes to the application (events outside its windows are reported
+// relative to h). grab = 0 releases.
+extern "C" int xef_host_grab_pointer(int h, int grab) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    if (!g_dpy) return 0;
+    if (!grab) { X<int (*)(Display*, Time)>("XUngrabPointer")(g_dpy, CurrentTime); X<int (*)(Display*)>("XFlush")(g_dpy); return 1; }
+    HWin* w = find(h);
+    if (!w) return 0;
+    int r = X<int (*)(Display*, ::Window, int, unsigned, int, int, ::Window, Cursor, Time)>("XGrabPointer")(
+        g_dpy, w->win, True, ButtonPressMask | ButtonReleaseMask | PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+    X<int (*)(Display*)>("XFlush")(g_dpy);
+    return r == GrabSuccess;
 }
 
 // ---- profile / screen / frame / pointer ----------------------------------------------------------------
@@ -651,6 +696,7 @@ const Fn kFns[] = {
     {"_xef_host_window_get_geometry", (void*)&xef_host_window_get_geometry},
     {"_xef_host_file_dialog", (void*)&xef_host_file_dialog},
     {"_xef_host_present_pixels", (void*)&xef_host_present_pixels},
+    {"_xef_host_window_set_popup", (void*)&xef_host_window_set_popup}, {"_xef_host_grab_pointer", (void*)&xef_host_grab_pointer},
 };
 
 } // namespace
@@ -665,7 +711,7 @@ unsigned long darwin_appkit_host_window_xid(int h) {
 uint64_t darwin_appkit_host_resolve(const char* name) {
     for (const Fn& f : kFns)
         if (!strcmp(name, f.name)) return darwin_hle_register_function(name, f.fn);
-    return 0;
+    return darwin_cg_host_resolve(name);
 }
 
 } // namespace xef

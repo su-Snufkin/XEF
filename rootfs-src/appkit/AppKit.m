@@ -1,11 +1,14 @@
 /* AppKit-lite: small AppKit/NSOpenGL implementation for xef-osx. MRC (no ARC). */
 #import "AppKitLite.h"
+#import "AppKitGraphics.h"
+#import "AppKitControls.h"
 #include "xef_host.h"
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
 #include <Block.h>
 #include <stdio.h>
+#include <math.h>
 #include <objc/message.h>
 #include <objc/runtime.h>
 
@@ -59,6 +62,30 @@ BOOL NSMouseInRect(NSPoint p, NSRect r, BOOL flipped) {
   return NSPointInRect(p, r);
 }
 
+static id lite_stub(id self, SEL _cmd, ...);
+/* Catch-all stubs answer unknown selectors with a logged no-op. -respondsToSelector: must not see them: while a probe
+ * runs the resolvers decline, and a stub added by an earlier real send does not count as an implementation. */
+static __thread int g_stub_probe;
+int XEFStubProbing(void) { return g_stub_probe; }
+static IMP g_menu_stub_imp;
+void XEFRegisterMenuStub(IMP i) { g_menu_stub_imp = i; }
+static BOOL real_responds(id self, SEL a, BOOL (*superImpl)(id, SEL, SEL)) {
+  g_stub_probe++;
+  BOOL r = superImpl(self, @selector(respondsToSelector:), a);
+  g_stub_probe--;
+  if (!r) return NO;
+  Method m = class_getInstanceMethod(object_getClass(self), a);
+  IMP imp = m ? method_getImplementation(m) : NULL;
+  return imp != (IMP)lite_stub && (!g_menu_stub_imp || imp != g_menu_stub_imp); }
+static BOOL nsobject_responds(id self, SEL _cmd, SEL a) {
+  static IMP base; if (!base) base = class_getMethodImplementation([NSObject class], @selector(respondsToSelector:));
+  return ((BOOL (*)(id, SEL, SEL))base)(self, _cmd, a); }
+BOOL XEFRealRespondsToSelector(id self, SEL a) { return real_responds(self, a, nsobject_responds); }
+/* YES when o implements a (not just an AppKit-lite catch-all stub, which -respondsToSelector: also reports) */
+BOOL XEFRespondsForReal(id o, SEL a) {
+  if (!o || !a || ![o respondsToSelector:a]) return NO;
+  Method m = class_getInstanceMethod(object_getClass(o), a);
+  return !m || method_getImplementation(m) != (IMP)lite_stub; }
 static id lite_stub(id self, SEL _cmd, ...) {
   static NSMutableSet *seen;
   @synchronized ([NSObject class]) {
@@ -110,10 +137,6 @@ NSString *const AVCaptureDeviceTypeExternalUnknown = @"AVCaptureDeviceTypeExtern
 NSString *const AVCaptureSessionPresetHigh = @"AVCaptureSessionPresetHigh";
 NSString *const AVMediaTypeVideo = @"vide";
 
-const void *const kCGColorSpaceExtendedLinearSRGB = (const void*)1;
-const void *const kCGColorSpaceITUR_2100_PQ = (const void*)2;
-const void *const kCGColorSpaceSRGB = (const void*)3;
-const void *const kCGColorClear = (const void*)4;
 
 CFStringRef const kCVPixelBufferHeightKey = CFSTR("Height");
 CFStringRef const kCVPixelBufferPixelFormatTypeKey = CFSTR("PixelFormatType");
@@ -171,7 +194,7 @@ static NSUInteger g_guest_buttons = 0;
 - (void)interpretKeyEvents:(NSArray *)events {
   for (NSEvent *e in events) {
     NSString *c = [e characters]; unichar ch = [c length] ? [c characterAtIndex:0] : 0;
-    if (ch >= 0x20 && ch != 0x7f && !(e->_flags & (NSEventModifierFlagCommand | NSEventModifierFlagControl))) {
+    if (ch >= 0x20 && ch != 0x7f && !(ch >= 0xF700 && ch <= 0xF8FF) && !(e->_flags & (NSEventModifierFlagCommand | NSEventModifierFlagControl))) {
       if ([self respondsToSelector:@selector(insertText:replacementRange:)])
         [(id)self insertText:c replacementRange:NSMakeRange(NSNotFound, 0)];
       continue; }
@@ -194,14 +217,14 @@ static NSUInteger g_guest_buttons = 0;
 - (NSPoint)locationInWindow { return _loc; }
 - (NSEventModifierFlags)modifierFlags { return _flags; }
 - (NSString *)characters { return _chars ? _chars : @""; }
-- (NSString *)charactersIgnoringModifiers { return [self characters]; }
+- (NSString *)charactersIgnoringModifiers { return _charsIgnoring ? _charsIgnoring : [self characters]; }
 - (id)window { return _window; }
 - (NSInteger)windowNumber { return _window ? [(NSWindow *)_window windowNumber] : 0; }
 - (NSTimeInterval)timestamp { return _ts; }
 - (NSInteger)buttonNumber { return _button; }
 - (CGFloat)deltaX { return _dx; } - (CGFloat)deltaY { return _dy; }
 - (CGFloat)scrollingDeltaX { return _dx; } - (CGFloat)scrollingDeltaY { return _dy; }
-- (BOOL)hasPreciseScrollingDeltas { return NO; } - (BOOL)isARepeat { return NO; } - (NSInteger)clickCount { return 1; }
+- (BOOL)hasPreciseScrollingDeltas { return NO; } - (BOOL)isARepeat { return NO; } - (NSInteger)clickCount { return _clicks ? _clicks : 1; }
 + (NSEvent *)otherEventWithType:(NSEventType)t location:(NSPoint)p modifierFlags:(NSUInteger)f timestamp:(NSTimeInterval)ts
     windowNumber:(NSInteger)w context:(id)c subtype:(short)s data1:(NSInteger)d1 data2:(NSInteger)d2 {
   NSEvent *e = [[[NSEvent alloc] init] autorelease]; e->_type = t; e->_loc = p; e->_flags = f; e->_ts = ts; return e;
@@ -222,7 +245,7 @@ static NSUInteger g_guest_buttons = 0;
 + (void)removeMonitor:(id)monitor {
   if (!monitor || ![g_monitors containsObject:monitor]) return;
   id blk = [monitor objectForKey:@"block"]; [g_monitors removeObject:monitor]; Block_release(blk); }
-- (void)dealloc { [_chars release]; [super dealloc]; }
+- (void)dealloc { [_chars release]; [_charsIgnoring release]; [super dealloc]; }
 @end
 
 
@@ -244,13 +267,14 @@ static NSUInteger g_guest_buttons = 0;
   if (w <= 0 || h <= 0 || bps <= 0 || spp <= 0 || p) { [self release]; return nil; }   /* planar reps are not supported */
   _w = w; _h = h; _bps = bps; _spp = spp; _alpha = a; _fmt = f; _cs = [cs retain];
   _bpp = bpp ? bpp : bps * spp; _bpr = bpr ? bpr : (w * _bpp + 7) / 8;
-  _data = calloc(1, (size_t)_bpr * h);
-  if (planes && planes[0]) memcpy(_data, planes[0], (size_t)_bpr * h);
+  /* caller-supplied planes are used in place (AppKit semantics); otherwise the rep owns zeroed storage */
+  if (planes && planes[0]) _data = planes[0];
+  else { _data = calloc(1, (size_t)_bpr * h); _owns = YES; }
   if (!_data) { [self release]; return nil; }
   return self; }
 - (unsigned char *)bitmapData { return _data; } - (NSInteger)pixelsWide { return _w; } - (NSInteger)pixelsHigh { return _h; }
 - (NSInteger)bytesPerRow { return _bpr; } - (NSInteger)bitsPerPixel { return _bpp; }
-- (void)dealloc { free(_data); [_cs release]; [super dealloc]; }
+- (void)dealloc { if (_owns) free(_data); [_cs release]; [super dealloc]; }
 @end
 
 @implementation NSImage
@@ -271,28 +295,103 @@ static NSUInteger g_guest_buttons = 0;
 @end
 
 /* process-local clipboard (no X selection integration): reads back what this process wrote */
+/* process-local pasteboards by name (no X selection integration yet): data is stored per type; strings are kept as
+ * NSString and served as UTF-8 data, property lists as objects */
+NSString *const NSPasteboardNameGeneral = @"Apple CFPasteboard general";
+NSString *const NSPasteboardNameFind = @"Apple CFPasteboard find";
+NSString *const NSPasteboardNameFont = @"Apple CFPasteboard font";
+NSString *const NSPasteboardNameRuler = @"Apple CFPasteboard ruler";
+NSString *const NSPasteboardNameDrag = @"Apple CFPasteboard drag";
+NSString *const NSPasteboardTypeRTF = @"public.rtf";
+NSString *const NSPasteboardTypeRTFD = @"com.apple.flat-rtfd";
+NSString *const NSPasteboardTypeHTML = @"public.html";
+NSString *const NSPasteboardTypeTIFF = @"public.tiff";
+NSString *const NSPasteboardTypePNG = @"public.png";
+NSString *const NSPasteboardTypePDF = @"com.adobe.pdf";
+NSString *const NSPasteboardTypeFileURL = @"public.file-url";
+NSString *const NSPasteboardTypeColor = @"com.apple.cocoa.pasteboard.color";
+NSString *const NSPasteboardTypeFont = @"com.apple.cocoa.pasteboard.character-formatting";
+NSString *const NSPasteboardTypeRuler = @"com.apple.cocoa.pasteboard.paragraph-formatting";
+NSString *const NSPasteboardTypeTabularText = @"public.utf8-tab-separated-values-text";
+NSString *const NSPasteboardTypeMultipleTextSelection = @"com.apple.cocoa.pasteboard.multiple-text-selection";
+NSString *const NSPasteboardTypeSound = @"com.apple.cocoa.pasteboard.sound";
+NSString *const NSStringPboardType = @"NSStringPboardType";
+NSString *const NSRTFPboardType = @"NeXT Rich Text Format v1.0 pasteboard type";
+NSString *const NSRTFDPboardType = @"NeXT RTFD pasteboard type";
+NSString *const NSTIFFPboardType = @"NeXT TIFF v4.0 pasteboard type";
+NSString *const NSURLPboardType = @"Apple URL pasteboard type";
+NSString *const NSColorPboardType = @"NSColor pasteboard type";
+NSString *const NSFontPboardType = @"NeXT font pasteboard type";
+NSString *const NSRulerPboardType = @"NeXT ruler pasteboard type";
+NSString *const NSHTMLPboardType = @"Apple HTML pasteboard type";
 @implementation NSPasteboard
-+ (NSPasteboard *)generalPasteboard { static NSPasteboard *g; if (!g) { g = [[NSPasteboard alloc] init]; g->_types = [[NSMutableArray alloc] init]; g->_data = [[NSMutableDictionary alloc] init]; } return g; }
-- (NSInteger)declareTypes:(NSArray *)types owner:(id)owner { [_types setArray:types]; [_data removeAllObjects]; return ++_change; }
+static NSMutableDictionary *g_boards;
++ (NSPasteboard *)pasteboardWithName:(NSString *)name {
+  if (!name) name = NSPasteboardNameGeneral;
+  @synchronized ([NSPasteboard class]) {
+    if (!g_boards) g_boards = [[NSMutableDictionary alloc] init];
+    NSPasteboard *p = [g_boards objectForKey:name];
+    if (!p) { p = [[[NSPasteboard alloc] init] autorelease]; p->_types = [[NSMutableArray alloc] init]; p->_data = [[NSMutableDictionary alloc] init]; p->_name = [name copy]; [g_boards setObject:p forKey:name]; }
+    return p; } }
++ (NSPasteboard *)generalPasteboard { return [self pasteboardWithName:NSPasteboardNameGeneral]; }
++ (NSPasteboard *)pasteboardWithUniqueName { return [self pasteboardWithName:[[NSProcessInfo processInfo] globallyUniqueString]]; }
++ (NSArray *)typesFilterableTo:(NSString *)t { return @[t]; }
+- (NSString *)name { return _name; }
+- (void)releaseGlobally {}
+- (NSInteger)changeCount { return _change; }
+- (NSInteger)declareTypes:(NSArray *)types owner:(id)owner { [_types setArray:types ?: @[]]; [_data removeAllObjects]; return ++_change; }
+- (NSInteger)addTypes:(NSArray *)types owner:(id)owner { for (NSString *t in types) if (![_types containsObject:t]) [_types addObject:t]; return ++_change; }
 - (NSInteger)clearContents { [_types removeAllObjects]; [_data removeAllObjects]; return ++_change; }
+- (NSArray *)types { return [[_types copy] autorelease]; }
+- (NSString *)availableTypeFromArray:(NSArray *)types { for (NSString *t in types) if ([_types containsObject:t]) return t; return nil; }
+- (BOOL)canReadItemWithDataConformingToTypes:(NSArray *)types { return [self availableTypeFromArray:types] != nil; }
+- (BOOL)_put:(id)v forType:(NSString *)t { if (!v || !t) return NO; if (![_types containsObject:t]) [_types addObject:t]; [_data setObject:v forKey:t]; _change++; return YES; }
+- (BOOL)setString:(NSString *)s forType:(NSString *)t { return [self _put:[[s copy] autorelease] forType:t]; }
+- (BOOL)setData:(NSData *)d forType:(NSString *)t { return [self _put:[[d copy] autorelease] forType:t]; }
+- (BOOL)setPropertyList:(id)p forType:(NSString *)t { return [self _put:p forType:t]; }
+- (NSString *)stringForType:(NSString *)t {
+  id o = [_data objectForKey:t];
+  if (!o && ([t isEqualToString:NSStringPboardType] || [t isEqualToString:@"NSStringPboardType"])) o = [_data objectForKey:NSPasteboardTypeString];
+  if (!o && [t isEqualToString:NSPasteboardTypeString]) o = [_data objectForKey:NSStringPboardType];
+  if ([o isKindOfClass:[NSString class]]) return o;
+  if ([o isKindOfClass:[NSData class]]) return [[[NSString alloc] initWithData:o encoding:NSUTF8StringEncoding] autorelease];
+  return nil; }
+- (NSData *)dataForType:(NSString *)t {
+  id o = [_data objectForKey:t];
+  if ([o isKindOfClass:[NSData class]]) return o;
+  if ([o isKindOfClass:[NSString class]]) return [o dataUsingEncoding:NSUTF8StringEncoding];
+  if (o) return [NSPropertyListSerialization dataWithPropertyList:o format:NSPropertyListXMLFormat_v1_0 options:0 error:NULL];
+  return nil; }
+- (id)propertyListForType:(NSString *)t {
+  id o = [_data objectForKey:t];
+  if ([o isKindOfClass:[NSData class]]) return [NSPropertyListSerialization propertyListWithData:o options:0 format:NULL error:NULL];
+  return o; }
 - (BOOL)writeObjects:(NSArray *)objects {
   for (id obj in objects) {
     if ([obj isKindOfClass:[NSString class]]) [self setString:obj forType:NSPasteboardTypeString];
+    else if ([obj isKindOfClass:[NSAttributedString class]]) [self setString:[obj string] forType:NSPasteboardTypeString];
+    else if ([obj isKindOfClass:[NSURL class]]) { [self setString:[obj absoluteString] forType:[obj isFileURL] ? NSPasteboardTypeFileURL : NSPasteboardTypeURL]; }
     else if ([obj isKindOfClass:[NSPasteboardItem class]]) {
       NSPasteboardItem *item = (NSPasteboardItem *)obj;
-      for (NSString *t in [item types]) {
-        NSString *s = [item stringForType:t];
-        if (s) [self setString:s forType:t];
-      }
-    }
-  }
-  return YES;
-}
-- (BOOL)setString:(NSString *)s forType:(NSString *)t {
-  if (!s || !t) return NO; if (![_types containsObject:t]) [_types addObject:t]; [_data setObject:[[s copy] autorelease] forKey:t]; _change++; return YES; }
-- (NSString *)stringForType:(NSString *)t { id o = [_data objectForKey:t]; return [o isKindOfClass:[NSString class]] ? o : nil; }
-- (NSArray *)types { return _types; }
-- (NSArray *)readObjectsForClasses:(NSArray *)classes options:(NSDictionary *)o { return nil; }
+      for (NSString *t in [item types]) { id v = [item->_data objectForKey:t]; if (v) [self _put:v forType:t]; } } }
+  return YES; }
+- (NSArray *)readObjectsForClasses:(NSArray *)classes options:(NSDictionary *)o {
+  NSMutableArray *r = [NSMutableArray array];
+  for (Class c in classes) {
+    if (c == [NSString class] || [c isSubclassOfClass:[NSString class]]) { NSString *s = [self stringForType:NSPasteboardTypeString]; if (s) [r addObject:s]; }
+    else if (c == [NSAttributedString class]) { NSString *s = [self stringForType:NSPasteboardTypeString]; if (s) [r addObject:[[[NSAttributedString alloc] initWithString:s] autorelease]]; }
+    else if (c == [NSURL class]) {
+      NSString *s = [self stringForType:NSPasteboardTypeFileURL] ?: [self stringForType:NSPasteboardTypeURL];
+      NSURL *u = s ? [NSURL URLWithString:s] : nil; if (u) [r addObject:u]; } }
+  return [r count] ? r : nil; }
+- (BOOL)canReadObjectForClasses:(NSArray *)classes options:(NSDictionary *)o { return [self readObjectsForClasses:classes options:o] != nil; }
+- (NSArray *)pasteboardItems {
+  if (![_types count]) return @[];
+  NSPasteboardItem *i = [[[NSPasteboardItem alloc] init] autorelease];
+  for (NSString *t in _types) { id v = [_data objectForKey:t]; if (v) [i->_data setObject:v forKey:t]; }
+  return @[i]; }
+- (NSInteger)prepareForNewContentsWithOptions:(NSUInteger)o { return [self clearContents]; }
+- (void)dealloc { [_types release]; [_data release]; [_name release]; [super dealloc]; }
 @end
 
 @implementation NSStatusItem
@@ -319,6 +418,15 @@ static NSUInteger g_guest_buttons = 0;
 @end
 
 /* macOS virtual keycode -> unshifted ASCII character (ANSI layout) */
+/* NSEvent function-key characters (NSUpArrowFunctionKey ...) for non-printing keys */
+static unichar function_key(int kc) {
+  switch (kc) {
+  case 126: return 0xF700; case 125: return 0xF701; case 123: return 0xF702; case 124: return 0xF703;
+  case 122: return 0xF704; case 120: return 0xF705; case 99: return 0xF706; case 118: return 0xF707; case 96: return 0xF708;
+  case 97: return 0xF709; case 98: return 0xF70A; case 100: return 0xF70B; case 101: return 0xF70C; case 109: return 0xF70D;
+  case 103: return 0xF70E; case 111: return 0xF70F; case 115: return 0xF729; case 119: return 0xF72B;
+  case 116: return 0xF72C; case 121: return 0xF72D; case 117: return 0xF728;
+  default: return 0; } }
 static unichar key_char(int kc, int shift) {
   static const char ansi[128] = {
     [0]='a',[11]='b',[8]='c',[2]='d',[14]='e',[3]='f',[5]='g',[4]='h',[34]='i',[38]='j',[40]='k',[37]='l',[46]='m',
@@ -345,6 +453,7 @@ static unichar key_char(int kc, int shift) {
 - (NSInteger)depth { return 0x208; /* NSWindowDepthTwentyfourBitRGB */ }
 - (id)colorSpace { return nil; }
 + (BOOL)resolveInstanceMethod:(SEL)sel {
+  if (g_stub_probe) return NO;
   const char *n = sel_getName(sel);
   if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
   class_addMethod(self, sel, (IMP)lite_stub, "@@:");
@@ -408,20 +517,18 @@ static id dynamic_nscolor_class_imp(id self, SEL _cmd) {
 }
 
 + (BOOL)resolveClassMethod:(SEL)sel {
+  if (g_stub_probe) return NO;
   Class meta = object_getClass((id)self);
   class_addMethod(meta, sel, (IMP)dynamic_nscolor_class_imp, "@@:");
   return YES;
 }
 
 - (CGFloat)redComponent { return r; } - (CGFloat)greenComponent { return g; } - (CGFloat)blueComponent { return b; } - (CGFloat)alphaComponent { return a; }
-- (void)set {}
-- (void)setFill {}
-- (void)setStroke {}
-- (void *)CGColor { return NULL; }
 - (NSColor *)colorUsingColorSpace:(id)s { return self; }
 - (NSColor *)colorWithAlphaComponent:(CGFloat)alpha { return [NSColor colorWithCalibratedRed:r green:g blue:b alpha:alpha]; }
 
 + (BOOL)resolveInstanceMethod:(SEL)sel {
+  if (g_stub_probe) return NO;
   const char *n = sel_getName(sel);
   if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
   class_addMethod(self, sel, (IMP)lite_stub, "@@:");
@@ -429,76 +536,92 @@ static id dynamic_nscolor_class_imp(id self, SEL _cmd) {
 }
 @end
 
+/* NSNumber tagged pointers (LSB set; integer payload in bits 3..63, see fixup_tagged_pointer_classes in the loader)
+ * reach classes whose methods expect a real object. The replacements below decode tagged values and pass every real
+ * object (CF numbers, NSConstantIntegerNumber, doubles) on to the class's original implementation. */
+enum { N_OBJCTYPE, N_LONGLONG, N_DOUBLE, N_INT, N_GETVALUE, N_HASH, N_COPY, N_COPYZONE, N_BOOL, N_STRING, N_DESC, N_ISEQUAL, N_COMPARE, N_COUNT };
+#define N_CLASSES 4
+static Class g_num_cls[N_CLASSES];
+static IMP g_num_orig[N_CLASSES][N_COUNT];
+static BOOL num_tagged(id self) { return ((intptr_t)self & 1) != 0; }
+static IMP num_orig(id self, int k) {
+  for (Class c = object_getClass(self); c; c = class_getSuperclass(c))
+    for (int i = 0; i < N_CLASSES; i++) if (g_num_cls[i] == c && g_num_orig[i][k]) return g_num_orig[i][k];
+  return NULL; }
+static long long tagged_value(id self) { return (long long)((intptr_t)self >> 3); }
+#define ORIG(k, T, ...) do { IMP o_ = num_orig(self, k); if (o_) return ((T (*)(id, SEL, ##__VA_ARGS__))o_)
 static const char *swizzled_objCType(id self, SEL _cmd) {
-  return "q";
-}
+  if (!num_tagged(self)) { ORIG(N_OBJCTYPE, const char *)(self, _cmd); } while (0); }
+  return "q"; }
 static long long swizzled_longLongValue(id self, SEL _cmd) {
-  intptr_t v = (intptr_t)self;
-  if (v & 1) return (long long)(v >> 3);
-  return 0;
-}
+  if (!num_tagged(self)) { ORIG(N_LONGLONG, long long)(self, _cmd); } while (0); return 0; }
+  return tagged_value(self); }
 static double swizzled_doubleValue(id self, SEL _cmd) {
-  return (double)swizzled_longLongValue(self, _cmd);
-}
+  if (!num_tagged(self)) { ORIG(N_DOUBLE, double)(self, _cmd); } while (0); return (double)swizzled_longLongValue(self, _cmd); }
+  return (double)tagged_value(self); }
 static int swizzled_intValue(id self, SEL _cmd) {
-  return (int)swizzled_longLongValue(self, _cmd);
-}
+  if (!num_tagged(self)) { ORIG(N_INT, int)(self, _cmd); } while (0); return (int)swizzled_longLongValue(self, _cmd); }
+  return (int)tagged_value(self); }
 static void swizzled_getValue(id self, SEL _cmd, void *p) {
-  if (p) *(long long *)p = swizzled_longLongValue(self, _cmd);
-}
+  if (!num_tagged(self)) { IMP o = num_orig(self, N_GETVALUE); if (o) { ((void (*)(id, SEL, void *))o)(self, _cmd, p); return; } }
+  if (p) *(long long *)p = swizzled_longLongValue(self, _cmd); }
 static NSUInteger swizzled_hash(id self, SEL _cmd) {
-  return (NSUInteger)swizzled_longLongValue(self, _cmd);
-}
+  if (!num_tagged(self)) { ORIG(N_HASH, NSUInteger)(self, _cmd); } while (0); return (NSUInteger)self; }
+  return (NSUInteger)tagged_value(self); }
 static id swizzled_copy(id self, SEL _cmd) {
-  return [self retain];
-}
+  if (!num_tagged(self)) { ORIG(N_COPY, id)(self, _cmd); } while (0); }
+  return [self retain]; }
 static id swizzled_copyWithZone(id self, SEL _cmd, void *z) {
-  return [self retain];
-}
+  if (!num_tagged(self)) { ORIG(N_COPYZONE, id, void *)(self, _cmd, z); } while (0); }
+  return [self retain]; }
 static BOOL swizzled_boolValue(id self, SEL _cmd) {
-  return swizzled_longLongValue(self, _cmd) != 0;
-}
+  if (!num_tagged(self)) { ORIG(N_BOOL, BOOL)(self, _cmd); } while (0); return swizzled_longLongValue(self, _cmd) != 0; }
+  return tagged_value(self) != 0; }
 static NSString *swizzled_stringValue(id self, SEL _cmd) {
-  return [NSString stringWithFormat:@"%lld", swizzled_longLongValue(self, _cmd)];
-}
+  if (!num_tagged(self)) { ORIG(N_STRING, NSString *)(self, _cmd); } while (0); }
+  return [NSString stringWithFormat:@"%lld", swizzled_longLongValue(self, _cmd)]; }
 static NSString *swizzled_description(id self, SEL _cmd) {
-  return swizzled_stringValue(self, _cmd);
-}
+  if (!num_tagged(self)) { ORIG(N_DESC, NSString *)(self, _cmd); } while (0); }
+  return swizzled_stringValue(self, _cmd); }
+/* numbers of different kinds (tagged, CF, compile-time constants) compare by value: Darling's CF comparison assumes
+ * both operands are CF numbers */
+static BOOL num_floating(id n) { const char *t = [n objCType]; return t && (t[0] == 'd' || t[0] == 'f'); }
+static NSComparisonResult num_cmp(id a, id b) {
+  if (num_floating(a) || num_floating(b)) { double x = [a doubleValue], y = [b doubleValue]; return x < y ? NSOrderedAscending : x > y ? NSOrderedDescending : NSOrderedSame; }
+  long long x = [a longLongValue], y = [b longLongValue]; return x < y ? NSOrderedAscending : x > y ? NSOrderedDescending : NSOrderedSame; }
+static BOOL num_same_kind(id a, id b) { return !num_tagged(a) && !num_tagged(b) && object_getClass(a) == object_getClass(b); }
 static BOOL swizzled_isEqualToNumber(id self, SEL _cmd, NSNumber *o) {
   if (!o) return NO;
-  return swizzled_longLongValue(self, _cmd) == [o longLongValue];
-}
+  if (num_same_kind(self, o)) { ORIG(N_ISEQUAL, BOOL, NSNumber *)(self, _cmd, o); } while (0); }
+  return num_cmp(self, o) == NSOrderedSame; }
 static NSComparisonResult swizzled_compare(id self, SEL _cmd, NSNumber *o) {
   if (!o) return NSOrderedDescending;
-  long long a = swizzled_longLongValue(self, _cmd);
-  long long b = [o longLongValue];
-  if (a < b) return NSOrderedAscending;
-  if (a > b) return NSOrderedDescending;
-  return NSOrderedSame;
-}
+  if (num_same_kind(self, o)) { ORIG(N_COMPARE, NSComparisonResult, NSNumber *)(self, _cmd, o); } while (0); }
+  return num_cmp(self, o); }
+#undef ORIG
 
 __attribute__((constructor))
 static void fixup_nsnumber_methods(void) {
-  const char *classes[] = {"NSNumber", "__NSCFNumber", "NSConstantIntegerNumber", "__NSUnrecognizedTaggedPointer"};
-  for (int i = 0; i < 4; i++) {
+  const char *classes[N_CLASSES] = {"NSNumber", "__NSCFNumber", "NSConstantIntegerNumber", "__NSUnrecognizedTaggedPointer"};
+  struct { SEL sel; IMP imp; const char *types; } m[N_COUNT] = {
+    { @selector(objCType), (IMP)swizzled_objCType, "r*@:" }, { @selector(longLongValue), (IMP)swizzled_longLongValue, "q@:" },
+    { @selector(doubleValue), (IMP)swizzled_doubleValue, "d@:" }, { @selector(intValue), (IMP)swizzled_intValue, "i@:" },
+    { @selector(getValue:), (IMP)swizzled_getValue, "v@:^v" }, { @selector(hash), (IMP)swizzled_hash, "Q@:" },
+    { @selector(copy), (IMP)swizzled_copy, "@@:" }, { @selector(copyWithZone:), (IMP)swizzled_copyWithZone, "@@:^v" },
+    { @selector(boolValue), (IMP)swizzled_boolValue, "c@:" }, { @selector(stringValue), (IMP)swizzled_stringValue, "@@:" },
+    { @selector(description), (IMP)swizzled_description, "@@:" }, { @selector(isEqualToNumber:), (IMP)swizzled_isEqualToNumber, "c@:@" },
+    { @selector(compare:), (IMP)swizzled_compare, "q@:@" } };
+  for (int i = 0; i < N_CLASSES; i++) {
     Class cls = objc_getClass(classes[i]);
-    if (cls) {
-      class_replaceMethod(cls, @selector(objCType), (IMP)swizzled_objCType, "r*@:");
-      class_replaceMethod(cls, @selector(longLongValue), (IMP)swizzled_longLongValue, "q@:");
-      class_replaceMethod(cls, @selector(doubleValue), (IMP)swizzled_doubleValue, "d@:");
-      class_replaceMethod(cls, @selector(intValue), (IMP)swizzled_intValue, "i@:");
-      class_replaceMethod(cls, @selector(getValue:), (IMP)swizzled_getValue, "v@:^v");
-      class_replaceMethod(cls, @selector(hash), (IMP)swizzled_hash, "Q@:");
-      class_replaceMethod(cls, @selector(copy), (IMP)swizzled_copy, "@@:");
-      class_replaceMethod(cls, @selector(copyWithZone:), (IMP)swizzled_copyWithZone, "@@:^v");
-      class_replaceMethod(cls, @selector(boolValue), (IMP)swizzled_boolValue, "c@:");
-      class_replaceMethod(cls, @selector(stringValue), (IMP)swizzled_stringValue, "@@:");
-      class_replaceMethod(cls, @selector(description), (IMP)swizzled_description, "@@:");
-      class_replaceMethod(cls, @selector(isEqualToNumber:), (IMP)swizzled_isEqualToNumber, "c@:@");
-      class_replaceMethod(cls, @selector(compare:), (IMP)swizzled_compare, "q@:@");
-    }
-  }
-}
+    if (!cls) continue;
+    g_num_cls[i] = cls;
+    for (int k = 0; k < N_COUNT; k++) {
+      /* the class's own implementation, else the inherited one (looked up before replacing) */
+      IMP inherited = class_getMethodImplementation(cls, m[k].sel);
+      IMP own = class_replaceMethod(cls, m[k].sel, m[k].imp, m[k].types);
+      IMP o = own ? own : inherited;
+      if (o == (IMP)_objc_msgForward || o == m[k].imp) o = NULL;
+      g_num_orig[i][k] = o; } } }
 
 @implementation NSCursor
 + (NSCursor *)arrowCursor { static NSCursor *c; if (!c) c = [[NSCursor alloc] init]; return c; }
@@ -513,26 +636,7 @@ static void fixup_nsnumber_methods(void) {
 @end
 
 /* --------------------------------------------------------------------- menu */
-@implementation NSMenuItem
-- (id)initWithTitle:(NSString *)t action:(SEL)a keyEquivalent:(NSString *)k {
-  if ((self = [super init])) { _title = [t copy]; _action = a; _key = [k copy]; } return self; }
-+ (NSMenuItem *)separatorItem { return [[[NSMenuItem alloc] initWithTitle:@"" action:NULL keyEquivalent:@""] autorelease]; }
-- (void)setSubmenu:(id)m { [m retain]; [_sub release]; _sub = m; } - (id)submenu { return _sub; }
-- (NSString *)title { return _title; } - (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
-- (void)setTarget:(id)t { _target = t; } - (id)target { return _target; } - (SEL)action { return _action; }
-- (void)setKeyEquivalentModifierMask:(NSUInteger)m {}
-- (void)dealloc { [_title release]; [_sub release]; [_key release]; [super dealloc]; }
-@end
 
-@implementation NSMenu
-- (id)initWithTitle:(NSString *)t { if ((self = [super init])) { _title = [t copy]; _items = [[NSMutableArray alloc] init]; } return self; }
-- (id)init { return [self initWithTitle:@""]; }
-- (void)addItem:(NSMenuItem *)i { [_items addObject:i]; }
-- (NSMenuItem *)addItemWithTitle:(NSString *)t action:(SEL)a keyEquivalent:(NSString *)k {
-  NSMenuItem *i = [[[NSMenuItem alloc] initWithTitle:t action:a keyEquivalent:k] autorelease]; [_items addObject:i]; return i; }
-- (NSArray *)itemArray { return _items; } - (NSString *)title { return _title; }
-- (void)dealloc { [_title release]; [_items release]; [super dealloc]; }
-@end
 
 /* --------------------------------------------------------------------- view */
 @implementation NSView
@@ -542,7 +646,9 @@ static void fixup_nsnumber_methods(void) {
   if (!c) c = NSClassFromString(@"CALayer");
   return c ? [c performSelector:@selector(layer)] : nil;
 }
-- (id)initWithFrame:(NSRect)f {
+- (id)initWithFrame:(NSRect)f { return [self _xefInitWithFrame:f]; }
+/* NSView's own initialisation (nib decoding uses it directly: -initWithFrame: overrides must not run there) */
+- (id)_xefInitWithFrame:(NSRect)f {
   if ((self = [super init])) {
     _frame = f;
     _bounds = NSMakeRect(0, 0, f.size.width, f.size.height);
@@ -606,32 +712,21 @@ static void fixup_nsnumber_methods(void) {
   [v _setWindow:_window];
 }
 - (void)removeFromSuperview { NSView *s = _superview; if (!s) return; _superview = nil; [self _setWindow:nil]; [s->_subviews removeObject:self]; }
-- (void)setNeedsDisplay:(BOOL)f { _needsDisplay = f; }
+- (void)setNeedsDisplay:(BOOL)f { _needsDisplay = f; if (f && _window) _window->_dirty2D = YES; }
 - (BOOL)needsDisplay { return _needsDisplay; }
-- (void)display { _needsDisplay = NO; [self drawRect:_bounds]; for (NSView *s in _subviews) [s display]; }
-- (void)displayIfNeeded { if (_needsDisplay) [self display]; else for (NSView *s in _subviews) [s displayIfNeeded]; }
+/* windows drawn by AppKit-lite (2D) redraw their whole view tree; GL/Metal windows keep the old drawRect: walk */
+- (void)display {
+  if (_window && [_window _xef2D]) { [_window _xefRedraw]; return; }
+  _needsDisplay = NO; [self drawRect:_bounds]; for (NSView *s in _subviews) [s display]; }
+- (void)displayIfNeeded {
+  if (_window && [_window _xef2D]) { if (_window->_dirty2D) [_window _xefRedraw]; return; }
+  if (_needsDisplay) [self display]; else for (NSView *s in _subviews) [s displayIfNeeded]; }
 - (void)drawRect:(NSRect)r {}
 - (BOOL)isFlipped { return NO; } - (BOOL)isOpaque { return NO; }
 - (void)viewDidMoveToWindow {}
 - (void)lockFocus {} - (void)unlockFocus {}
 - (void)setWantsBestResolutionOpenGLSurface:(BOOL)f { _bestRes = f; }
 - (NSRect)convertRectToBacking:(NSRect)r { return r; } - (NSRect)convertRectFromBacking:(NSRect)r { return r; }
-- (NSPoint)convertPoint:(NSPoint)p fromView:(NSView *)v {
-  if (v == self) return p;
-  NSPoint winP = p;
-  if (v) {
-    for (NSView *cur = v; cur; cur = cur->_superview) {
-      winP.x += cur->_frame.origin.x;
-      winP.y += cur->_frame.origin.y;
-    }
-  }
-  NSPoint selfP = winP;
-  for (NSView *cur = self; cur; cur = cur->_superview) {
-    selfP.x -= cur->_frame.origin.x;
-    selfP.y -= cur->_frame.origin.y;
-  }
-  return selfP;
-}
 - (void)setWantsLayer:(BOOL)f {
   _wantsLayer = f;
   if (f && !_layer) {
@@ -722,6 +817,7 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)_applyFrame:(NSRect)f sync:(BOOL)sync {
   NSRect old = _frame; _frame = f; NSRect c = [self contentRectForFrameRect:f];
   if (_content) [_content setFrame:NSMakeRect(0, 0, c.size.width, c.size.height)];
+  _dirty2D = YES;
   if (sync) xef_host_window_set_frame(_handle, (int)c.origin.x, (int)(SCREEN_H - c.origin.y - c.size.height), (int)c.size.width, (int)c.size.height);
   if (old.size.width != f.size.width || old.size.height != f.size.height) [self _notify:kWinDidResize selector:@selector(windowDidResize:)];
   if (old.origin.x != f.origin.x || old.origin.y != f.origin.y) [self _notify:kWinDidMove selector:@selector(windowDidMove:)]; }
@@ -741,13 +837,21 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   [v retain]; [_content _setWindow:nil]; [_content release]; _content = v;
   NSRect c = [self contentRectForFrameRect:_frame]; [v setFrame:NSMakeRect(0, 0, c.size.width, c.size.height)];
   [v _setWindow:self];
-  [v setNextResponder:self]; }
-- (NSView *)contentView { return _content; }
+  [v setNextResponder:self]; _dirty2D = YES; }
+- (NSView *)contentView {
+  if (!_content) {
+    NSRect c = [self contentRectForFrameRect:_frame];
+    NSView *v = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, c.size.width, c.size.height)];
+    [self setContentView:v];
+    [v release];
+  }
+  return _content;
+}
 - (BOOL)isVisible { return _visible && !_mini; }
 - (void)setIsVisible:(BOOL)v { if (v) [self orderFront:nil]; else [self orderOut:nil]; }
 - (void)orderFront:(id)s {
   if (_visible) return;
-  _visible = YES; xef_host_window_show(_handle);
+  _visible = YES; _dirty2D = YES; xef_host_window_show(_handle);
   [self frame];
   [self _notify:kWinDidOcclusion selector:@selector(windowDidChangeOcclusionState:)]; }
 - (void)makeKeyAndOrderFront:(id)s { [self orderFront:s]; [self makeKeyWindow]; }
@@ -776,8 +880,9 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)setDelegate:(id)d { _delegate = d; } - (id)delegate { return _delegate; }
 - (CGFloat)backingScaleFactor { return 1.0; }
 - (void)setOpaque:(BOOL)f { _opaque = f; } - (BOOL)isOpaque { return _opaque; }
-- (void)setBackgroundColor:(NSColor *)c {}
-- (void)display { [_content display]; }
+- (void)setBackgroundColor:(NSColor *)c { if (getenv("XEF_APPKIT_DEBUG")) NSLog(@"xef: window %p setBackgroundColor %@", self, c); [c retain]; [_bg release]; _bg = c; _dirty2D = YES; }
+- (NSColor *)backgroundColor { return _bg ? _bg : [NSColor windowBackgroundColor]; }
+- (void)display { if ([self _xef2D]) [self _xefRedraw]; else [_content display]; }
 - (NSInteger)windowNumber { return _handle; } - (int)xefHandle { return _handle; }
 - (void)setLevel:(NSInteger)l { _level = l; } - (NSInteger)level { return _level; }
 - (void)setCollectionBehavior:(NSUInteger)b { _collection = b; } - (NSUInteger)collectionBehavior { return _collection; }
@@ -896,10 +1001,27 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)_removeWindow:(NSWindow *)w { [_windows removeObject:w]; }
 - (void)finishLaunching {
   if (_launched) return; _launched = YES;
+  if (getenv("XEF_APPKIT_DEBUG")) NSLog(@"xef: finishLaunching, delegate %@", _delegate);
   NSNotification *n = [NSNotification notificationWithName:NSApplicationDidFinishLaunchingNotification object:self];
   if ([_delegate respondsToSelector:@selector(applicationWillFinishLaunching:)]) [_delegate applicationWillFinishLaunching:n];
   [[NSNotificationCenter defaultCenter] postNotification:n];
-  if ([_delegate respondsToSelector:@selector(applicationDidFinishLaunching:)]) [_delegate applicationDidFinishLaunching:n]; }
+  if ([_delegate respondsToSelector:@selector(applicationDidFinishLaunching:)]) [_delegate applicationDidFinishLaunching:n];
+  if ([self respondsToSelector:@selector(_xefUpdateMenuBar)]) [self performSelector:@selector(_xefUpdateMenuBar)];
+  /* test hook: XEF_APPKIT_SEND_ACTION=sel1:,sel2: sends these actions through the responder chain after launch */
+  const char *acts = getenv("XEF_APPKIT_SEND_ACTION");
+  if (acts) for (NSString *a in [[NSString stringWithUTF8String:acts] componentsSeparatedByString:@","])
+    if ([a length]) [self sendAction:NSSelectorFromString(a) to:nil from:self];
+  /* test hook: XEF_APPKIT_TYPE=text queues key-down events typing the text into the key window ("\n" = Return) */
+  const char *typ = getenv("XEF_APPKIT_TYPE");
+  if (typ) {
+    NSString *t = [[NSString stringWithUTF8String:typ] stringByReplacingOccurrencesOfString:@"\\n" withString:@"\n"];
+    for (NSUInteger i = 0; i < [t length]; i++) {
+      unichar ch = [t characterAtIndex:i];
+      NSEvent *e = [[[NSEvent alloc] init] autorelease];
+      e->_type = NSEventTypeKeyDown; e->_keyCode = ch == '\n' ? 36 : 0xffff; e->_ts = [NSDate timeIntervalSinceReferenceDate];
+      e->_window = [self keyWindow] ?: [self _eventWindow];
+      e->_chars = [[NSString alloc] initWithCharacters:&ch length:1]; e->_charsIgnoring = [e->_chars copy];
+      [self postEvent:e atStart:NO]; } } }
 - (BOOL)isRunning { return _running; }
 - (void)postEvent:(NSEvent *)e atStart:(BOOL)s { if (s) [_queue insertObject:e atIndex:0]; else [_queue addObject:e]; }
 
@@ -938,7 +1060,21 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   if (h->type == NSEventTypeScrollWheel) e->_dy = h->keycode;
   if (h->type == NSEventTypeKeyDown || h->type == NSEventTypeKeyUp) {
     unichar c = key_char(h->keycode, (h->flags & NSEventModifierFlagShift) != 0);
-    if (c) e->_chars = [[NSString alloc] initWithCharacters:&c length:1]; }
+    unichar fk = function_key(h->keycode);
+    if (fk) c = fk;
+    else if (h->ch > 0 && h->ch != 0x7f && !(h->flags & NSEventModifierFlagControl)) {
+      /* the host's typed character (layout, shift, AltGr); Cmd-shortcuts keep the plain key */
+      if (h->ch < 0x10000) c = (unichar)h->ch;
+      else { unichar sp[2] = { (unichar)(0xD800 + ((h->ch - 0x10000) >> 10)), (unichar)(0xDC00 + ((h->ch - 0x10000) & 0x3FF)) };
+             e->_chars = [[NSString alloc] initWithCharacters:sp length:2]; c = 0; } }
+    if (c) e->_chars = [[NSString alloc] initWithCharacters:&c length:1];
+    e->_charsIgnoring = [[NSString alloc] initWithCharacters:&c length:c ? 1 : 0];
+    if (!fk) { unichar plain = key_char(h->keycode, 0); if (plain) { [e->_charsIgnoring release]; e->_charsIgnoring = [[NSString alloc] initWithCharacters:&plain length:1]; } } }
+  if (h->type == NSEventTypeLeftMouseDown || h->type == NSEventTypeRightMouseDown || h->type == NSEventTypeOtherMouseDown) {
+    /* multi-click: same button within 0.4 s and 4 px of the previous press */
+    static double last_ts; static NSPoint last_p; static int last_type, clicks;
+    clicks = (h->type == last_type && e->_ts - last_ts < 0.4 && fabs(e->_loc.x - last_p.x) < 4 && fabs(e->_loc.y - last_p.y) < 4) ? clicks + 1 : 1;
+    last_ts = e->_ts; last_p = e->_loc; last_type = h->type; e->_clicks = clicks; }
   if (h->type == NSEventTypeLeftMouseDown) g_guest_buttons |= (1 << 0);
   else if (h->type == NSEventTypeLeftMouseUp) g_guest_buttons &= ~(1 << 0);
   else if (h->type == NSEventTypeRightMouseDown || h->type == NSEventTypeRightMouseUp || h->type == NSEventTypeRightMouseDragged) {
@@ -975,9 +1111,14 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
     if (!((1ULL << ev->_type) & [[m objectForKey:@"mask"] unsignedLongLongValue])) continue;
     NSEvent *(^blk)(NSEvent *) = (NSEvent *(^)(NSEvent *))[m objectForKey:@"block"];
     ev = blk(ev); if (!ev) break; }
+  if (ev && ev->_type == NSEventTypeKeyDown && [self _xefHandleKeyEquivalent:ev]) ev = nil;
   if (ev) { NSWindow *w = ev->_window ? ev->_window : [self _eventWindow]; [w sendEvent:ev]; }
   _current = prev; }
-- (void)updateWindows { for (NSWindow *w in [[_windows copy] autorelease]) if (w->_visible) [w->_content displayIfNeeded]; }
+- (void)updateWindows {
+  for (NSWindow *w in [[_windows copy] autorelease]) {
+    if (!w->_visible) continue;
+    if ([w _xef2D]) { if (w->_dirty2D) [w _xefRedraw]; }
+    else [w->_content displayIfNeeded]; } }
 
 /* stop: ends the loop after the current event (also when called from applicationDidFinishLaunching:) */
 - (void)run {
@@ -1032,11 +1173,12 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (id)initWithFormat:(NSOpenGLPixelFormat *)f shareContext:(NSOpenGLContext *)s {
   if (!f) return nil;
   if ((self = [super init])) { _pf = [f retain]; _share = [s retain]; _swap = 1; _opaque = YES; } return self; }
-- (void)setView:(NSView *)v { _view = v; if (g_current == self) [self makeCurrentContext]; }
+- (void)setView:(NSView *)v { _view = v; if (v) v->_glUsed = YES; if (g_current == self) [self makeCurrentContext]; }
 - (NSView *)view { return _view; }
 - (int)_handle { return _view && _view->_window ? _view->_window->_handle : 0; }
 - (void)makeCurrentContext {
   g_current = self; int h = [self _handle];
+  if (_view) { _view->_glUsed = YES; if (_view->_window) _view->_window->_no2D = YES; }
   if (h) xef_host_gl_set_profile(h, _pf ? _pf->profile : NSOpenGLProfileVersionLegacy);   /* core contexts need glXCreateContextAttribsARB */
   xef_host_gl_make_current(h); }
 + (void)clearCurrentContext { g_current = nil; xef_host_gl_make_current(0); }
@@ -1082,18 +1224,6 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 /* ---------------------------------------------------------------- alerts */
 /* There is no modal UI: an alert is written to stderr and answered with its first button (NSAlertFirstButtonReturn),
  * which is what the default-button keyboard shortcut would do. Used by SDL_ShowMessageBox for fatal errors. */
-@interface NSButton : NSView { @public NSString *_title, *_keyEquivalent; NSInteger _tag; }
-@end
-@implementation NSButton
-- (NSString *)title { return _title; }
-- (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
-- (NSString *)keyEquivalent { return _keyEquivalent; }
-- (void)setKeyEquivalent:(NSString *)k { [k retain]; [_keyEquivalent release]; _keyEquivalent = k; }
-- (NSInteger)tag { return _tag; }
-- (void)setTag:(NSInteger)t { _tag = t; }
-- (void)dealloc { [_title release]; [_keyEquivalent release]; [super dealloc]; }
-@end
-
 @interface NSAlert : NSObject { NSString *_message, *_info; NSMutableArray *_buttons; NSUInteger _style; }
 @end
 @implementation NSAlert
@@ -1124,49 +1254,18 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 /* The rest of what SDL2's video backend (SDL_cocoa*.m) sends. Geometry is single-screen and scale 1.0 as above. */
 
 @implementation NSView (XefSDL)
-- (NSRect)convertRect:(NSRect)r toView:(NSView *)v { return r; }      /* subviews fill their parent at the origin */
-- (NSRect)convertRect:(NSRect)r fromView:(NSView *)v { return r; }
-- (NSPoint)convertPoint:(NSPoint)p toView:(NSView *)v {
-  if (v == self) return p;
-  NSPoint winP = p;
-  for (NSView *cur = self; cur; cur = cur->_superview) {
-    winP.x += cur->_frame.origin.x;
-    winP.y += cur->_frame.origin.y;
-  }
-  NSPoint vP = winP;
-  if (v) {
-    for (NSView *cur = v; cur; cur = cur->_superview) {
-      vP.x -= cur->_frame.origin.x;
-      vP.y -= cur->_frame.origin.y;
-    }
-  }
-  return vP;
-}
 - (NSSize)convertSizeToBacking:(NSSize)s { return s; }
 - (NSSize)convertSizeFromBacking:(NSSize)s { return s; }
 - (NSPoint)convertPointToBacking:(NSPoint)p { return p; }
-- (NSView *)hitTest:(NSPoint)p {
-  if (!NSPointInRect(p, _frame)) return nil;
-  NSPoint q = NSMakePoint(p.x - _frame.origin.x, p.y - _frame.origin.y);
-  for (NSView *s in [_subviews reverseObjectEnumerator]) {
-    if ([s respondsToSelector:@selector(isHidden)] && [s isHidden]) continue;
-    NSView *h = [s hitTest:q];
-    if (h) return h;
-  }
-  return self;
-}
 - (void)setAutoresizingMask:(NSUInteger)m { _autoresizingMask = m; }
 - (NSUInteger)autoresizingMask { return _autoresizingMask; }
 - (void)setAutoresizesSubviews:(BOOL)f { _autoresizesSubviews = f; }
 - (BOOL)autoresizesSubviews { return _autoresizesSubviews; }
 - (void)addCursorRect:(NSRect)r cursor:(NSCursor *)c {} - (void)resetCursorRects {} - (void)discardCursorRects {}
 - (void)setAcceptsTouchEvents:(BOOL)f {} - (void)setAllowedTouchTypes:(NSUInteger)t {}
-- (NSView *)viewWithTag:(NSInteger)t { return nil; } - (NSInteger)tag { return -1; }
 - (void)unregisterDraggedTypes { [_dragTypes release]; _dragTypes = nil; }
-- (void)setHidden:(BOOL)f {} - (BOOL)isHidden { return NO; }
 - (void)setPostsFrameChangedNotifications:(BOOL)f {}
 - (void)setLayerContentsRedrawPolicy:(NSInteger)p {}
-- (NSRect)visibleRect { return _bounds; }
 - (BOOL)inLiveResize { return NO; }
 @end
 
@@ -1245,12 +1344,6 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (NSUInteger)deviceID { return 0; } - (void *)CGEvent { return NULL; }
 @end
 
-@implementation NSPasteboard (XefSDL)
-- (NSInteger)changeCount { return _change; }
-- (NSString *)availableTypeFromArray:(NSArray *)types { for (NSString *t in types) if ([_types containsObject:t]) return t; return nil; }
-- (NSData *)dataForType:(NSString *)t { id v = [_data objectForKey:t]; return [v isKindOfClass:[NSString class]] ? [v dataUsingEncoding:NSUTF8StringEncoding] : v; }
-- (id)propertyListForType:(NSString *)t { return [_data objectForKey:t]; }
-@end
 
 @implementation NSCursor (XefSDL)
 + (NSCursor *)currentCursor { return [self arrowCursor]; }
@@ -1263,54 +1356,19 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (NSImage *)image { return _image; } - (NSPoint)hotSpot { return _hot; }
 @end
 
-@implementation NSMenu (XefSDL)
-+ (void)setMenuBarVisible:(BOOL)f {} + (BOOL)menuBarVisible { return NO; }
-- (NSInteger)numberOfItems { return [_items count]; }
-- (NSMenuItem *)itemAtIndex:(NSInteger)i { return [_items objectAtIndex:i]; }
-- (void)removeAllItems { [_items removeAllObjects]; }
-- (void)setAutoenablesItems:(BOOL)f {}
-@end
 
 @implementation NSOpenGLPixelFormat (XefSDL)
 - (void *)CGLPixelFormatObj { return self; }
 @end
 
 @implementation NSImage (XefSDL)
-- (id)initWithContentsOfFile:(NSString *)path { return [self init]; }
-- (id)initWithData:(NSData *)data { return [self init]; }
-- (id)initWithSize:(NSSize)size { _size = size; return self; }
-- (void)drawInRect:(NSRect)d fromRect:(NSRect)s operation:(NSUInteger)op fraction:(CGFloat)f {}   /* no 2D drawing on X11-lite */
+- (id)init { return [self initWithSize:NSZeroSize]; }
+- (id)initWithContentsOfFile:(NSString *)path { return [self initWithSize:NSZeroSize]; }   /* no image decoders yet */
+- (id)initWithData:(NSData *)data { return [self initWithSize:NSZeroSize]; }
 - (void)setSize:(NSSize)s { _size = s; } - (BOOL)isValid { return YES; }
 - (void)lockFocus {} - (void)unlockFocus {}
 @end
 
-/* minimal 2D drawing classes: SDL's software framebuffer path draws through them; nothing is drawn (OpenGL only) */
-@interface NSGraphicsContext : NSObject
-@end
-@implementation NSGraphicsContext
-static NSGraphicsContext *g_gc;
-+ (NSGraphicsContext *)currentContext { return g_gc; }
-+ (void)setCurrentContext:(NSGraphicsContext *)c { [c retain]; [g_gc release]; g_gc = c; }
-+ (NSGraphicsContext *)graphicsContextWithWindow:(NSWindow *)w { return [[[NSGraphicsContext alloc] init] autorelease]; }
-+ (NSGraphicsContext *)graphicsContextWithCGContext:(void *)c flipped:(BOOL)f { return [[[NSGraphicsContext alloc] init] autorelease]; }
-+ (void)saveGraphicsState {} + (void)restoreGraphicsState {}
-- (void)saveGraphicsState {} - (void)restoreGraphicsState {} - (void)flushGraphics {}
-- (void *)CGContext { return NULL; } - (void *)graphicsPort { return NULL; }
-- (void)setCompositingOperation:(NSUInteger)o {} - (void)setShouldAntialias:(BOOL)f {}
-@end
-
-@interface NSBezierPath : NSObject
-@end
-@implementation NSBezierPath
-+ (NSBezierPath *)bezierPath { return [[[NSBezierPath alloc] init] autorelease]; }
-+ (NSBezierPath *)bezierPathWithRect:(NSRect)r { return [self bezierPath]; }
-+ (void)fillRect:(NSRect)r {} + (void)strokeRect:(NSRect)r {} + (void)clipRect:(NSRect)r {}
-- (void)appendBezierPathWithRect:(NSRect)r {} - (void)addClip {} - (void)setClip {} - (void)fill {} - (void)stroke {}
-- (void)moveToPoint:(NSPoint)p {} - (void)lineToPoint:(NSPoint)p {} - (void)closePath {}
-@end
-
-@interface NSColorSpace : NSObject
-@end
 @implementation NSColorSpace
 + (NSColorSpace *)sRGBColorSpace { static NSColorSpace *s; if (!s) s = [[NSColorSpace alloc] init]; return s; }
 + (NSColorSpace *)deviceRGBColorSpace { return [self sRGBColorSpace]; } + (NSColorSpace *)genericRGBColorSpace { return [self sRGBColorSpace]; }
@@ -1446,7 +1504,6 @@ static NSGraphicsContext *g_gc;
 }
 @end
 
-void NSRectFill(NSRect r) {}
 void NSBeep(void) {}
 
 @implementation NSAppleEventManager (AppKitLite)
@@ -1458,8 +1515,19 @@ void NSBeep(void) {}
 /* Anything else AppKit has and AppKit-lite does not: windows, views and the application answer unknown selectors with a
  * logged no-op returning 0/nil (setters of cosmetic state such as setOneShot: dominate). Selectors that SDL/GLFW probe
  * with respondsToSelector: are unaffected: resolveInstanceMethod: is only reached when a message is actually sent. */
+@implementation NSResponder (XefRealResponds)
+- (BOOL)respondsToSelector:(SEL)a { return XEFRealRespondsToSelector(self, a); }
+@end
+@implementation NSScreen (XefRealResponds)
+- (BOOL)respondsToSelector:(SEL)a { return XEFRealRespondsToSelector(self, a); }
+@end
+@implementation NSColor (XefRealResponds)
+- (BOOL)respondsToSelector:(SEL)a { return XEFRealRespondsToSelector(self, a); }
+@end
+
 @implementation NSResponder (XefStubs)
 + (BOOL)resolveInstanceMethod:(SEL)sel {
+  if (g_stub_probe) return NO;
   const char *n = sel_getName(sel);
   if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
   /* only real AppKit classes and their subclasses */
@@ -1471,23 +1539,7 @@ void NSBeep(void) {}
   return YES; }
 @end
 
-@implementation NSMenuItem (XefStubs)
-+ (BOOL)resolveInstanceMethod:(SEL)sel {
-  const char *n = sel_getName(sel);
-  if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
-  class_addMethod(self, sel, (IMP)lite_stub, "@@:");
-  return YES;
-}
-@end
 
-@implementation NSMenu (XefMenuStubs)
-+ (BOOL)resolveInstanceMethod:(SEL)sel {
-  const char *n = sel_getName(sel);
-  if (n[0] == '_' || !strncmp(n, "respondsTo", 10) || !strncmp(n, "init", 4) || !strncmp(n, "copy", 4) || !strncmp(n, "mutableCopy", 11)) return NO;
-  class_addMethod(self, sel, (IMP)lite_stub, "@@:");
-  return YES;
-}
-@end
 
 @implementation NSBitmapImageRep (XefSDL)
 - (id)initWithBitmapDataPlanes:(unsigned char **)planes pixelsWide:(NSInteger)w pixelsHigh:(NSInteger)h bitsPerSample:(NSInteger)bps

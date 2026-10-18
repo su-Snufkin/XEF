@@ -46,9 +46,18 @@ ln -sfn A $F/Carbon.framework/Versions/Current
 mk AppKit C
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/AppKit.m -o $O/AppKit.o
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/AppKitNib.m -o $O/AppKitNib.o
+APPKIT_OBJS="$O/AppKit.o $O/AppKitNib.o"
+for m in AppKitGraphics AppKitControls AppKitMenu AppKitAssets AppKitFoundationCompat AppKitDocument AppKitText; do
+  clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/$m.m -o $O/$m.o
+  APPKIT_OBJS="$APPKIT_OBJS $O/$m.o"
+done
+for z in lzfse_decode lzfse_decode_base lzfse_fse lzvn_decode_base; do
+  clang $COMMON -O2 -w -isysroot $SDK -c $S/lzfse/$z.c -o $O/appkit_$z.o
+  APPKIT_OBJS="$APPKIT_OBJS $O/appkit_$z.o"
+done
 clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit \
   -Wl,-compatibility_version,45 -Wl,-current_version,2685.10.108 -Wl,-not_for_dyld_shared_cache \
-  $O/AppKit.o $O/AppKitNib.o $LIBS $HIT -Wl,-undefined,dynamic_lookup -o $F/AppKit.framework/Versions/C/AppKit
+  $APPKIT_OBJS $LIBS $HIT -Wl,-undefined,dynamic_lookup -o $F/AppKit.framework/Versions/C/AppKit
 
 # OpenGL
 mk OpenGL A
