@@ -243,7 +243,7 @@ void xef_mtl_layer_release_drawable(uint32_t layer, uint32_t drawable) {
 
 void xef_mtl_layer_destroy(uint32_t layer) {
     std::lock_guard<std::recursive_mutex> lk(g.mtx);
-    (void)layer;
+    layer_destroy(layer);
 }
 
 uint32_t xef_mtl_event_create(void) {

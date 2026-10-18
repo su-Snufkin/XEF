@@ -107,6 +107,21 @@ void release_drawable(uint32_t key) {
     if (l && i < l->busy.size()) l->busy[i] = false;
 }
 
+static void destroy_swapchain(Layer* l);
+
+void layer_destroy(uint32_t id) {
+    Layer* l = layer(id);
+    if (!l) return;
+    for (auto& q : g.queues) if (q) { vk.QueueWaitIdle(g.queue); retire(q.get()); }
+    destroy_drawables(l);
+    destroy_swapchain(l);
+    if (l->surface && g.instance) {
+        vk.DestroySurfaceKHR(g.instance, l->surface, nullptr);
+        l->surface = VK_NULL_HANDLE;
+    }
+    if (id < g.layers.size()) g.layers[id].reset();
+}
+
 static void destroy_swapchain(Layer* l) {
     if (l->swapchain) {
         vk.DeviceWaitIdle(g.dev);

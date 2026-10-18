@@ -240,6 +240,7 @@ struct Layer {
 uint32_t layer_create(int window);
 void layer_configure(uint32_t id, uint32_t w, uint32_t h, uint32_t fmt, uint32_t flags);
 uint32_t layer_next_drawable(uint32_t id, uint32_t* tex, uint64_t* rid);
+void layer_destroy(uint32_t id);
 struct PendingPresent {
     Layer* layer;
     uint32_t layer_id;
