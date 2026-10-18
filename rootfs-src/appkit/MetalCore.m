@@ -1479,7 +1479,21 @@ static void xef_linked(NSArray *lfs, NSArray *libs, NSMutableData *refs, NSMutab
 - (NSUInteger)minimumLinearTextureAlignmentForPixelFormat:(MTLPixelFormat)f { return 256; }
 - (NSUInteger)minimumTextureBufferAlignmentForPixelFormat:(MTLPixelFormat)f { return 16; }
 - (void)getDefaultSamplePositions:(MTLSamplePosition *)positions count:(NSUInteger)count {
-  for (NSUInteger i = 0; i < count; i++) positions[i] = MTLSamplePositionMake(0.5f, 0.5f);
+  if (!positions || !count) return;
+  static const float P2[2][2] = {{0.75f, 0.75f}, {0.25f, 0.25f}};
+  static const float P4[4][2] = {{0.375f, 0.125f}, {0.875f, 0.375f}, {0.125f, 0.625f}, {0.625f, 0.875f}};
+  static const float P8[8][2] = {{0.5625f, 0.3125f}, {0.4375f, 0.6875f}, {0.8125f, 0.5625f}, {0.3125f, 0.1875f},
+                                 {0.1875f, 0.8125f}, {0.0625f, 0.4375f}, {0.6875f, 0.9375f}, {0.9375f, 0.0625f}};
+  if (count == 1) {
+    positions[0] = MTLSamplePositionMake(0.5f, 0.5f);
+  } else if (count == 2) {
+    for (NSUInteger i = 0; i < 2; i++) positions[i] = MTLSamplePositionMake(P2[i][0], P2[i][1]);
+  } else if (count <= 4) {
+    for (NSUInteger i = 0; i < count; i++) positions[i] = MTLSamplePositionMake(P4[i][0], P4[i][1]);
+  } else {
+    for (NSUInteger i = 0; i < count && i < 8; i++) positions[i] = MTLSamplePositionMake(P8[i][0], P8[i][1]);
+    for (NSUInteger i = 8; i < count; i++) positions[i] = MTLSamplePositionMake(0.5f, 0.5f);
+  }
 }
 - (void)sampleTimestamps:(MTLTimestamp *)cpu gpuTimestamp:(MTLTimestamp *)gpu {
   uint64_t t = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1e9);
