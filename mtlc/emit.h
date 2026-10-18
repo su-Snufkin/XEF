@@ -88,6 +88,8 @@ public:
     // ---- images ----
     std::map<uint32_t, Id> image_vars;   // binding -> variable
     Id sampler_var = 0, cmp_sampler_var = 0;
+    Id sample_count_id = 0, sample_pos_var = 0;
+    Id sample_count();   // specialization constant 0: the pipeline's raster sample count
     Id image_type_for(uint32_t dim, uint32_t comp, bool storage, uint32_t format = 0);
     Id load_image(uint32_t dim, uint32_t comp, bool storage, llvm::Value* handle, Id& img_type, uint32_t format = 0, Id* ptr_out = nullptr);
     bool emit_texture_atomic(llvm::CallInst* ci, llvm::StringRef s);

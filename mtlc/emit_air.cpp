@@ -745,6 +745,30 @@ bool Emitter::emit_air(CallInst* ci, StringRef name) {
     }
     if (name.starts_with("air.is_null_simdgroup_event")) { result(ci, sb.const_bool(true)); return true; }
     if (op == "get_read_sampler") { result(ci, sb.const_u64(0)); return true; }
+    if (op == "get_num_samples") { result(ci, sample_count()); return true; }
+    if (op == "get_sample_position") {
+        // Metal's default positions equal Vulkan's standard ones: one table for 1, 2, 4 and 8 samples
+        Id f32 = sb.t_float(32), f2 = sb.t_vec(f32, 2), u32 = t_u32();
+        if (!sample_pos_var) {
+            static const float P[15][2] = {{0.5f, 0.5f}, {0.75f, 0.75f}, {0.25f, 0.25f},
+                {0.375f, 0.125f}, {0.875f, 0.375f}, {0.125f, 0.625f}, {0.625f, 0.875f},
+                {0.5625f, 0.3125f}, {0.4375f, 0.6875f}, {0.8125f, 0.5625f}, {0.3125f, 0.1875f},
+                {0.1875f, 0.8125f}, {0.0625f, 0.4375f}, {0.6875f, 0.9375f}, {0.9375f, 0.0625f}};
+            Words el;
+            for (auto& p : P) el.push_back(sb.const_composite(f2, {sb.const_f32(p[0]), sb.const_f32(p[1])}));
+            Id at = sb.t_array(f2, 15);
+            sample_pos_var = sb.variable(sb.t_ptr(spv::StorageClassPrivate, at), spv::StorageClassPrivate, sb.const_composite(at, el));
+            interface_ids.push_back(sample_pos_var);
+        }
+        Id n = sample_count();
+        Id last = emit_r(spv::OpISub, u32, {n, c_u32(1)});
+        Id i = val(ci->getArgOperand(0));
+        Id clamped = emit_r(spv::OpExtInst, u32, {sb.glsl(), (uint32_t)GLSLstd450UMin, i, last});
+        Id idx = emit_r(spv::OpIAdd, u32, {last, clamped});   // tables start at count - 1
+        Id p = emit_r(spv::OpAccessChain, sb.t_ptr(spv::StorageClassPrivate, f2), {sample_pos_var, idx});
+        result(ci, emit_r(spv::OpLoad, f2, {p}));
+        return true;
+    }
     if (op == "get_function_pointer_visible_function_table") { fail("visible function tables"); return true; }
     return false;
 }
@@ -861,6 +885,15 @@ Id Emitter::load_image(uint32_t dim, uint32_t comp, bool storage, Value* handle,
         sb.decorate(img, spv::DecorationNonUniform);
     }
     return img;
+}
+
+Id Emitter::sample_count() {
+    if (!sample_count_id) {
+        sample_count_id = sb.alloc();
+        SpvBuilder::inst(sb.globals, spv::OpSpecConstant, {t_u32(), sample_count_id, 1});
+        sb.decorate(sample_count_id, spv::DecorationSpecId, {0});
+    }
+    return sample_count_id;
 }
 
 Id Emitter::load_sampler(Value* handle, bool compare) {

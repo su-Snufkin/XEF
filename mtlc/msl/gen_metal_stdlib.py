@@ -755,6 +755,10 @@ extern "C" bool __xef_quad_all(bool) XEF_AIR("air.quad_all");
 extern "C" bool __xef_quad_any(bool) XEF_AIR("air.quad_any");
 XEF_INL bool quad_all(bool b) { return __xef_quad_all(b); }
 XEF_INL bool quad_any(bool b) { return __xef_quad_any(b); }
+extern "C" __xef_ev_t<float, 2> __xef_get_sample_position(uint, int) XEF_AIR("air.get_sample_position.v2f32");
+extern "C" uint __xef_get_num_samples() XEF_AIR("air.get_num_samples");
+XEF_INL float2 get_sample_position(uint i) { return float2::from(__xef_get_sample_position(i, 0)); }
+XEF_INL uint get_num_samples() { return __xef_get_num_samples(); }
 extern "C" bool __xef_simd_is_helper_thread() XEF_AIR("air.simd_is_helper_thread");
 XEF_INL bool simd_is_helper_thread() { return __xef_simd_is_helper_thread(); }
 struct simd_vote {
@@ -933,6 +937,8 @@ for cls, (kind, cdim, rdim, arr, ms, cube, depth, mips, odim) in TEX_KINDS.items
                 w(f'extern "C" {evt(t, 4)} __xef_gather_{sname}(__xef_tex_h, __xef_smp_h, {ccoord}{params_layer}{off}, int, int) XEF_AIR("air.gather_{kind}.{sgn(t)}v4{tg}");')
         if depth and not ms and t == "float":
             w(f'extern "C" float __xef_sample_compare_{cls}(__xef_tex_h, __xef_smp_h, int, {ccoord}{params_layer}, float{off}, bool, float, float, int) XEF_AIR("air.sample_compare_{kind}.f32");')
+            gd = evt("float", cdim)
+            w(f'extern "C" float __xef_sample_compare_grad_{cls}(__xef_tex_h, __xef_smp_h, int, {ccoord}{params_layer}, float, {gd}, {gd}, float{off}, int) XEF_AIR("air.sample_compare_{kind}_grad.f32");')
             w(f'extern "C" __xef_ev_t<float, 4> __xef_gather_compare_{cls}(__xef_tex_h, __xef_smp_h, int, {ccoord}{params_layer}, float{off}, int) XEF_AIR("air.gather_compare_{kind}.f32");')
             w(f'extern "C" __xef_ev_t<float, 4> __xef_gather_{cls}(__xef_tex_h, __xef_smp_h, int, {ccoord}{params_layer}{off}, int) XEF_AIR("air.gather_{kind}.v4f32");')
         rcoord = evt("uint", rdim)
@@ -993,11 +999,16 @@ for cls, (kind, cdim, rdim, arr, ms, cube, depth, mips, odim) in TEX_KINDS.items
             if odim:
                 w(f"  XEF_INL {resT} sample(sampler s, {cT} c{lay}, {gtype} g, {offT} offset) const {{ return {wrap(f'__xef_sample_grad_{cls}_T__(h, s.get(), {dm}{cv('c')}{layv}, g.dx.v, g.dy.v, 0.0f{offargs(chr(111)+chr(102)+chr(102)+chr(115)+chr(101)+chr(116))}, 0)')}; }}")
         if depth:
-            for (extra_sig, mode, a1) in [("", "false", "0.0f"), (", level l", "true", "l.lod")]:
+            for (extra_sig, mode, a1) in [("", "false", "0.0f"), (", level l", "true", "l.lod"), (", bias b", "false", "b.value")]:
                 for with_off in ([False, True] if odim else [False]):
                     off_param = f", {offT} offset" if (odim and with_off) else ""
                     o = "offset" if with_off else zero_off
                     w(f"  XEF_INL float sample_compare(sampler s, {cT} c{lay}, float ref{extra_sig}{off_param}) const {{ return __xef_sample_compare_{cls}(h, s.get(), 1, {cv('c')}{layv}, ref{offargs(o)}, {mode}, {a1}, 0.0f, 0); }}")
+            if gtype and not ms:
+                for with_off in ([False, True] if odim else [False]):
+                    off_param = f", {offT} offset" if (odim and with_off) else ""
+                    o = "offset" if with_off else zero_off
+                    w(f"  XEF_INL float sample_compare(sampler s, {cT} c{lay}, float ref, {gtype} g{off_param}) const {{ return __xef_sample_compare_grad_{cls}(h, s.get(), 1, {cv('c')}{layv}, ref, g.dx.v, g.dy.v, 0.0f{offargs(o)}, 0); }}")
             w(f"  XEF_INL vec<T, 4> gather(sampler s, {cT} c{lay}" + (f", {offT} offset = {offT}(0)" if odim else "") + f") const {{ return vec<T, 4>::from(__xef_gather_{cls}(h, s.get(), 1, {cv('c')}{layv}{offargs('offset')}, 0)); }}")
             w(f"  XEF_INL vec<T, 4> gather_compare(sampler s, {cT} c{lay}, float ref" + (f", {offT} offset = {offT}(0)" if odim else "") + f") const {{ return vec<T, 4>::from(__xef_gather_compare_{cls}(h, s.get(), 1, {cv('c')}{layv}, ref{offargs('offset')}, 0)); }}")
         elif cdim >= 2:

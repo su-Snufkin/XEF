@@ -3444,6 +3444,10 @@ extern "C" bool __xef_quad_all(bool) XEF_AIR("air.quad_all");
 extern "C" bool __xef_quad_any(bool) XEF_AIR("air.quad_any");
 XEF_INL bool quad_all(bool b) { return __xef_quad_all(b); }
 XEF_INL bool quad_any(bool b) { return __xef_quad_any(b); }
+extern "C" __xef_ev_t<float, 2> __xef_get_sample_position(uint, int) XEF_AIR("air.get_sample_position.v2f32");
+extern "C" uint __xef_get_num_samples() XEF_AIR("air.get_num_samples");
+XEF_INL float2 get_sample_position(uint i) { return float2::from(__xef_get_sample_position(i, 0)); }
+XEF_INL uint get_num_samples() { return __xef_get_num_samples(); }
 extern "C" bool __xef_simd_is_helper_thread() XEF_AIR("air.simd_is_helper_thread");
 XEF_INL bool simd_is_helper_thread() { return __xef_simd_is_helper_thread(); }
 struct simd_vote {
@@ -4769,6 +4773,7 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
 extern "C" float __xef_sample_depth2d_float(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, bool, __xef_ev_t<int, 2>, bool, float, float, int) XEF_AIR("air.sample_depth_2d.f32");
 extern "C" float __xef_sample_grad_depth2d_float(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.sample_depth_2d_grad.f32");
 extern "C" float __xef_sample_compare_depth2d(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, bool, float, float, int) XEF_AIR("air.sample_compare_depth_2d.f32");
+extern "C" float __xef_sample_compare_grad_depth2d(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, float, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.sample_compare_depth_2d_grad.f32");
 extern "C" __xef_ev_t<float, 4> __xef_gather_compare_depth2d(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.gather_compare_depth_2d.f32");
 extern "C" __xef_ev_t<float, 4> __xef_gather_depth2d(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.gather_depth_2d.v4f32");
 extern "C" float __xef_read_depth2d_float(__xef_tex_h, __xef_ev_t<uint, 2>, uint, int) XEF_AIR("air.read_depth_2d.f32");
@@ -4804,6 +4809,10 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL float sample_compare(sampler s, float2 c, float ref, int2 offset) const { return __xef_sample_compare_depth2d(h, s.get(), 1, (c).v, ref, true, (offset).v, false, 0.0f, 0.0f, 0); }
   XEF_INL float sample_compare(sampler s, float2 c, float ref, level l) const { return __xef_sample_compare_depth2d(h, s.get(), 1, (c).v, ref, true, (int2(0)).v, true, l.lod, 0.0f, 0); }
   XEF_INL float sample_compare(sampler s, float2 c, float ref, level l, int2 offset) const { return __xef_sample_compare_depth2d(h, s.get(), 1, (c).v, ref, true, (offset).v, true, l.lod, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float2 c, float ref, bias b) const { return __xef_sample_compare_depth2d(h, s.get(), 1, (c).v, ref, true, (int2(0)).v, false, b.value, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float2 c, float ref, bias b, int2 offset) const { return __xef_sample_compare_depth2d(h, s.get(), 1, (c).v, ref, true, (offset).v, false, b.value, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float2 c, float ref, gradient2d g) const { return __xef_sample_compare_grad_depth2d(h, s.get(), 1, (c).v, ref, g.dx.v, g.dy.v, 0.0f, true, (int2(0)).v, 0); }
+  XEF_INL float sample_compare(sampler s, float2 c, float ref, gradient2d g, int2 offset) const { return __xef_sample_compare_grad_depth2d(h, s.get(), 1, (c).v, ref, g.dx.v, g.dy.v, 0.0f, true, (offset).v, 0); }
   XEF_INL vec<T, 4> gather(sampler s, float2 c, int2 offset = int2(0)) const { return vec<T, 4>::from(__xef_gather_depth2d(h, s.get(), 1, (c).v, true, (offset).v, 0)); }
   XEF_INL vec<T, 4> gather_compare(sampler s, float2 c, float ref, int2 offset = int2(0)) const { return vec<T, 4>::from(__xef_gather_compare_depth2d(h, s.get(), 1, (c).v, ref, true, (offset).v, 0)); }
   XEF_INL float calculate_clamped_lod(sampler s, float2 c) const { return __xef_lod_cl_depth2d(h, s.get(), (c).v, 0); }
@@ -4818,6 +4827,7 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
 extern "C" float __xef_sample_depth2d_array_float(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, uint, bool, __xef_ev_t<int, 2>, bool, float, float, int) XEF_AIR("air.sample_depth_2d_array.f32");
 extern "C" float __xef_sample_grad_depth2d_array_float(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, uint, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.sample_depth_2d_array_grad.f32");
 extern "C" float __xef_sample_compare_depth2d_array(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, uint, float, bool, __xef_ev_t<int, 2>, bool, float, float, int) XEF_AIR("air.sample_compare_depth_2d_array.f32");
+extern "C" float __xef_sample_compare_grad_depth2d_array(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, uint, float, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.sample_compare_depth_2d_array_grad.f32");
 extern "C" __xef_ev_t<float, 4> __xef_gather_compare_depth2d_array(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, uint, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.gather_compare_depth_2d_array.f32");
 extern "C" __xef_ev_t<float, 4> __xef_gather_depth2d_array(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 2>, uint, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.gather_depth_2d_array.v4f32");
 extern "C" float __xef_read_depth2d_array_float(__xef_tex_h, __xef_ev_t<uint, 2>, uint, uint, int) XEF_AIR("air.read_depth_2d_array.f32");
@@ -4853,6 +4863,10 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL float sample_compare(sampler s, float2 c, uint array, float ref, int2 offset) const { return __xef_sample_compare_depth2d_array(h, s.get(), 1, (c).v, array, ref, true, (offset).v, false, 0.0f, 0.0f, 0); }
   XEF_INL float sample_compare(sampler s, float2 c, uint array, float ref, level l) const { return __xef_sample_compare_depth2d_array(h, s.get(), 1, (c).v, array, ref, true, (int2(0)).v, true, l.lod, 0.0f, 0); }
   XEF_INL float sample_compare(sampler s, float2 c, uint array, float ref, level l, int2 offset) const { return __xef_sample_compare_depth2d_array(h, s.get(), 1, (c).v, array, ref, true, (offset).v, true, l.lod, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float2 c, uint array, float ref, bias b) const { return __xef_sample_compare_depth2d_array(h, s.get(), 1, (c).v, array, ref, true, (int2(0)).v, false, b.value, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float2 c, uint array, float ref, bias b, int2 offset) const { return __xef_sample_compare_depth2d_array(h, s.get(), 1, (c).v, array, ref, true, (offset).v, false, b.value, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float2 c, uint array, float ref, gradient2d g) const { return __xef_sample_compare_grad_depth2d_array(h, s.get(), 1, (c).v, array, ref, g.dx.v, g.dy.v, 0.0f, true, (int2(0)).v, 0); }
+  XEF_INL float sample_compare(sampler s, float2 c, uint array, float ref, gradient2d g, int2 offset) const { return __xef_sample_compare_grad_depth2d_array(h, s.get(), 1, (c).v, array, ref, g.dx.v, g.dy.v, 0.0f, true, (offset).v, 0); }
   XEF_INL vec<T, 4> gather(sampler s, float2 c, uint array, int2 offset = int2(0)) const { return vec<T, 4>::from(__xef_gather_depth2d_array(h, s.get(), 1, (c).v, array, true, (offset).v, 0)); }
   XEF_INL vec<T, 4> gather_compare(sampler s, float2 c, uint array, float ref, int2 offset = int2(0)) const { return vec<T, 4>::from(__xef_gather_compare_depth2d_array(h, s.get(), 1, (c).v, array, ref, true, (offset).v, 0)); }
   XEF_INL float calculate_clamped_lod(sampler s, float2 c) const { return __xef_lod_cl_depth2d_array(h, s.get(), (c).v, 0); }
@@ -4868,6 +4882,7 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
 extern "C" float __xef_sample_depthcube_float(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, bool, float, float, int) XEF_AIR("air.sample_depth_cube.f32");
 extern "C" float __xef_sample_grad_depthcube_float(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, float, int) XEF_AIR("air.sample_depth_cube_grad.f32");
 extern "C" float __xef_sample_compare_depthcube(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, float, bool, float, float, int) XEF_AIR("air.sample_compare_depth_cube.f32");
+extern "C" float __xef_sample_compare_grad_depthcube(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, float, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, float, int) XEF_AIR("air.sample_compare_depth_cube_grad.f32");
 extern "C" __xef_ev_t<float, 4> __xef_gather_compare_depthcube(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, float, int) XEF_AIR("air.gather_compare_depth_cube.f32");
 extern "C" __xef_ev_t<float, 4> __xef_gather_depthcube(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, int) XEF_AIR("air.gather_depth_cube.v4f32");
 extern "C" float __xef_read_depthcube_float(__xef_tex_h, __xef_ev_t<uint, 2>, uint, uint, int) XEF_AIR("air.read_depth_cube.f32");
@@ -4895,6 +4910,8 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL T sample(sampler s, float3 c, gradientcube g) const { return (T)(__xef_sample_grad_depthcube_sel<T>::call(h, s.get(), 1, (c).v, g.dx.v, g.dy.v, 0.0f, 0)); }
   XEF_INL float sample_compare(sampler s, float3 c, float ref) const { return __xef_sample_compare_depthcube(h, s.get(), 1, (c).v, ref, false, 0.0f, 0.0f, 0); }
   XEF_INL float sample_compare(sampler s, float3 c, float ref, level l) const { return __xef_sample_compare_depthcube(h, s.get(), 1, (c).v, ref, true, l.lod, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float3 c, float ref, bias b) const { return __xef_sample_compare_depthcube(h, s.get(), 1, (c).v, ref, false, b.value, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float3 c, float ref, gradientcube g) const { return __xef_sample_compare_grad_depthcube(h, s.get(), 1, (c).v, ref, g.dx.v, g.dy.v, 0.0f, 0); }
   XEF_INL vec<T, 4> gather(sampler s, float3 c) const { return vec<T, 4>::from(__xef_gather_depthcube(h, s.get(), 1, (c).v, 0)); }
   XEF_INL vec<T, 4> gather_compare(sampler s, float3 c, float ref) const { return vec<T, 4>::from(__xef_gather_compare_depthcube(h, s.get(), 1, (c).v, ref, 0)); }
   XEF_INL float calculate_clamped_lod(sampler s, float3 c) const { return __xef_lod_cl_depthcube(h, s.get(), (c).v, 0); }
@@ -4909,6 +4926,7 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
 extern "C" float __xef_sample_depthcube_array_float(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, uint, bool, float, float, int) XEF_AIR("air.sample_depth_cube_array.f32");
 extern "C" float __xef_sample_grad_depthcube_array_float(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, uint, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, float, int) XEF_AIR("air.sample_depth_cube_array_grad.f32");
 extern "C" float __xef_sample_compare_depthcube_array(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, uint, float, bool, float, float, int) XEF_AIR("air.sample_compare_depth_cube_array.f32");
+extern "C" float __xef_sample_compare_grad_depthcube_array(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, uint, float, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, float, int) XEF_AIR("air.sample_compare_depth_cube_array_grad.f32");
 extern "C" __xef_ev_t<float, 4> __xef_gather_compare_depthcube_array(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, uint, float, int) XEF_AIR("air.gather_compare_depth_cube_array.f32");
 extern "C" __xef_ev_t<float, 4> __xef_gather_depthcube_array(__xef_tex_h, __xef_smp_h, int, __xef_ev_t<float, 3>, uint, int) XEF_AIR("air.gather_depth_cube_array.v4f32");
 extern "C" float __xef_read_depthcube_array_float(__xef_tex_h, __xef_ev_t<uint, 2>, uint, uint, uint, int) XEF_AIR("air.read_depth_cube_array.f32");
@@ -4936,6 +4954,8 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL T sample(sampler s, float3 c, uint array, gradientcube g) const { return (T)(__xef_sample_grad_depthcube_array_sel<T>::call(h, s.get(), 1, (c).v, array, g.dx.v, g.dy.v, 0.0f, 0)); }
   XEF_INL float sample_compare(sampler s, float3 c, uint array, float ref) const { return __xef_sample_compare_depthcube_array(h, s.get(), 1, (c).v, array, ref, false, 0.0f, 0.0f, 0); }
   XEF_INL float sample_compare(sampler s, float3 c, uint array, float ref, level l) const { return __xef_sample_compare_depthcube_array(h, s.get(), 1, (c).v, array, ref, true, l.lod, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float3 c, uint array, float ref, bias b) const { return __xef_sample_compare_depthcube_array(h, s.get(), 1, (c).v, array, ref, false, b.value, 0.0f, 0); }
+  XEF_INL float sample_compare(sampler s, float3 c, uint array, float ref, gradientcube g) const { return __xef_sample_compare_grad_depthcube_array(h, s.get(), 1, (c).v, array, ref, g.dx.v, g.dy.v, 0.0f, 0); }
   XEF_INL vec<T, 4> gather(sampler s, float3 c, uint array) const { return vec<T, 4>::from(__xef_gather_depthcube_array(h, s.get(), 1, (c).v, array, 0)); }
   XEF_INL vec<T, 4> gather_compare(sampler s, float3 c, uint array, float ref) const { return vec<T, 4>::from(__xef_gather_compare_depthcube_array(h, s.get(), 1, (c).v, array, ref, 0)); }
   XEF_INL float calculate_clamped_lod(sampler s, float3 c) const { return __xef_lod_cl_depthcube_array(h, s.get(), (c).v, 0); }

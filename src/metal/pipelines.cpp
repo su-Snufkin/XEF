@@ -84,6 +84,11 @@ VkPipeline render_pipeline_for(RenderPipeline* p, uint32_t cls) {
     VkPipelineShaderStageCreateInfo stages[2] = {stage_info(VK_SHADER_STAGE_VERTEX_BIT, p->vs.mod)};
     uint32_t nstages = 1;
     if (p->has_fs) stages[nstages++] = stage_info(VK_SHADER_STAGE_FRAGMENT_BIT, p->fs.mod);
+    // specialization constant 0: raster sample count (get_num_samples / get_sample_position)
+    uint32_t spec_samples = std::max(1u, d.sample_count);
+    VkSpecializationMapEntry spec_entry{0, 0, 4};
+    VkSpecializationInfo spec{1, &spec_entry, 4, &spec_samples};
+    for (uint32_t i = 0; i < nstages; i++) stages[i].pSpecializationInfo = &spec;
 
     // vertex input: one Vulkan binding per Metal buffer index used by the vertex descriptor
     std::vector<VkVertexInputBindingDescription> bindings;
