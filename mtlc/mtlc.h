@@ -66,6 +66,7 @@ bool compile(const CompileRequest& req, xef::mtlabi::CompileResult& res);
 // helpers
 llvm::Function* get_placeholder(llvm::Module& m, const std::string& base, llvm::Type* ret, llvm::ArrayRef<llvm::Type*> params);
 std::string type_tag(llvm::Type* t);
+uint64_t visible_function_id(llvm::StringRef name);
 bool run_cleanup(llvm::Function& f, bool full);
 
 // SPIR-V builtin ids used by placeholder calls

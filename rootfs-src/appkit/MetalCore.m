@@ -465,6 +465,17 @@ static NSUInteger xef_data_type_size(MTLDataType t) {
   uint32_t _id;
 }
 @end
+@interface XEFMetalFunctionHandle : NSObject
+- (instancetype)initWithName:(NSString *)name functionType:(MTLFunctionType)type device:(id<MTLDevice>)device;
+@end
+@interface XEFMetalVisibleFunctionTable : NSObject
+- (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLVisibleFunctionTableDescriptor *)descriptor;
+- (id<MTLBuffer>)_xefBuffer;
+@end
+static id xef_fn_handle(id<MTLFunction> f) {
+  return f ? [[[XEFMetalFunctionHandle alloc] initWithName:[f name] functionType:MTLFunctionTypeVisible device:[f device]] autorelease] : nil;
+}
+
 @implementation XEFMetalRenderPipelineState
 - (id<MTLDevice>)device { return xef_shared_device(); }
 - (NSUInteger)maxTotalThreadsPerThreadgroup { return 1024; }
@@ -479,6 +490,10 @@ static NSUInteger xef_data_type_size(MTLDataType t) {
 - (NSUInteger)maxTotalThreadgroupsPerMeshGrid { return 0; }
 - (NSUInteger)imageblockMemoryLengthForDimensions:(MTLSize)d { return 0; }
 - (void)dealloc { if (_id) xef_mtl_pipeline_destroy(_id); [super dealloc]; }
+- (id<MTLFunctionHandle>)functionHandleWithFunction:(id<MTLFunction>)f stage:(MTLRenderStages)st { return xef_fn_handle(f); }
+- (id<MTLVisibleFunctionTable>)newVisibleFunctionTableWithDescriptor:(MTLVisibleFunctionTableDescriptor *)d stage:(MTLRenderStages)st {
+  return (id<MTLVisibleFunctionTable>)[[XEFMetalVisibleFunctionTable alloc] initWithDevice:xef_shared_device() descriptor:d];
+}
 @end
 
 @interface XEFMetalComputePipelineState : XEFMetalObject <MTLComputePipelineState> {
@@ -496,6 +511,11 @@ static NSUInteger xef_data_type_size(MTLDataType t) {
 - (BOOL)supportIndirectCommandBuffers { return YES; }   /* CPU-encoded ICBs replay through the encoder */
 - (MTLResourceID)gpuResourceID { MTLResourceID r; r._impl = _id; return r; }
 - (void)dealloc { if (_id) xef_mtl_pipeline_destroy(_id); [super dealloc]; }
+- (id<MTLFunctionHandle>)functionHandleWithFunction:(id<MTLFunction>)f { return xef_fn_handle(f); }
+- (id<MTLVisibleFunctionTable>)newVisibleFunctionTableWithDescriptor:(MTLVisibleFunctionTableDescriptor *)d {
+  return (id<MTLVisibleFunctionTable>)[[XEFMetalVisibleFunctionTable alloc] initWithDevice:xef_shared_device() descriptor:d];
+}
+- (id<MTLComputePipelineState>)newComputePipelineStateWithAdditionalBinaryFunctions:(NSArray *)fns error:(NSError **)error { return [self retain]; }
 @end
 
 /* ------------------------------------------------------------------- events / fences */
@@ -850,6 +870,12 @@ XEF_STAGE_BINDINGS(Fragment, XEF_MTL_STAGE_FRAGMENT)
   const uint32_t *r = (const uint32_t *)((const uint8_t *)[rb contents] + off);   /* MTLIndirectCommandBufferExecutionRange */
   [self executeCommandsInBuffer:icb withRange:NSMakeRange(r[0], r[1])];
 }
+- (void)setVertexVisibleFunctionTable:(id<MTLVisibleFunctionTable>)t atBufferIndex:(NSUInteger)i {
+  [self setVertexBuffer:[(XEFMetalVisibleFunctionTable *)t _xefBuffer] offset:0 atIndex:i];
+}
+- (void)setFragmentVisibleFunctionTable:(id<MTLVisibleFunctionTable>)t atBufferIndex:(NSUInteger)i {
+  [self setFragmentBuffer:[(XEFMetalVisibleFunctionTable *)t _xefBuffer] offset:0 atIndex:i];
+}
 @end
 
 /* ---- compute ---- */
@@ -905,6 +931,12 @@ XEF_STAGE_BINDINGS(, XEF_MTL_STAGE_KERNEL)
 - (void)executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)icb indirectBuffer:(id<MTLBuffer>)rb indirectBufferOffset:(NSUInteger)off {
   const uint32_t *r = (const uint32_t *)((const uint8_t *)[rb contents] + off);
   [self executeCommandsInBuffer:icb withRange:NSMakeRange(r[0], r[1])];
+}
+- (void)setVisibleFunctionTable:(id<MTLVisibleFunctionTable>)t atBufferIndex:(NSUInteger)i {
+  [self setBuffer:[(XEFMetalVisibleFunctionTable *)t _xefBuffer] offset:0 atIndex:i];
+}
+- (void)setVisibleFunctionTables:(const id<MTLVisibleFunctionTable> *)t withBufferRange:(NSRange)r {
+  for (NSUInteger k = 0; k < r.length; k++) [self setVisibleFunctionTable:t[k] atBufferIndex:r.location + k];
 }
 @end
 
@@ -1404,8 +1436,8 @@ static void xef_linked(NSArray *lfs, NSArray *libs, NSMutableData *refs, NSMutab
 - (BOOL)areProgrammableSamplePositionsSupported { return NO; }
 - (NSUInteger)maxBufferLength { return (NSUInteger)_info.max_buffer_length; }
 - (BOOL)supportsRaytracing { return NO; }
-- (BOOL)supportsFunctionPointers { return NO; }
-- (BOOL)supportsFunctionPointersFromRender { return NO; }
+- (BOOL)supportsFunctionPointers { return YES; }   /* switch over the pipeline's linked functions */
+- (BOOL)supportsFunctionPointersFromRender { return YES; }
 - (BOOL)supportsRaytracingFromRender { return NO; }
 - (BOOL)supportsPrimitiveMotionBlur { return NO; }
 - (BOOL)shouldMaximizeConcurrentCompilation { return NO; }

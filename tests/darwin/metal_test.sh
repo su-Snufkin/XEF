@@ -64,7 +64,7 @@ if [ -f tests/darwin/heap_event_test ]; then
 fi
 
 # small API tests whose expectations were checked on a real Mac
-for t in mip_sample_test tex_atomic_test sample_pos_test linked_fn_test; do
+for t in mip_sample_test tex_atomic_test sample_pos_test linked_fn_test fn_table_test; do
   [ -f tests/darwin/$t ] || continue
   OUT8=$(timeout 15 $X -L darwin-rootfs tests/darwin/$t 2>&1)
   if ! echo "$OUT8" | grep -q "PASS $t"; then echo "FAIL metal_test ($t)"; echo "$OUT8"; exit 1; fi

@@ -36,12 +36,21 @@ std::string disassemble(const std::vector<uint32_t>& words) {
 // calls to `X.MTL_VISIBLE_FN_REF` reach [[visible]] functions supplied at pipeline creation: link their
 // modules in (only what is referenced) and call the definitions directly
 static bool link_visible_functions(Module& m, const std::vector<const StageSource*>& linked, LLVMContext& ctx, std::string& err) {
+    // function tables can reach any linked function: then everything is linked in
+    bool tables = false;
+    for (Function& f : m)
+        if (f.getName().starts_with("air.get_function_pointer_") && !f.use_empty()) tables = true;
     for (const StageSource* l : linked) {
+        if (Function* own = m.getFunction(l->function); own && !own->isDeclaration()) {   // same library: already here
+            own->addFnAttr("xef-visible");
+            continue;
+        }
         Function* ref = m.getFunction(l->function + ".MTL_VISIBLE_FN_REF");
         if (ref && m.getFunction(l->function)) continue;
         if (!ref) {   // dynamic libraries: an external declaration with the same name
             ref = m.getFunction(l->function);
-            if (!ref || !ref->isDeclaration()) continue;
+            if (ref && !ref->isDeclaration()) continue;
+            if (!ref && !tables) continue;
         }
         auto buf = MemoryBuffer::getMemBuffer(StringRef((const char*)l->bitcode.data(), l->bitcode.size()), "linked", false);
         auto lm = parseBitcodeFile(buf->getMemBufferRef(), ctx);
@@ -55,8 +64,13 @@ static bool link_visible_functions(Module& m, const std::vector<const StageSourc
             if (NamedMDNode* nm = mod->getNamedMetadata(md)) nm->eraseFromParent();
         mod->setDataLayout(m.getDataLayout());
         mod->setTargetTriple(m.getTargetTriple());
-        if (ref->getName() != l->function) ref->setName(l->function);   // the declaration now names the definition being linked in
-        if (Linker::linkModules(m, std::move(mod), Linker::Flags::LinkOnlyNeeded)) { err = "cannot link " + l->function; return false; }
+        if (ref && ref->getName() != l->function) ref->setName(l->function);   // the declaration now names the definition being linked in
+        def->addFnAttr("xef-visible");
+        if (Linker::linkModules(m, std::move(mod), ref ? Linker::Flags::LinkOnlyNeeded : Linker::Flags::None)) {
+            err = "cannot link " + l->function;
+            return false;
+        }
+        if (Function* f = m.getFunction(l->function)) f->addFnAttr("xef-visible");
     }
     return true;
 }

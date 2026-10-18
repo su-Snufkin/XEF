@@ -766,6 +766,15 @@ extern "C" bool __xef_quad_all(bool) XEF_AIR("air.quad_all");
 extern "C" bool __xef_quad_any(bool) XEF_AIR("air.quad_any");
 XEF_INL bool quad_all(bool b) { return __xef_quad_all(b); }
 XEF_INL bool quad_any(bool b) { return __xef_quad_any(b); }
+// function tables: a buffer of function ids; t[i] yields a callable function pointer
+extern "C" void* __xef_get_fnptr(const void*, uint) XEF_AIR("air.get_function_pointer_visible_function_table");
+template <class F> struct visible_function_table;
+template <class R, class... A> struct visible_function_table<R(A...)> {
+  const void* __h;
+  XEF_INL visible_function_table(const void* p = nullptr) : __h(p) {}
+  XEF_INL R (*operator[](uint i) const)(A...) { return (R (*)(A...))__xef_get_fnptr(__h, i); }
+  XEF_INL bool empty() const { return __h == nullptr; }
+};
 extern "C" __xef_ev_t<float, 2> __xef_get_sample_position(uint, int) XEF_AIR("air.get_sample_position.v2f32");
 extern "C" uint __xef_get_num_samples() XEF_AIR("air.get_num_samples");
 XEF_INL float2 get_sample_position(uint i) { return float2::from(__xef_get_sample_position(i, 0)); }

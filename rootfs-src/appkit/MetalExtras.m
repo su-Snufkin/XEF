@@ -501,7 +501,13 @@
 - (NSString *)name { return _name; }
 - (MTLFunctionType)functionType { return _functionType; }
 - (id<MTLDevice>)device { return _device; }
-- (MTLResourceID)gpuResourceID { MTLResourceID rid = { (uint64_t)(uintptr_t)self }; return rid; }
+/* same value xef-mtlc compiles into function-pointer dispatch: FNV-1a of the name, top bit set */
+- (MTLResourceID)gpuResourceID {
+  uint64_t h = 0xcbf29ce484222325ull;
+  for (const char *c = [_name UTF8String]; c && *c; c++) { h ^= (uint8_t)*c; h *= 0x100000001b3ull; }
+  MTLResourceID rid = { h | (1ull << 63) };
+  return rid;
+}
 - (void)dealloc {
   [_name release];
   [super dealloc];
@@ -524,6 +530,7 @@
   NSString *_label;
   NSUInteger _functionCount;
   NSMutableArray<id<MTLFunctionHandle>> *_functions;
+  id<MTLBuffer> _buffer;   /* one 64-bit function id per entry, bound like a buffer */
 }
 - (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(MTLVisibleFunctionTableDescriptor *)descriptor;
 @end
@@ -537,6 +544,7 @@
     for (NSUInteger i = 0; i < _functionCount; i++) {
       [_functions addObject:(id)[NSNull null]];
     }
+    _buffer = [device newBufferWithLength:MAX(_functionCount, (NSUInteger)1) * 8 options:MTLResourceStorageModeShared];
   }
   return self;
 }
@@ -548,6 +556,7 @@
 - (void)setFunction:(id<MTLFunctionHandle>)function atIndex:(NSUInteger)index {
   if (index < _functionCount) {
     [_functions replaceObjectAtIndex:index withObject:(function ? (id)function : (id)[NSNull null])];
+    ((uint64_t *)[_buffer contents])[index] = function ? [function gpuResourceID]._impl : 0;
   }
 }
 - (void)setFunctions:(const id<MTLFunctionHandle> *)functions withRange:(NSRange)range {
@@ -564,9 +573,11 @@
 - (BOOL)isAliasable { return NO; }
 - (id<MTLHeap>)heap { return nil; }
 - (NSUInteger)heapOffset { return 0; }
+- (id<MTLBuffer>)_xefBuffer { return _buffer; }
 - (void)dealloc {
   [_label release];
   [_functions release];
+  [_buffer release];
   [super dealloc];
 }
 @end

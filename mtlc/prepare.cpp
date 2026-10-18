@@ -25,6 +25,68 @@ namespace mtlc {
 using namespace llvm;
 using namespace xef::mtlabi;
 
+// function ids (function handles, visible function table entries): FNV-1a of the name with the top bit set;
+// the guest computes the same value for MTLFunctionHandle.gpuResourceID
+uint64_t visible_function_id(StringRef name) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (char ch : name) { h ^= (uint8_t)ch; h *= 0x100000001b3ull; }
+    return h | (1ull << 63);
+}
+
+// table loads become 64-bit id loads; indirect calls become a switch over the linked visible functions
+// with the same signature (each case is a direct call, inlined later)
+static void resolve_function_pointers(Module& m) {
+    std::vector<CallInst*> loads, calls;
+    for (Function& f : m)
+        for (BasicBlock& b : f)
+            for (Instruction& i : b)
+                if (auto* ci = dyn_cast<CallInst>(&i)) {
+                    Function* callee = ci->getCalledFunction();
+                    if (callee && callee->getName().starts_with("air.get_function_pointer_")) loads.push_back(ci);
+                    else if (!callee && !ci->isInlineAsm()) calls.push_back(ci);
+                }
+    LLVMContext& ctx = m.getContext();
+    for (CallInst* ci : loads) {
+        IRBuilder<> b(ci);
+        Value* tbl = ci->getArgOperand(0);
+        Value* idx = b.CreateZExtOrTrunc(ci->getArgOperand(1), b.getInt64Ty());
+        Value* p = b.CreateGEP(b.getInt64Ty(), tbl, idx);
+        Value* id = b.CreateAlignedLoad(b.getInt64Ty(), p, Align(8));
+        ci->replaceAllUsesWith(b.CreateIntToPtr(id, ci->getType()));
+        ci->eraseFromParent();
+    }
+    for (CallInst* ci : calls) {
+        FunctionType* ft = ci->getFunctionType();
+        std::vector<Function*> cands;
+        for (Function& f : m)
+            if (!f.isDeclaration() && f.hasFnAttribute("xef-visible") && f.getFunctionType() == ft) cands.push_back(&f);
+        BasicBlock* head = ci->getParent();
+        BasicBlock* tail = head->splitBasicBlock(ci->getIterator(), "fp.join");
+        head->getTerminator()->eraseFromParent();
+        IRBuilder<> b(head);
+        Value* id = b.CreatePtrToInt(ci->getCalledOperand(), b.getInt64Ty());
+        BasicBlock* none = BasicBlock::Create(ctx, "fp.none", head->getParent(), tail);
+        BranchInst::Create(tail, none);
+        SwitchInst* sw = b.CreateSwitch(id, none, (unsigned)cands.size());
+        PHINode* phi = nullptr;
+        if (!ci->getType()->isVoidTy()) {
+            phi = PHINode::Create(ci->getType(), (unsigned)cands.size() + 1, "fp.ret", tail->begin());
+            phi->addIncoming(PoisonValue::get(ci->getType()), none);
+        }
+        std::vector<Value*> args(ci->arg_begin(), ci->arg_end());
+        for (Function* f : cands) {
+            BasicBlock* bb = BasicBlock::Create(ctx, "fp." + f->getName(), head->getParent(), tail);
+            IRBuilder<> cb(bb);
+            CallInst* r = cb.CreateCall(f, args);
+            cb.CreateBr(tail);
+            sw->addCase(ConstantInt::get(b.getInt64Ty(), visible_function_id(f->getName())), bb);
+            if (phi) phi->addIncoming(r, bb);
+        }
+        if (phi) ci->replaceAllUsesWith(phi);
+        ci->eraseFromParent();
+    }
+}
+
 std::string type_tag(Type* t) {
     if (t->isVoidTy()) return "void";
     if (t->isHalfTy()) return "f16";
@@ -348,6 +410,10 @@ static Value* make_arg(WrapperCtx& c, const AirElem& e, Type* t) {
         }
         return b.CreateAddrSpaceCast(arr, t);
     }
+    if (k == "air.visible_function_table" || k == "air.intersection_function_table") {
+        if (e.location < 0) return PoisonValue::get(t);
+        return as_ptr(c.load_table(BIND_BUFFER, (uint16_t)e.location));
+    }
     if (k == "air.buffer" || k == "air.indirect_buffer") {
         if (e.location < 0) return PoisonValue::get(t);
         return as_ptr(c.load_table(BIND_BUFFER, (uint16_t)e.location));
@@ -617,6 +683,7 @@ bool prepare_stage(Module& m, AirEntry& e, const CompileRequest& req, LinkInfo& 
     b.CreateRetVoid();
     if (e.stage == StageKind::Vertex) link.have_vertex = true;
 
+    resolve_function_pointers(m);
     // inline everything into xef.main
     for (Function& f : m) {
         if (f.isDeclaration() || &f == main) continue;
