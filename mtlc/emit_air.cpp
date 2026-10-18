@@ -406,7 +406,7 @@ bool Emitter::emit_air(CallInst* ci, StringRef name) {
     if (op.starts_with("sample") || op.starts_with("gather") || op.starts_with("read_") || op.starts_with("write_") ||
         op.starts_with("get_width") || op.starts_with("get_height") || op.starts_with("get_depth") ||
         op.starts_with("get_array_size") || op.starts_with("get_num_mip_levels") || op.starts_with("get_num_samples_") ||
-        op.starts_with("calculate_") || op.starts_with("fence_") || op.starts_with("atomic_fetch") || op.starts_with("atomic_exchange") ||
+        op.starts_with("calculate_") || op.starts_with("fence_") || (op.starts_with("atomic_") && op.contains("_explicit_texture")) ||
         op.starts_with("atomic_compare_exchange"))
         return emit_air_texture(ci, name);
     if (op.starts_with("simd") || op.starts_with("quad") || op == "is_uniform")
@@ -788,7 +788,7 @@ bool arrayed_of(uint32_t d) { return d == DIM_1D_ARRAY || d == DIM_2D_ARRAY || d
 bool ms_of(uint32_t d) { return d == DIM_2D_MS || d == DIM_2D_MS_ARRAY; }
 } // namespace
 
-Id Emitter::image_type_for(uint32_t dim, uint32_t comp, bool storage) {
+Id Emitter::image_type_for(uint32_t dim, uint32_t comp, bool storage, uint32_t format) {
     Id st = comp == COMP_FLOAT ? sb.t_float(32) : sb.t_int(32);
     if (comp == COMP_SINT) st = sb.type(spv::OpTypeInt, {32, 1});
     spv::Dim d = dim_of(dim);
@@ -797,7 +797,7 @@ Id Emitter::image_type_for(uint32_t dim, uint32_t comp, bool storage) {
     if (dim == DIM_CUBE_ARRAY) sb.cap(storage ? spv::CapabilityImageCubeArray : spv::CapabilitySampledCubeArray);
     if (storage && ms_of(dim)) sb.cap(spv::CapabilityStorageImageMultisample);
     if (storage && dim == DIM_2D_MS_ARRAY) sb.cap(spv::CapabilityImageMSArray);
-    return sb.t_image(st, d, 2, arrayed_of(dim) ? 1 : 0, ms_of(dim) ? 1 : 0, storage ? 2 : 1, spv::ImageFormatUnknown);
+    return sb.t_image(st, d, 2, arrayed_of(dim) ? 1 : 0, ms_of(dim) ? 1 : 0, storage ? 2 : 1, format ? (spv::ImageFormat)format : spv::ImageFormatUnknown);
 }
 
 Id Emitter::handle_index(Value* handle) {
@@ -824,11 +824,11 @@ static bool handle_uniform(Value* handle) {
     return ci && ci->getCalledFunction() && ci->getCalledFunction()->getName().starts_with("xef.pc.table");
 }
 
-Id Emitter::load_image(uint32_t dim, uint32_t comp, bool storage, Value* handle, Id& img_type) {
+Id Emitter::load_image(uint32_t dim, uint32_t comp, bool storage, Value* handle, Id& img_type, uint32_t format, Id* ptr_out) {
     uint32_t binding = storage ? storage_image_binding(dim, comp) : sampled_image_binding(dim, comp);
-    img_type = image_type_for(dim, comp, storage);
+    img_type = image_type_for(dim, comp, storage, format);
     Id var;
-    auto it = image_vars.find(binding);
+    auto it = image_vars.find(binding | format << 16);   /* typed views (atomics) alias the same binding */
     if (it != image_vars.end()) var = it->second;
     else {
         Id arr = sb.t_rtarray(img_type);
@@ -836,12 +836,22 @@ Id Emitter::load_image(uint32_t dim, uint32_t comp, bool storage, Value* handle,
         sb.decorate(var, spv::DecorationDescriptorSet, {0});
         sb.decorate(var, spv::DecorationBinding, {binding});
         sb.cap(spv::CapabilityRuntimeDescriptorArray);
-        image_vars[binding] = var;
+        image_vars[binding | format << 16] = var;
         interface_ids.push_back(var);
     }
     Id idx = handle_index(handle);
     bool nonuni = !handle_uniform(handle);
     Id p = emit_r(spv::OpAccessChain, sb.t_ptr(spv::StorageClassUniformConstant, img_type), {var, idx});
+    if (ptr_out) {
+        *ptr_out = p;
+        if (!handle_uniform(handle)) {
+            sb.cap(spv::CapabilityShaderNonUniform);
+            sb.cap(spv::CapabilityStorageImageArrayNonUniformIndexing);
+            sb.decorate(idx, spv::DecorationNonUniform);
+            sb.decorate(p, spv::DecorationNonUniform);
+        }
+        return 0;
+    }
     Id img = emit_r(spv::OpLoad, img_type, {p});
     if (nonuni) {
         sb.cap(spv::CapabilityShaderNonUniform);
@@ -876,8 +886,74 @@ Id Emitter::load_sampler(Value* handle, bool compare) {
     return s;
 }
 
+// atomic_<op>_explicit_<kind>.{s,u}.v4i32(tex, coord, [slice], <unused>, value | expected desired, ...):
+// one 32-bit texel through OpImageTexelPointer on an R32ui/R32i view of the storage-image binding
+bool Emitter::emit_texture_atomic(CallInst* ci, StringRef s) {
+    size_t e = s.find("_explicit_");
+    if (e == StringRef::npos) { fail("unsupported texture atomic air." + s.str()); return true; }
+    StringRef op = s.slice(7, e), rest = s.drop_front(e + 10);
+    const TexKind* tk = find_kind(rest);
+    if (!tk) { fail("unknown texture kind air." + s.str()); return true; }
+    bool sgn = s.contains(".s.");
+    uint32_t comp = sgn ? COMP_SINT : COMP_UINT;
+    Id it, p = 0;
+    load_image(tk->dim, comp, true, ci->getArgOperand(0), it, sgn ? spv::ImageFormatR32i : spv::ImageFormatR32ui, &p);
+    Type* i32 = Type::getInt32Ty(m.getContext());
+    Id u32 = t_u32(), st = sgn ? sb.type(spv::OpTypeInt, {32, 1}) : u32;
+    // coordinate (+ slice)
+    Value* cv = ci->getArgOperand(1);
+    unsigned cn = tk->coords + (tk->cube ? 1 : 0);
+    Id c = val(cv);
+    if (cv->getType()->getScalarSizeInBits() != 32) c = emit_r(spv::OpUConvert, ty(vlen(cv->getType()) == 1 ? (Type*)i32 : FixedVectorType::get(i32, vlen(cv->getType()))), {c});
+    unsigned k = 2;
+    if (tk->arrayed) {
+        Id layer = val(ci->getArgOperand(k++));
+        Words parts;
+        if (cn == 1) parts.push_back(c);
+        else for (unsigned q = 0; q < cn; q++) parts.push_back(emit_r(spv::OpCompositeExtract, u32, {c, q}));
+        parts.push_back(layer);
+        c = emit_r(spv::OpCompositeConstruct, sb.t_vec(u32, cn + 1), parts);
+    }
+    std::vector<Value*> vals;   // 4-component operands after the coordinates
+    for (; k < ci->arg_size(); k++) if (vlen(ci->getArgOperand(k)->getType()) == 4) vals.push_back(ci->getArgOperand(k));
+    if (vals.empty()) { fail("texture atomic without a value"); return true; }
+    auto x_of = [&](Value* v) {
+        Id x = emit_r(spv::OpCompositeExtract, u32, {val(v), 0});
+        return sgn ? emit_r(spv::OpBitcast, st, {x}) : x;
+    };
+    Id tp = emit_r(spv::OpImageTexelPointer, sb.t_ptr(spv::StorageClassImage, st), {p, c, c_u32(0)});
+    Id scope = c_u32(spv::ScopeDevice), sem = c_u32(0);
+    Id r;
+    if (op == "xefcmpxchg") {
+        if (vals.size() < 2) { fail("texture compare-exchange operands"); return true; }
+        r = emit_r(spv::OpAtomicCompareExchange, st, {tp, scope, sem, sem, x_of(vals[vals.size() - 1]), x_of(vals[vals.size() - 2])});
+    } else {
+        spv::Op o;
+        if (op == "fetch_add") o = spv::OpAtomicIAdd;
+        else if (op == "fetch_sub") o = spv::OpAtomicISub;
+        else if (op == "fetch_and") o = spv::OpAtomicAnd;
+        else if (op == "fetch_or") o = spv::OpAtomicOr;
+        else if (op == "fetch_xor") o = spv::OpAtomicXor;
+        else if (op == "fetch_min") o = sgn ? spv::OpAtomicSMin : spv::OpAtomicUMin;
+        else if (op == "fetch_max") o = sgn ? spv::OpAtomicSMax : spv::OpAtomicUMax;
+        else if (op == "exchange") o = spv::OpAtomicExchange;
+        else if (op == "load") { r = emit_r(spv::OpAtomicLoad, st, {tp, scope, sem}); goto done; }
+        else if (op == "store") { emit(spv::OpAtomicStore, {tp, scope, sem, x_of(vals.back())}); return true; }
+        else { fail("unsupported texture atomic air." + s.str()); return true; }
+        r = emit_r(o, st, {tp, scope, sem, x_of(vals.back())});
+    }
+done:
+    if (sgn) r = emit_r(spv::OpBitcast, u32, {r});
+    if (!ci->getType()->isVoidTy()) {
+        Id v4 = emit_r(spv::OpCompositeConstruct, sb.t_vec(u32, 4), {r, c_u32(0), c_u32(0), c_u32(0)});
+        result(ci, v4);
+    }
+    return true;
+}
+
 bool Emitter::emit_air_texture(CallInst* ci, StringRef name) {
     StringRef s = name.drop_front(4);   // after "air."
+    if (s.starts_with("atomic_")) return emit_texture_atomic(ci, s);
     // operation
     enum { SAMPLE, SAMPLE_CMP, GATHER, GATHER_CMP, READ, WRITE, QWIDTH, QHEIGHT, QDEPTH, QARRAY, QMIPS, QSAMPLES, LOD_CL, LOD_UNCL, FENCE, OTHER } kind = OTHER;
     struct { const char* p; int k; } ops[] = {
@@ -1019,6 +1095,7 @@ bool Emitter::emit_air_texture(CallInst* ci, StringRef name) {
         if (kind == WRITE) {
             Id v = convert_numeric_ids(val(value), value->getType(), v4t, comp == COMP_SINT);
             if (vlen(value->getType()) == 1) v = splat(v4t, convert_numeric_ids(val(value), value->getType(), v4t->getScalarType(), comp == COMP_SINT));
+            if (comp == COMP_SINT) v = emit_r(spv::OpBitcast, sb.t_vec(sb.type(spv::OpTypeInt, {32, 1}), 4), {v});   // texel type = sampled type
             sb.cap(spv::CapabilityStorageImageWriteWithoutFormat);
             emit(spv::OpImageWrite, {img, coord_full, v});
             return true;

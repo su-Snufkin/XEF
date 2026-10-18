@@ -32,6 +32,8 @@ struct GInfo {
 };
 
 // decoded constexpr sampler (see ConstSampler in mtl_shader_abi.h)
+static unsigned vlen_of(Type* t) { auto* v = dyn_cast<FixedVectorType>(t); return v ? v->getNumElements() : 1; }
+
 static ConstSampler decode_sampler(uint64_t lo, uint64_t hi) {
     ConstSampler s{};
     // AIR address modes: 0 clamp_to_zero, 1 clamp_to_edge, 2 repeat, 3 mirrored_repeat, 4 clamp_to_border
@@ -830,6 +832,40 @@ public:
                 }
             }
             if (name.starts_with("air.atomic.")) { lower_air_atomic(ci, name); return; }
+            if (name.starts_with("air.atomic_compare_exchange_weak_explicit_texture")) {
+                // (tex, coord, [slice], ?, ptr expected, desired, order, order, scope) -> i1, *expected = old:
+                // becomes air.atomic_xefcmpxchg_explicit_<kind>(tex, coord, [slice], ?, expected, desired) -> old
+                std::vector<Value*> args;
+                Value* expp = nullptr;
+                for (unsigned k = 0; k < ci->arg_size(); k++) {
+                    Value* a = ci->getArgOperand(k);
+                    if (k > 0 && is_ptr(a)) { expp = a; continue; }
+                    args.push_back(k == 0 ? b.CreateIntToPtr(get(a), a->getType()) : a);
+                }
+                if (!expp) { fail("texture compare-exchange without expected value"); return; }
+                Value* desired = nullptr;
+                for (size_t k = 1; k < args.size(); k++) if (vlen_of(args[k]->getType()) == 4) desired = args[k];
+                if (!desired) { fail("texture compare-exchange without desired value"); return; }
+                Value* eaddr = get(expp);
+                uint8_t ep = get_prov(expp);
+                Value* expected = load_mem(b, desired->getType(), eaddr, ep, Align(4));
+                // keep tex, coords, slice and the unused vector, then expected and desired
+                std::vector<Value*> nargs;
+                for (Value* a : args) { if (a == desired) break; nargs.push_back(a); }
+                nargs.push_back(expected);
+                nargs.push_back(desired);
+                std::string nn = "air.atomic_xefcmpxchg_explicit_" + name.substr(strlen("air.atomic_compare_exchange_weak_explicit_")).str();
+                std::vector<Type*> pts;
+                for (Value* a : nargs) pts.push_back(a->getType());
+                FunctionCallee fc = m.getOrInsertFunction(nn, FunctionType::get(desired->getType(), pts, false));
+                Value* old = b.CreateCall(fc, nargs);
+                store_mem(b, old, eaddr, ep, Align(4));
+                Value* ok = b.CreateICmpEQ(b.CreateExtractElement(old, (uint64_t)0), b.CreateExtractElement(expected, (uint64_t)0));
+                if (ci->getType()->isIntegerTy() && !ci->getType()->isIntegerTy(1)) ok = b.CreateZExt(ok, ci->getType());
+                ci->replaceAllUsesWith(ok);
+                dead.push_back(ci);
+                return;
+            }
             if (name == "xef.const_sampler") {
                 uint64_t st = 0;
                 if (auto* c = dyn_cast<ConstantInt>(ci->getArgOperand(0))) st = c->getZExtValue();

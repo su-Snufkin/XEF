@@ -941,6 +941,12 @@ for cls, (kind, cdim, rdim, arr, ms, cube, depth, mips, odim) in TEX_KINDS.items
         if not depth and not ms:
             wp = rcoord + (", uint" if cube else "") + (", uint" if arr else "") + f", {evt(t, 4)}" + (", uint" if mips else "")
             w(f'extern "C" void __xef_write_{sname}(__xef_tex_h, {wp}, int) XEF_AIR("air.write_{kind}.{sgn(t)}{rtag}");')
+        if t in ("int", "uint") and not depth and not ms and not cube and cls != "texture_buffer":
+            # 32-bit integer texture atomics (tex, coord, [slice], unused, value, order, scope)
+            ap = rcoord + (", uint" if arr else "") + ", __xef_ev_t<uint, 2>"
+            for op in ("fetch_add", "fetch_sub", "fetch_and", "fetch_or", "fetch_xor", "fetch_min", "fetch_max", "exchange"):
+                w(f'extern "C" {evt(t, 4)} __xef_atomic_{op}_{sname}(__xef_tex_h, {ap}, {evt(t, 4)}, int, int) XEF_AIR("air.atomic_{op}_explicit_{kind}.{sgn(t)}v4i32");')
+            w(f'extern "C" bool __xef_atomic_cmpxchg_{sname}(__xef_tex_h, {ap}, {evt(t, 4)} *, {evt(t, 4)}, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_{kind}.{sgn(t)}v4i32");')
     qlod = ", uint" if mips else ""
     for q in ["width", "height", "depth", "array_size", "num_mip_levels", "num_samples"]:
         w(f'extern "C" uint __xef_get_{q}_{cls}(__xef_tex_h{qlod if q in ("width", "height", "depth") else ""}) XEF_AIR("air.get_{q}_{kind}");')
@@ -1013,6 +1019,12 @@ for cls, (kind, cdim, rdim, arr, ms, cube, depth, mips, odim) in TEX_KINDS.items
         if not depth and not ms:
             w(f"  XEF_INL void write(vec<T, 4> v, {rc} c{face}{lay}{lodp}) const {{ __xef_write_{cls}_T__(h, {rcv}{facev}{layv}, v.v{lodv}, __acc_rw() ? 3 : 2); }}")
             w(f"  XEF_INL void write(T v, {rc} c{face}{lay}{lodp}) const {{ write(vec<T, 4>(v), c{facev}{layv}{lodv}); }}")
+            if ct == "uint" and not cube and cls != "texture_buffer":
+                for op in ("fetch_add", "fetch_sub", "fetch_and", "fetch_or", "fetch_xor", "fetch_min", "fetch_max", "exchange"):
+                    w(f"  XEF_INL vec<T, 4> atomic_{op}({rc} c{lay}, vec<T, 4> v, memory_order o = memory_order_relaxed) const {{ return vec<T, 4>::from(__xef_atomic_{op}_{cls}_T__(h, {rcv}{layv}, __xef_ev_t<uint, 2>{{}}, v.v, 0, 3)); }}")
+                    w(f"  XEF_INL vec<T, 4> atomic_{op}({rc} c{lay}, T v, memory_order o = memory_order_relaxed) const {{ return atomic_{op}(c{layv}, vec<T, 4>(v)); }}")
+                w(f"  XEF_INL bool atomic_compare_exchange_weak({rc} c{lay}, thread vec<T, 4> *expected, vec<T, 4> desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const {{ return __xef_atomic_cmpxchg_{cls}_T__(h, {rcv}{layv}, __xef_ev_t<uint, 2>{{}}, &expected->v, desired.v, 0, 0, 3); }}")
+                w(f"  XEF_INL bool atomic_compare_exchange_weak({rc} c{lay}, thread vec<T, 4> *expected, T desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const {{ return atomic_compare_exchange_weak(c{layv}, expected, vec<T, 4>(desired)); }}")
     lq = "uint lod = 0" if mips else ""
     lv = ", lod" if mips else ""
     w(f"  XEF_INL uint get_width({lq}) const {{ return __xef_get_width_{cls}(h{lv}); }}")

@@ -591,7 +591,7 @@ static void publish_texture(Texture* t, Texture* root) {
         if (t->texel_view) {
             write_texel_desc(sampled_image_binding(DIM_BUFFER, comp), t->resource_id, t->texel_view, false);
             if (comp != COMP_FLOAT) write_texel_desc(sampled_image_binding(DIM_BUFFER, COMP_FLOAT), t->resource_id, t->texel_view, false);
-            if (t->usage & 2) write_texel_desc(storage_image_binding(DIM_BUFFER, comp), t->resource_id, t->texel_view, true);
+            if (t->usage & 0x22) write_texel_desc(storage_image_binding(DIM_BUFFER, comp), t->resource_id, t->texel_view, true);
         }
         return;
     }
@@ -606,7 +606,7 @@ static void publish_texture(Texture* t, Texture* root) {
         t->array_view = make_view(root, vf, VK_IMAGE_VIEW_TYPE_2D_ARRAY, aspect, t->base_level, t->mips, t->base_layer, layers, comp_map, VK_IMAGE_USAGE_SAMPLED_BIT);
         if (t->array_view) write_image_desc(sampled_image_binding(DIM_2D_ARRAY, comp), t->resource_id, t->array_view, false);
     }
-    if ((t->usage & 2) && aspect == VK_IMAGE_ASPECT_COLOR_BIT) {
+    if ((t->usage & 0x22) && aspect == VK_IMAGE_ASPECT_COLOR_BIT) {
         VkFormat sf = storage_format(vf);
         if (format_supports(sf, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) {
             // storage views are single-level
@@ -671,7 +671,7 @@ uint32_t texture_create(const xef_mtl_texture_desc* d, uint64_t* rid) {
         if (ff & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) ici.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     } else if (!(t->fmt->flags & FMT_COMPRESSED)) {
         if (ff & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) ici.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        if ((t->usage & 2) && format_supports(storage_format(t->vkfmt), VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) ici.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+        if ((t->usage & 0x22) && format_supports(storage_format(t->vkfmt), VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) ici.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
     if (cube) ici.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     ici.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;

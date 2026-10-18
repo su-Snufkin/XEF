@@ -63,10 +63,12 @@ if [ -f tests/darwin/heap_event_test ]; then
   fi
 fi
 
-if [ -f tests/darwin/mip_sample_test ]; then
-  OUT8=$(timeout 15 $X -L darwin-rootfs tests/darwin/mip_sample_test 2>&1)
-  if ! echo "$OUT8" | grep -q "PASS mip_sample_test"; then echo "FAIL metal_test (mip_sample_test)"; echo "$OUT8"; exit 1; fi
-fi
+# small API tests whose expectations were checked on a real Mac
+for t in mip_sample_test tex_atomic_test; do
+  [ -f tests/darwin/$t ] || continue
+  OUT8=$(timeout 15 $X -L darwin-rootfs tests/darwin/$t 2>&1)
+  if ! echo "$OUT8" | grep -q "PASS $t"; then echo "FAIL metal_test ($t)"; echo "$OUT8"; exit 1; fi
+done
 
 # Xcode's macOS Metal Game template (storyboard, MTKView, ModelIO box, asset-catalog texture), built on a Mac
 MG=darwin-rootfs/Applications/MetalGame.app/Contents/MacOS/MetalGame

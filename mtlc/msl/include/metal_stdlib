@@ -3672,10 +3672,28 @@ extern "C" __xef_ev_t<int, 4> __xef_sample_texture1d_int(__xef_tex_h, __xef_smp_
 extern "C" __xef_ev_t<int, 4> __xef_sample_grad_texture1d_int(__xef_tex_h, __xef_smp_h, float, float, float, float, bool, int, int) XEF_AIR("air.sample_texture_1d_grad.s.v4i32");
 extern "C" __xef_ev_t<int, 4> __xef_read_texture1d_int(__xef_tex_h, uint, uint, int) XEF_AIR("air.read_texture_1d.s.v4i32");
 extern "C" void __xef_write_texture1d_int(__xef_tex_h, uint, __xef_ev_t<int, 4>, uint, int) XEF_AIR("air.write_texture_1d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_add_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_1d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_sub_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_1d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_and_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_1d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_or_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_1d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_xor_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_1d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_min_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_1d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_max_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_1d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_exchange_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_1d.s.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture1d_int(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4> *, __xef_ev_t<int, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_1d.s.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_texture1d_uint(__xef_tex_h, __xef_smp_h, float, bool, int, bool, float, float, int) XEF_AIR("air.sample_texture_1d.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_grad_texture1d_uint(__xef_tex_h, __xef_smp_h, float, float, float, float, bool, int, int) XEF_AIR("air.sample_texture_1d_grad.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_read_texture1d_uint(__xef_tex_h, uint, uint, int) XEF_AIR("air.read_texture_1d.u.v4i32");
 extern "C" void __xef_write_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 4>, uint, int) XEF_AIR("air.write_texture_1d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_add_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_1d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_sub_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_1d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_and_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_1d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_or_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_1d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_xor_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_1d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_min_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_1d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_max_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_1d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_exchange_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_1d.u.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture1d_uint(__xef_tex_h, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4> *, __xef_ev_t<uint, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_1d.u.v4i32");
 extern "C" __xef_ev_t<short, 4> __xef_sample_texture1d_short(__xef_tex_h, __xef_smp_h, float, bool, int, bool, float, float, int) XEF_AIR("air.sample_texture_1d.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_sample_grad_texture1d_short(__xef_tex_h, __xef_smp_h, float, float, float, float, bool, int, int) XEF_AIR("air.sample_texture_1d_grad.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_read_texture1d_short(__xef_tex_h, uint, uint, int) XEF_AIR("air.read_texture_1d.s.v4i16");
@@ -3692,6 +3710,141 @@ extern "C" uint __xef_get_num_mip_levels_texture1d(__xef_tex_h) XEF_AIR("air.get
 extern "C" uint __xef_get_num_samples_texture1d(__xef_tex_h) XEF_AIR("air.get_num_samples_texture_1d");
 extern "C" float __xef_lod_cl_texture1d(__xef_tex_h, __xef_smp_h, float, int) XEF_AIR("air.calculate_clamped_lod_texture_1d");
 extern "C" float __xef_lod_uncl_texture1d(__xef_tex_h, __xef_smp_h, float, int) XEF_AIR("air.calculate_unclamped_lod_texture_1d");
+template <class T> struct __xef_atomic_cmpxchg_texture1d_sel;
+template <> struct __xef_atomic_cmpxchg_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture1d_int(a...); } };
+template <> struct __xef_atomic_cmpxchg_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_cmpxchg_texture1d_array_sel;
+template <> struct __xef_atomic_cmpxchg_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_cmpxchg_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_cmpxchg_texture2d_sel;
+template <> struct __xef_atomic_cmpxchg_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture2d_int(a...); } };
+template <> struct __xef_atomic_cmpxchg_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_cmpxchg_texture2d_array_sel;
+template <> struct __xef_atomic_cmpxchg_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_cmpxchg_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_cmpxchg_texture3d_sel;
+template <> struct __xef_atomic_cmpxchg_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture3d_int(a...); } };
+template <> struct __xef_atomic_cmpxchg_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_cmpxchg_texture3d_uint(a...); } };
+template <class T> struct __xef_atomic_exchange_texture1d_sel;
+template <> struct __xef_atomic_exchange_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture1d_int(a...); } };
+template <> struct __xef_atomic_exchange_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_exchange_texture1d_array_sel;
+template <> struct __xef_atomic_exchange_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_exchange_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_exchange_texture2d_sel;
+template <> struct __xef_atomic_exchange_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture2d_int(a...); } };
+template <> struct __xef_atomic_exchange_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_exchange_texture2d_array_sel;
+template <> struct __xef_atomic_exchange_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_exchange_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_exchange_texture3d_sel;
+template <> struct __xef_atomic_exchange_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture3d_int(a...); } };
+template <> struct __xef_atomic_exchange_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_exchange_texture3d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_add_texture1d_sel;
+template <> struct __xef_atomic_fetch_add_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture1d_int(a...); } };
+template <> struct __xef_atomic_fetch_add_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_add_texture1d_array_sel;
+template <> struct __xef_atomic_fetch_add_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_add_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_add_texture2d_sel;
+template <> struct __xef_atomic_fetch_add_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture2d_int(a...); } };
+template <> struct __xef_atomic_fetch_add_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_add_texture2d_array_sel;
+template <> struct __xef_atomic_fetch_add_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_add_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_add_texture3d_sel;
+template <> struct __xef_atomic_fetch_add_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture3d_int(a...); } };
+template <> struct __xef_atomic_fetch_add_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_add_texture3d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_and_texture1d_sel;
+template <> struct __xef_atomic_fetch_and_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture1d_int(a...); } };
+template <> struct __xef_atomic_fetch_and_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_and_texture1d_array_sel;
+template <> struct __xef_atomic_fetch_and_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_and_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_and_texture2d_sel;
+template <> struct __xef_atomic_fetch_and_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture2d_int(a...); } };
+template <> struct __xef_atomic_fetch_and_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_and_texture2d_array_sel;
+template <> struct __xef_atomic_fetch_and_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_and_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_and_texture3d_sel;
+template <> struct __xef_atomic_fetch_and_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture3d_int(a...); } };
+template <> struct __xef_atomic_fetch_and_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_and_texture3d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_max_texture1d_sel;
+template <> struct __xef_atomic_fetch_max_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture1d_int(a...); } };
+template <> struct __xef_atomic_fetch_max_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_max_texture1d_array_sel;
+template <> struct __xef_atomic_fetch_max_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_max_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_max_texture2d_sel;
+template <> struct __xef_atomic_fetch_max_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture2d_int(a...); } };
+template <> struct __xef_atomic_fetch_max_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_max_texture2d_array_sel;
+template <> struct __xef_atomic_fetch_max_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_max_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_max_texture3d_sel;
+template <> struct __xef_atomic_fetch_max_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture3d_int(a...); } };
+template <> struct __xef_atomic_fetch_max_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_max_texture3d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_min_texture1d_sel;
+template <> struct __xef_atomic_fetch_min_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture1d_int(a...); } };
+template <> struct __xef_atomic_fetch_min_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_min_texture1d_array_sel;
+template <> struct __xef_atomic_fetch_min_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_min_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_min_texture2d_sel;
+template <> struct __xef_atomic_fetch_min_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture2d_int(a...); } };
+template <> struct __xef_atomic_fetch_min_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_min_texture2d_array_sel;
+template <> struct __xef_atomic_fetch_min_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_min_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_min_texture3d_sel;
+template <> struct __xef_atomic_fetch_min_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture3d_int(a...); } };
+template <> struct __xef_atomic_fetch_min_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_min_texture3d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_or_texture1d_sel;
+template <> struct __xef_atomic_fetch_or_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture1d_int(a...); } };
+template <> struct __xef_atomic_fetch_or_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_or_texture1d_array_sel;
+template <> struct __xef_atomic_fetch_or_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_or_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_or_texture2d_sel;
+template <> struct __xef_atomic_fetch_or_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture2d_int(a...); } };
+template <> struct __xef_atomic_fetch_or_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_or_texture2d_array_sel;
+template <> struct __xef_atomic_fetch_or_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_or_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_or_texture3d_sel;
+template <> struct __xef_atomic_fetch_or_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture3d_int(a...); } };
+template <> struct __xef_atomic_fetch_or_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_or_texture3d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_sub_texture1d_sel;
+template <> struct __xef_atomic_fetch_sub_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture1d_int(a...); } };
+template <> struct __xef_atomic_fetch_sub_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_sub_texture1d_array_sel;
+template <> struct __xef_atomic_fetch_sub_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_sub_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_sub_texture2d_sel;
+template <> struct __xef_atomic_fetch_sub_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture2d_int(a...); } };
+template <> struct __xef_atomic_fetch_sub_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_sub_texture2d_array_sel;
+template <> struct __xef_atomic_fetch_sub_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_sub_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_sub_texture3d_sel;
+template <> struct __xef_atomic_fetch_sub_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture3d_int(a...); } };
+template <> struct __xef_atomic_fetch_sub_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_sub_texture3d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_xor_texture1d_sel;
+template <> struct __xef_atomic_fetch_xor_texture1d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture1d_int(a...); } };
+template <> struct __xef_atomic_fetch_xor_texture1d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture1d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_xor_texture1d_array_sel;
+template <> struct __xef_atomic_fetch_xor_texture1d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture1d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_xor_texture1d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture1d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_xor_texture2d_sel;
+template <> struct __xef_atomic_fetch_xor_texture2d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture2d_int(a...); } };
+template <> struct __xef_atomic_fetch_xor_texture2d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture2d_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_xor_texture2d_array_sel;
+template <> struct __xef_atomic_fetch_xor_texture2d_array_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture2d_array_int(a...); } };
+template <> struct __xef_atomic_fetch_xor_texture2d_array_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture2d_array_uint(a...); } };
+template <class T> struct __xef_atomic_fetch_xor_texture3d_sel;
+template <> struct __xef_atomic_fetch_xor_texture3d_sel<int> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture3d_int(a...); } };
+template <> struct __xef_atomic_fetch_xor_texture3d_sel<uint> { template <class... A> static XEF_INL auto call(A... a) { return __xef_atomic_fetch_xor_texture3d_uint(a...); } };
 template <class T> struct __xef_gather_texture2d_sel;
 template <> struct __xef_gather_texture2d_sel<float> { template <class... A> static XEF_INL auto call(A... a) { return __xef_gather_texture2d_float(a...); } };
 template <> struct __xef_gather_texture2d_sel<half> { template <class... A> static XEF_INL auto call(A... a) { return __xef_gather_texture2d_half(a...); } };
@@ -3999,6 +4152,24 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL vec<T, 4> read(uint c, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture1d_sel<T>::call(h, (uint)c, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, uint c, uint lod = 0) const { __xef_write_texture1d_sel<T>::call(h, (uint)c, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, uint c, uint lod = 0) const { write(vec<T, 4>(v), c, lod); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_add_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_add(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_sub_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_sub(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_and_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_and(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_or_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_or(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_xor_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_xor(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_min_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_min(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_max_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_max(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_exchange_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint c, T v, memory_order o = memory_order_relaxed) const { return atomic_exchange(c, vec<T, 4>(v)); }
+  XEF_INL bool atomic_compare_exchange_weak(uint c, thread vec<T, 4> *expected, vec<T, 4> desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return __xef_atomic_cmpxchg_texture1d_sel<T>::call(h, (uint)c, __xef_ev_t<uint, 2>{}, &expected->v, desired.v, 0, 0, 3); }
+  XEF_INL bool atomic_compare_exchange_weak(uint c, thread vec<T, 4> *expected, T desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return atomic_compare_exchange_weak(c, expected, vec<T, 4>(desired)); }
   XEF_INL vec<T, 4> read(ushort c, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture1d_sel<T>::call(h, (uint)c, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, ushort c, uint lod = 0) const { __xef_write_texture1d_sel<T>::call(h, (uint)c, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, ushort c, uint lod = 0) const { write(vec<T, 4>(v), c, lod); }
@@ -4018,10 +4189,28 @@ extern "C" __xef_ev_t<int, 4> __xef_sample_texture1d_array_int(__xef_tex_h, __xe
 extern "C" __xef_ev_t<int, 4> __xef_sample_grad_texture1d_array_int(__xef_tex_h, __xef_smp_h, float, uint, float, float, float, bool, int, int) XEF_AIR("air.sample_texture_1d_array_grad.s.v4i32");
 extern "C" __xef_ev_t<int, 4> __xef_read_texture1d_array_int(__xef_tex_h, uint, uint, uint, int) XEF_AIR("air.read_texture_1d_array.s.v4i32");
 extern "C" void __xef_write_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<int, 4>, uint, int) XEF_AIR("air.write_texture_1d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_add_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_1d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_sub_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_1d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_and_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_1d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_or_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_1d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_xor_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_1d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_min_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_1d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_max_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_1d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_exchange_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_1d_array.s.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture1d_array_int(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4> *, __xef_ev_t<int, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_1d_array.s.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_texture1d_array_uint(__xef_tex_h, __xef_smp_h, float, uint, bool, int, bool, float, float, int) XEF_AIR("air.sample_texture_1d_array.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_grad_texture1d_array_uint(__xef_tex_h, __xef_smp_h, float, uint, float, float, float, bool, int, int) XEF_AIR("air.sample_texture_1d_array_grad.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_read_texture1d_array_uint(__xef_tex_h, uint, uint, uint, int) XEF_AIR("air.read_texture_1d_array.u.v4i32");
 extern "C" void __xef_write_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 4>, uint, int) XEF_AIR("air.write_texture_1d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_add_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_1d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_sub_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_1d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_and_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_1d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_or_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_1d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_xor_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_1d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_min_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_1d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_max_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_1d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_exchange_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_1d_array.u.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture1d_array_uint(__xef_tex_h, uint, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4> *, __xef_ev_t<uint, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_1d_array.u.v4i32");
 extern "C" __xef_ev_t<short, 4> __xef_sample_texture1d_array_short(__xef_tex_h, __xef_smp_h, float, uint, bool, int, bool, float, float, int) XEF_AIR("air.sample_texture_1d_array.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_sample_grad_texture1d_array_short(__xef_tex_h, __xef_smp_h, float, uint, float, float, float, bool, int, int) XEF_AIR("air.sample_texture_1d_array_grad.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_read_texture1d_array_short(__xef_tex_h, uint, uint, uint, int) XEF_AIR("air.read_texture_1d_array.s.v4i16");
@@ -4058,6 +4247,24 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL vec<T, 4> read(uint c, uint array, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture1d_array_sel<T>::call(h, (uint)c, array, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, uint c, uint array, uint lod = 0) const { __xef_write_texture1d_array_sel<T>::call(h, (uint)c, array, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, uint c, uint array, uint lod = 0) const { write(vec<T, 4>(v), c, array, lod); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_add_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_add(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_sub_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_sub(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_and_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_and(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_or_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_or(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_xor_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_xor(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_min_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_min(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_max_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_max(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_exchange_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_exchange(c, array, vec<T, 4>(v)); }
+  XEF_INL bool atomic_compare_exchange_weak(uint c, uint array, thread vec<T, 4> *expected, vec<T, 4> desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return __xef_atomic_cmpxchg_texture1d_array_sel<T>::call(h, (uint)c, array, __xef_ev_t<uint, 2>{}, &expected->v, desired.v, 0, 0, 3); }
+  XEF_INL bool atomic_compare_exchange_weak(uint c, uint array, thread vec<T, 4> *expected, T desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return atomic_compare_exchange_weak(c, array, expected, vec<T, 4>(desired)); }
   XEF_INL vec<T, 4> read(ushort c, uint array, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture1d_array_sel<T>::call(h, (uint)c, array, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, ushort c, uint array, uint lod = 0) const { __xef_write_texture1d_array_sel<T>::call(h, (uint)c, array, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, ushort c, uint array, uint lod = 0) const { write(vec<T, 4>(v), c, array, lod); }
@@ -4081,11 +4288,29 @@ extern "C" __xef_ev_t<int, 4> __xef_sample_grad_texture2d_int(__xef_tex_h, __xef
 extern "C" __xef_ev_t<int, 4> __xef_gather_texture2d_int(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, bool, __xef_ev_t<int, 2>, int, int) XEF_AIR("air.gather_texture_2d.s.v4i32");
 extern "C" __xef_ev_t<int, 4> __xef_read_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, int) XEF_AIR("air.read_texture_2d.s.v4i32");
 extern "C" void __xef_write_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, uint, int) XEF_AIR("air.write_texture_2d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_add_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_2d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_sub_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_2d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_and_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_2d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_or_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_2d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_xor_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_2d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_min_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_2d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_max_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_2d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_exchange_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_2d.s.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture2d_int(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4> *, __xef_ev_t<int, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_2d.s.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_texture2d_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, bool, __xef_ev_t<int, 2>, bool, float, float, int) XEF_AIR("air.sample_texture_2d.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_grad_texture2d_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.sample_texture_2d_grad.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_gather_texture2d_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, bool, __xef_ev_t<int, 2>, int, int) XEF_AIR("air.gather_texture_2d.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_read_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, int) XEF_AIR("air.read_texture_2d.u.v4i32");
 extern "C" void __xef_write_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, uint, int) XEF_AIR("air.write_texture_2d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_add_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_2d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_sub_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_2d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_and_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_2d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_or_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_2d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_xor_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_2d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_min_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_2d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_max_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_2d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_exchange_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_2d.u.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture2d_uint(__xef_tex_h, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4> *, __xef_ev_t<uint, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_2d.u.v4i32");
 extern "C" __xef_ev_t<short, 4> __xef_sample_texture2d_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, bool, __xef_ev_t<int, 2>, bool, float, float, int) XEF_AIR("air.sample_texture_2d.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_sample_grad_texture2d_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.sample_texture_2d_grad.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_gather_texture2d_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, bool, __xef_ev_t<int, 2>, int, int) XEF_AIR("air.gather_texture_2d.s.v4i16");
@@ -4127,6 +4352,24 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL vec<T, 4> read(uint2 c, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture2d_sel<T>::call(h, uint2(c).v, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, uint2 c, uint lod = 0) const { __xef_write_texture2d_sel<T>::call(h, uint2(c).v, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, uint2 c, uint lod = 0) const { write(vec<T, 4>(v), c, lod); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint2 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_add_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint2 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_add(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint2 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_sub_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint2 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_sub(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint2 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_and_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint2 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_and(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint2 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_or_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint2 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_or(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint2 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_xor_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint2 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_xor(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint2 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_min_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint2 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_min(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint2 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_max_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint2 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_max(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint2 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_exchange_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint2 c, T v, memory_order o = memory_order_relaxed) const { return atomic_exchange(c, vec<T, 4>(v)); }
+  XEF_INL bool atomic_compare_exchange_weak(uint2 c, thread vec<T, 4> *expected, vec<T, 4> desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return __xef_atomic_cmpxchg_texture2d_sel<T>::call(h, uint2(c).v, __xef_ev_t<uint, 2>{}, &expected->v, desired.v, 0, 0, 3); }
+  XEF_INL bool atomic_compare_exchange_weak(uint2 c, thread vec<T, 4> *expected, T desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return atomic_compare_exchange_weak(c, expected, vec<T, 4>(desired)); }
   XEF_INL vec<T, 4> read(ushort2 c, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture2d_sel<T>::call(h, uint2(c).v, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, ushort2 c, uint lod = 0) const { __xef_write_texture2d_sel<T>::call(h, uint2(c).v, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, ushort2 c, uint lod = 0) const { write(vec<T, 4>(v), c, lod); }
@@ -4150,11 +4393,29 @@ extern "C" __xef_ev_t<int, 4> __xef_sample_grad_texture2d_array_int(__xef_tex_h,
 extern "C" __xef_ev_t<int, 4> __xef_gather_texture2d_array_int(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, uint, bool, __xef_ev_t<int, 2>, int, int) XEF_AIR("air.gather_texture_2d_array.s.v4i32");
 extern "C" __xef_ev_t<int, 4> __xef_read_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, uint, int) XEF_AIR("air.read_texture_2d_array.s.v4i32");
 extern "C" void __xef_write_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<int, 4>, uint, int) XEF_AIR("air.write_texture_2d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_add_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_2d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_sub_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_2d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_and_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_2d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_or_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_2d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_xor_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_2d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_min_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_2d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_max_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_2d_array.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_exchange_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_2d_array.s.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture2d_array_int(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4> *, __xef_ev_t<int, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_2d_array.s.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_texture2d_array_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, uint, bool, __xef_ev_t<int, 2>, bool, float, float, int) XEF_AIR("air.sample_texture_2d_array.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_grad_texture2d_array_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, uint, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.sample_texture_2d_array_grad.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_gather_texture2d_array_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, uint, bool, __xef_ev_t<int, 2>, int, int) XEF_AIR("air.gather_texture_2d_array.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_read_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, uint, int) XEF_AIR("air.read_texture_2d_array.u.v4i32");
 extern "C" void __xef_write_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 4>, uint, int) XEF_AIR("air.write_texture_2d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_add_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_2d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_sub_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_2d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_and_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_2d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_or_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_2d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_xor_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_2d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_min_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_2d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_max_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_2d_array.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_exchange_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_2d_array.u.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture2d_array_uint(__xef_tex_h, __xef_ev_t<uint, 2>, uint, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4> *, __xef_ev_t<uint, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_2d_array.u.v4i32");
 extern "C" __xef_ev_t<short, 4> __xef_sample_texture2d_array_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, uint, bool, __xef_ev_t<int, 2>, bool, float, float, int) XEF_AIR("air.sample_texture_2d_array.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_sample_grad_texture2d_array_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, uint, __xef_ev_t<float, 2>, __xef_ev_t<float, 2>, float, bool, __xef_ev_t<int, 2>, int) XEF_AIR("air.sample_texture_2d_array_grad.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_gather_texture2d_array_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 2>, uint, bool, __xef_ev_t<int, 2>, int, int) XEF_AIR("air.gather_texture_2d_array.s.v4i16");
@@ -4196,6 +4457,24 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL vec<T, 4> read(uint2 c, uint array, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture2d_array_sel<T>::call(h, uint2(c).v, array, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, uint2 c, uint array, uint lod = 0) const { __xef_write_texture2d_array_sel<T>::call(h, uint2(c).v, array, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, uint2 c, uint array, uint lod = 0) const { write(vec<T, 4>(v), c, array, lod); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint2 c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_add_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint2 c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_add(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint2 c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_sub_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint2 c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_sub(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint2 c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_and_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint2 c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_and(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint2 c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_or_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint2 c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_or(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint2 c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_xor_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint2 c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_xor(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint2 c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_min_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint2 c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_min(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint2 c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_max_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint2 c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_max(c, array, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint2 c, uint array, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_exchange_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint2 c, uint array, T v, memory_order o = memory_order_relaxed) const { return atomic_exchange(c, array, vec<T, 4>(v)); }
+  XEF_INL bool atomic_compare_exchange_weak(uint2 c, uint array, thread vec<T, 4> *expected, vec<T, 4> desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return __xef_atomic_cmpxchg_texture2d_array_sel<T>::call(h, uint2(c).v, array, __xef_ev_t<uint, 2>{}, &expected->v, desired.v, 0, 0, 3); }
+  XEF_INL bool atomic_compare_exchange_weak(uint2 c, uint array, thread vec<T, 4> *expected, T desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return atomic_compare_exchange_weak(c, array, expected, vec<T, 4>(desired)); }
   XEF_INL vec<T, 4> read(ushort2 c, uint array, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture2d_array_sel<T>::call(h, uint2(c).v, array, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, ushort2 c, uint array, uint lod = 0) const { __xef_write_texture2d_array_sel<T>::call(h, uint2(c).v, array, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, ushort2 c, uint array, uint lod = 0) const { write(vec<T, 4>(v), c, array, lod); }
@@ -4220,11 +4499,29 @@ extern "C" __xef_ev_t<int, 4> __xef_sample_grad_texture3d_int(__xef_tex_h, __xef
 extern "C" __xef_ev_t<int, 4> __xef_gather_texture3d_int(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 3>, bool, __xef_ev_t<int, 3>, int, int) XEF_AIR("air.gather_texture_3d.s.v4i32");
 extern "C" __xef_ev_t<int, 4> __xef_read_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, uint, int) XEF_AIR("air.read_texture_3d.s.v4i32");
 extern "C" void __xef_write_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<int, 4>, uint, int) XEF_AIR("air.write_texture_3d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_add_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_3d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_sub_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_3d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_and_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_3d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_or_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_3d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_xor_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_3d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_min_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_3d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_fetch_max_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_3d.s.v4i32");
+extern "C" __xef_ev_t<int, 4> __xef_atomic_exchange_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_3d.s.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture3d_int(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<int, 4> *, __xef_ev_t<int, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_3d.s.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_texture3d_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 3>, bool, __xef_ev_t<int, 3>, bool, float, float, int) XEF_AIR("air.sample_texture_3d.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_sample_grad_texture3d_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, float, bool, __xef_ev_t<int, 3>, int) XEF_AIR("air.sample_texture_3d_grad.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_gather_texture3d_uint(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 3>, bool, __xef_ev_t<int, 3>, int, int) XEF_AIR("air.gather_texture_3d.u.v4i32");
 extern "C" __xef_ev_t<uint, 4> __xef_read_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, uint, int) XEF_AIR("air.read_texture_3d.u.v4i32");
 extern "C" void __xef_write_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 4>, uint, int) XEF_AIR("air.write_texture_3d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_add_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_add_explicit_texture_3d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_sub_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_sub_explicit_texture_3d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_and_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_and_explicit_texture_3d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_or_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_or_explicit_texture_3d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_xor_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_xor_explicit_texture_3d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_min_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_min_explicit_texture_3d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_fetch_max_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_fetch_max_explicit_texture_3d.u.v4i32");
+extern "C" __xef_ev_t<uint, 4> __xef_atomic_exchange_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4>, int, int) XEF_AIR("air.atomic_exchange_explicit_texture_3d.u.v4i32");
+extern "C" bool __xef_atomic_cmpxchg_texture3d_uint(__xef_tex_h, __xef_ev_t<uint, 3>, __xef_ev_t<uint, 2>, __xef_ev_t<uint, 4> *, __xef_ev_t<uint, 4>, int, int, int) XEF_AIR("air.atomic_compare_exchange_weak_explicit_texture_3d.u.v4i32");
 extern "C" __xef_ev_t<short, 4> __xef_sample_texture3d_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 3>, bool, __xef_ev_t<int, 3>, bool, float, float, int) XEF_AIR("air.sample_texture_3d.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_sample_grad_texture3d_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, __xef_ev_t<float, 3>, float, bool, __xef_ev_t<int, 3>, int) XEF_AIR("air.sample_texture_3d_grad.s.v4i16");
 extern "C" __xef_ev_t<short, 4> __xef_gather_texture3d_short(__xef_tex_h, __xef_smp_h, __xef_ev_t<float, 3>, bool, __xef_ev_t<int, 3>, int, int) XEF_AIR("air.gather_texture_3d.s.v4i16");
@@ -4266,6 +4563,24 @@ template <class T, access A = access::sample, memory_coherence __MC = memory_coh
   XEF_INL vec<T, 4> read(uint3 c, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture3d_sel<T>::call(h, uint3(c).v, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, uint3 c, uint lod = 0) const { __xef_write_texture3d_sel<T>::call(h, uint3(c).v, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, uint3 c, uint lod = 0) const { write(vec<T, 4>(v), c, lod); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint3 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_add_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_add(uint3 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_add(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint3 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_sub_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_sub(uint3 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_sub(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint3 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_and_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_and(uint3 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_and(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint3 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_or_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_or(uint3 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_or(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint3 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_xor_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_xor(uint3 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_xor(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint3 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_min_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_min(uint3 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_min(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint3 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_fetch_max_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_fetch_max(uint3 c, T v, memory_order o = memory_order_relaxed) const { return atomic_fetch_max(c, vec<T, 4>(v)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint3 c, vec<T, 4> v, memory_order o = memory_order_relaxed) const { return vec<T, 4>::from(__xef_atomic_exchange_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, v.v, 0, 3)); }
+  XEF_INL vec<T, 4> atomic_exchange(uint3 c, T v, memory_order o = memory_order_relaxed) const { return atomic_exchange(c, vec<T, 4>(v)); }
+  XEF_INL bool atomic_compare_exchange_weak(uint3 c, thread vec<T, 4> *expected, vec<T, 4> desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return __xef_atomic_cmpxchg_texture3d_sel<T>::call(h, uint3(c).v, __xef_ev_t<uint, 2>{}, &expected->v, desired.v, 0, 0, 3); }
+  XEF_INL bool atomic_compare_exchange_weak(uint3 c, thread vec<T, 4> *expected, T desired, memory_order s = memory_order_relaxed, memory_order f = memory_order_relaxed) const { return atomic_compare_exchange_weak(c, expected, vec<T, 4>(desired)); }
   XEF_INL vec<T, 4> read(ushort3 c, uint lod = 0) const { return vec<T, 4>::from(__xef_read_texture3d_sel<T>::call(h, uint3(c).v, lod, __acc_rw() ? 3 : 1)); }
   XEF_INL void write(vec<T, 4> v, ushort3 c, uint lod = 0) const { __xef_write_texture3d_sel<T>::call(h, uint3(c).v, v.v, lod, __acc_rw() ? 3 : 2); }
   XEF_INL void write(T v, ushort3 c, uint lod = 0) const { write(vec<T, 4>(v), c, lod); }
