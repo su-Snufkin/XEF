@@ -409,7 +409,7 @@ bool Emitter::emit_air(CallInst* ci, StringRef name) {
         op.starts_with("calculate_") || op.starts_with("fence_") || (op.starts_with("atomic_") && op.contains("_explicit_texture")) ||
         op.starts_with("atomic_compare_exchange"))
         return emit_air_texture(ci, name);
-    if (op.starts_with("simd") || op.starts_with("quad") || op == "is_uniform")
+    if ((op.starts_with("simd") && op != "simdgroup") || op.starts_with("quad") || op == "is_uniform")   // air.simdgroup.barrier: below
         return emit_air_simd(ci, name);
 
     // ---- float math ----
@@ -745,6 +745,13 @@ bool Emitter::emit_air(CallInst* ci, StringRef name) {
     }
     if (name.starts_with("air.is_null_simdgroup_event")) { result(ci, sb.const_bool(true)); return true; }
     if (op == "get_read_sampler") { result(ci, sb.const_u64(0)); return true; }
+    if (op.starts_with("is_null_texture") || op == "is_null_sampler") {
+        Value* h = ci->getArgOperand(0);
+        Id x = handle_index(h);
+        Id r = emit_r(spv::OpIEqual, sb.t_bool(), {x, c_u32(0)});
+        result(ci, convert_numeric_ids(r, Type::getInt1Ty(m.getContext()), ci->getType(), false));
+        return true;
+    }
     if (op == "get_num_samples") { result(ci, sample_count()); return true; }
     if (op == "get_sample_position") {
         // Metal's default positions equal Vulkan's standard ones: one table for 1, 2, 4 and 8 samples
@@ -1217,7 +1224,23 @@ bool Emitter::emit_air_texture(CallInst* ci, StringRef name) {
     if (has_off && offset && !isa<ConstantAggregateZero>(offset) && !(isa<ConstantInt>(offset) && cast<ConstantInt>(offset)->isZero())) {
         const_off = isa<Constant>(offset);
         offs = val(offset);
-        if (!const_off) sb.cap(spv::CapabilityImageGatherExtended);
+        if (!const_off && kind != GATHER && kind != GATHER_CMP) {
+            // Vulkan allows dynamic offsets only on gathers: move the offset into the coordinate (texels of level 0)
+            sb.cap(spv::CapabilityImageQuery);
+            unsigned sz_n = cn + (tk->arrayed ? 1 : 0);
+            Id size = emit_r(spv::OpImageQuerySizeLod, sz_n == 1 ? i32t : sb.t_vec(i32t, sz_n), {img, c_u32(0)});
+            Words parts;
+            for (unsigned q = 0; q < cn; q++) {
+                Id sq = sz_n == 1 ? size : emit_r(spv::OpCompositeExtract, i32t, {size, q});
+                Id oq = cn == 1 ? offs : emit_r(spv::OpCompositeExtract, i32t, {offs, q});
+                Id d = emit_r(spv::OpFDiv, f32t, {emit_r(spv::OpConvertSToF, f32t, {oq}), emit_r(spv::OpConvertSToF, f32t, {sq})});
+                Id cq = sz_n == 1 ? c : emit_r(spv::OpCompositeExtract, f32t, {c, q});
+                parts.push_back(emit_r(spv::OpFAdd, f32t, {cq, d}));
+            }
+            if (tk->arrayed) parts.push_back(emit_r(spv::OpCompositeExtract, f32t, {c, cn}));
+            c = sz_n == 1 ? parts[0] : emit_r(spv::OpCompositeConstruct, sb.t_vec(f32t, sz_n), parts);
+            offs = 0;
+        } else if (!const_off) sb.cap(spv::CapabilityImageGatherExtended);
     }
     if (bias) { mask |= spv::ImageOperandsBiasMask; iops.push_back(bias); }
     if (lod) { mask |= spv::ImageOperandsLodMask; iops.push_back(lod); }
@@ -1228,9 +1251,11 @@ bool Emitter::emit_air_texture(CallInst* ci, StringRef name) {
     if (mask) { tail.push_back(mask); tail.insert(tail.end(), iops.begin(), iops.end()); }
 
     Id r;
+    Id tt = comp == COMP_SINT ? sb.t_vec(sb.type(spv::OpTypeInt, {32, 1}), 4) : ty(v4t);   // result = sampled type
+    auto as_v4t = [&](Id x) { return comp == COMP_SINT ? emit_r(spv::OpBitcast, ty(v4t), {x}) : x; };
     if (kind == SAMPLE) {
         Words w{si, c}; w.insert(w.end(), tail.begin(), tail.end());
-        r = emit_r(implicit ? spv::OpImageSampleImplicitLod : spv::OpImageSampleExplicitLod, ty(v4t), w);
+        r = as_v4t(emit_r(implicit ? spv::OpImageSampleImplicitLod : spv::OpImageSampleExplicitLod, tt, w));
         finish(r, v4t);
     } else if (kind == SAMPLE_CMP) {
         Words w{si, c, val(ref)}; w.insert(w.end(), tail.begin(), tail.end());
@@ -1239,7 +1264,7 @@ bool Emitter::emit_air_texture(CallInst* ci, StringRef name) {
     } else if (kind == GATHER) {
         Words w{si, c, gcomp ? val(gcomp) : c_u32(0)};
         if (offs) { w.push_back(const_off ? (uint32_t)spv::ImageOperandsConstOffsetMask : (uint32_t)spv::ImageOperandsOffsetMask); w.push_back(offs); }
-        r = emit_r(spv::OpImageGather, ty(v4t), w);
+        r = as_v4t(emit_r(spv::OpImageGather, tt, w));
         Id rr = convert_numeric_ids(r, v4t, res_val_t, comp == COMP_SINT);
         if (res_struct) rr = emit_r(spv::OpCompositeConstruct, ty(t), {rr, sb.const_null(ty(cast<StructType>(t)->getElementType(1)))});
         result(ci, rr);

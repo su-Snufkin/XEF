@@ -270,6 +270,8 @@ Id Emitter::psb_pointer(Value* addr_ptr, Id pointee) {
     Value* addr = nullptr;
     if (auto* ip = dyn_cast<IntToPtrInst>(addr_ptr)) addr = ip->getOperand(0);
     else if (auto* ce = dyn_cast<ConstantExpr>(addr_ptr)) { if (ce->getOpcode() == Instruction::IntToPtr) addr = ce->getOperand(0); }
+    if (!addr && isa<ConstantPointerNull>(addr_ptr))
+        return emit_r(spv::OpConvertUToPtr, sb.t_ptr(spv::StorageClassPhysicalStorageBuffer, pointee), {sb.const_u64(0)});
     if (!addr) { fail("device access through a non-inttoptr pointer"); return 0; }
     Id a = val(addr);
     if (!addr->getType()->isIntegerTy(64)) a = emit_r(spv::OpUConvert, sb.t_int(64), {a});
@@ -299,7 +301,10 @@ Id Emitter::local_var(Value* base, spv::StorageClass& sc, Type*& vty) {
         interface_ids.push_back(v);
         return v;
     }
-    fail("unsupported local pointer base");
+    std::string what;
+    raw_string_ostream os(what);
+    base->print(os);
+    fail("unsupported local pointer base: " + what.substr(0, 160));
     return 0;
 }
 
@@ -392,6 +397,7 @@ bool Emitter::local_pointer(Value* p, Id& ptr_id, Type*& elem_ty, spv::StorageCl
 
 static bool is_psb_ptr(Value* p) {
     if (isa<IntToPtrInst>(p)) return true;
+    if (isa<ConstantPointerNull>(p) && p->getType()->getPointerAddressSpace() != 3) return true;   // dead paths after inlining
     if (auto* ce = dyn_cast<ConstantExpr>(p)) return ce->getOpcode() == Instruction::IntToPtr;
     return false;
 }
@@ -408,7 +414,7 @@ void Emitter::emit_load(LoadInst* li) {
     if (is_psb_ptr(p)) {
         storage_caps(sb, t);
         Id ptr = psb_pointer(p, ty(t));
-        uint32_t al = (uint32_t)li->getAlign().value();
+        uint32_t al = (uint32_t)std::min<uint64_t>(li->getAlign().value(), 256);
         Id r = id_of(li);
         if (li->isAtomic()) {
             emit(spv::OpAtomicLoad, {ty(t), r, ptr, c_u32(spv::ScopeDevice), c_u32(0)});
@@ -437,7 +443,7 @@ void Emitter::emit_store(StoreInst* si) {
         storage_caps(sb, t);
         Id ptr = psb_pointer(p, ty(t));
         if (si->isAtomic()) emit(spv::OpAtomicStore, {ptr, c_u32(spv::ScopeDevice), c_u32(0), val(v)});
-        else emit(spv::OpStore, {ptr, val(v), (uint32_t)spv::MemoryAccessAlignedMask, (uint32_t)si->getAlign().value()});
+        else emit(spv::OpStore, {ptr, val(v), (uint32_t)spv::MemoryAccessAlignedMask, (uint32_t)std::min<uint64_t>(si->getAlign().value(), 256)});
         return;
     }
     Id ptr; Type* et; spv::StorageClass sc;

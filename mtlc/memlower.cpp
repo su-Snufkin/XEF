@@ -376,7 +376,7 @@ public:
         Type* st = t->getScalarType();
         if (!(st->isIntegerTy(8) || st->isIntegerTy(16) || st->isIntegerTy(32) || st->isIntegerTy(64) || st->isHalfTy() ||
               st->isFloatTy() || st->isDoubleTy())) {
-            fail("unsupported device load type");
+            fail("unsupported device load type " + type_tag(t));
             return PoisonValue::get(t);
         }
         Value* p = b.CreateIntToPtr(addr, PointerType::get(ctx, 1));
@@ -427,9 +427,10 @@ public:
     // ---------------- word arenas ----------------
     Value* arena_ptr(IRBuilder<>& b, bool tg, Value* word_index) {
         if (tg) {
-            if (!ps.tg_arena) fail("internal: no threadgroup arena");
+            if (!ps.tg_arena) { fail("threadgroup access without threadgroup memory"); return PoisonValue::get(PointerType::get(ctx, 3)); }
             return b.CreateInBoundsGEP(ps.tg_arena->getValueType(), ps.tg_arena, {b.getInt32(0), word_index});
         }
+        if (!ps.priv_arena) { fail("thread-memory access without thread memory"); return PoisonValue::get(PointerType::get(ctx, 0)); }
         return b.CreateInBoundsGEP(ps.priv_arena->getAllocatedType(), ps.priv_arena, {b.getInt32(0), word_index});
     }
     Value* load_word(IRBuilder<>& b, bool tg, Value* byte_off) {
@@ -832,6 +833,11 @@ public:
                 }
             }
             if (name.starts_with("air.atomic.")) { lower_air_atomic(ci, name); return; }
+            if (name.starts_with("air.get_null_texture") || name.starts_with("air.get_null_sampler")) {
+                map[i] = ConstantInt::get(i64, 0);   // resource id 0: no resource
+                dead.push_back(i);
+                return;
+            }
             if (name.starts_with("air.atomic_compare_exchange_weak_explicit_texture")) {
                 // (tex, coord, [slice], ?, ptr expected, desired, order, order, scope) -> i1, *expected = old:
                 // becomes air.atomic_xefcmpxchg_explicit_<kind>(tex, coord, [slice], ?, expected, desired) -> old

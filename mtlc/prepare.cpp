@@ -14,6 +14,7 @@
 #include "llvm/Transforms/Scalar/EarlyCSE.h"
 #include "llvm/Transforms/Scalar/GVN.h"
 #include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/Scalar/Scalarizer.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Scalar/InstSimplifyPass.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -641,6 +642,25 @@ bool prepare_stage(Module& m, AirEntry& e, const CompileRequest& req, LinkInfo& 
         if (NamedMDNode* nm = m.getNamedMetadata(md)) nm->eraseFromParent();
 
     run_cleanup(*main, true);
+    // SPIR-V vectors have at most 4 components: functions using wider ones (<8 x half>, <16 x i8> in Apple's
+    // libraries) are scalarized, loads and stores included
+    bool wide = false;
+    for (BasicBlock& blk : *main)
+        for (Instruction& i : blk) {
+            auto wide_t = [](Type* t) { auto* v = dyn_cast<FixedVectorType>(t); return v && v->getNumElements() > 4; };
+            if (wide_t(i.getType())) wide = true;
+            for (Value* o : i.operands()) if (wide_t(o->getType())) wide = true;
+        }
+    if (wide) {
+        run_fpm(*main, [](FunctionPassManager& fpm) {
+            ScalarizerPassOptions o;
+            o.ScalarizeLoadStore = true;
+            o.ScalarizeVariableInsertExtract = true;
+            fpm.addPass(ScalarizerPass(o));
+            fpm.addPass(EarlyCSEPass(true));
+            fpm.addPass(ADCEPass());
+        });
+    }
     return true;
 }
 

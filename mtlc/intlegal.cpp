@@ -161,7 +161,68 @@ static void expand_int_intrinsics(Function& f) {
     }
 }
 
+// buffer accesses aligned below their scalar size (packed data) are not expressible as SPIR-V Aligned accesses:
+// split them into naturally aligned 1/2-byte pieces assembled into 32-bit words
+static Value* psb_address(Value* p) {
+    if (auto* ip = dyn_cast<IntToPtrInst>(p)) return ip->getOperand(0);
+    if (auto* ce = dyn_cast<ConstantExpr>(p)) if (ce->getOpcode() == Instruction::IntToPtr) return ce->getOperand(0);
+    return nullptr;
+}
+
+static void split_misaligned(Function& f) {
+    const DataLayout& dl = f.getParent()->getDataLayout();
+    std::vector<Instruction*> work;
+    for (BasicBlock& b : f)
+        for (Instruction& i : b) {
+            Type* t = nullptr; Align al; Value* p = nullptr;
+            if (auto* li = dyn_cast<LoadInst>(&i)) { if (li->isAtomic() || li->isVolatile()) continue; t = li->getType(); al = li->getAlign(); p = li->getPointerOperand(); }
+            else if (auto* si = dyn_cast<StoreInst>(&i)) { if (si->isAtomic() || si->isVolatile()) continue; t = si->getValueOperand()->getType(); al = si->getAlign(); p = si->getPointerOperand(); }
+            else continue;
+            if (!psb_address(p) || t->isAggregateType() || t->isPointerTy()) continue;
+            uint64_t es = dl.getTypeStoreSize(t->getScalarType()), size = dl.getTypeStoreSize(t);
+            if (al.value() >= es || al.value() > 2 || size % 2) continue;
+            work.push_back(&i);
+        }
+    for (Instruction* i : work) {
+        IRBuilder<> b(i);
+        LLVMContext& c = f.getContext();
+        bool is_load = isa<LoadInst>(i);
+        Value* p = is_load ? cast<LoadInst>(i)->getPointerOperand() : cast<StoreInst>(i)->getPointerOperand();
+        Type* t = is_load ? i->getType() : cast<StoreInst>(i)->getValueOperand()->getType();
+        unsigned a = (unsigned)(is_load ? cast<LoadInst>(i)->getAlign() : cast<StoreInst>(i)->getAlign()).value();
+        Value* base = psb_address(p);
+        uint64_t size = dl.getTypeStoreSize(t);
+        unsigned wb = size % 4 ? 2 : 4;   // word bytes
+        unsigned words = (unsigned)(size / wb), per = wb / a;
+        Type* ct = Type::getIntNTy(c, a * 8);
+        Type* i32 = Type::getIntNTy(c, wb * 8);
+        Type* wt = words == 1 ? (Type*)i32 : FixedVectorType::get(i32, words);
+        auto chunk_ptr = [&](unsigned k) { return b.CreateIntToPtr(b.CreateAdd(base, b.getInt64(k * a)), p->getType()); };
+        if (is_load) {
+            Value* w = PoisonValue::get(wt);
+            for (unsigned j = 0; j < words; j++) {
+                Value* acc = ConstantInt::get(i32, 0);
+                for (unsigned q = 0; q < per; q++) {
+                    Value* x = b.CreateZExt(b.CreateAlignedLoad(ct, chunk_ptr(j * per + q), Align(a)), i32);
+                    acc = b.CreateOr(acc, q ? b.CreateShl(x, q * a * 8) : x);
+                }
+                w = words == 1 ? acc : b.CreateInsertElement(w, acc, (uint64_t)j);
+            }
+            i->replaceAllUsesWith(b.CreateBitCast(w, t));
+        } else {
+            Value* w = b.CreateBitCast(cast<StoreInst>(i)->getValueOperand(), wt);
+            for (unsigned j = 0; j < words; j++) {
+                Value* x = words == 1 ? w : b.CreateExtractElement(w, (uint64_t)j);
+                for (unsigned q = 0; q < per; q++)
+                    b.CreateAlignedStore(b.CreateTrunc(q ? b.CreateLShr(x, q * a * 8) : x, ct), chunk_ptr(j * per + q), Align(a));
+            }
+        }
+        i->eraseFromParent();
+    }
+}
+
 bool legalize_ints(Function& f, std::string& err) {
+    split_misaligned(f);
     expand_int_intrinsics(f);
     fold_bool_bitcasts(f);
     std::vector<Instruction*> work;
