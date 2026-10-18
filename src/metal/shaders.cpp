@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <spawn.h>
 #include <sys/stat.h>
@@ -84,9 +85,16 @@ static bool write_all(int fd, const void* p, size_t n) {
     }
     return true;
 }
-static bool read_all(int fd, void* p, size_t n) {
+static bool read_all(int fd, void* p, size_t n, int timeout_ms = 30000) {
     uint8_t* b = (uint8_t*)p;
     while (n) {
+        struct pollfd pfd{fd, POLLIN, 0};
+        int pr = poll(&pfd, 1, timeout_ms);
+        if (pr < 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        if (pr == 0) return false; // timeout
         ssize_t r = read(fd, b, n);
         if (r < 0 && errno == EINTR) continue;
         if (r <= 0) return false;

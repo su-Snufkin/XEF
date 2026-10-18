@@ -1235,6 +1235,7 @@ static void xef_pass_attachment_ds(MTLRenderPassAttachmentDescriptor *a, xef_mtl
   _status = MTLCommandBufferStatusScheduled;
   sh = [_scheduledHandlers copy];
   [_scheduledHandlers removeAllObjects];
+  pthread_cond_broadcast(&_cond);
   pthread_mutex_unlock(&_lock);
   for (MTLCommandBufferHandler h in sh) h(self);
   [sh release];
@@ -1255,7 +1256,12 @@ static void xef_pass_attachment_ds(MTLRenderPassAttachmentDescriptor *a, xef_mtl
   [_retained removeAllObjects];
   [_drawables removeAllObjects];
 }
-- (void)waitUntilScheduled {}
+- (void)waitUntilScheduled {
+  if (_status < MTLCommandBufferStatusCommitted) return;
+  pthread_mutex_lock(&_lock);
+  while (_status < MTLCommandBufferStatusScheduled) pthread_cond_wait(&_cond, &_lock);
+  pthread_mutex_unlock(&_lock);
+}
 - (void)waitUntilCompleted {
   if (_status < MTLCommandBufferStatusCommitted) return;
   pthread_mutex_lock(&_lock);
