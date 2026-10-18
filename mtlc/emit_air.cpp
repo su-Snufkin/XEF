@@ -545,7 +545,7 @@ bool Emitter::emit_air(CallInst* ci, StringRef name) {
     // ---- integer ----
     bool sgn = name.contains(".s.");
     if (op == "abs") return g(GLSLstd450SAbs, {0});
-    if (op == "absdiff") {
+    if (op == "absdiff" || op == "abs_diff") {
         Id mx = ext(rt, sgn ? GLSLstd450SMax : GLSLstd450UMax, {a(0), a(1)});
         Id mn = ext(rt, sgn ? GLSLstd450SMin : GLSLstd450UMin, {a(0), a(1)});
         result(ci, emit_r(spv::OpISub, rt, {mx, mn}));
@@ -1134,17 +1134,19 @@ bool Emitter::emit_air_texture(CallInst* ci, StringRef name) {
             return true;
         }
         Id r;
+        Id tt = comp == COMP_SINT ? sb.t_vec(sb.type(spv::OpTypeInt, {32, 1}), 4) : ty(v4t);   // result = sampled type
         if (storage) {
             sb.cap(spv::CapabilityStorageImageReadWithoutFormat);
-            if (sample) r = emit_r(spv::OpImageRead, ty(v4t), {img, coord_full, (uint32_t)spv::ImageOperandsSampleMask, int_vec(sample, 1)});
-            else r = emit_r(spv::OpImageRead, ty(v4t), {img, coord_full});
+            if (sample) r = emit_r(spv::OpImageRead, tt, {img, coord_full, (uint32_t)spv::ImageOperandsSampleMask, int_vec(sample, 1)});
+            else r = emit_r(spv::OpImageRead, tt, {img, coord_full});
         } else if (tk->sdim == spv::DimBuffer) {
-            r = emit_r(spv::OpImageFetch, ty(v4t), {img, coord_full});
+            r = emit_r(spv::OpImageFetch, tt, {img, coord_full});
         } else if (sample) {
-            r = emit_r(spv::OpImageFetch, ty(v4t), {img, coord_full, (uint32_t)spv::ImageOperandsSampleMask, int_vec(sample, 1)});
+            r = emit_r(spv::OpImageFetch, tt, {img, coord_full, (uint32_t)spv::ImageOperandsSampleMask, int_vec(sample, 1)});
         } else {
-            r = emit_r(spv::OpImageFetch, ty(v4t), {img, coord_full, (uint32_t)spv::ImageOperandsLodMask, lod ? int_vec(lod, 1) : c_u32(0)});
+            r = emit_r(spv::OpImageFetch, tt, {img, coord_full, (uint32_t)spv::ImageOperandsLodMask, lod ? int_vec(lod, 1) : c_u32(0)});
         }
+        if (comp == COMP_SINT) r = emit_r(spv::OpBitcast, ty(v4t), {r});
         finish(r, v4t);
         return true;
     }
@@ -1384,7 +1386,14 @@ bool Emitter::emit_air_simd(CallInst* ci, StringRef name) {
                 result(ci, s2);
                 return true;
             }
-            fail("quad vote");
+            // all/any: OR / AND the predicate across the quad with xor shuffles
+            Id u32 = t_u32();
+            Id x = emit_r(spv::OpSelect, u32, {a(0), c_u32(1), c_u32(0)});
+            spv::Op o = op == "quad_all" ? spv::OpBitwiseAnd : spv::OpBitwiseOr;
+            Id s1 = emit_r(o, u32, {x, emit_r(spv::OpGroupNonUniformShuffleXor, u32, {sub, x, c_u32(1)})});
+            Id s2 = emit_r(o, u32, {s1, emit_r(spv::OpGroupNonUniformShuffleXor, u32, {sub, s1, c_u32(2)})});
+            Id b = emit_r(spv::OpINotEqual, sb.t_bool(), {s2, c_u32(0)});
+            result(ci, convert_numeric_ids(b, Type::getInt1Ty(m.getContext()), ci->getType(), false));
             return true;
         } else { fail("unsupported quad op " + name.str()); return true; }
         result(ci, shuffle(target));

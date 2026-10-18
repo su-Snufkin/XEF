@@ -416,7 +416,7 @@ public:
                     while (q < e && t[q].text != ";" && t[q].text != "(" && t[q].text != ")") { if (t[q].text == "=" ) break; q++; }
                     if (q < e && t[q].text == ";") decl = true;
                     if (decl && prev != ")")
-                        edits.push_back({t[k].pos, t[k].end, "static __attribute__((section(\"xef.tg\")))"});
+                        edits.push_back({t[k].pos, t[k].end, "static __attribute__((section(\"xef.tg\"), used))"});   // used: GlobalOpt must not make it thread-private
                 }
             }
         }
@@ -460,10 +460,24 @@ public:
             if (k.text == "{") {
                 // function bodies: scan for threadgroup locals
                 size_t e = match(p, "{", "}");
-                if (t[p - 1].text == ")" || t[p - 1].text == "const" || t[p - 1].text == "]]") { scan_body(p, e); p = e + 1; continue; }
+                size_t q = p - 1;
+                bool as_qualified = false;
+                while (q > 0 && is_qualifier(t[q].text)) {
+                    if (t[q].text != "const" && t[q].text != "thread" && t[q].text != "volatile" && t[q].text != "noexcept") as_qualified = true;
+                    q--;
+                }
+                if (t[q].text == ")" || t[p - 1].text == "]]") {
+                    if (!as_qualified && duplicate_after_erasure(p, e)) { p = e + 1; continue; }
+                    scan_body(p, e); p = e + 1; continue;
+                }
                 brace++;
+                scopes.push_back(next_scope++);
             }
-            if (k.text == "}") brace--;
+            if (k.text == "}") { brace--; if (!scopes.empty()) scopes.pop_back(); }
+            if (k.text == ";" && p >= 2 && t[p - 1].text == "default" && t[p - 2].text == "=") {
+                // defaulted special members: same erasure duplicates as function bodies
+                if (duplicate_after_erasure(p - 2, p)) { p++; continue; }
+            }
             if (k.text == ";" ) pending.clear();
             p++;
         }
@@ -471,6 +485,43 @@ public:
     }
     // entries may live in namespaces: braces of namespaces/structs are counted, function bodies are skipped
     bool brace_ok(int) const { return true; }
+
+    static bool is_qualifier(const std::string& x) {
+        return x == "const" || x == "volatile" || x == "thread" || x == "device" || x == "constant" || x == "threadgroup" ||
+               x == "threadgroup_imageblock" || x == "ray_data" || x == "object_data" || x == "noexcept" || x == "override" ||
+               x == "final";
+    }
+    static bool is_address_space(const std::string& x) {
+        return x == "thread" || x == "device" || x == "constant" || x == "threadgroup" || x == "threadgroup_imageblock" ||
+               x == "ray_data" || x == "object_data";
+    }
+    // overloads that differ only in address spaces (device T& / constant T&) become the same C++ function once
+    // address spaces are erased: keep the first definition in each scope, drop the others
+    std::vector<int> scopes;
+    int next_scope = 1;
+    std::set<std::string> seen_functions;
+    bool duplicate_after_erasure(size_t body, size_t body_end) {
+        size_t a = body;
+        int d = 0;
+        while (a > 0) {
+            const std::string& x = t[a - 1].text;
+            if (x == ")" || x == "]" || x == "]]") d++;
+            if (x == "(" || x == "[" || x == "[[") d--;
+            if (d == 0 && (x == ";" || x == "{" || x == "}")) break;
+            a--;
+        }
+        std::string sig = std::to_string(scopes.empty() ? 0 : scopes.back()) + "|";
+        bool has_as = false;
+        for (size_t q = a; q < body; q++) {
+            if (is_address_space(t[q].text)) { has_as = true; continue; }
+            sig += t[q].text + " ";
+        }
+        if (!seen_functions.insert(sig).second && has_as) {
+            edits.push_back({t[a].pos, t[body_end].end, " "});
+            return true;
+        }
+        return false;
+    }
 
     // float literals: unsuffixed -> `f`, `h` suffix -> half cast
     void literals() {
@@ -1131,6 +1182,7 @@ bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std:
             g->replaceAllUsesWith(ConstantExpr::getAddrSpaceCast(ng, g->getType()));
             g->eraseFromParent();
         }
+        if (GlobalVariable* u = m.getGlobalVariable("llvm.used")) u->eraseFromParent();
     }
 
     // 4. AIR entry points

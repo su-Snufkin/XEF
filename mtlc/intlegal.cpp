@@ -9,6 +9,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include <map>
+#include <set>
 
 namespace mtlc {
 using namespace llvm;
@@ -33,34 +34,135 @@ static bool involves_odd(Instruction& i) {
     return false;
 }
 
-// extractelement (bitcast <N x iM> x to <N*M x i1>), k  ->  trunc (lshr x[k / M], k % M)
-// (InstCombine's form of reading lanes of a bool vector stored as bytes)
+// lanes of i1 vectors wider than SPIR-V allows (<24 x i1> = bitcast of <3 x i8> bool lanes, as InstCombine
+// produces for bool vectors): rebuild each extracted lane through elementwise ops, shuffles and the bitcast
+static Value* wide_lane(IRBuilder<>& b, Value* v, uint64_t k, int depth) {
+    if (depth > 16) return nullptr;
+    if (auto* c = dyn_cast<Constant>(v)) {
+        Constant* e = c->getAggregateElement((unsigned)k);
+        return e && !isa<PoisonValue>(e) && !isa<UndefValue>(e) ? e : ConstantInt::getFalse(v->getContext());
+    }
+    if (auto* bc = dyn_cast<BitCastInst>(v)) {
+        if (!bc->getSrcTy()->isVectorTy() || !bc->getSrcTy()->getScalarType()->isIntegerTy()) return nullptr;
+        unsigned m = bc->getSrcTy()->getScalarSizeInBits();
+        Value* lane = b.CreateExtractElement(bc->getOperand(0), b.getInt64(k / m));
+        if (k % m) lane = b.CreateLShr(lane, ConstantInt::get(lane->getType(), k % m));
+        return b.CreateTrunc(lane, b.getInt1Ty());
+    }
+    if (auto* bo = dyn_cast<BinaryOperator>(v)) {
+        Value* x = wide_lane(b, bo->getOperand(0), k, depth + 1);
+        Value* y = x ? wide_lane(b, bo->getOperand(1), k, depth + 1) : nullptr;
+        return y ? b.CreateBinOp(bo->getOpcode(), x, y) : nullptr;
+    }
+    if (auto* sv = dyn_cast<ShuffleVectorInst>(v)) {
+        int src = sv->getMaskValue((unsigned)k);
+        if (src < 0) return ConstantInt::getFalse(v->getContext());
+        unsigned n = cast<FixedVectorType>(sv->getOperand(0)->getType())->getNumElements();
+        return (unsigned)src < n ? wide_lane(b, sv->getOperand(0), src, depth + 1) : wide_lane(b, sv->getOperand(1), src - n, depth + 1);
+    }
+    if (auto* sel = dyn_cast<SelectInst>(v)) {
+        Value* c = sel->getCondition()->getType()->isVectorTy() ? wide_lane(b, sel->getCondition(), k, depth + 1) : sel->getCondition();
+        Value* x = c ? wide_lane(b, sel->getTrueValue(), k, depth + 1) : nullptr;
+        Value* y = x ? wide_lane(b, sel->getFalseValue(), k, depth + 1) : nullptr;
+        return y ? b.CreateSelect(c, x, y) : nullptr;
+    }
+    auto* vt = dyn_cast<FixedVectorType>(v->getType());
+    if (vt && vt->getNumElements() <= 4) return b.CreateExtractElement(v, b.getInt64(k));
+    return nullptr;
+}
+
 static void fold_bool_bitcasts(Function& f) {
     std::vector<ExtractElementInst*> work;
     for (BasicBlock& b : f)
         for (Instruction& i : b)
             if (auto* ee = dyn_cast<ExtractElementInst>(&i))
-                if (auto* bc = dyn_cast<BitCastInst>(ee->getVectorOperand()))
-                    if (ee->getType()->isIntegerTy(1) && isa<ConstantInt>(ee->getIndexOperand()) &&
-                        bc->getSrcTy()->isVectorTy() && bc->getSrcTy()->getScalarType()->isIntegerTy())
+                if (auto* vt = dyn_cast<FixedVectorType>(ee->getVectorOperandType()))
+                    if (vt->getNumElements() > 4 && ee->getType()->isIntegerTy(1) && isa<ConstantInt>(ee->getIndexOperand()))
                         work.push_back(ee);
-    std::vector<Instruction*> casts;
+    std::set<Instruction*> maybe_dead;
     for (ExtractElementInst* ee : work) {
-        auto* bc = cast<BitCastInst>(ee->getVectorOperand());
-        unsigned m = bc->getSrcTy()->getScalarSizeInBits();
-        uint64_t k = cast<ConstantInt>(ee->getIndexOperand())->getZExtValue();
         IRBuilder<> b(ee);
-        Value* lane = b.CreateExtractElement(bc->getOperand(0), b.getInt64(k / m));
-        if (k % m) lane = b.CreateLShr(lane, ConstantInt::get(lane->getType(), k % m));
-        ee->replaceAllUsesWith(b.CreateTrunc(lane, b.getInt1Ty()));
+        Value* r = wide_lane(b, ee->getVectorOperand(), cast<ConstantInt>(ee->getIndexOperand())->getZExtValue(), 0);
+        if (!r) continue;
+        if (auto* src = dyn_cast<Instruction>(ee->getVectorOperand())) maybe_dead.insert(src);
+        ee->replaceAllUsesWith(r);
         ee->eraseFromParent();
-        casts.push_back(bc);
     }
-    for (Instruction* c : casts)
-        if (c->getParent() && c->use_empty()) c->eraseFromParent();
+    // drop the now unused wide vector computations
+    while (!maybe_dead.empty()) {
+        Instruction* x = *maybe_dead.begin();
+        maybe_dead.erase(maybe_dead.begin());
+        if (!x->use_empty() || x->mayHaveSideEffects()) continue;
+        for (Value* o : x->operands()) if (auto* oi = dyn_cast<Instruction>(o)) maybe_dead.insert(oi);
+        x->eraseFromParent();
+    }
+}
+
+// llvm.{s,u}cmp and llvm.*.with.overflow have no SPIR-V counterpart: expand them
+static void expand_int_intrinsics(Function& f) {
+    std::vector<IntrinsicInst*> work;
+    for (BasicBlock& b : f)
+        for (Instruction& i : b)
+            if (auto* ii = dyn_cast<IntrinsicInst>(&i)) {
+                switch (ii->getIntrinsicID()) {
+                case Intrinsic::scmp: case Intrinsic::ucmp:
+                case Intrinsic::sadd_with_overflow: case Intrinsic::uadd_with_overflow:
+                case Intrinsic::ssub_with_overflow: case Intrinsic::usub_with_overflow:
+                case Intrinsic::smul_with_overflow: case Intrinsic::umul_with_overflow:
+                    work.push_back(ii); break;
+                default: break;
+                }
+            }
+    for (IntrinsicInst* ii : work) {
+        IRBuilder<> b(ii);
+        Value* x = ii->getArgOperand(0);
+        Value* y = ii->getArgOperand(1);
+        Value* r = nullptr;
+        Intrinsic::ID id = ii->getIntrinsicID();
+        if (id == Intrinsic::scmp || id == Intrinsic::ucmp) {
+            bool sg = id == Intrinsic::scmp;
+            Type* rt = ii->getType();
+            Value* lt = b.CreateICmp(sg ? CmpInst::ICMP_SLT : CmpInst::ICMP_ULT, x, y);
+            Value* gt = b.CreateICmp(sg ? CmpInst::ICMP_SGT : CmpInst::ICMP_UGT, x, y);
+            r = b.CreateSelect(lt, ConstantInt::getSigned(rt, -1), b.CreateSelect(gt, ConstantInt::get(rt, 1), ConstantInt::get(rt, 0)));
+        } else {
+            Value* v = nullptr;
+            Value* ov = nullptr;
+            unsigned w = x->getType()->getScalarSizeInBits();
+            switch (id) {
+            case Intrinsic::uadd_with_overflow: v = b.CreateAdd(x, y); ov = b.CreateICmpULT(v, x); break;
+            case Intrinsic::usub_with_overflow: v = b.CreateSub(x, y); ov = b.CreateICmpULT(x, y); break;
+            case Intrinsic::sadd_with_overflow: {
+                v = b.CreateAdd(x, y);   // overflow when x and y share a sign that the sum lacks
+                Value* t = b.CreateAnd(b.CreateXor(v, x), b.CreateXor(v, y));
+                ov = b.CreateICmpSLT(t, Constant::getNullValue(x->getType()));
+                break;
+            }
+            case Intrinsic::ssub_with_overflow: {
+                v = b.CreateSub(x, y);
+                Value* t = b.CreateAnd(b.CreateXor(x, y), b.CreateXor(v, x));
+                ov = b.CreateICmpSLT(t, Constant::getNullValue(x->getType()));
+                break;
+            }
+            default: {   /* multiplications through the double-width product */
+                bool sg = id == Intrinsic::smul_with_overflow;
+                Type* wt = x->getType()->getWithNewBitWidth(2 * w);
+                Value* p = b.CreateMul(sg ? b.CreateSExt(x, wt) : b.CreateZExt(x, wt), sg ? b.CreateSExt(y, wt) : b.CreateZExt(y, wt));
+                v = b.CreateTrunc(p, x->getType());
+                Value* back = sg ? b.CreateSExt(v, wt) : b.CreateZExt(v, wt);
+                ov = b.CreateICmpNE(back, p);
+                break;
+            }
+            }
+            r = b.CreateInsertValue(b.CreateInsertValue(PoisonValue::get(ii->getType()), v, {0}), ov, {1});
+        }
+        ii->replaceAllUsesWith(r);
+        ii->eraseFromParent();
+    }
 }
 
 bool legalize_ints(Function& f, std::string& err) {
+    expand_int_intrinsics(f);
     fold_bool_bitcasts(f);
     std::vector<Instruction*> work;
     for (BasicBlock& b : f) for (Instruction& i : b) if (involves_odd(i)) work.push_back(&i);

@@ -219,7 +219,8 @@ Id Emitter::builtin_var(bool out, uint32_t bi, Id type) {
     spv::StorageClass sc = out ? spv::StorageClassOutput : spv::StorageClassInput;
     Id v = sb.variable(sb.t_ptr(sc, type), sc);
     sb.decorate(v, spv::DecorationBuiltIn, {bi});
-    if (!out && fragment && (bi == BI_SAMPLE_ID || bi == BI_PRIMITIVE_ID || bi == BI_LAYER || bi == BI_VIEWPORT_INDEX))
+    if (!out && fragment && (bi == BI_SAMPLE_ID || bi == BI_PRIMITIVE_ID || bi == BI_LAYER || bi == BI_VIEWPORT_INDEX ||
+                              bi == BI_SUBGROUP_SIZE || bi == BI_SUBGROUP_LOCAL_INVOCATION_ID || bi == BI_SUBGROUP_ID || bi == BI_NUM_SUBGROUPS))
         sb.decorate(v, spv::DecorationFlat);
     switch (bi) {
     case BI_SAMPLE_ID: sb.cap(spv::CapabilitySampleRateShading); break;

@@ -1179,7 +1179,29 @@ public:
 
 } // namespace
 
+// coherent(device) accesses (MSL 3.2): plain volatile loads/stores through the same pointer
+static void lower_coherent_accesses(Function& f) {
+    std::vector<CallInst*> work;
+    for (BasicBlock& b : f)
+        for (Instruction& i : b)
+            if (auto* ci = dyn_cast<CallInst>(&i))
+                if (Function* fn = ci->getCalledFunction())
+                    if (fn->getName().starts_with("air.load.device_coherent") || fn->getName().starts_with("air.store.device_coherent"))
+                        work.push_back(ci);
+    for (CallInst* ci : work) {
+        IRBuilder<> b(ci);
+        if (ci->getCalledFunction()->getName().starts_with("air.load")) {
+            LoadInst* l = b.CreateLoad(ci->getType(), ci->getArgOperand(0), true);
+            ci->replaceAllUsesWith(l);
+        } else {
+            b.CreateStore(ci->getArgOperand(0), ci->getArgOperand(1), true);
+        }
+        ci->eraseFromParent();
+    }
+}
+
 bool lower_memory(PreparedStage& ps, std::string& err) {
+    lower_coherent_accesses(*ps.main);
     MemLower ml(ps, err);
     if (!ml.run()) return false;
     run_cleanup(*ps.main, false);

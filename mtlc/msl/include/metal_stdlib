@@ -29,6 +29,7 @@
 #define METAL_FUNC inline __attribute__((always_inline))
 #define METAL_INTERNAL
 #define METAL_ENABLE_IF(...)
+#define METAL_CONST_ARG(...)
 #define METAL_ASM __asm__
 
 typedef _Float16 half;
@@ -112,6 +113,7 @@ template <class T> struct vec<T, 2> {
   vec() = default;
   XEF_CINL vec(const vec&) = default;
   XEF_CINL vec& operator=(const vec&) = default;
+  XEF_INL volatile vec& operator=(const vec& o) volatile { v = o.v; return *this; }   /* coherent -> volatile buffers */
   template <class S, class = __xef_scalar_t<S>> XEF_CINL vec(S s) : v((E)(T)s) {}
   template <class A, class B, class... R, class = typename __xef_enable_if_t<__xef_total<A, B, R...>() == 2>::type>
   XEF_CINL vec(A a, B b, R... r) : v(make(a, b, r...)) {}
@@ -277,6 +279,7 @@ template <class T> struct vec<T, 3> {
   vec() = default;
   XEF_CINL vec(const vec&) = default;
   XEF_CINL vec& operator=(const vec&) = default;
+  XEF_INL volatile vec& operator=(const vec& o) volatile { v = o.v; return *this; }   /* coherent -> volatile buffers */
   template <class S, class = __xef_scalar_t<S>> XEF_CINL vec(S s) : v((E)(T)s) {}
   template <class A, class B, class... R, class = typename __xef_enable_if_t<__xef_total<A, B, R...>() == 3>::type>
   XEF_CINL vec(A a, B b, R... r) : v(make(a, b, r...)) {}
@@ -824,6 +827,7 @@ template <class T> struct vec<T, 4> {
   vec() = default;
   XEF_CINL vec(const vec&) = default;
   XEF_CINL vec& operator=(const vec&) = default;
+  XEF_INL volatile vec& operator=(const vec& o) volatile { v = o.v; return *this; }   /* coherent -> volatile buffers */
   template <class S, class = __xef_scalar_t<S>> XEF_CINL vec(S s) : v((E)(T)s) {}
   template <class A, class B, class... R, class = typename __xef_enable_if_t<__xef_total<A, B, R...>() == 4>::type>
   XEF_CINL vec(A a, B b, R... r) : v(make(a, b, r...)) {}
@@ -2897,6 +2901,7 @@ template <class T, int N> XEF_INL vec<T, N> asinh(vec<T, N> x) { return log(x + 
 template <class T, int N> XEF_INL vec<T, N> acosh(vec<T, N> x) { return log(x + sqrt(x * x - (T)1)); }
 template <class T, int N> XEF_INL vec<T, N> atanh(vec<T, N> x) { return (T)0.5f * log(((T)1 + x) / ((T)1 - x)); }
 template <class T, int N> XEF_INL vec<bool, N> isnan(vec<T, N> x) { return x != x; }
+template <class T, int N> XEF_INL vec<bool, N> isnormal(vec<T, N> x) { vec<bool, N> r; for (int i = 0; i < N; i++) r[i] = isnormal((T)x[i]); return r; }
 template <class T, int N> XEF_INL vec<bool, N> isinf(vec<T, N> x) { return fabs(x) == vec<T, N>((T)__builtin_inff()); }
 template <class T, int N> XEF_INL vec<bool, N> isfinite(vec<T, N> x) { return !(isnan(x) || isinf(x)); }
 template <class T, int N> XEF_INL vec<bool, N> signbit(vec<T, N> x) { vec<bool, N> r; for (int i = 0; i < N; i++) r[i] = __builtin_signbit((T)x[i]); return r; }
@@ -3419,6 +3424,34 @@ extern "C" ushort __xef_quad_shuffle_rotate_down_ushort(ushort, ushort) XEF_AIR(
 XEF_INL ushort quad_shuffle_rotate_down(ushort x, ushort l) { return __xef_quad_shuffle_rotate_down_ushort(x, l); }
 extern "C" ushort __xef_quad_broadcast_ushort(ushort, ushort) XEF_AIR("air.quad_broadcast.i16");
 XEF_INL ushort quad_broadcast(ushort x, ushort l) { return __xef_quad_broadcast_ushort(x, l); }
+XEF_INL long simd_shuffle(long x, ushort l) { uint lo = simd_shuffle((uint)(ulong)x, l), hi = simd_shuffle((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong simd_shuffle(ulong x, ushort l) { uint lo = simd_shuffle((uint)(ulong)x, l), hi = simd_shuffle((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long simd_shuffle_xor(long x, ushort l) { uint lo = simd_shuffle_xor((uint)(ulong)x, l), hi = simd_shuffle_xor((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong simd_shuffle_xor(ulong x, ushort l) { uint lo = simd_shuffle_xor((uint)(ulong)x, l), hi = simd_shuffle_xor((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long simd_shuffle_up(long x, ushort l) { uint lo = simd_shuffle_up((uint)(ulong)x, l), hi = simd_shuffle_up((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong simd_shuffle_up(ulong x, ushort l) { uint lo = simd_shuffle_up((uint)(ulong)x, l), hi = simd_shuffle_up((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long simd_shuffle_down(long x, ushort l) { uint lo = simd_shuffle_down((uint)(ulong)x, l), hi = simd_shuffle_down((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong simd_shuffle_down(ulong x, ushort l) { uint lo = simd_shuffle_down((uint)(ulong)x, l), hi = simd_shuffle_down((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long simd_shuffle_rotate_up(long x, ushort l) { uint lo = simd_shuffle_rotate_up((uint)(ulong)x, l), hi = simd_shuffle_rotate_up((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong simd_shuffle_rotate_up(ulong x, ushort l) { uint lo = simd_shuffle_rotate_up((uint)(ulong)x, l), hi = simd_shuffle_rotate_up((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long simd_shuffle_rotate_down(long x, ushort l) { uint lo = simd_shuffle_rotate_down((uint)(ulong)x, l), hi = simd_shuffle_rotate_down((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong simd_shuffle_rotate_down(ulong x, ushort l) { uint lo = simd_shuffle_rotate_down((uint)(ulong)x, l), hi = simd_shuffle_rotate_down((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long simd_broadcast(long x, ushort l) { uint lo = simd_broadcast((uint)(ulong)x, l), hi = simd_broadcast((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong simd_broadcast(ulong x, ushort l) { uint lo = simd_broadcast((uint)(ulong)x, l), hi = simd_broadcast((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long quad_shuffle(long x, ushort l) { uint lo = quad_shuffle((uint)(ulong)x, l), hi = quad_shuffle((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong quad_shuffle(ulong x, ushort l) { uint lo = quad_shuffle((uint)(ulong)x, l), hi = quad_shuffle((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long quad_shuffle_xor(long x, ushort l) { uint lo = quad_shuffle_xor((uint)(ulong)x, l), hi = quad_shuffle_xor((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong quad_shuffle_xor(ulong x, ushort l) { uint lo = quad_shuffle_xor((uint)(ulong)x, l), hi = quad_shuffle_xor((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long quad_shuffle_up(long x, ushort l) { uint lo = quad_shuffle_up((uint)(ulong)x, l), hi = quad_shuffle_up((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong quad_shuffle_up(ulong x, ushort l) { uint lo = quad_shuffle_up((uint)(ulong)x, l), hi = quad_shuffle_up((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long quad_shuffle_down(long x, ushort l) { uint lo = quad_shuffle_down((uint)(ulong)x, l), hi = quad_shuffle_down((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong quad_shuffle_down(ulong x, ushort l) { uint lo = quad_shuffle_down((uint)(ulong)x, l), hi = quad_shuffle_down((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long quad_shuffle_rotate_up(long x, ushort l) { uint lo = quad_shuffle_rotate_up((uint)(ulong)x, l), hi = quad_shuffle_rotate_up((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong quad_shuffle_rotate_up(ulong x, ushort l) { uint lo = quad_shuffle_rotate_up((uint)(ulong)x, l), hi = quad_shuffle_rotate_up((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long quad_shuffle_rotate_down(long x, ushort l) { uint lo = quad_shuffle_rotate_down((uint)(ulong)x, l), hi = quad_shuffle_rotate_down((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong quad_shuffle_rotate_down(ulong x, ushort l) { uint lo = quad_shuffle_rotate_down((uint)(ulong)x, l), hi = quad_shuffle_rotate_down((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
+XEF_INL long quad_broadcast(long x, ushort l) { uint lo = quad_broadcast((uint)(ulong)x, l), hi = quad_broadcast((uint)((ulong)x >> 32), l); return (long)((ulong)hi << 32 | lo); }
+XEF_INL ulong quad_broadcast(ulong x, ushort l) { uint lo = quad_broadcast((uint)(ulong)x, l), hi = quad_broadcast((uint)((ulong)x >> 32), l); return (ulong)((ulong)hi << 32 | lo); }
 
 template <class T, int N> XEF_INL vec<T, N> simd_sum(vec<T, N> x) { vec<T, N> r; for (int i = 0; i < N; i++) r[i] = simd_sum((T)x[i]); return r; }
 template <class T, int N> XEF_INL vec<T, N> simd_max(vec<T, N> x) { vec<T, N> r; for (int i = 0; i < N; i++) r[i] = simd_max((T)x[i]); return r; }
