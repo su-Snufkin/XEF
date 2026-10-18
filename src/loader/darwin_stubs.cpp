@@ -5,6 +5,7 @@
 #include "loader/elf_loader.h"
 #include "common/common.h"
 #include "runtime/dispatch.h"
+#include "thunks/thunks.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -785,7 +786,315 @@ static const StubEntry kStubs2[] = {
     {"_CFStreamCreatePairWithSocketToNetService", (void*)&st_zero2},
 };
 
+// ---- Swift 5.1+ Runtime & Fallback Shims -------------------------------------------------------
+static size_t swift_meta_size(const void* self_meta) {
+    if (!self_meta) return 64;
+    const uint64_t* m = (const uint64_t*)self_meta;
+    const uint64_t* vwt = (const uint64_t*)(uintptr_t)m[-1];
+    if (vwt && (uintptr_t)vwt > 0x10000) {
+        size_t sz = (size_t)vwt[8];
+        if (sz > 0 && sz <= 65536) return sz;
+    }
+    return 64;
+}
+static void* st_swift_cvw_copy(void* dest, void* src, const void* self_meta) {
+    if (dest && src && dest != src) memmove(dest, src, swift_meta_size(self_meta));
+    return dest;
+}
+static void st_swift_cvw_destroy(void*, const void*) {}
+static uint32_t st_swift_cvw_getEnumTag(const void*, const void*) { return 0; }
+static void st_swift_cvw_injectEnumTag(void*, uint32_t, const void*) {}
+static void* st_swift_coroFrameAlloc(size_t sz) { return malloc(sz ? sz : 16); }
+
+uint64_t darwin_hle_register_function_locked(const char* name, void* host_fn);
+
+static uint64_t g_swift_vwt[12] = {};
+static uint64_t g_swift_dummy_meta_storage[16] = {};
+static uint64_t g_swift_dummy_wt[32] = {};
+static bool g_swift_dummy_inited = false;
+
+void init_swift_dummy_tables_locked() {
+    if (g_swift_dummy_inited) return;
+    g_swift_dummy_inited = true;
+    uint64_t fn_copy = darwin_hle_register_function_locked("__xef_swift_vwt_copy", (void*)&st_swift_cvw_copy);
+    uint64_t fn_destroy = darwin_hle_register_function_locked("__xef_swift_vwt_destroy", (void*)&st_swift_cvw_destroy);
+    uint64_t fn_tag = darwin_hle_register_function_locked("__xef_swift_vwt_tag", (void*)&st_swift_cvw_getEnumTag);
+    uint64_t fn_inj = darwin_hle_register_function_locked("__xef_swift_vwt_inj", (void*)&st_swift_cvw_injectEnumTag);
+    g_swift_vwt[0] = fn_copy;    // initializeBufferWithCopyOfBuffer
+    g_swift_vwt[1] = fn_destroy; // destroy
+    g_swift_vwt[2] = fn_copy;    // initializeWithCopy
+    g_swift_vwt[3] = fn_copy;    // assignWithCopy
+    g_swift_vwt[4] = fn_copy;    // initializeWithTake
+    g_swift_vwt[5] = fn_copy;    // assignWithTake
+    g_swift_vwt[6] = fn_tag;     // getEnumTagSinglePayload
+    g_swift_vwt[7] = fn_inj;     // storeEnumTagSinglePayload
+    g_swift_vwt[8] = 64;         // size
+    g_swift_vwt[9] = 64;         // stride
+    g_swift_vwt[10] = 7;         // flags (alignmentMask = 7 -> 8-byte aligned, POD)
+    g_swift_vwt[11] = 0;         // extraInhabitantCount
+
+    g_swift_dummy_meta_storage[0] = (uint64_t)(uintptr_t)g_swift_vwt;
+    g_swift_dummy_meta_storage[1] = 0x200; // MetadataKind::Struct
+    g_swift_dummy_meta_storage[2] = (uint64_t)(uintptr_t)&g_swift_dummy_meta_storage[4];
+    // Populate a valid non-generic Struct TargetTypeContextDescriptor at g_swift_dummy_meta_storage[4] (32 bytes):
+    // word 0: Flags = 0x00000011 (ContextDescriptorKind::Struct = 17, non-generic, no singleton init)
+    // word 1: Parent = 0
+    // word 2: Name = +16 (points to &words[6] = "XEFSwiftStub")
+    // word 3: AccessFunctionPtr = 0
+    // word 4: Fields = 0
+    // word 5: NumFields = 0
+    uint32_t* desc = (uint32_t*)&g_swift_dummy_meta_storage[4];
+    desc[0] = 0x00000011u;
+    desc[1] = 0;
+    desc[2] = 16;
+    desc[3] = 0;
+    desc[4] = 0;
+    desc[5] = 0;
+    memcpy(&desc[6], "XEFSwift", 8);
+
+    uint64_t fn_noop = darwin_hle_register_function_locked("__xef_swift_wt_noop", (void*)&st_zero2);
+    g_swift_dummy_wt[0] = (uint64_t)(uintptr_t)&g_swift_dummy_meta_storage[4];
+    for (int i = 1; i < 32; i++) g_swift_dummy_wt[i] = fn_noop;
+}
+
+void* darwin_swift_dummy_metadata() {
+    return &g_swift_dummy_meta_storage[1];
+}
+
+void* darwin_swift_dummy_vwt() {
+    return g_swift_vwt;
+}
+
+void* darwin_swift_dummy_witness_table() {
+    return g_swift_dummy_wt;
+}
+
+static void st_swift_cvw_initMetadata(void* vwtable, const void*) {
+    if (vwtable) {
+        uint64_t** meta_m1 = (uint64_t**)vwtable - 1;
+        *meta_m1 = g_swift_vwt;
+    }
+}
+static void* st_swift_cvw_allocGenericMetadata(const void*, const void*, const void*) {
+    return darwin_swift_dummy_metadata();
+}
+
+static uint64_t st_swift_getTypeByMangledNameInContext(uint64_t name_ptr, uint64_t name_len, uint64_t ctx, uint64_t gen_args) {
+    static uint64_t fn = 0;
+    if (!fn) fn = dyld_flat_lookup("_swift_getTypeByMangledNameInContext");
+    if (fn) {
+        u64 a[4] = {name_ptr, name_len, ctx, gen_args};
+        uint64_t r = guest_call(fn, 4, a);
+        if (r) return r;
+    }
+    return (uint64_t)(uintptr_t)darwin_swift_dummy_metadata();
+}
+
+static uint64_t st_swift_getTypeByMangledNameInContextInMetadataState(uint64_t, uint64_t name_ptr, uint64_t name_len, uint64_t ctx, uint64_t gen_args) {
+    return st_swift_getTypeByMangledNameInContext(name_ptr, name_len, ctx, gen_args);
+}
+
+static uint64_t st_swift_conformsToProtocol2(uint64_t type, uint64_t proto) {
+    static uint64_t fn = 0;
+    if (!fn) fn = dyld_flat_lookup("_swift_conformsToProtocol");
+    if (fn) {
+        u64 a[2] = {type, proto};
+        uint64_t r = guest_call(fn, 2, a);
+        if (r) return r;
+    }
+    return (uint64_t)(uintptr_t)darwin_swift_dummy_witness_table();
+}
+
+static uint64_t st_swift_getOpaqueTypeConformance(uint64_t, uint64_t, uint64_t) {
+    return (uint64_t)(uintptr_t)darwin_swift_dummy_witness_table();
+}
+
+static uint64_t st_swift_allocatePack(const uint64_t* elts, uint64_t count) {
+    if (!count) return 0;
+    uint64_t* p = (uint64_t*)calloc(count, sizeof(uint64_t));
+    if (elts) memcpy(p, elts, count * sizeof(uint64_t));
+    return (uint64_t)(uintptr_t)p;
+}
+
+static uint64_t st_swift_NSImage_imageLiteral(uint64_t name_lo, uint64_t name_hi) {
+    (void)name_lo; (void)name_hi;
+    static uint64_t fn_alloc = 0, fn_msg = 0, cls_img = 0, sel_init = 0;
+    if (!fn_alloc) fn_alloc = dyld_flat_lookup("_objc_alloc");
+    if (!fn_msg) fn_msg = dyld_flat_lookup("_objc_msgSend");
+    if (!cls_img) cls_img = dyld_flat_lookup("_OBJC_CLASS_$_NSImage");
+    if (!sel_init) {
+        if (uint64_t fn_sel = dyld_flat_lookup("_sel_registerName")) {
+            static const char kInit[] = "init";
+            u64 a[1] = {(u64)(uintptr_t)kInit};
+            sel_init = guest_call(fn_sel, 1, a);
+        }
+    }
+    if (fn_alloc && fn_msg && cls_img && sel_init) {
+        u64 a1[1] = {cls_img};
+        uint64_t obj = guest_call(fn_alloc, 1, a1);
+        if (obj) {
+            u64 a2[2] = {obj, sel_init};
+            return guest_call(fn_msg, 2, a2);
+        }
+    }
+    return 0;
+}
+
+static uint64_t st_swift_getWitnessTable(const uint32_t* conf, uint64_t type, uint64_t inst_args) {
+    if (!conf) return (uint64_t)(uintptr_t)darwin_swift_dummy_witness_table();
+    if ((uintptr_t)conf == (uintptr_t)darwin_swift_dummy_metadata()) {
+        return (uint64_t)(uintptr_t)darwin_swift_dummy_witness_table();
+    }
+    int32_t proto_rel = (int32_t)conf[0];
+    uintptr_t proto_addr = (uintptr_t)conf + (intptr_t)(proto_rel & ~1);
+    if (proto_rel & 1) {
+        uint64_t target = *(const uint64_t*)proto_addr;
+        if (!target || target == (uint64_t)(uintptr_t)darwin_swift_dummy_metadata()) {
+            return (uint64_t)(uintptr_t)darwin_swift_dummy_witness_table();
+        }
+    }
+    uint32_t flags = conf[3];
+    bool has_resilient = (flags >> 17) & 1;
+    if (has_resilient) {
+        return (uint64_t)(uintptr_t)darwin_swift_dummy_witness_table();
+    }
+    static uint64_t fn = 0;
+    if (!fn) fn = dyld_flat_lookup("_swift_getWitnessTable");
+    if (fn) {
+        u64 a[3] = {(uint64_t)(uintptr_t)conf, type, inst_args};
+        uint64_t r = guest_call(fn, 3, a);
+        if (r) return r;
+    }
+    return (uint64_t)(uintptr_t)darwin_swift_dummy_witness_table();
+}
+
+static int st_UIApplicationMain(int argc, char** argv, void*, void*) {
+    if (uint64_t nsapp_main = dyld_flat_lookup("_NSApplicationMain")) {
+        u64 a[2] = {(u64)argc, (u64)(uintptr_t)argv};
+        return (int)guest_call(nsapp_main, 2, a);
+    }
+    return 0;
+}
+
+static uint64_t st_swift_getObjectType(uint64_t obj) {
+    if (!obj) return 0;
+    static uint64_t fn_get_cls = 0;
+    if (!fn_get_cls) fn_get_cls = dyld_flat_lookup("_object_getClass");
+    if (fn_get_cls) {
+        u64 a[1] = {obj};
+        uint64_t cls = guest_call(fn_get_cls, 1, a);
+        if (cls) return cls;
+    }
+    return *(const uint64_t*)(uintptr_t)obj & 0x00007ffffffffff8ULL;
+}
+
+static uint64_t st_swift_getGenericMetadata(uint64_t request, uint64_t args, uint64_t desc) {
+    if (!desc || desc == (uint64_t)(uintptr_t)darwin_swift_dummy_metadata() ||
+        desc == (uint64_t)(uintptr_t)&g_swift_dummy_meta_storage[4]) {
+        return (uint64_t)(uintptr_t)darwin_swift_dummy_metadata();
+    }
+    static uint64_t fn = 0;
+    if (!fn) fn = dyld_flat_lookup("_swift_getGenericMetadata");
+    if (fn) {
+        u64 a[3] = {request, args, desc};
+        return guest_call(fn, 3, a);
+    }
+    return (uint64_t)(uintptr_t)darwin_swift_dummy_metadata();
+}
+
+static uint64_t st_swift_getSingletonMetadata(uint64_t request, uint64_t desc) {
+    if (!desc || desc == (uint64_t)(uintptr_t)darwin_swift_dummy_metadata() ||
+        desc == (uint64_t)(uintptr_t)&g_swift_dummy_meta_storage[4]) {
+        return (uint64_t)(uintptr_t)darwin_swift_dummy_metadata();
+    }
+    const int32_t* d = (const int32_t*)(uintptr_t)desc;
+    uint32_t flags = (uint32_t)d[0];
+    // For non-generic Class descriptors (kind == 16) with singleton metadata initialization (bit 16 of kind-specific flags -> bit 31 of flags):
+    // word 11 is relative offset to Cache, word 12 is relative offset to in-place Metadata, word 13 is CompletionFunction.
+    if ((flags & 0x9f) == 0x10 && (flags & 0x80000000u)) {
+        uintptr_t cache_addr = (uintptr_t)&d[11] + (intptr_t)d[11];
+        uintptr_t meta_addr  = (uintptr_t)&d[12] + (intptr_t)d[12];
+        uint64_t* cache_slot = (uint64_t*)cache_addr;
+        if (*cache_slot) return *cache_slot;
+        *cache_slot = (uint64_t)meta_addr;
+        return (uint64_t)meta_addr;
+    }
+    static uint64_t fn = 0;
+    if (!fn) fn = dyld_flat_lookup("_swift_getSingletonMetadata");
+    if (fn) {
+        u64 a[2] = {request, desc};
+        return guest_call(fn, 2, a);
+    }
+    return (uint64_t)(uintptr_t)darwin_swift_dummy_metadata();
+}
+
+static uint64_t st_swift_updateClassMetadata2(uint64_t cls, uint64_t flags, uint64_t numFields,
+                                              const uint64_t* fieldLayouts, uint64_t* fieldOffsets) {
+    if (!cls) return 0;
+    uint64_t* c = (uint64_t*)(uintptr_t)cls;
+    uint64_t saved_desc = c[8];
+    static uint64_t fn = 0;
+    if (!fn) fn = dyld_flat_lookup("_swift_updateClassMetadata2");
+    uint64_t r = 0;
+    if (fn) {
+        u64 a[5] = {cls, flags, numFields, (uint64_t)(uintptr_t)fieldLayouts, (uint64_t)(uintptr_t)fieldOffsets};
+        r = guest_call(fn, 5, a);
+    }
+    if (saved_desc && !c[8]) {
+        c[8] = saved_desc;
+    }
+    return r;
+}
+
+static const StubEntry kSwiftStubs[] = {
+    {"_UIApplicationMain", (void*)&st_UIApplicationMain},
+    {"_swift_getObjectType", (void*)&st_swift_getObjectType},
+    {"_swift_getGenericMetadata", (void*)&st_swift_getGenericMetadata},
+    {"_swift_getSingletonMetadata", (void*)&st_swift_getSingletonMetadata},
+    {"_swift_updateClassMetadata2", (void*)&st_swift_updateClassMetadata2},
+    {"_swift_getWitnessTable", (void*)&st_swift_getWitnessTable},
+    {"_swift_getTypeByMangledNameInContext2", (void*)&st_swift_getTypeByMangledNameInContext},
+    {"_swift_getTypeByMangledNameInContextInMetadataState", (void*)&st_swift_getTypeByMangledNameInContextInMetadataState},
+    {"_swift_getTypeByMangledNameInContextInMetadataState2", (void*)&st_swift_getTypeByMangledNameInContextInMetadataState},
+    {"_swift_conformsToProtocol2", (void*)&st_swift_conformsToProtocol2},
+    {"_swift_getOpaqueTypeConformance", (void*)&st_swift_getOpaqueTypeConformance},
+    {"_swift_getOpaqueTypeConformance2", (void*)&st_swift_getOpaqueTypeConformance},
+    {"_swift_getOpaqueTypeMetadata", (void*)&darwin_swift_dummy_metadata},
+    {"_swift_getOpaqueTypeMetadata2", (void*)&darwin_swift_dummy_metadata},
+    {"_swift_getExtendedExistentialTypeMetadata_unique", (void*)&darwin_swift_dummy_metadata},
+    {"_swift_getExtendedExistentialTypeMetadata", (void*)&darwin_swift_dummy_metadata},
+    {"_swift_allocateMetadataPack", (void*)&st_swift_allocatePack},
+    {"_swift_allocateWitnessTablePack", (void*)&st_swift_allocatePack},
+    {"_swift_coroFrameAlloc", (void*)&st_swift_coroFrameAlloc},
+    {"_swift_isUniquelyReferenced_nonNull_bridgeObject", (void*)&st_one},
+    {"_swift_willThrowTypedImpl", (void*)&st_noop2},
+    {"_swift_cvw_assignWithCopy", (void*)&st_swift_cvw_copy},
+    {"_swift_cvw_assignWithTake", (void*)&st_swift_cvw_copy},
+    {"_swift_cvw_initWithCopy", (void*)&st_swift_cvw_copy},
+    {"_swift_cvw_initWithTake", (void*)&st_swift_cvw_copy},
+    {"_swift_cvw_initializeBufferWithCopyOfBuffer", (void*)&st_swift_cvw_copy},
+    {"_swift_cvw_destroy", (void*)&st_swift_cvw_destroy},
+    {"_swift_cvw_enumFn_getEnumTag", (void*)&st_swift_cvw_getEnumTag},
+    {"_swift_cvw_multiPayloadEnumGeneric_getEnumTag", (void*)&st_swift_cvw_getEnumTag},
+    {"_swift_cvw_singlePayloadEnumGeneric_getEnumTag", (void*)&st_swift_cvw_getEnumTag},
+    {"_swift_cvw_multiPayloadEnumGeneric_destructiveInjectEnumTag", (void*)&st_swift_cvw_injectEnumTag},
+    {"_swift_cvw_singlePayloadEnumGeneric_destructiveInjectEnumTag", (void*)&st_swift_cvw_injectEnumTag},
+    {"_swift_cvw_initStructMetadataWithLayoutString", (void*)&st_swift_cvw_initMetadata},
+    {"_swift_cvw_initEnumMetadataMultiPayloadWithLayoutString", (void*)&st_swift_cvw_initMetadata},
+    {"_swift_cvw_initEnumMetadataSingleCaseWithLayoutString", (void*)&st_swift_cvw_initMetadata},
+    {"_swift_cvw_initEnumMetadataSinglePayloadWithLayoutString", (void*)&st_swift_cvw_initMetadata},
+    {"_swift_cvw_instantiateLayoutString", (void*)&st_swift_cvw_initMetadata},
+    {"_swift_cvw_allocateGenericValueMetadataWithLayoutString", (void*)&st_swift_cvw_allocGenericMetadata},
+    {"_$ss042_stdlib_isOSVersionAtLeastOrVariantVersiondE0yBi1_Bw_BwBwBwBwBwtF", (void*)&st_one},
+    {"_$ss26_stdlib_isOSVersionAtLeastyBi1_Bw_BwBwtF", (void*)&st_one},
+    {"_$sSo7NSSoundC6AppKitE4beepyyFZ", (void*)&st_noop2},
+    {"_$sSo6CGRectV6AppKitE4fill5usingySo22NSCompositingOperationV_tF", (void*)&st_noop2},
+    {"_$sSo6CGRectV6AppKitE4clipyyF", (void*)&st_noop2},
+    {"_$sSo7NSImageC6AppKitE24imageLiteralResourceNameABSS_tcfC", (void*)&st_swift_NSImage_imageLiteral},
+};
+
 void* darwin_stub_lookup(const char* name) {
+    for (const StubEntry& e : kSwiftStubs) if (!strcmp(e.name, name)) return e.fn;
     for (const StubEntry& e : kStubs2) if (!strcmp(e.name, name)) return e.fn;
     for (const StubEntry& e : kStubs) if (!strcmp(e.name, name)) return e.fn;
     return nullptr;
@@ -815,7 +1124,12 @@ static bool is_libedit_data_var(const char* name) {
     return false;
 }
 
-// data symbols CoreFoundation / xpc expect
+static bool ends_with(const char* s, size_t len, const char* suf) {
+    size_t slen = strlen(suf);
+    return len >= slen && memcmp(s + len - slen, suf, slen) == 0;
+}
+
+// data symbols CoreFoundation / xpc / Swift expect
 void* darwin_stub_data_lookup(const char* name) {
     static char xpc_types[16][64];
     static int n = 0;
@@ -847,6 +1161,26 @@ void* darwin_stub_data_lookup(const char* name) {
         made.push_back({name, d});
         return d;
     }
+    if (!strcmp(name, "__swiftImmortalRefCount")) {
+        static uint64_t imm = 0x80000000ffffffffull;
+        return &imm;
+    }
+    if (!strcmp(name, "_$ss20__StaticArrayStorageCN")) {
+        if (uint64_t p = dyld_flat_lookup("_$ss28__ContiguousArrayStorageBaseCN")) return (void*)(uintptr_t)p;
+        if (uint64_t p = dyld_flat_lookup("_$ss19__EmptyArrayStorageCN")) return (void*)(uintptr_t)p;
+    }
+    if (!strncmp(name, "_$s", 3)) {
+        size_t len = strlen(name);
+        if (ends_with(name, len, "WV")) return darwin_swift_dummy_vwt();
+        if (ends_with(name, len, "WP")) return darwin_swift_dummy_witness_table();
+        if (ends_with(name, len, "VMn") || ends_with(name, len, "CMn") || ends_with(name, len, "OMn") ||
+            ends_with(name, len, "VN")  || ends_with(name, len, "CN")  || ends_with(name, len, "ON")  ||
+            ends_with(name, len, "Mp")  || ends_with(name, len, "Mc")  || ends_with(name, len, "Tl")  ||
+            ends_with(name, len, "TL")  || ends_with(name, len, "Tn")  || ends_with(name, len, "Tb")  ||
+            ends_with(name, len, "Tq")  || ends_with(name, len, "QOMQ") || ends_with(name, len, "vpMV")) {
+            return darwin_swift_dummy_metadata();
+        }
+    }
     static void* libedit = dlopen("libedit.so.0", RTLD_GLOBAL | RTLD_LAZY);
     if (!libedit) libedit = dlopen("libedit.so.2", RTLD_GLOBAL | RTLD_LAZY);
     if (!libedit) libedit = dlopen("libedit.so", RTLD_GLOBAL | RTLD_LAZY);
@@ -859,8 +1193,5 @@ void* darwin_stub_data_lookup(const char* name) {
     }
     return nullptr;
 }
-
-
-
 
 } // namespace xef

@@ -175,6 +175,13 @@ uint64_t dyld_flat_lookup(const char* name) {
 // ---------------------------------------------------------------------------------------------
 // ordinal: >0 dependency, 0 self, -1 main executable, -2 flat lookup, -3 weak lookup
 static uint64_t resolve_import(MachImage* img, int ordinal, const char* name, bool weak_import) {
+    if (strcmp(name, "_swift_getWitnessTable") == 0 ||
+        strcmp(name, "_swift_getObjectType") == 0 ||
+        strcmp(name, "_swift_getGenericMetadata") == 0 ||
+        strcmp(name, "_swift_getSingletonMetadata") == 0 ||
+        strcmp(name, "_swift_updateClassMetadata2") == 0) {
+        return darwin_hle_resolve_symbol(name, false);
+    }
     uint64_t r = 0;
     bool hle_dep = false;
     if (ordinal > 0) {
@@ -569,6 +576,8 @@ static std::vector<std::string> expand_candidates(const std::string& name_in, Ma
                     out.push_back(exp + "/" + tail);
             }
         }
+        out.push_back("/usr/lib/swift/" + tail);
+        out.push_back("/usr/lib/" + tail);
     } else {
         for (const std::string& exp : subst(name, from))
             out.push_back(exp);
@@ -909,6 +918,21 @@ static void load_implicit_images() {
         if (access(host.c_str(), R_OK) != 0) continue;
         if (MachImage* im = map_image(n, host, false)) load_dependencies(im);
     }
+    // In macOS Ventura+, Swift's Foundation and Concurrency overlays live in the shared cache / frameworks,
+    // whereas our standalone Swift 5 runtime puts them in libswiftFoundation.dylib / libswift_Concurrency.dylib.
+    if (find_loaded("/usr/lib/swift/libswiftCore.dylib")) {
+        static const char* const kSwiftImplicit[] = {
+            "/usr/lib/swift/libswiftFoundation.dylib",
+            "/usr/lib/swift/libswift_Concurrency.dylib",
+        };
+        for (const char* sf : kSwiftImplicit) {
+            if (find_loaded(sf)) continue;
+            std::string host = resolve_guest_path(sf);
+            if (access(host.c_str(), R_OK) == 0) {
+                if (MachImage* im = map_image(sf, host, false)) load_dependencies(im);
+            }
+        }
+    }
 }
 
 bool load_macho(const char* path, LoadedImage& img) {
@@ -1123,7 +1147,19 @@ void dyld_run_initializers(uint64_t argc, uint64_t argv, uint64_t envp, uint64_t
     std::lock_guard<std::recursive_mutex> lk(g_dyld_lock);
     u64 args[4] = {argc, argv, envp, apple};
     std::vector<MachImage*> seen;
-    // implicit images (libunwind) first, then the executable's tree
+    // Initialize core runtime and Foundation first so Objective-C toll-free bridging is ready
+    // before any dylib (such as libswiftCore) runs its constructor.
+    static const char* const kEarly[] = {
+        "/usr/lib/libunwind.1.dylib",
+        "/usr/lib/system/libsystem_blocks.dylib",
+        "/usr/lib/libobjc.A.dylib",
+        "/usr/lib/system/libdispatch.dylib",
+        "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+        "/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+    };
+    for (const char* name : kEarly) {
+        if (MachImage* im = find_loaded(name)) run_inits_of(im, seen, args);
+    }
     for (size_t i = g_images.size(); i-- > 1;) run_inits_of(g_images[i], seen, args);
     if (!g_images.empty()) run_inits_of(g_images[0], seen, args);
     fixup_tagged_pointer_classes();

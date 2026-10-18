@@ -74,6 +74,8 @@ void* darwin_pthread_lookup(const char* name);
 void darwin_signals_init(uint8_t* stub);
 void* darwin_stub_data_lookup(const char* name);
 void* darwin_sys_data_lookup(const char* name);
+void* darwin_swift_dummy_metadata();
+void* darwin_swift_dummy_witness_table();
 static std::unordered_map<std::string, uint64_t> g_symbol_cache;
 static std::unordered_set<std::string> g_host_fallback_names;   // resolved only through the host's dlsym
 
@@ -2444,6 +2446,8 @@ static void darwin_dyld_register_func_for_remove_image(u64) {}
 static const char* darwin_dyld_get_image_install_name(const void* mh) {
     for (MachImage* im : dyld_images())
         if (im->header == (uint64_t)(uintptr_t)mh) return im->install_name.c_str();
+    if (MachImage* im = dyld_image_containing((uint64_t)(uintptr_t)mh))
+        return im->path.c_str();
     return nullptr;
 }
 
@@ -3553,6 +3557,8 @@ void darwin_hle_init() {
     g_thunk_code_used += 16;
     darwin_signals_init(sigret);
     emit_setjmp_family();
+    void init_swift_dummy_tables_locked();
+    init_swift_dummy_tables_locked();
 }
 
 uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit_only) {
@@ -3649,7 +3655,9 @@ uint64_t darwin_hle_resolve_symbol(const char* name, bool is_weak, bool explicit
         g_symbol_cache[name] = addr;
         return addr;
     }
-    if (strcmp(name, "___chkstk_darwin") == 0) {
+    if (strcmp(name, "___chkstk_darwin") == 0 ||
+        strncmp(name, "_swift_retain_x", 15) == 0 ||
+        strncmp(name, "_swift_release_x", 16) == 0) {
         if (g_thunk_code_used + 16 > kThunkCodeSize) {
             fatal("darwin_hle: thunk code buffer exhausted");
         }
@@ -4128,9 +4136,7 @@ bool darwin_hle_current(const char** name, u64* lr) {
     return true;
 }
 
-uint64_t darwin_hle_register_function(const char* name, void* host_fn) {
-    darwin_hle_init();
-    std::lock_guard<std::mutex> lk(g_hle_lock);
+uint64_t darwin_hle_register_function_locked(const char* name, void* host_fn) {
     auto it = g_symbol_cache.find(name);
     if (it != g_symbol_cache.end()) return it->second;
     uint32_t thunk_id = (uint32_t)g_thunks.size();
@@ -4146,6 +4152,12 @@ uint64_t darwin_hle_register_function(const char* name, void* host_fn) {
     g_symbol_cache[name] = a;
     g_host_fallback_names.insert(name);
     return a;
+}
+
+uint64_t darwin_hle_register_function(const char* name, void* host_fn) {
+    darwin_hle_init();
+    std::lock_guard<std::mutex> lk(g_hle_lock);
+    return darwin_hle_register_function_locked(name, host_fn);
 }
 
 // XEF_GUEST_BT=N[,count]: from N seconds after start, the next `count` (default 20) HLE calls of each thread print
@@ -4219,6 +4231,31 @@ void darwin_hle_dispatch(CpuState* st) {
 
 
     if (host_fn == (void*)&darwin_missing_symbol_fallback) {
+        if (strcmp(name, "_$s7SwiftUI3AppPAAE4mainyyFZ") == 0 ||
+            strcmp(name, "_$s7SwiftUI6runAppys5NeverOxAA0D0RzlF") == 0 ||
+            strcmp(name, "_UIApplicationMain") == 0) {
+            if (uint64_t nsapp_main = dyld_flat_lookup("_NSApplicationMain")) {
+                u64 a[2] = {(u64)g_darwin_argc, (u64)(uintptr_t)g_darwin_argv};
+                st->x[0] = guest_call(nsapp_main, 2, a);
+                return;
+            }
+        }
+        if (strncmp(name, "_$s", 3) == 0) {
+            size_t len = strlen(name);
+            if (len >= 2 && strcmp(name + len - 2, "Ma") == 0) {
+                st->x[0] = (uint64_t)(uintptr_t)darwin_swift_dummy_metadata();
+                st->x[1] = 0; // MetadataState::Complete
+                return;
+            }
+            if (len >= 2 && (strcmp(name + len - 2, "Wl") == 0 || strcmp(name + len - 2, "WT") == 0)) {
+                st->x[0] = (uint64_t)(uintptr_t)darwin_swift_dummy_witness_table();
+                return;
+            }
+            XEF_LOG(1, "xef-osx: warning: returning 0 for unimplemented Swift symbol '%s'", name);
+            st->x[0] = 0;
+            st->x[1] = 0;
+            return;
+        }
         fatal("xef-osx: called unresolved Darwin symbol '%s'", name);
     }
 

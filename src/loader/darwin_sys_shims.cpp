@@ -36,18 +36,21 @@ static const void* sh_header_containing(const void* addr) {
     MachImage* im = dyld_image_containing((uint64_t)(uintptr_t)addr);
     return im ? (const void*)(uintptr_t)im->header : nullptr;
 }
+static MachImage* image_for_header(const void* mh) {
+    if (!mh) return nullptr;
+    for (MachImage* im : dyld_images()) if (im->header == (uint64_t)(uintptr_t)mh) return im;
+    // Some callers (e.g. libobjc) pass the return value of _NSGetMachExecuteHeader() without dereferencing it
+    uint64_t deref = *(const uint64_t*)mh;
+    for (MachImage* im : dyld_images()) if (im->header == deref) return im;
+    return nullptr;
+}
 static intptr_t sh_image_slide(const void* mh) {
-    for (MachImage* im : dyld_images()) if (im->header == (uint64_t)(uintptr_t)mh) return (intptr_t)im->slide;
+    if (MachImage* im = image_for_header(mh)) return (intptr_t)im->slide;
     return 0;
 }
 static bool sh_image_uuid(const void*, uint8_t*) { return false; }
 static const void* sh_mach_execute_header() { return sh_prog_header(); }
 static const void** sh_NSGetMachExecuteHeader() { static const void* p; p = sh_prog_header(); return &p; }
-
-static MachImage* image_for_header(const void* mh) {
-    for (MachImage* im : dyld_images()) if (im->header == (uint64_t)(uintptr_t)mh) return im;
-    return nullptr;
-}
 static uint8_t* sh_getsectdatafromheader_64(const void* mh, const char* seg, const char* sect, uint64_t* size) {
     MachImage* im = image_for_header(mh);
     if (!im) return nullptr;
@@ -56,6 +59,11 @@ static uint8_t* sh_getsectdatafromheader_64(const void* mh, const char* seg, con
             if (size) *size = s.size;
             return (uint8_t*)(uintptr_t)s.addr;
         }
+    if (sect && !strcmp(sect, "__objc_dupclass")) {
+        static uint64_t dummy_dup = 0;
+        if (size) *size = 0;
+        return (uint8_t*)((uintptr_t)&dummy_dup - im->slide);
+    }
     return nullptr;
 }
 static uint8_t* sh_getsegmentdata(const void* mh, const char* seg, uint64_t* size) {
@@ -274,6 +282,16 @@ static void sh_abort() {
     u64 lr = t ? t->st->x[30] : 0;
     MachImage* im = dyld_image_containing(lr);
     fprintf(stderr, "xef-osx: abort() called from %s+%#lx\n", im ? im->path.c_str() : "?", (unsigned long)(im ? lr - im->header : lr));
+    // guest frame-pointer backtrace (uncaught exceptions end here: the throw site is a few frames up)
+    u64 fp = t ? t->st->x[29] : 0;
+    for (int i = 0; i < 32 && fp && !(fp & 7); i++) {
+        u64 ret = ((u64*)fp)[1];
+        if (!ret) break;
+        fprintf(stderr, "xef-osx:   #%d %s\n", i, dyld_describe(ret).c_str());
+        u64 next = ((u64*)fp)[0];
+        if (next <= fp || next >= fp + 0x10000000) break;
+        fp = next;
+    }
     fflush(stdout);
     abort();
 }
