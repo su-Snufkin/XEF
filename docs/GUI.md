@@ -73,13 +73,25 @@ in the same process. Needs `DISPLAY` (e.g. `Xvfb :99 -screen 0 640x480x24`) and,
 `LIBGL_ALWAYS_SOFTWARE=1`. `tests/darwin/gl_test.sh` is the regression test (300 frames, two runs, screenshot check with
 `tools/imgcheck.py`). The same cube rendered on the real Mac (`tests/darwin/mac_gl/ref.ppm`) matches at SSIM 0.996.
 
-Cocoa/AppKit OpenGL (`NSOpenGLView`, `NSOpenGLContext`), GLFW (`glfw_gl21`, `glfw_gl32`), and Cocoa Metal (`CAMetalLayer`, `MTLDevice`) are fully supported:
-- **`AppKit.framework`**: Windows, menus, runloop, layer-backed views (`setWantsLayer:YES`, `-makeBackingLayer`, `+layerClass`), event routing, drag & drop, file dialogs.
-- **`QuartzCore.framework`**: `CAMetalLayer` and `CAMetalDrawable` presenting Metal drawables directly onto host GLX/X11 windows via `xef_host_present_pixels`.
-- **`Metal.framework`**: Complete implementation of `MTLDevice`, `MTLCommandQueue`, `MTLCommandBuffer`, blit and render command encoders (`MTLRenderCommandEncoder`), texture uploads (row-by-row 4- and 6-argument `replaceRegion:`), texture views (`newTextureViewWithPixelFormat:`), MSL shader parsing, and 2D/3D rasterizer with alpha blending, perspective interpolation, and scissor clipping.
-- **Verified Apps**:
-  - `cand4_metal` (`tests/darwin/metal_test.sh`): offscreen Metal 3D triangle pipeline passing 300 frames without errors.
-  - `orbit64` (Nintendo 64 emulator): runs under SDL3 with Metal backend (`SDL_gpu_metal`) on X11 at a stable 60 FPS (11.3 ms/frame) with full UI, menus, boxart browser, and in-game emulation (`Mario Kart 64`).
+Cocoa/AppKit OpenGL (`NSOpenGLView`, `NSOpenGLContext`) and GLFW (`glfw_gl21`, `glfw_gl32`) run on the host's libGL.
+
+Metal runs on the GPU through **MetalVK** (Metal → Vulkan 1.3):
+- **Shaders**: `mtlc/xef-mtlc` is a separate compiler process that turns AIR (the LLVM bitcode in `.metallib` files)
+  into Vulkan SPIR-V, and compiles Metal Shading Language source (`newLibraryWithSource:`) to AIR first with an
+  embedded clang and a generated `metal_stdlib`. Results are cached in `~/.cache/xef-mtl`.
+- **Engine** (`src/metal`): buffers/textures/samplers, render/compute/blit encoders recorded by the guest
+  `Metal.framework` and executed as Vulkan command buffers with dynamic rendering, presentation through a Vulkan
+  swapchain on the AppKit window.
+- **Frameworks** (`rootfs-src/appkit`): `Metal.framework`, `QuartzCore` (`CAMetalLayer`), `MetalKit` (`MTKView`,
+  `MTKMesh`, `MTKTextureLoader` incl. compiled asset catalogs), `ModelIO` meshes, and AppKit nib/storyboard loading
+  (`NSApplicationMain`, `NSViewController`, `NSWindowController`, `NSStoryboard`).
+- **Verified apps** (`tests/darwin/metal_test.sh`): `cand4_metal`, `metallib_test`, `metalkit_test`, `compute_test`,
+  `cube_test`, `heap_event_test`, `mip_sample_test`; 22 of the SDL3 GPU samples (all 34 render correctly); Xcode's
+  macOS Metal Game template; `vkcube` through MoltenVK (Vulkan → MoltenVK → MetalVK → Vulkan); `orbit64` with
+  Mario Kart 64 at 60 fps.
+- **Debugging**: `XEF_MTL_SHOT=out.ppm XEF_MTL_SHOT_FRAME=N [XEF_MTL_SHOT_EXIT=1]` saves a presented frame,
+  `XEF_MTL_TRACE=1` prints the executed command stream, `XEF_MTL_CAPTURE=dir` saves one compute dispatch,
+  `XEF_MTL_DUMP_LIBS=dir` keeps every library/MSL source, `xef-mtlc LIB.metallib --all --dump` compiles offline.
 
 ## Setup
 

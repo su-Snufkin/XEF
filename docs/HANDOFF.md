@@ -498,7 +498,7 @@ macOS GUI / 3D & Metal (2026-10-16):
   - Wszystkie testy regresji (`tests/darwin/gl_test.sh`: gltri, gltri_core, cocoa_gl, glfw_gl21, glfw_gl32 oraz `tests/darwin/metal_test.sh`) przechodzą w 100% (PASS gl_test, PASS metal_test).
 
 Implementacja MetalVK (Natywny backend Vulkan dla Metal) pod XEF-OSX (2026-10-17):
-- **Architektura MetalVK dla XEF-OSX**:
+- **Architektura MetalVK dla XEF-OSX** (opis historyczny — ten backend został zastąpiony, patrz sekcja 9):
   - Nowoczesna warstwa akceleracji sprzętowej tłumacząca potok Apple Metal bezpośrednio na Vulkan 1.3 / 1.4 dla Linuksa.
 - **Implementacja backendu Vulkan dla Metal (`src/loader/darwin_metal_vk.h`, `src/loader/darwin_metal_vk.cpp`, `src/loader/darwin_metal_vk_spv.h`)**:
   - Dynamiczny loader Vulkan (`dlopen("libvulkan.so.1")`, dynamiczne rozwiązywanie funkcji instancji i urządzenia przez `vkGetInstanceProcAddr`).
@@ -528,3 +528,26 @@ Implementacja MetalVK (Natywny backend Vulkan dla Metal) pod XEF-OSX (2026-10-17
   - Przebudowano frameworki na Macu i zintegrowano z testem `tests/darwin/metalkit_test.m` (włączonym do `metal_test.sh`).
 
 
+
+### 9. MetalVK — prawdziwy Metal na Vulkanie (2026-10-17/18)
+
+Poprzedni backend (`darwin_metal_vk.cpp`, rasteryzer trójkątów) usunięto. Obecna architektura:
+- **`mtlc/xef-mtlc`** — osobny proces (protokół w `src/metal/mtl_shader_proto.h`): AIR → SPIR-V własnym emiterem
+  (strukturyzacja w stylu clspv, pamięć device/constant przez BDA, thread/threadgroup przez tablice słów),
+  oraz MSL → AIR (`mtlc/msl/frontend.cpp`: clang C++20 + generowany `metal_stdlib` z `gen_metal_stdlib.py`).
+  Walidacja SPIR-V domyślnie włączona (`XEF_MTL_NO_VALIDATE` wyłącza) — niepoprawny SPIR-V wywracał sterownik.
+- **`src/metal`** — silnik: zasoby bindless (set 0), tabele argumentów w buforach pierścieniowych, dynamic rendering,
+  layout GENERAL, semafory timeline, swapchain na oknie X11 AppKit.
+- **Gość** — `rootfs-src/appkit/Metal*.m`, `QuartzCore.m`, `MetalKit.m` (+`MetalKitAssets.m`, LZFSE w `lzfse/`),
+  `ModelIO.m`, `AppKitNib.m` (nib/storyboard, `NSApplicationMain`), `compat/blocks_objc.m` (copy bloków).
+- **Wyrocznia na Macu**: `xcrun metal` kompiluje korpus MSL SPIRV-Cross; `xef-mtlc --refl` porównuje refleksję
+  (wejścia/wyjścia/wiązania) bibliotek Apple z naszym frontendem — 414/507 identycznych. Testy `.m` buduje się i
+  uruchamia na Macu, żeby sprawdzić, że same testy są poprawne (`heap_event_test` przepisany pod prawdziwy Metal).
+- **Znalezione i naprawione błędy** (wybrane): sampler `compareFunction` stosowany do zwykłego `sample` (biały ekran
+  w SDL_gpu), koercja ABI AArch64 `float3` w wywołaniach intrinsiców, nieparsowane atrybuty członków `stage_in`,
+  `early_fragment_tests` w formacie Apple, tablice tekstur w argumentach, liczby całkowite nietypowej szerokości.
+- **Działa**: orbit64 (UI + Mario Kart 64, 60 fps), wszystkie 34 SDL_gpu_examples, szablon Xcode „Metal Game”,
+  vkcube przez MoltenVK. Aplikacje testowe leżą w `darwin-rootfs` (ignorowane przez git); jak je zbudować — commity
+  i `tests/darwin/metal_test.sh`.
+- **Braki**: shadery teselacji/mesh, atomiki na teksturach, `get_sample_position`, funkcje widoczne/wskaźniki funkcji,
+  ray tracing, liczniki GPU, mapy rasteryzacji, część przeciążeń `sample_compare`; ICB tylko kodowane na CPU.
