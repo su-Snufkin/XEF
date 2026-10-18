@@ -3,6 +3,7 @@
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Linker/Linker.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include <spirv-tools/libspirv.hpp>
@@ -32,20 +33,56 @@ std::string disassemble(const std::vector<uint32_t>& words) {
     return text;
 }
 
+// calls to `X.MTL_VISIBLE_FN_REF` reach [[visible]] functions supplied at pipeline creation: link their
+// modules in (only what is referenced) and call the definitions directly
+static bool link_visible_functions(Module& m, const std::vector<const StageSource*>& linked, LLVMContext& ctx, std::string& err) {
+    for (const StageSource* l : linked) {
+        Function* ref = m.getFunction(l->function + ".MTL_VISIBLE_FN_REF");
+        if (ref && m.getFunction(l->function)) continue;
+        if (!ref) {   // dynamic libraries: an external declaration with the same name
+            ref = m.getFunction(l->function);
+            if (!ref || !ref->isDeclaration()) continue;
+        }
+        auto buf = MemoryBuffer::getMemBuffer(StringRef((const char*)l->bitcode.data(), l->bitcode.size()), "linked", false);
+        auto lm = parseBitcodeFile(buf->getMemBufferRef(), ctx);
+        if (!lm) { std::string e; raw_string_ostream os(e); os << lm.takeError(); err = l->function + ": " + e; return false; }
+        std::unique_ptr<Module> mod = std::move(*lm);
+        Function* def = mod->getFunction(l->function);
+        if (!def || def->isDeclaration()) continue;
+        // only the function body matters: drop the linked module's entry metadata
+        for (const char* md : {"air.vertex", "air.fragment", "air.kernel", "air.visible", "air.intersection", "llvm.ident", "air.version",
+                               "air.language_version", "air.compile_options", "air.source_file_name"})
+            if (NamedMDNode* nm = mod->getNamedMetadata(md)) nm->eraseFromParent();
+        mod->setDataLayout(m.getDataLayout());
+        mod->setTargetTriple(m.getTargetTriple());
+        if (ref->getName() != l->function) ref->setName(l->function);   // the declaration now names the definition being linked in
+        if (Linker::linkModules(m, std::move(mod), Linker::Flags::LinkOnlyNeeded)) { err = "cannot link " + l->function; return false; }
+    }
+    return true;
+}
+
 bool compile(const CompileRequest& req, CompileResult& res) {
     res.ok = false;
     res.stages.clear();
-    res.stages.resize(req.stages.size());
     LLVMContext ctx;
     LinkInfo link;
-    // vertex first so fragment inputs can be matched by name
+    // vertex first so fragment inputs can be matched by name; linked functions are not stages
     std::vector<size_t> order;
+    std::vector<const StageSource*> linked;
     for (size_t i = 0; i < req.stages.size(); i++) if (req.stages[i].stage == STAGE_VERTEX) order.push_back(i);
-    for (size_t i = 0; i < req.stages.size(); i++) if (req.stages[i].stage != STAGE_VERTEX) order.push_back(i);
+    for (size_t i = 0; i < req.stages.size(); i++)
+        if (req.stages[i].stage == STAGE_LINKED) linked.push_back(&req.stages[i]);
+        else if (req.stages[i].stage != STAGE_VERTEX) order.push_back(i);
+    std::vector<size_t> slot(req.stages.size(), 0);
+    {
+        size_t n = 0;
+        for (size_t i = 0; i < req.stages.size(); i++) if (req.stages[i].stage != STAGE_LINKED) slot[i] = n++;
+        res.stages.resize(n);
+    }
     bool dump = (req.flags & REQ_DUMP) != 0;
     for (size_t idx : order) {
         const StageSource& src = req.stages[idx];
-        StageResult& sr = res.stages[idx];
+        StageResult& sr = res.stages[slot[idx]];
         sr.stage = src.stage;
         std::string err;
         auto buf = MemoryBuffer::getMemBuffer(StringRef((const char*)src.bitcode.data(), src.bitcode.size()), "air", false);
@@ -58,6 +95,7 @@ bool compile(const CompileRequest& req, CompileResult& res) {
             return false;
         }
         std::unique_ptr<Module> mod = std::move(*mod_or);
+        if (!linked.empty() && !link_visible_functions(*mod, linked, ctx, err)) { res.log += "link [" + src.function + "]: " + err + "\n"; return false; }
         AirEntry entry;
         if (!find_entry(*mod, src.function, entry)) {
             res.log += "entry point '" + src.function + "' not found\n";

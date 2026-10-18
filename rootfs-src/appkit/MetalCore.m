@@ -1346,6 +1346,24 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
   if (f && [(id)f isKindOfClass:[XEFMetalFunction class]]) [(XEFMetalFunction *)f _fill:r];
 }
 
+/* [[visible]] functions for a pipeline: linkedFunctions (functions, binary and private functions) and preloaded
+   dynamic libraries; the arrays live until the pipeline call returns */
+static void xef_linked(NSArray *lfs, NSArray *libs, NSMutableData *refs, NSMutableData *ids) {
+  for (MTLLinkedFunctions *lf in lfs) {
+    if (![lf isKindOfClass:[MTLLinkedFunctions class]]) continue;
+    for (NSArray *a in @[lf.functions ?: @[], lf.binaryFunctions ?: @[], lf.privateFunctions ?: @[]])
+      for (id f in a) {
+        xef_mtl_function_ref r;
+        xef_function_ref(f, &r);
+        if (r.name) [refs appendBytes:&r length:sizeof r];
+      }
+  }
+  for (id dl in libs) {
+    id lib = [dl respondsToSelector:@selector(_xefLibrary)] ? [dl performSelector:@selector(_xefLibrary)] : nil;
+    if ([lib isKindOfClass:[XEFMetalLibrary class]]) { uint32_t v = ((XEFMetalLibrary *)lib)->_id; [ids appendBytes:&v length:4]; }
+  }
+}
+
 @implementation XEFMetalDevice
 + (id)sharedDevice {
   static XEFMetalDevice *d;
@@ -1393,7 +1411,7 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
 - (BOOL)shouldMaximizeConcurrentCompilation { return NO; }
 - (void)setShouldMaximizeConcurrentCompilation:(BOOL)b {}
 - (NSUInteger)maximumConcurrentCompilationTaskCount { return 1; }
-- (BOOL)supportsDynamicLibraries { return NO; }
+- (BOOL)supportsDynamicLibraries { return YES; }   /* linked into each pipeline at compile time */
 - (BOOL)supportsRenderDynamicLibraries { return NO; }
 - (uint32_t)peerGroupID { return 0; }
 - (uint32_t)peerIndex { return 0; }
@@ -1704,6 +1722,17 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
   d.alpha_to_one = desc.alphaToOneEnabled ? 1 : 0;
   d.rasterization_enabled = desc.rasterizationEnabled ? 1 : 0;
   d.input_topology = (uint32_t)desc.inputPrimitiveTopology;
+  NSMutableData *lrefs = [NSMutableData data], *lids = [NSMutableData data];
+  NSMutableArray *lfs = [NSMutableArray array], *libs = [NSMutableArray array];
+  if ([desc respondsToSelector:@selector(vertexLinkedFunctions)]) {
+    if (desc.vertexLinkedFunctions) [lfs addObject:desc.vertexLinkedFunctions];
+    if (desc.fragmentLinkedFunctions) [lfs addObject:desc.fragmentLinkedFunctions];
+    if (desc.vertexPreloadedLibraries) [libs addObjectsFromArray:desc.vertexPreloadedLibraries];
+    if (desc.fragmentPreloadedLibraries) [libs addObjectsFromArray:desc.fragmentPreloadedLibraries];
+  }
+  xef_linked(lfs, libs, lrefs, lids);
+  d.linked = [lrefs bytes]; d.linked_count = (uint32_t)([lrefs length] / sizeof(xef_mtl_function_ref));
+  d.link_libraries = [lids bytes]; d.link_library_count = (uint32_t)([lids length] / 4);
   char err[4096] = {0};
   uint32_t id = xef_mtl_render_pipeline_create(&d, err, sizeof err);
   if (reflection) *reflection = nil;
@@ -1735,9 +1764,17 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
 }
 /* ---- compute pipelines ---- */
 - (id<MTLComputePipelineState>)_computeWithFunction:(id<MTLFunction>)fn maxThreads:(NSUInteger)maxThreads label:(NSString *)label error:(NSError **)error {
+  return [self _computeWithFunction:fn linked:nil libraries:nil maxThreads:maxThreads label:label error:error];
+}
+- (id<MTLComputePipelineState>)_computeWithFunction:(id<MTLFunction>)fn linked:(MTLLinkedFunctions *)lf libraries:(NSArray *)libs
+                                         maxThreads:(NSUInteger)maxThreads label:(NSString *)label error:(NSError **)error {
   xef_mtl_compute_pipeline_desc d;
   memset(&d, 0, sizeof d);
   xef_function_ref(fn, &d.function);
+  NSMutableData *lrefs = [NSMutableData data], *lids = [NSMutableData data];
+  xef_linked(lf ? @[lf] : @[], libs ?: @[], lrefs, lids);
+  d.linked = [lrefs bytes]; d.linked_count = (uint32_t)([lrefs length] / sizeof(xef_mtl_function_ref));
+  d.link_libraries = [lids bytes]; d.link_library_count = (uint32_t)([lids length] / 4);
   d.max_total_threads = (uint32_t)maxThreads;
   XEFMetalComputePipelineState *p = [[XEFMetalComputePipelineState alloc] init];
   char err[4096] = {0};
@@ -1763,7 +1800,8 @@ static void xef_function_ref(id<MTLFunction> f, xef_mtl_function_ref *r) {
 - (id<MTLComputePipelineState>)newComputePipelineStateWithDescriptor:(MTLComputePipelineDescriptor *)desc options:(MTLPipelineOption)options
                                                           reflection:(MTLAutoreleasedComputePipelineReflection *)reflection error:(NSError **)error {
   if (reflection) *reflection = nil;
-  return [self _computeWithFunction:desc.computeFunction maxThreads:desc.maxTotalThreadsPerThreadgroup label:desc.label error:error];
+  return [self _computeWithFunction:desc.computeFunction linked:desc.linkedFunctions libraries:desc.preloadedLibraries
+                         maxThreads:desc.maxTotalThreadsPerThreadgroup label:desc.label error:error];
 }
 - (void)newComputePipelineStateWithFunction:(id<MTLFunction>)fn completionHandler:(MTLNewComputePipelineStateCompletionHandler)h {
   NSError *err = nil;

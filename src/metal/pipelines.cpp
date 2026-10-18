@@ -48,6 +48,25 @@ bool function_source(const xef_mtl_function_ref& ref, uint32_t stage, CompileReq
     return false;
 }
 
+// visible functions for STAGE_LINKED: explicit references plus every visible function of the given libraries
+static bool add_linked(const xef_mtl_function_ref* refs, uint32_t n, const uint32_t* libs, uint32_t nlibs, CompileRequest& req, std::string& err) {
+    for (uint32_t i = 0; i < n; i++)
+        if (refs[i].name && !function_source(refs[i], STAGE_LINKED, req, err)) return false;
+    for (uint32_t i = 0; i < nlibs; i++) {
+        Library* lib = library(libs[i]);
+        if (!lib) continue;
+        for (const metallib::Function& f : lib->fns)
+            if (f.bitcode && (f.type == metallib::FN_VISIBLE || f.type == metallib::FN_UNQUALIFIED || f.type == metallib::FN_EXTERN)) {
+                StageSource s;
+                s.stage = STAGE_LINKED;
+                s.function = f.name;
+                s.bitcode.assign(f.bitcode, f.bitcode + f.bitcode_size);
+                req.stages.push_back(std::move(s));
+            }
+    }
+    return true;
+}
+
 static VkBlendFactor blend_factor(uint32_t f) {
     static const VkBlendFactor t[] = {
         VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_SRC_COLOR, VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
@@ -222,6 +241,7 @@ uint32_t create_render_pipeline(const xef_mtl_render_pipeline_desc* d, std::stri
     if (!function_source(d->vertex, STAGE_VERTEX, req, err)) return 0;
     bool has_fs = d->fragment.library && d->rasterization_enabled;
     if (has_fs && !function_source(d->fragment, STAGE_FRAGMENT, req, err)) return 0;
+    if (!add_linked(d->linked, d->linked_count, d->link_libraries, d->link_library_count, req, err)) return 0;
     if (!d->rasterization_enabled) req.flags |= REQ_RASTER_DISABLED;
     if (!getenv("XEF_MTL_NO_VALIDATE")) req.flags |= REQ_VALIDATE;   // invalid SPIR-V can crash the driver
     CompileResult res;
@@ -229,6 +249,7 @@ uint32_t create_render_pipeline(const xef_mtl_render_pipeline_desc* d, std::stri
     auto p = std::make_unique<RenderPipeline>();
     p->desc = *d;
     p->desc.vertex.name = nullptr; p->desc.vertex.constants = nullptr;
+    p->desc.linked = nullptr; p->desc.link_libraries = nullptr;   // guest pointers are only valid during the call
     p->desc.fragment.name = nullptr; p->desc.fragment.constants = nullptr;
     p->has_fs = has_fs;
     for (auto& s : res.stages) {
@@ -289,6 +310,7 @@ ComputeVariant* compute_variant(ComputePipeline* p, const uint32_t tg[3], const 
 uint32_t create_compute_pipeline(const xef_mtl_compute_pipeline_desc* d, xef_mtl_pipeline_info* info, std::string& err) {
     auto p = std::make_unique<ComputePipeline>();
     if (!function_source(d->function, STAGE_KERNEL, p->req, err)) return 0;
+    if (!add_linked(d->linked, d->linked_count, d->link_libraries, d->link_library_count, p->req, err)) return 0;
     if (Library* lib = library(d->function.library)) p->source = lib->source;
     if (!getenv("XEF_MTL_NO_VALIDATE")) p->req.flags |= REQ_VALIDATE;
     p->max_threads = d->max_total_threads ? std::min(d->max_total_threads, g.max_tg_threads) : g.max_tg_threads;

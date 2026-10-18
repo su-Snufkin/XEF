@@ -113,6 +113,8 @@ int main(int argc, char** argv) {
     if (is_lib && !xef::metallib::parse(data.data(), data.size(), fns, &err)) { fprintf(stderr, "%s\n", err.c_str()); return 1; }
     bool list = false, all = false, dump = false, noval = false, refl = false;
     std::string fname, frag, out;
+    std::vector<StageSource> linked;   // -L LIB: visible functions of another library
+    std::vector<std::vector<uint8_t>> linked_data;
     uint32_t tg[3] = {0, 0, 0};
     for (int i = 2; i < argc; i++) {
         std::string a = argv[i];
@@ -127,6 +129,21 @@ int main(int argc, char** argv) {
         else if (a == "-F" && i + 1 < argc) frag = argv[++i];
         else if (a == "-o" && i + 1 < argc) out = argv[++i];
         else if (a == "--tg" && i + 1 < argc) sscanf(argv[++i], "%u,%u,%u", &tg[0], &tg[1], &tg[2]);
+        else if (a == "-L" && i + 1 < argc) {
+            std::vector<uint8_t> ld = read_file(argv[++i]);
+            std::vector<xef::metallib::Function> lf;
+            std::string e2;
+            if (!xef::metallib::parse(ld.data(), ld.size(), lf, &e2)) { fprintf(stderr, "%s\n", e2.c_str()); return 1; }
+            for (auto& f : lf)
+                if (f.type == xef::metallib::FN_VISIBLE || f.type == xef::metallib::FN_UNQUALIFIED || f.type == xef::metallib::FN_EXTERN) {
+                    StageSource s;
+                    s.stage = STAGE_LINKED;
+                    s.function = f.name;
+                    s.bitcode.assign(f.bitcode, f.bitcode + f.bitcode_size);
+                    linked.push_back(s);
+                }
+            linked_data.push_back(std::move(ld));
+        }
     }
     if (list) {
         for (auto& f : fns) printf("%-10s %8zu  %s\n", xef::metallib::type_name(f.type), f.bitcode_size, f.name.c_str());
@@ -150,6 +167,7 @@ int main(int argc, char** argv) {
             CompileRequest req;
             req.flags = REQ_VALIDATE | (dump ? REQ_DUMP : 0);
             req.stages.push_back(make_stage(f));
+            req.stages.insert(req.stages.end(), linked.begin(), linked.end());
             if (f.type == xef::metallib::FN_KERNEL) { req.tg_size[0] = tg[0] ? tg[0] : 32; req.tg_size[1] = tg[1] ? tg[1] : 1; req.tg_size[2] = tg[2] ? tg[2] : 1; }
             CompileResult res;
             mtlc::compile(req, res);
@@ -189,6 +207,7 @@ int main(int argc, char** argv) {
         s.bitcode = data;
         req.stages.push_back(s);
     }
+    req.stages.insert(req.stages.end(), linked.begin(), linked.end());
     CompileResult res;
     mtlc::compile(req, res);
     if (!res.ok) { fprintf(stderr, "%s", res.log.c_str()); return 1; }

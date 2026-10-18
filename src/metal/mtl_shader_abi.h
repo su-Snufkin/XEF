@@ -13,9 +13,10 @@
 namespace xef::mtlabi {
 
 constexpr uint32_t kProtoMagic = 0x43544D58;   // "XMTC"
-constexpr uint32_t kProtoVersion = 6;
+constexpr uint32_t kProtoVersion = 7;
 
-enum Stage : uint32_t { STAGE_VERTEX = 0, STAGE_FRAGMENT = 1, STAGE_KERNEL = 2 };
+enum Stage : uint32_t { STAGE_VERTEX = 0, STAGE_FRAGMENT = 1, STAGE_KERNEL = 2,
+                        STAGE_LINKED = 3 };   // visible functions linked into every stage (linkedFunctions, dynamic libraries)
 
 // ---- descriptor set 0 ----
 enum ImgDim : uint32_t {

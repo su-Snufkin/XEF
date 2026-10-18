@@ -97,7 +97,7 @@ inline bool deserialize(const void* d, size_t n, CompileRequest& r) {
     ByteReader rd(d, n);
     if (rd.u32() != kProtoVersion) return false;
     uint32_t ns = rd.u32();
-    if (ns > 8) return false;
+    if (ns > 4096) return false;
     r.stages.resize(ns);
     for (auto& s : r.stages) {
         s.stage = rd.u32(); s.function = rd.str(); s.bitcode = rd.vec<uint8_t>();

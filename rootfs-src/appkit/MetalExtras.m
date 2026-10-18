@@ -1401,6 +1401,7 @@ typedef enum {
 - (id<MTLDevice>)device { return _device; }
 - (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 - (NSString *)installName { return _installName; }
+- (id<MTLLibrary>)_xefLibrary { return _library; }
 - (BOOL)serializeToURL:(NSURL *)url error:(NSError **)error {
   if (error) *error = nil;
   if (_library && [_library respondsToSelector:@selector(_data)]) {

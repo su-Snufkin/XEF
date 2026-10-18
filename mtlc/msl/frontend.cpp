@@ -137,6 +137,7 @@ public:
     std::map<std::string, std::vector<Member>> structs;
     std::vector<Entry> entries;
     std::vector<FnConst> fconsts;
+    std::vector<std::string> visible;   // [[visible]] function definitions (library functions of type 4)
     struct Edit { size_t b, e; std::string r; };
     std::vector<Edit> edits;
     std::string err;
@@ -431,6 +432,7 @@ public:
                 std::vector<Attr> as;
                 size_t n = attrs(p, &as);
                 if (brace == 0) pending.insert(pending.end(), as.begin(), as.end());
+                if (find_attr(as, "visible")) visible_function(n);
                 p = n;
                 continue;
             }
@@ -485,6 +487,31 @@ public:
     }
     // entries may live in namespaces: braces of namespaces/structs are counted, function bodies are skipped
     bool brace_ok(int) const { return true; }
+
+    // [[visible]] T name(params) { ... } -> unmangled library function; a declaration without body calls the
+    // function supplied at pipeline creation, which AIR spells `name.MTL_VISIBLE_FN_REF`
+    void visible_function(size_t start) {
+        size_t q = start;
+        int d = 0;
+        while (t[q].kind != Tok::End && !(d == 0 && t[q].text == "(")) {
+            if (t[q].text == "<") d++;
+            if (t[q].text == ">") d--;
+            if (t[q].text == ";" || t[q].text == "{") return;
+            q++;
+        }
+        if (t[q].kind == Tok::End || q == start || t[q - 1].kind != Tok::Ident) return;
+        std::string name = t[q - 1].text;
+        size_t close = match(q, "(", ")");
+        size_t after = close + 1;
+        while (is_qualifier(t[after].text)) after++;
+        edits.push_back({t[start].pos, t[start].pos, "extern \"C\" "});
+        if (t[after].text == ";") {
+            edits.push_back({t[after].pos, t[after].pos, " __asm__(\"" + name + ".MTL_VISIBLE_FN_REF\")"});
+        } else if (t[after].text == "{") {
+            edits.push_back({t[start].pos, t[start].pos, "__attribute__((used, noinline)) "});
+            visible.push_back(name);
+        }
+    }
 
     static bool is_qualifier(const std::string& x) {
         return x == "const" || x == "volatile" || x == "thread" || x == "device" || x == "constant" || x == "threadgroup" ||
@@ -1119,7 +1146,7 @@ bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std:
         wrappers += w;
         plans.push_back(std::move(pl));
     }
-    if (plans.empty()) { err = "no vertex, fragment or kernel functions in the source"; return false; }
+    // no entry points: a function library (visible functions, dynamic library exports)
     std::string full = "#include <metal_stdlib>\nusing namespace metal;\n" + body + "\n" + attr_globals + wrappers;
     if (getenv("XEF_MSL_DUMP")) fprintf(stderr, "=== rewritten MSL\n%s\n", full.c_str());
 
@@ -1274,6 +1301,14 @@ bool compile_msl(const std::string& source, std::vector<uint8_t>& metallib, std:
         mds[k]->addOperand(MDNode::get(ctx, node));
         fn_list.push_back({e.name, (uint8_t)k});
     }
+    for (const std::string& v : ps.visible)
+        if (Function* fn = m.getFunction(v); fn && !fn->isDeclaration()) fn_list.push_back({v, (uint8_t)4});   // MTLFunctionTypeVisible
+    if (GlobalVariable* u = m.getGlobalVariable("llvm.used")) u->eraseFromParent();
+    if (plans.empty())   // a library without entry points (dynamic library): export its external functions
+        for (Function& fn : m)
+            if (!fn.isDeclaration() && fn.getLinkage() == GlobalValue::ExternalLinkage && !fn.getName().starts_with("__xef") &&
+                std::find_if(fn_list.begin(), fn_list.end(), [&](auto& e) { return e.first == fn.getName(); }) == fn_list.end())
+                fn_list.push_back({fn.getName().str(), (uint8_t)3});
     for (Function& fn : m)
         if (!fn.isDeclaration() && fn.getLinkage() == GlobalValue::ExternalLinkage) {
             bool entry = false;

@@ -109,6 +109,10 @@ typedef struct xef_mtl_render_pipeline_desc {
     uint32_t alpha_to_coverage, alpha_to_one;
     uint32_t rasterization_enabled;
     uint32_t input_topology;            /* MTLPrimitiveTopologyClass */
+    uint32_t linked_count;              /* [[visible]] functions available to both stages */
+    const xef_mtl_function_ref* linked;
+    const uint32_t* link_libraries;     /* preloaded dynamic libraries (library ids) */
+    uint32_t link_library_count;
     uint32_t pad;
 } xef_mtl_render_pipeline_desc;
 
@@ -116,6 +120,10 @@ typedef struct xef_mtl_compute_pipeline_desc {
     xef_mtl_function_ref function;
     uint32_t max_total_threads;         /* 0 = default */
     uint32_t threadgroup_size_multiple;
+    const xef_mtl_function_ref* linked; /* linkedFunctions (functions, private and binary functions) */
+    uint32_t linked_count;
+    uint32_t link_library_count;        /* preloaded dynamic libraries (library ids) */
+    const uint32_t* link_libraries;
 } xef_mtl_compute_pipeline_desc;
 
 typedef struct xef_mtl_pipeline_info {

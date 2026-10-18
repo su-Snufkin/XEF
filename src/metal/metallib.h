@@ -15,7 +15,8 @@
 
 namespace xef::metallib {
 
-enum FnType : uint8_t { FN_VERTEX = 0, FN_FRAGMENT = 1, FN_KERNEL = 2, FN_VISIBLE = 3, FN_INTERSECTION = 4, FN_MESH = 7, FN_OBJECT = 8, FN_UNKNOWN = 0xff };
+enum FnType : uint8_t { FN_VERTEX = 0, FN_FRAGMENT = 1, FN_KERNEL = 2, FN_UNQUALIFIED = 3, FN_VISIBLE = 4, FN_EXTERN = 5,
+                        FN_INTERSECTION = 6, FN_MESH = 7, FN_OBJECT = 8, FN_UNKNOWN = 0xff };
 
 struct Function {
     std::string name;
@@ -82,7 +83,8 @@ inline bool parse(const void* data, size_t size, std::vector<Function>& out, std
 inline const char* type_name(uint8_t t) {
     switch (t) {
     case FN_VERTEX: return "vertex"; case FN_FRAGMENT: return "fragment"; case FN_KERNEL: return "kernel";
-    case FN_VISIBLE: return "visible"; case FN_INTERSECTION: return "intersection"; case FN_MESH: return "mesh";
+    case FN_UNQUALIFIED: return "function"; case FN_VISIBLE: return "visible"; case FN_EXTERN: return "extern";
+    case FN_INTERSECTION: return "intersection"; case FN_MESH: return "mesh";
     case FN_OBJECT: return "object"; default: return "unknown";
     }
 }
