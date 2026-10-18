@@ -43,6 +43,11 @@ static Value* wide_lane(IRBuilder<>& b, Value* v, uint64_t k, int depth) {
         return e && !isa<PoisonValue>(e) && !isa<UndefValue>(e) ? e : ConstantInt::getFalse(v->getContext());
     }
     if (auto* bc = dyn_cast<BitCastInst>(v)) {
+        if (bc->getSrcTy()->isIntegerTy()) {   // iN -> <N x i1>: bit k
+            Value* x = bc->getOperand(0);
+            if (k) x = b.CreateLShr(x, ConstantInt::get(x->getType(), k));
+            return b.CreateTrunc(x, b.getInt1Ty());
+        }
         if (!bc->getSrcTy()->isVectorTy() || !bc->getSrcTy()->getScalarType()->isIntegerTy()) return nullptr;
         unsigned m = bc->getSrcTy()->getScalarSizeInBits();
         Value* lane = b.CreateExtractElement(bc->getOperand(0), b.getInt64(k / m));

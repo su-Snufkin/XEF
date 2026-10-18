@@ -89,6 +89,8 @@ using std::initializer_list;
 
 template <class T> struct __xef_add_rref { typedef T&& type; };
 template <> struct __xef_add_rref<void> { typedef void type; };
+template <class A, class B> struct __xef_is_same { static constexpr bool value = false; };
+template <class A> struct __xef_is_same<A, A> { static constexpr bool value = true; };
 template <bool B, class T = void> struct __xef_enable_if_t {};
 template <class T> struct __xef_enable_if_t<true, T> { typedef T type; };
 #define XEF_INL inline __attribute__((always_inline))
@@ -141,7 +143,7 @@ template <class T> struct vec<T, {n}> {{
   vec() = default;
   XEF_CINL vec(const vec&) = default;
   XEF_CINL vec& operator=(const vec&) = default;
-  XEF_INL volatile vec& operator=(const vec& o) volatile {{ v = o.v; return *this; }}   /* coherent -> volatile buffers */
+  template <class U, class = typename __xef_enable_if_t<__xef_is_same<U, vec>::value>::type> XEF_INL volatile vec& operator=(const U& o) volatile {{ v = o.v; return *this; }}   /* coherent -> volatile buffers; a template keeps vec trivially copyable */
   template <class S, class = __xef_scalar_t<S>> XEF_CINL vec(S s) : v((E)(T)s) {{}}
   template <class A, class B, class... R, class = typename __xef_enable_if_t<__xef_total<A, B, R...>() == {n}>::type>
   XEF_CINL vec(A a, B b, R... r) : v(make(a, b, r...)) {{}}
