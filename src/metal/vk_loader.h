@@ -31,7 +31,7 @@ namespace xef::mtl {
     X(CreateSampler) X(DestroySampler) X(CreateShaderModule) X(DestroyShaderModule) \
     X(CreateDescriptorSetLayout) X(DestroyDescriptorSetLayout) X(CreateDescriptorPool) X(DestroyDescriptorPool) \
     X(AllocateDescriptorSets) X(UpdateDescriptorSets) X(CreatePipelineLayout) X(DestroyPipelineLayout) \
-    X(CreateGraphicsPipelines) X(CreateComputePipelines) X(DestroyPipeline) X(CreatePipelineCache) \
+    X(CreateGraphicsPipelines) X(CreateComputePipelines) X(DestroyPipeline) X(CreatePipelineCache) X(GetPipelineCacheData) X(DestroyPipelineCache) \
     X(CreateCommandPool) X(DestroyCommandPool) X(ResetCommandPool) X(AllocateCommandBuffers) X(FreeCommandBuffers) \
     X(BeginCommandBuffer) X(EndCommandBuffer) X(ResetCommandBuffer) \
     X(CreateFence) X(DestroyFence) X(ResetFences) X(WaitForFences) X(GetFenceStatus) \

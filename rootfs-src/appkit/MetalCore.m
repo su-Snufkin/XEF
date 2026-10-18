@@ -1452,7 +1452,12 @@ static void xef_linked(NSArray *lfs, NSArray *libs, NSMutableData *refs, NSMutab
 - (NSArray *)counterSets { return @[]; }
 - (BOOL)supportsFamily:(MTLGPUFamily)f {
   switch (f) {
-  case MTLGPUFamilyMac2: case MTLGPUFamilyCommon1: case MTLGPUFamilyCommon2: case MTLGPUFamilyCommon3: case MTLGPUFamilyMetal3:
+  case MTLGPUFamilyApple1: case MTLGPUFamilyApple2: case MTLGPUFamilyApple3:
+  case MTLGPUFamilyApple4: case MTLGPUFamilyApple5: case MTLGPUFamilyApple6:
+  case MTLGPUFamilyApple7: case MTLGPUFamilyApple8:
+  case MTLGPUFamilyMac1: case MTLGPUFamilyMac2:
+  case MTLGPUFamilyCommon1: case MTLGPUFamilyCommon2: case MTLGPUFamilyCommon3:
+  case MTLGPUFamilyMetal3:
     return YES;
   default:
     return NO;

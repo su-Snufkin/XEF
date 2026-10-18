@@ -3,6 +3,7 @@
 #include "common/common.h"
 #include <cstring>
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 namespace xef::mtl {
 
@@ -339,8 +340,43 @@ bool engine_init() {
     plci.pushConstantRangeCount = 1;
     plci.pPushConstantRanges = &pcr;
     vk.CreatePipelineLayout(g.dev, &plci, nullptr, &g.pipe_layout);
+
+    // Persistent pipeline cache in ~/.cache/xef-mtl/vk_pipeline_cache.bin
+    std::string cache_path;
+    std::vector<uint8_t> cache_data;
+    if (const char* x = getenv("XDG_CACHE_HOME")) cache_path = std::string(x) + "/xef-mtl";
+    else if (const char* h = getenv("HOME")) cache_path = std::string(h) + "/.cache/xef-mtl";
+    if (!cache_path.empty()) {
+        mkdir(cache_path.c_str(), 0755);
+        char pcb[128];
+        snprintf(pcb, sizeof pcb, "/vk_pipeline_cache_%04x_%04x.bin", g.props.vendorID, g.props.deviceID);
+        cache_path += pcb;
+        if (FILE* f = fopen(cache_path.c_str(), "rb")) {
+            fseek(f, 0, SEEK_END);
+            long sz = ftell(f);
+            if (sz > 0) {
+                fseek(f, 0, SEEK_SET);
+                cache_data.resize((size_t)sz);
+                if (fread(cache_data.data(), 1, cache_data.size(), f) != cache_data.size())
+                    cache_data.clear();
+            }
+            fclose(f);
+        }
+    }
+
     VkPipelineCacheCreateInfo pcci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    if (!cache_data.empty()) {
+        pcci.initialDataSize = cache_data.size();
+        pcci.pInitialData = cache_data.data();
+    }
     vk.CreatePipelineCache(g.dev, &pcci, nullptr, &g.pipe_cache);
+
+    static std::string s_cache_path = cache_path;
+    static bool s_registered = false;
+    if (!s_registered) {
+        s_registered = true;
+        atexit(save_pipeline_cache);
+    }
 
     g.ok = true;
     // zero vertex data for attributes the vertex descriptor does not provide
@@ -1024,6 +1060,28 @@ void texture_get_bytes(uint32_t id, uint32_t level, uint32_t slice, const uint32
     vk.UnmapMemory(g.dev, sb->mem);
     vk.FreeMemory(g.dev, sb->mem, nullptr);
     g.buffers[staging].reset();
+}
+
+void save_pipeline_cache() {
+    if (!g.dev || !g.pipe_cache || !vk.GetPipelineCacheData) return;
+    std::string cache_path;
+    if (const char* x = getenv("XDG_CACHE_HOME")) cache_path = std::string(x) + "/xef-mtl";
+    else if (const char* h = getenv("HOME")) cache_path = std::string(h) + "/.cache/xef-mtl";
+    if (cache_path.empty()) return;
+    mkdir(cache_path.c_str(), 0755);
+    char pcb[128];
+    snprintf(pcb, sizeof pcb, "/vk_pipeline_cache_%04x_%04x.bin", g.props.vendorID, g.props.deviceID);
+    cache_path += pcb;
+    size_t sz = 0;
+    if (vk.GetPipelineCacheData(g.dev, g.pipe_cache, &sz, nullptr) == VK_SUCCESS && sz > 0) {
+        std::vector<uint8_t> d(sz);
+        if (vk.GetPipelineCacheData(g.dev, g.pipe_cache, &sz, d.data()) == VK_SUCCESS) {
+            if (FILE* f = fopen(cache_path.c_str(), "wb")) {
+                fwrite(d.data(), 1, sz, f);
+                fclose(f);
+            }
+        }
+    }
 }
 
 } // namespace xef::mtl

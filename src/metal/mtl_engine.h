@@ -180,6 +180,7 @@ extern Engine g;
 
 // engine.cpp
 bool engine_init();
+void save_pipeline_cache();
 uint32_t find_memory_type(uint32_t bits, VkMemoryPropertyFlags want, VkMemoryPropertyFlags avoid = 0);
 VkDeviceMemory alloc_memory(VkMemoryRequirements req, VkMemoryPropertyFlags want, bool device_address, VkMemoryPropertyFlags avoid = 0);
 Buffer* buffer(uint32_t id);
