@@ -50,6 +50,7 @@ struct MachImage {
     uint64_t tlv_init = 0, tlv_init_size = 0;         // __thread_data
     uint64_t tlv_total = 0;                           // __thread_data + __thread_bss
     bool initialized = false;
+    bool stub = false;                  // generated placeholder (tools/gen_framework_stubs.py): looked up last
     bool bound = false;
     // dyld metadata (points into the mapped __LINKEDIT)
     const uint8_t* chained = nullptr; size_t chained_size = 0;
@@ -72,8 +73,10 @@ std::string dyld_describe(uint64_t addr);
 
 // Look up an exported symbol of `img` (follows re-exports). Returns 0 when absent.
 uint64_t dyld_image_lookup(MachImage* img, const char* name);
-// Flat lookup over every loaded image.
+// Flat lookup over every loaded image (generated stub images excluded).
 uint64_t dyld_flat_lookup(const char* name);
+// Lookup in the generated stub images only: the last resort before a name counts as unresolved.
+uint64_t dyld_stub_lookup(const char* name);
 
 // Runtime dlopen(): load the dylib (and its dependencies), bind, run initializers.
 MachImage* dyld_dlopen(const char* path);

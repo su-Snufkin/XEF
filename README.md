@@ -132,6 +132,34 @@ libSystem is emulated (HLE); the rest is real arm64 code built from open source 
 | Foundation | Darling (`darling-foundation`) | `tools/build_foundation.sh` |
 | AppKit, QuartzCore, CoreGraphics, Metal, … | `rootfs-src/` | `tools/build_appkit.sh`, `tools/build_metal.sh` |
 
+### Every other system framework: generated stubs
+
+`tools/build_framework_stubs.sh` covers the rest of macOS - about 2500 public and private frameworks (macOS 26 SDK)
+- with generated placeholders, so that an application linking any of them loads, finds its classes and constants,
+and gets `nil` / `0` from what is not implemented instead of stopping at an unresolved symbol:
+
+| Input | From |
+|---|---|
+| exported names of every framework | the SDK's `.tbd` files on the Mac |
+| function or data, constant values, sizes, superclasses | `tools/mac_fwdump.m`, read from the running system on the Mac |
+
+`tools/gen_framework_stubs.py` turns that into arm64 dylibs built on Linux (clang + `ld64.lld`): functions return 0,
+string constants have their real value (`NSTextFinderCaseInsensitiveKey` is `"NSFindPanelCaseInsensitiveSearch"`),
+numeric constants their real bytes, Objective-C classes their real superclass. No Apple code or header is copied.
+
+- A framework missing from the rootfs gets a stub dylib; a hand-written one gets `<dylib>.xefstubs` next to it with
+  only the names it lacks (133 of them, e.g. the ~500 AppKit classes AppKit-lite does not have).
+- `xef-osx` binds a name to a stub only when no rootfs dylib, HLE function or host function provides it, so the
+  stubs never replace an implementation. Run the script again after adding one.
+- `XEF_STUB_TRACE=1` logs every stub function and message an application reaches: the list of what to implement next.
+- Swift and C++ symbols are left out (`--mangled` includes them).
+
+```bash
+tools/build_framework_stubs.sh                    # everything (about 3 minutes, rootfs 74 MB -> 274 MB)
+tools/build_framework_stubs.sh --only '/GameKit$'
+tests/darwin/fwstubs/build.sh && build/xef-osx -L darwin-rootfs tests/darwin/fwstubs_test
+```
+
 Data (time zones): `tools/setup_darwin_rootfs_data.sh`. Experimental (not used by the HLE): the real
 `libsystem_kernel` (`tools/build_libsystem_kernel.sh`) and libplatform (`tools/build_libplatform.sh`).
 

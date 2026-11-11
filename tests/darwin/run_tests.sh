@@ -62,5 +62,13 @@ echo "--- Test 5: OpenGL cube (Xvfb, gltri) ---"
 echo "--- Test 6: Metal render pipeline (cand4_metal offscreen) ---"
 "$DIR/metal_test.sh"
 
+echo "--- Test 7: generated stub frameworks (tools/build_framework_stubs.sh) ---"
+ROOTFS="$DIR/../../darwin-rootfs"
+if [ -e "$ROOTFS/System/Library/Frameworks/GameKit.framework/GameKit" ]; then
+    "$XEF_OSX" -L "$ROOTFS" "$DIR/fwstubs_test"
+else
+    echo "SKIP fwstubs_test (no stub frameworks in darwin-rootfs)"
+fi
+
 echo "=== ALL TESTS COMPLETED SUCCESSFULLY! ==="
 

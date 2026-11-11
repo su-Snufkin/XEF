@@ -166,7 +166,22 @@ uint64_t dyld_image_lookup(MachImage* img, const char* name) {
 uint64_t dyld_flat_lookup(const char* name) {
     std::lock_guard<std::recursive_mutex> lk(g_dyld_lock);
     for (MachImage* im : g_images)
-        if (uint64_t r = dyld_lookup_rec(im, name, 0)) return r;
+        if (!im->stub)
+            if (uint64_t r = dyld_lookup_rec(im, name, 0)) return r;
+    return 0;
+}
+
+// Generated stub frameworks (tools/gen_framework_stubs.py) carry every name of the real library's export list as
+// a placeholder. They must never hide an implementation - a rootfs dylib, the HLE, a host function - so they are
+// left out of the ordinary lookups and asked only when everything else has failed.
+static bool g_have_stubs = false;
+
+uint64_t dyld_stub_lookup(const char* name) {
+    if (!g_have_stubs) return 0;
+    std::lock_guard<std::recursive_mutex> lk(g_dyld_lock);
+    for (MachImage* im : g_images)
+        if (im->stub)
+            if (uint64_t r = dyld_lookup_rec(im, name, 0)) return r;
     return 0;
 }
 
@@ -187,7 +202,7 @@ static uint64_t resolve_import(MachImage* img, int ordinal, const char* name, bo
     if (ordinal > 0) {
         if ((size_t)ordinal <= img->deps.size()) {
             MachImage* d = img->deps[ordinal - 1].image;
-            if (d) r = dyld_image_lookup(d, name);
+            if (d && !d->stub) r = dyld_image_lookup(d, name);
             else {
                 hle_dep = true;
                 if (img->deps[ordinal - 1].weak) weak_import = true;
@@ -203,13 +218,18 @@ static uint64_t resolve_import(MachImage* img, int ordinal, const char* name, bo
         // libSystem's names: a real system dylib in the rootfs (libdispatch-lite, libunwind, blocks, ...)
         // wins over the HLE; then the explicit HLE implementations; then the host libc fallback
         for (size_t i = 1; i < g_images.size() && !r; i++)
-            r = dyld_lookup_rec(g_images[i], name, 0);
+            if (!g_images[i]->stub) r = dyld_lookup_rec(g_images[i], name, 0);
         if (r) return r;
         r = darwin_hle_resolve_symbol(name, true, true);
         if (r) return r;
     }
     r = dyld_flat_lookup(name);
     if (r) return r;
+    if (g_have_stubs) {
+        if (!hle_dep) r = darwin_hle_resolve_symbol(name, true, true);
+        if (!r) r = dyld_stub_lookup(name);
+        if (r) return r;
+    }
     if (strncmp(name, "_OBJC_CLASS_$_", 14) == 0 || strncmp(name, "_OBJC_METACLASS_$_", 18) == 0) {
         return 0;
     }
@@ -838,6 +858,8 @@ static MachImage* map_image(const std::string& guest_path, const std::string& ho
 
     MachImage* raw = im.release();
     raw->index = (uint32_t)g_images.size();
+    raw->stub = dyld_lookup_rec(raw, "_xef_generated_stub", 0) != 0;
+    if (raw->stub) g_have_stubs = true;
     g_images.push_back(raw);
     g_by_name[guest_path] = raw;
     if (raw->install_name != guest_path) g_by_name[raw->install_name] = raw;
@@ -853,6 +875,31 @@ static void load_dependencies(MachImage* im) {
         MachImage* d = load_dependency(im, im->deps[i].name, im->deps[i].weak);
         im->deps[i].image = d;
         if (d && g_images.size() > before) load_dependencies(d);
+    }
+    // "<dylib>.xefstubs" next to a hand-written system dylib: generated placeholders for the part of the real
+    // library's export list it does not implement
+    if (!im->stub && im->filetype == MH_DYLIB && im->path.rfind("/System/Library/", 0) == 0) {
+        // the file sits next to the real file: Foo.framework/Foo is a symlink to Versions/A/Foo
+        std::vector<std::string> names = {im->path + ".xefstubs"};
+        if (!im->real_path.empty() && im->real_path != im->path) names.push_back(im->real_path + ".xefstubs");
+        char rp[PATH_MAX], rr[PATH_MAX];
+        if (!g_rootfs.empty() && realpath(resolve_guest_path(im->path.c_str()).c_str(), rp) && realpath(g_rootfs.c_str(), rr)) {
+            size_t n = strlen(rr);
+            if (strncmp(rp, rr, n) == 0 && rp[n] == '/') names.push_back(std::string(rp + n) + ".xefstubs");
+        }
+        for (const std::string& companion : names) {
+            if (access(resolve_guest_path(companion.c_str()).c_str(), R_OK) != 0) continue;
+            size_t before = g_images.size();
+            if (MachImage* d = load_dependency(im, companion, true)) {
+                MachDep dep;
+                dep.name = companion;
+                dep.weak = true;
+                dep.image = d;
+                im->deps.push_back(dep);
+                if (g_images.size() > before) load_dependencies(d);
+            }
+            break;
+        }
     }
 }
 

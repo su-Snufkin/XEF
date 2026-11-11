@@ -551,3 +551,39 @@ Poprzedni backend (`darwin_metal_vk.cpp`, rasteryzer trójkątów) usunięto. Ob
   i `tests/darwin/metal_test.sh`.
 - **Braki**: shadery teselacji/mesh, atomiki na teksturach, `get_sample_position`, funkcje widoczne/wskaźniki funkcji,
   ray tracing, liczniki GPU, mapy rasteryzacji, część przeciążeń `sample_compare`; ICB tylko kodowane na CPU.
+
+---
+
+## XEF-OSX — stuby wszystkich frameworków (2026-11-11)
+
+- **Cel:** aplikacja linkująca dowolny framework systemowy ma się załadować i dostać `nil`/`0` z tego, czego nie ma,
+  zamiast paść na nierozwiązanym symbolu / brakującej klasie. Prawdziwych binarek Apple nie kopiujemy (zasada z
+  `docs/PROMPT_MACOS_3D.md` zostaje): wymagałyby prawdziwego libSystem, jądra XNU i demonów (WindowServer, XPC),
+  a do tego nie wolno ich rozpowszechniać. Zamiast tego z Maca bierzemy **fakty o API**.
+- **Potok** (`tools/build_framework_stubs.sh`): `.tbd` z SDK na Macu → `mac-out/sdk`; `tools/mac_fwdump.m` na Macu
+  (`dlopen` każdej biblioteki w osobnym procesie: funkcja czy dane, wartości stałych CFString, bajty stałych liczbowych,
+  rozmiary, nadklasy) → `mac-out/facts.txt`; `tools/gen_framework_stubs.py build` generuje `.m` + `.s` i buduje dyliby
+  **lokalnie** (clang `-target arm64-apple-macos12.0` + `ld64.lld`, bez nagłówków SDK). Kroki 1–2 potrzebują Maca
+  tylko raz (wynik zostaje w `mac-out/`, poza gitem); krok 3 trwa ~3 min.
+- **Wynik (SDK 26, macOS 27):** 2546 bibliotek (2413 pełnych stubów, 133 pliki `<dylib>.xefstubs` obok ręcznie pisanych),
+  210 tys. funkcji, 163 tys. stałych napisowych, 26 tys. innych danych, 87 tys. klas; rootfs 74 MB → 274 MB.
+  47 bibliotek nie dało się załadować na Macu (rodzaj symbolu zgadywany z nazwy — `guess()`).
+- **Loader** (`macho_loader.cpp`): obraz z eksportem `_xef_generated_stub` ma `MachImage::stub`; jest pomijany w
+  `dyld_flat_lookup` i przy wiązaniu przez ordinal, a pytany (`dyld_stub_lookup`) dopiero po dylibach rootfs i jawnych
+  implementacjach HLE, przed fallbackiem do hosta. `X.xefstubs` jest ładowany razem z `X` (tylko `/System/Library/`).
+  Generator dodatkowo pomija nazwy zdefiniowane w dylibach rootfs, w HLE (`"_nazwa"` w `src/loader/darwin_*.cpp`) i w glibc.
+- **Klasy:** nieznana wiadomość → `forwardingTargetForSelector:` → obiekt klasy `XEFStubSink`, której
+  `+resolveInstanceMethod:` dodaje metodę zwracającą 0. `forwardInvocation:` NIE działa w tym rootfs
+  (`rootfs-src/corefoundation/arm64_forwarding.m` robi `abort()`), więc starsze stuby „Generated from Darling specs”
+  (`rootfs-src/appkit/*.m` z `forwardInvocation:`) padają na nieznanym selektorze — do przepisania na ten sam mechanizm.
+- **Diagnostyka:** `XEF_STUB_TRACE=1` wypisuje każde wywołanie stuba (`xef-stub: _Funkcja`, `xef-stub: -[Klasa sel]`).
+- **Testy:** `tests/darwin/fwstubs_test` (budowany na Linuksie: `tests/darwin/fwstubs/build.sh`), Test 7 w `run_tests.sh`.
+  Po wygenerowaniu stubów: `macref.sh` 68/69 (`foundation_more` pada tak samo bez stubów), `gl_test` PASS,
+  `frameworks_test` PASS; start +10–80 ms (więcej obrazów do zmapowania i klas do rejestracji).
+- **Budowanie w chmurze:** `apt-get install llvm-18-dev libclang-18-dev spirv-tools libx11-dev libgl-dev libvulkan-dev xvfb`,
+  cmake z `-DCMAKE_CXX_FLAGS="-isystem /usr/lib/llvm-18/include"`; `ld64.lld` = `/usr/bin/ld64.lld-18`. Rootfs z Maca:
+  `ssh mac 'cd ~/xef-remote/out/rootfs && tar -cf - . | gzip' | tar -xzf - -C darwin-rootfs`. `metal_test` wymaga Vulkana.
+- **Następne kroki:** (1) stuby dla `/usr/lib/*.dylib` (`--prefix /usr/lib/`), (2) struktury zwracane przez x8 nie są
+  zerowane, (3) duplikaty klas między ręcznymi frameworkami (NSColor w AppKit i SceneKit, MDL* w SceneKit i ModelIO,
+  CUICatalog w IconServices i CoreUI), (4) rootfs na Macu jest starszy niż gałąź (brak `SLSTransaction`,
+  `SystemVersion.plist`: `private_frameworks_test`, `tools_and_priv_test` padają) — przebudować `tools/build_*.sh`.
