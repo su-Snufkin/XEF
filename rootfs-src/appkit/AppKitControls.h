@@ -133,8 +133,7 @@ void XEFRedrawWindowNow(NSWindow *w);       /* presents the window right away (i
 + (NSAppearance *)appearanceNamed:(NSString *)n;
 @end
 
-@interface NSLayoutConstraint : NSObject
-@end
+#import "AppKitLayout.h"
 
 /* menus (AppKitMenu.m) */
 @interface NSMenu (XEFMenu)

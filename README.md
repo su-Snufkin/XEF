@@ -132,6 +132,26 @@ libSystem is emulated (HLE); the rest is real arm64 code built from open source 
 | Foundation | Darling (`darling-foundation`) | `tools/build_foundation.sh` |
 | AppKit, QuartzCore, CoreGraphics, Metal, … | `rootfs-src/` | `tools/build_appkit.sh`, `tools/build_metal.sh` |
 
+### AppKit-lite
+
+AppKit is written by hand (`rootfs-src/appkit/AppKit*.m`) and checked against the real one: a test prints behaviour
+(defaults, clamping, the order of delegate calls, frames after layout), runs on the Mac with real Cocoa and under
+XEF, and the two outputs must match line for line (`tests/darwin/macref.sh appkit_view appkit_table ...`).
+
+![AppKit-lite controls](docs/screenshots/appkit-gallery.png)
+
+| Area | Classes |
+|---|---|
+| Views and windows | NSView (hierarchy callbacks, autoresizing, bounds transforms, hit testing, layout passes), NSWindow, NSPanel, sheets |
+| Auto Layout | NSLayoutConstraint, anchors, NSLayoutGuide, visual format language; a Cassowary solver with strict priorities |
+| Controls | buttons, text fields, pop-ups, sliders, steppers, progress indicators, segmented controls, switches, combo boxes, date pickers, level indicators, colour wells, image views |
+| Containers | NSScrollView, NSTabView, NSSplitView, NSStackView, NSBox |
+| Tables | NSTableView (cell- and view-based), NSOutlineView, headers with sorting and column resizing |
+| Drawing and text | NSBezierPath, NSColor, NSGradient, NSImage, NSFont, attributed strings, NSTextView |
+
+`tools/appkit_gap.sh` lists what of AppKit's public API (read from the SDK headers) is still missing, per class:
+3690 of 8332 public methods are implemented.
+
 ### Every other system framework: generated stubs
 
 `tools/build_framework_stubs.sh` covers the rest of macOS - about 2500 public and private frameworks (macOS 26 SDK)

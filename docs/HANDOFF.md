@@ -587,3 +587,135 @@ Poprzedni backend (`darwin_metal_vk.cpp`, rasteryzer trójkątów) usunięto. Ob
   zerowane, (3) duplikaty klas między ręcznymi frameworkami (NSColor w AppKit i SceneKit, MDL* w SceneKit i ModelIO,
   CUICatalog w IconServices i CoreUI), (4) rootfs na Macu jest starszy niż gałąź (brak `SLSTransaction`,
   `SystemVersion.plist`: `private_frameworks_test`, `tools_and_priv_test` padają) — przebudować `tools/build_*.sh`.
+
+---
+
+## XEF-OSX — rozbudowa AppKit-lite (2026-11-12)
+
+Zadanie od użytkownika: „rozwiń AppKit jak tylko możesz”. Poniżej stan, metoda pracy, pułapki i kolejka zadań.
+
+### 1. Metoda: wyrocznia z prawdziwego Maca (trzymaj się jej)
+- **Każde zachowanie najpierw zmierz na Macu.** Test w `tests/darwin/mac/*.m` drukuje fakty (wartości domyślne,
+  obcinanie zakresów, kolejność callbacków, ramki po layoucie). `tests/darwin/macref.sh nazwa` buduje go na Macu
+  z prawdziwym Cocoa (`clang -fobjc-arc -framework Cocoa`, wykrywane po `Cocoa.h`), uruchamia tam i pod XEF, porównuje
+  wyjście linia po linii. Najpierw napisz test, uruchom **tylko na Macu** (`ssh mac 'cd ~/xef-remote/src/macref && clang
+  ... && ./test'`), przeczytaj wynik, dopiero potem implementuj. Prawdziwy AppKit ma sporo nieoczywistych reguł
+  (patrz §4) — zgadywanie się nie opłaca.
+- Testy bez okna na ekranie działają przez ssh (`NSWindow ... defer:YES` też). Unikaj w testach: metryk fontów,
+  wyników niejednoznacznych layoutów (remisy priorytetów, widok bez ograniczenia szerokości), `visibleRect` widoku
+  bez okna (prawdziwy AppKit zwraca wtedy ogromny prostokąt), ułamków zależnych od skali ekranu (Mac ma 2x, XEF 1x —
+  np. NSSplitView zaokrągla do 0,5 pt na Macu; dobieraj rozmiary tak, żeby wychodziły liczby całkowite).
+- **Mapa braków:** `tools/appkit_gap.sh` (podsumowanie) i `tools/appkit_gap.sh NSView` (brakujące metody klasy).
+  Źródło prawdy to nagłówki SDK (`mac-out/headers`, pobierane z Maca przy pierwszym użyciu; `tools/appkit_api.py`
+  wyciąga metody, właściwości i wymagane metody adoptowanych protokołów). Program `tests/darwin/apigap/apigap.m`
+  (budowany lokalnie, bez Maca) pyta pod XEF o każdą metodę przez `XEFClassImplements` z AppKit.m, który **nie liczy
+  stubów „łapiących wszystko”** (`lite_stub`). Protokół NSAccessibility (~285 metod na klasę) jest pomijany, chyba że
+  `WITH_ACCESSIBILITY=1`.
+- **Stan liczbowy:** 3690 z 8332 publicznych metod AppKit zaimplementowane naprawdę (44%); 1509 brakuje w
+  istniejących klasach, 3133 w 207 nieistniejących klasach. Pierwszy uczciwy pomiar (po rundach 1–2) dawał 3216.
+  Wcześniejsze „3182/8152” było zawyżone przez stuby łapiące wszystko (NSView „brakowało” 5 metod, naprawdę 214).
+
+### 2. Co doszło (pliki w `rootfs-src/appkit/`, wszystkie w `tools/build_appkit.sh` i `build_appkit_only.sh`)
+- **`AppKitControls2.m/.h`** — NSSlider(+Cell: liniowy, pionowy, kołowy, znaczniki), NSStepper, NSProgressIndicator
+  (pasek, nieokreślony, spinner; animacja NSTimer), NSSegmentedControl (3 tryby śledzenia), NSImageView/NSImageCell,
+  NSLevelIndicator (4 style), NSColorWell, NSSwitch, NSComboBox (lista jako menu), NSDatePicker (tekstowy + stepper),
+  NSTabView/NSTabViewItem, NSSplitView (przeciąganie dzielnika, delegat), NSStackView (układ ręczny, bez solvera),
+  NSVisualEffectView, NSPanel, NSGradient (liniowy/radialny), NSAnimationContext (bez interpolacji: zmiany od razu,
+  completion na następnym obrocie pętli). Test: `appkit_controls.m` (139 linii, zgodne z Makiem).
+- **`AppKitTable.m/.h`** — NSTableView (cell-based i view-based z kolejką reużycia), NSTableColumn, NSTableHeaderView
+  (sortowanie kliknięciem, zmiana szerokości kolumny), NSTableHeaderCell, NSTableRowView, NSTableCellView,
+  NSOutlineView (drzewo węzłów `XEFOutlineNode`, trójkąty, klawisze ←/→). NSScrollView umieszcza `headerView`
+  dokumentu w osobnym NSClipView nad treścią (`kXEFHeaderClip`, obiekt stowarzyszony). Test: `appkit_table.m`.
+- **`AppKitView.m`** — reszta API NSView i NSWindow (kategorie `XEFMore`): edycja hierarchii, przebiegi layoutu,
+  `cacheDisplayInRect:toBitmapImageRep:` (renderuje drzewo widoków do bitmapy), tooltipy, gesture recognizers (lista),
+  arkusze (sheet = okno wyśrodkowane nad rodzicem), okna potomne, zapisywanie ramek (`NSWindow Frame <nazwa>` w
+  NSUserDefaults), slot toolbara, właściwości paska tytułu/zakładek. Rzadki stan: `NSView->_extra` (słownik) i
+  `props(okno)` (obiekt stowarzyszony).
+- **Rdzeń NSView w `AppKit.m` / `AppKitGraphics.m` przepisany** pod prawdziwe zachowanie (test `appkit_view.m`,
+  120 linii): `_xefInsertSubview:atIndex:` (kolejność callbacków), `resizeSubviewsWithOldSize:` /
+  `resizeWithOldSuperviewSize:` z arytmetyką Apple (`autoresize_axis`), skala i origin bounds, powiadomienia
+  frame/bounds, `viewDidHide`/`viewDidUnhide`, hit-testing przez `NSMouseInRect`, `layoutSubtreeIfNeeded` wołane przed
+  każdym `_xefRedraw`. **Zmiany semantyki:** `-[NSView tag]` = −1, `acceptsFirstResponder` = NO, `needsDisplay` = NO
+  bez okna, `NSPointInRect`/`NSMouseInRect` mają teraz krawędzie jak w AppKit (wcześniej obie włączne).
+- **`AppKitLayout.m/.h` — Auto Layout od zera:** solver Cassowary (tablica simpleksowa jak w Kiwi) z
+  **leksykograficznymi priorytetami** (wektor współczynników celu na poziom priorytetu, do 12 poziomów na jedno
+  rozwiązanie — wyższy priorytet zawsze wygrywa, bez wag), NSLayoutConstraint (+ klucze nib), NSLayoutAnchor /
+  XAxis / YAxis / Dimension, NSLayoutGuide, `constraintsWithVisualFormat:` (VFL: `|`, `-`, `-(pred,pred)-`,
+  `[v(==w@p)]`, metryki, opcje wyrównania), `_NSDictionaryOfVariableBindings`, `fittingSize`. Test: `appkit_layout.m`.
+  - Hierarchia rozwiązywana w całości we współrzędnych najwyższego widoku, y w dół; zmienne na element: x, top,
+    width, height. Widok z `translatesAutoresizingMaskIntoConstraints == YES` wnosi swoją ramkę jako wymagane
+    ograniczenia; reszta dostaje ramkę z rozwiązania. Rozmiar korzenia: wymagany dla contentView okna, inaczej
+    priorytet 490 (zmierzone: ograniczenie @500 go przebija, @400 nie). `fittingSize`: szer./wys. → 0 @50.
+  - Kiedy liczy: `XEFLayoutSolveIfNeeded` z `layoutSubtreeIfNeeded`, tylko gdy zmienił się licznik `g_generation`
+    (podbijany przez `XEFLayoutInvalidate()` w setFrame, zmianach hierarchii, ograniczeń, intrinsic size) albo rozmiar
+    korzenia. Aktywne ograniczenia: globalna tablica `g_active` (bez retain); trzyma je najbliższy wspólny przodek
+    (`view.constraints`). `XEFLayoutViewGone` z `-[NSView dealloc]` usuwa ograniczenia martwego widoku.
+  - Darlingowe atrapy NSLayoutConstraint/NSLayoutAnchor **wyłączone z builda Foundation** (`skip` w
+    `tools/build_foundation.sh`) — klasy są teraz w AppKit.
+- **Foundation: `rootfs-src/foundation/NSIndexSet_xef.m`** zastępuje `NSIndexSet.m` z darling-foundation, który trzymał
+  zakresy nieposortowane (złe `count`, `lastIndex`, `containsIndex:`, kolejność enumeracji po dodaniu mniejszego
+  indeksu). Format archiwum jak u Apple (varinty w `NSRangeData`). Test: `indexset.m`.
+- **Galeria:** `tests/darwin/appkit_gallery/` (build.sh buduje na Macu, binarka `gallery` w repo), zrzut:
+  `DISPLAY=:7 XEF_APPKIT_SHOT=out.ppm XEF_APPKIT_SHOT_EXIT=1 build/xef-osx -L darwin-rootfs
+  tests/darwin/appkit_gallery/gallery` (`GALLERY_SKIP=abcdef` pomija sekcje — przydatne do bisekcji awarii).
+  Wynik: `docs/screenshots/appkit-gallery.png`.
+
+### 3. Pętla pracy (kopiuj-wklej)
+```sh
+tools/build_appkit_only.sh                                   # AppKit na Macu -> darwin-rootfs (~40 s)
+tools/gen_framework_stubs.py build --sdk mac-out/sdk --facts mac-out/facts.txt --only '/AppKit$'
+                                                             # KONIECZNE po każdym buildzie AppKit (patrz §4)
+tests/darwin/macref.sh appkit_view appkit_table appkit_controls appkit_layout indexset
+tests/darwin/gl_test.sh; build/xef-osx -L darwin-rootfs tests/darwin/frameworks_test
+tools/appkit_gap.sh                                          # pokrycie
+tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/Foundation.framework \
+    darwin-rootfs/System/Library/Frameworks/                 # Foundation (skrypt nie kopiuje do lokalnego rootfs)
+```
+- Kontrola kompilacji z ostrzeżeniami o nieznanych selektorach (AppKit budowany jest z `-w`): na Macu
+  `clang -fsyntax-only -Wno-everything -Wobjc-method-access -fno-objc-arc -isysroot $(xcrun --show-sdk-path) -I. plik.m`.
+  **Nieznany selektor zwracający CGFloat/NSRect/NSSize jest wołany jak funkcja zwracająca `id` → śmieci.** Deklaruj
+  metody w nagłówkach (`AppKit*.h`) albo w kategorii `NSObject (…Informal)` na górze pliku.
+- Stan regresji po tej sesji: `macref.sh` 73/74 (pada tylko stary `foundation_more`), `gl_test` PASS,
+  `frameworks_test` PASS, `fwstubs_test` PASS, galeria identyczna piksel w piksel przed i po Auto Layout.
+
+### 4. Pułapki znalezione w tej sesji
+- **Stary `AppKit.xefstubs` dubluje nowe klasy.** Po dodaniu klasy do AppKit-lite trzeba przegenerować plik
+  uzupełniający (`--only '/AppKit$'`), inaczej objc widzi dwie definicje i `appkit_gap.sh` liczy klasę jako brakującą.
+- **AppKit musi linkować CoreGraphics i CoreText** (dodane): aplikacja używająca tylko AppKit zostawiała
+  `CGAffineTransformMakeTranslation` nierozwiązane (dynamic_lookup nie ładuje dyliba).
+- **`-[NSScrollView tile]` zwalniał scroller** (remove + add w tablicy podwidoków, która miała jedyną referencję).
+  Naprawione; wzorzec „usuń i dodaj z powrotem” na `_subviews` zawsze otaczaj retain/release.
+- **`forwardInvocation:` nie działa w tym rootfs** (CF robi `abort`) — używaj `forwardingTargetForSelector:`.
+- **Klasy z Foundation Darlinga bywają atrapami** (NSLayoutConstraint, NSIndexSet). Gdy coś z Foundation zachowuje
+  się dziwnie, napisz test w `tests/darwin/mac/` — różnica wyjdzie od razu.
+- Prawdziwy AppKit — reguły, które zaskakują (wszystkie odwzorowane i pokryte testami):
+  NSSegmentedControl w trybie select-one ignoruje `setSelected:NO`; w trybie momentary `selectedSegment` zawsze −1 poza
+  akcją; NSTabView `selectNext/Previous` pyta delegata `shouldSelect` dwa razy; `selectRowIndexes:byExtendingSelection:YES`
+  działa także przy wyłączonej wielokrotnej selekcji i nie pyta delegata; `selectAll:` pyta `shouldSelectRow:` o każdy
+  wiersz; NSOutlineView po zwinięciu rodzica pamięta rozwinięte dzieci i otwiera je przy ponownym rozwinięciu (z pełnym
+  protokołem should/will/did), a `reloadData` pyta `shouldExpandItem:` o każdy otwarty element bez powiadomień;
+  NSProgressIndicator nie obcina wartości przy zmianie zakresu; NSTableColumn ma domyślny tytuł „Field”;
+  ponowne `addSubview:` tego samego widoku przenosi go na wierzch bez callbacków; `hitTest:` na krawędziach zależy od
+  odwrócenia nadwidoku; `resizeSubviewsWithOldSize:` nie jest wołane dla widoku bez podwidoków.
+
+### 5. Co dalej (w kolejności wartości dla prawdziwych aplikacji)
+1. **Klasy nieistniejące, często używane:** NSToolbar/NSToolbarItem (slot `-[NSWindow toolbar]` już jest; rysować
+   pasek nad contentView), NSGestureRecognizer + Click/Pan/Magnification/Press (lista w `-[NSView gestureRecognizers]`
+   jest; trzeba dostarczać zdarzenia w `-[NSWindow sendEvent:]`), NSPopover, NSImageRep (+ NSPDFImageRep/NSCIImageRep
+   jako atrapy), NSSound, NSSplitViewItem/NSSplitViewController/NSTabViewController, NSGridView, NSCollectionView,
+   NSObjectController/NSArrayController/NSTreeController (bindings przez KVC/KVO), NSPathControl, NSAnimation.
+2. **Braki w istniejących klasach** (`tools/appkit_gap.sh Klasa`): NSDocument 72, NSText 71, NSTextView 60, NSImage 60,
+   NSWorkspace 54, NSApplication 53, NSEvent 50, NSResponder 44, NSViewController 35, NSMenu 35. Część getterów w
+   `AppKitView.m` czyta `props()`/`_extra`, a istniejące settery w `AppKit.m` piszą do ivarów albo nigdzie
+   (`frameAutosaveName`, `acceptsMouseMovedEvents`, `isDocumentEdited`, `titleVisibility`) — ujednolicić.
+3. **Auto Layout — dokończenie:** NSStackView przepisać na ograniczenia (teraz układ ręczny w `_xefLayout`);
+   aktywować ograniczenia z nibów (`initWithCoder:` jest, ale `NSViewConstraints` widoku nie są instalowane — patrz
+   `AppKitNib.m`); linie bazowe (`firstBaseline`/`lastBaseline` = góra/dół); `anchorWithOffsetToAnchor:`; kierunek RTL;
+   okno dopasowujące się do `fittingSize` contentView; solver jest przebudowywany przy każdej zmianie (bez edycji
+   przyrostowej) — przy tysiącach ograniczeń trzeba będzie dodać `suggestValue`/usuwanie z Cassowary.
+4. **Stare atrapy „Generated from Darling specs”** (`rootfs-src/appkit/*.m` z `forwardInvocation:`) przepisać na
+   `forwardingTargetForSelector:` albo usunąć na rzecz generowanych stubów (`tools/gen_framework_stubs.py`).
+5. **Rysowanie:** NSBox nie rysuje tytułu ustawionego przez `setTitle:`; NSTabView rysuje tylko zakładki u góry;
+   brak rysowania toolbara i arkuszy „wysuwanych”; NSDatePicker bez kalendarza graficznego.
+6. Duplikaty klas między ręcznymi frameworkami (NSColor w AppKit i SceneKit, MDL* w SceneKit i ModelIO, CUICatalog
+   w IconServices i CoreUI) — wciąż otwarte.

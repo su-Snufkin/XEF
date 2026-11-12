@@ -1,5 +1,6 @@
 /* AppKit-lite: small AppKit/NSOpenGL implementation for xef-osx. MRC (no ARC). */
 #import "AppKitLite.h"
+#import "AppKitLayout.h"
 #import "AppKitGraphics.h"
 #import "AppKitControls.h"
 #include "xef_host.h"
@@ -679,6 +680,7 @@ static void fixup_nsnumber_methods(void) {
   CGFloat sy = old.size.height > 0 && _bounds.size.height > 0 ? _bounds.size.height / old.size.height : 1;
   NSSize oldBounds = _bounds.size;
   _frame = f; _bounds.size = NSMakeSize(f.size.width * sx, f.size.height * sy); _needsDisplay = YES;
+  XEFLayoutInvalidate();
   if (_window) _window->_dirty2D = YES;
   if (_layer) {
     if ([_layer respondsToSelector:@selector(setFrame:)]) [_layer setFrame:_frame];
@@ -764,6 +766,7 @@ static void autoresize_axis(CGFloat *pos, CGFloat *len, CGFloat oldSuper, CGFloa
     [v viewDidMoveToSuperview];
     [v _setWindow:_window];
   }
+  XEFLayoutInvalidate();
   if (_window) _window->_dirty2D = YES;
   [v release];
 }
@@ -778,6 +781,7 @@ static void autoresize_axis(CGFloat *pos, CGFloat *len, CGFloat oldSuper, CGFloa
   if (s->_window) s->_window->_dirty2D = YES;
   [self viewDidMoveToSuperview];
   [self _setWindow:nil];
+  XEFLayoutInvalidate();
 }
 - (void)setNeedsDisplay:(BOOL)f { _needsDisplay = f; if (f && _window) _window->_dirty2D = YES; }
 - (BOOL)needsDisplay { return _needsDisplay && _window != nil; }
@@ -822,6 +826,7 @@ static void autoresize_axis(CGFloat *pos, CGFloat *len, CGFloat oldSuper, CGFloa
 - (BOOL)acceptsFirstResponder { return NO; }
 - (NSMutableDictionary *)_xefExtra { if (!_extra) _extra = [[NSMutableDictionary alloc] init]; return _extra; }
 - (void)dealloc { if (_window && _window->_first == (NSResponder *)self) _window->_first = nil;
+  XEFLayoutViewGone(self);
   for (NSView *v in _subviews) { v->_superview = nil; v->_window = nil; }
   [_extra release]; [_subviews release]; [_tracking release]; [_layer release]; [_dragTypes release]; [super dealloc]; }
 @end

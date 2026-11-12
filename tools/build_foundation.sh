@@ -14,7 +14,9 @@ import re, os
 t = open(os.environ['HOME'] + '/xef-remote/src/darling/foundation/CMakeLists.txt').read()
 m = re.search(r'set\(foundation_sources(.*?)\n\)', t, re.S).group(1)
 m = re.sub(r'#.*', '', m)
-skip = ('NSXPC', 'PortCoder', 'NSMachBootstrapServer', 'NSTask.m')
+skip = ('NSXPC', 'PortCoder', 'NSMachBootstrapServer', 'NSTask.m',
+        # Auto Layout lives in AppKit-lite (rootfs-src/appkit/AppKitLayout.m)
+        'NSLayoutAnchor.m', 'NSLayoutConstraint.m', 'NSAutoresizingMaskLayoutConstraint.m', 'NSContentSizeLayoutConstraint.m', 'NSIBPrototypingLayoutConstraint.m')
 print(' '.join(('src/NSLog_xef.m' if x == 'src/NSLog.m' else 'src/NSIndexSet_xef.m' if x == 'src/NSIndexSet.m' else 'src/NSKeyValueObserving_xef.m' if x == 'src/NSKeyValueObserving.m' else x) for x in m.split() if x.endswith(('.m', '.c', '.mm')) and not x.startswith('$') and not any(k in x for k in skip)))
 PY
 )

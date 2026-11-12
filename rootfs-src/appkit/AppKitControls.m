@@ -1034,10 +1034,6 @@ static char kXEFHeaderClip;
   return v; }
 @end
 
-@implementation NSLayoutConstraint (XEFNib)
-- (id)initWithCoder:(NSCoder *)c { return [self init]; }   /* Auto Layout is not evaluated: frames come from the nib */
-- (void)encodeWithCoder:(NSCoder *)c {}
-@end
 
 @implementation NSAppearance
 + (NSAppearance *)appearanceNamed:(NSString *)n { NSAppearance *a = [[[self alloc] init] autorelease]; a->_name = [n copy]; return a; }

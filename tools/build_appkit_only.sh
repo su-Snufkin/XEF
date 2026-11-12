@@ -13,7 +13,7 @@ COMMON="-arch arm64 -mmacosx-version-min=12.0"
 LIBS="$F/Foundation.framework/Versions/C/Foundation $F/CoreFoundation.framework/Versions/A/CoreFoundation -L$R/usr/lib -lobjc"
 HIT=$F/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/HIToolbox
 OBJS=""
-for m in AppKit AppKitNib AppKitGraphics AppKitControls AppKitControls2 AppKitTable AppKitView AppKitMenu AppKitAssets AppKitFoundationCompat AppKitDocument AppKitText; do
+for m in AppKit AppKitNib AppKitGraphics AppKitControls AppKitControls2 AppKitTable AppKitView AppKitLayout AppKitMenu AppKitAssets AppKitFoundationCompat AppKitDocument AppKitText; do
   clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/$m.m -o $O/$m.o &
   OBJS="$OBJS $O/$m.o"
 done

@@ -5,6 +5,7 @@
 #import "AppKitLite.h"
 #import "AppKitGraphics.h"
 #import "AppKitControls.h"
+#import "AppKitLayout.h"
 #include <objc/runtime.h>
 #include <math.h>
 
@@ -64,21 +65,25 @@ X_OBJ(identifier, setIdentifier, @"identifier")
 - (void)setNeedsLayout:(BOOL)f { _layoutClean = !f; if (f && _window) _window->_dirty2D = YES; }
 - (void)layout {}
 - (void)layoutSubtreeIfNeeded {
+  XEFLayoutSolveIfNeeded(self);
   if (!_layoutClean) { _layoutClean = YES; [self layout]; }
   for (NSView *s in [[_subviews copy] autorelease]) [s layoutSubtreeIfNeeded]; }
 - (NSSize)intrinsicContentSize { return NSMakeSize(NSViewNoIntrinsicMetric, NSViewNoIntrinsicMetric); }
-- (NSSize)fittingSize { NSSize s = [self intrinsicContentSize]; return NSMakeSize(s.width > 0 ? s.width : 0, s.height > 0 ? s.height : 0); }
-- (void)invalidateIntrinsicContentSize { [_superview setNeedsLayout:YES]; }
-- (BOOL)translatesAutoresizingMaskIntoConstraints { return !_noTranslates; } - (void)setTranslatesAutoresizingMaskIntoConstraints:(BOOL)f { _noTranslates = !f; }
+- (NSSize)fittingSize {
+  NSSize fit;
+  if (XEFLayoutFittingSize(self, &fit)) return fit;
+  NSSize s = [self intrinsicContentSize]; return NSMakeSize(s.width > 0 ? s.width : 0, s.height > 0 ? s.height : 0); }
+- (void)invalidateIntrinsicContentSize { XEFLayoutInvalidate(); [_superview setNeedsLayout:YES]; }
+- (BOOL)translatesAutoresizingMaskIntoConstraints { return !_noTranslates; } - (void)setTranslatesAutoresizingMaskIntoConstraints:(BOOL)f { _noTranslates = !f; XEFLayoutInvalidate(); }
 - (void)updateConstraints {} - (void)updateConstraintsForSubtreeIfNeeded {}
 - (BOOL)needsUpdateConstraints { return NO; } - (void)setNeedsUpdateConstraints:(BOOL)f {}
 - (NSRect)alignmentRectForFrame:(NSRect)f { return f; } - (NSRect)frameForAlignmentRect:(NSRect)r { return r; }
 - (NSEdgeInsets)alignmentRectInsets { return NSEdgeInsetsMake(0, 0, 0, 0); }
 - (CGFloat)firstBaselineOffsetFromTop { return 0; } - (CGFloat)lastBaselineOffsetFromBottom { return 0; } - (CGFloat)baselineOffsetFromBottom { return 0; }
 - (float)contentHuggingPriorityForOrientation:(NSInteger)o { id v = _extra[o ? @"hugV" : @"hugH"]; return v ? [v floatValue] : 250; }
-- (void)setContentHuggingPriority:(float)p forOrientation:(NSInteger)o { [self _xefExtra][o ? @"hugV" : @"hugH"] = @(p); }
+- (void)setContentHuggingPriority:(float)p forOrientation:(NSInteger)o { [self _xefExtra][o ? @"hugV" : @"hugH"] = @(p); XEFLayoutInvalidate(); }
 - (float)contentCompressionResistancePriorityForOrientation:(NSInteger)o { id v = _extra[o ? @"crV" : @"crH"]; return v ? [v floatValue] : 750; }
-- (void)setContentCompressionResistancePriority:(float)p forOrientation:(NSInteger)o { [self _xefExtra][o ? @"crV" : @"crH"] = @(p); }
+- (void)setContentCompressionResistancePriority:(float)p forOrientation:(NSInteger)o { [self _xefExtra][o ? @"crV" : @"crH"] = @(p); XEFLayoutInvalidate(); }
 X_BOOL(isHorizontalContentSizeConstraintActive, setHorizontalContentSizeConstraintActive, @"hcs", YES)
 X_BOOL(isVerticalContentSizeConstraintActive, setVerticalContentSizeConstraintActive, @"vcs", YES)
 - (NSArray *)constraintsAffectingLayoutForOrientation:(NSInteger)o { return @[]; }

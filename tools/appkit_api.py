@@ -85,6 +85,8 @@ def parse(text, emit, table):
         members(body, lambda kind, sel, dep: emit(cls, kind, sel, dep))
         adopted = re.search(r'<([^>]*)>', head)
         for proto in re.findall(r'\w+', adopted.group(1)) if adopted else []:
+            if proto.startswith('NSAccessibility') and not os.environ.get('WITH_ACCESSIBILITY'):
+                continue                         # ~285 members per adopting class: counted only on request
             for kind, sel, dep in table.get(proto, []):
                 emit(cls, kind, sel, dep)
 
