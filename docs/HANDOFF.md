@@ -817,3 +817,16 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - **Testy z oknem wymagają `DISPLAY`** (np. `DISPLAY=:7 tests/darwin/macref.sh appkit_collection`; `Xvfb :7 -screen 0 1280x800x24`).
   Mac przez ssh pozwala na okna (`defer:NO`, `orderFront:`), ale nie ma `timeout` — kończ test `_exit(0)`.
 - Stan: **4422 z 8257** metod prawdziwych (54%), atrap 3997 (179 klas); `macref.sh` 80/81.
+
+### 10. Dekodowanie obrazów (2026-11-12)
+- **Host:** `xef_host_image_decode/copy/free` (`src/loader/darwin_cg_host.cpp`, deklaracje w `rootfs-src/appkit/xef_host.h`) ładują
+  `libgdk_pixbuf-2.0` przez dlopen (jak cairo/pango) i dekodują każdy format, który host zna (PNG, JPEG, GIF, TIFF, WebP, BMP, SVG…) do
+  RGBA8 bez premultiplikacji. Bez gdk-pixbuf dekodowanie jest po prostu wyłączone (`NSImage` zwraca nil).
+- **AppKit-lite** (`AppKitGraphics.m`, kategorie `XEFDecode`): `-[NSBitmapImageRep initWithData:]` (premultiplikuje do formatu domyślnego, więc
+  `_xefCreateContext` dalej działa), `+imageRepWithData:`, `+imageRepWithContentsOfFile:`, `-[NSImage initWithData:/initWithContentsOfFile:/
+  initWithContentsOfURL:/initByReferencingFile:/initByReferencingURL:]` — nil dla śmieci i brakujących plików (wcześniej atrapa
+  zwracała pusty obraz 0×0). Rozmiar obrazu = rozmiar w pikselach (bez obsługi DPI/@2x).
+- **Test:** `tests/darwin/appkit_image/build.sh` → `tests/darwin/image_test` (uruchamiany w `run_tests.sh`, test 9; `XEF_TEST_PNG`).
+- Stan: **4427 z 8257** metod prawdziwych; zostają atrapy `NSImageRep` (poza bitmapą), `NSBrowser` (117 metod), `NSSound`, `NSTreeController`,
+  `NSPathControl`, `NSTextLayoutManager`, `NSSpellChecker`. `metal_test` w `run_tests.sh` wymaga Vulkana i przerywa skrypt (znane).
+

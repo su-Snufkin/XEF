@@ -1198,3 +1198,34 @@ static void dump_shot(const unsigned char *px, size_t w, size_t h) {
 - (void)useOptimizedDrawing:(BOOL)f {}
 - (void)setAutodisplay:(BOOL)f {} - (BOOL)isAutodisplay { return YES; }
 @end
+
+/* decoding through the host (gdk-pixbuf): anything it can read becomes a premultiplied RGBA bitmap rep */
+@implementation NSBitmapImageRep (XEFDecode)
+- (id)initWithData:(NSData *)data {
+  int wh[2] = {0, 0}; int h = [data length] ? xef_host_image_decode([data bytes], [data length], wh) : 0;
+  if (!h) { [self release]; return nil; }
+  if (!(self = [self initWithBitmapDataPlanes:NULL pixelsWide:wh[0] pixelsHigh:wh[1] bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                               colorSpaceName:@"NSDeviceRGBColorSpace" bitmapFormat:0 bytesPerRow:wh[0] * 4 bitsPerPixel:32])) { xef_host_image_free(h); return nil; }
+  xef_host_image_copy(h, _data); xef_host_image_free(h);
+  for (NSInteger i = 0, n = _w * _h; i < n; i++) {   /* premultiply */
+    unsigned char *px = _data + i * 4; unsigned a = px[3];
+    if (a != 255) { px[0] = (px[0] * a + 127) / 255; px[1] = (px[1] * a + 127) / 255; px[2] = (px[2] * a + 127) / 255; } }
+  return self; }
++ (id)imageRepWithData:(NSData *)d { return [[[self alloc] initWithData:d] autorelease]; }
++ (id)imageRepWithContentsOfFile:(NSString *)p { NSData *d = [NSData dataWithContentsOfFile:p]; return d ? [self imageRepWithData:d] : nil; }
+@end
+
+@implementation NSImage (XEFDecode)
+- (id)initWithData:(NSData *)data {
+  NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithData:data];
+  if (!rep) { [self release]; return nil; }
+  if (!(self = [self initWithSize:NSMakeSize([rep pixelsWide], [rep pixelsHigh])])) { [rep release]; return nil; }
+  [self addRepresentation:rep]; [rep release]; return self; }
+- (id)initWithContentsOfFile:(NSString *)path {
+  NSData *d = path ? [NSData dataWithContentsOfFile:path] : nil;
+  if (!d) { [self release]; return nil; }
+  return [self initWithData:d]; }
+- (id)initWithContentsOfURL:(NSURL *)u { return [u isFileURL] ? [self initWithContentsOfFile:[u path]] : ([self release], nil); }
+- (id)initByReferencingFile:(NSString *)p { return [self initWithContentsOfFile:p]; }
+- (id)initByReferencingURL:(NSURL *)u { return [self initWithContentsOfURL:u]; }
+@end

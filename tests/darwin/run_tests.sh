@@ -77,5 +77,12 @@ else
     echo "SKIP generated_test (build it with tests/darwin/appkit_generated/build.sh)"
 fi
 
+echo "--- Test 9: NSImage decoding through the host (gdk-pixbuf) ---"
+if [ -e "$ROOTFS/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit" ] && [ -x "$DIR/image_test" ]; then
+    XEF_TEST_PNG="$DIR/appkit_image/red_green.png" "$XEF_OSX" -L "$ROOTFS" "$DIR/image_test"
+else
+    echo "SKIP image_test (build it with tests/darwin/appkit_image/build.sh)"
+fi
+
 echo "=== ALL TESTS COMPLETED SUCCESSFULLY! ==="
 

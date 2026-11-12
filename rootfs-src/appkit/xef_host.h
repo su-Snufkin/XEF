@@ -111,6 +111,10 @@ void xef_host_text_cursor(int t, int index, double *out4);      /* x, y, height,
 void xef_host_text_char_rect(int t, int index, double *out4);   /* x, y, w, h */
 int  xef_host_text_lines(int t, double *out, int max);          /* per line: start byte, top, height, baseline */
 void xef_host_font_metrics(const char *family, double size, int weight, int italic, double *out4, char *family_out, int family_len);
+/* image decoding: handle (0 = undecodable), pixel size in wh[0..1]; copy writes w*h*4 bytes RGBA, non-premultiplied */
+int  xef_host_image_decode(const void *data, unsigned long len, int *wh);
+void xef_host_image_copy(int img, unsigned char *dst);
+void xef_host_image_free(int img);
 
 #ifdef __cplusplus
 }

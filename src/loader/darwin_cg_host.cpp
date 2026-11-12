@@ -560,6 +560,71 @@ extern "C" void xef_host_font_metrics(const char* family, double size, int weigh
 }
 
 namespace {
+
+// ---- image decoding (gdk-pixbuf, dlopen'ed on first use): any format the host can read -> RGBA8 non-premultiplied ----
+struct Pix {
+    void* (*loader_new)();
+    int (*loader_write)(void*, const unsigned char*, size_t, void**);
+    int (*loader_close)(void*, void**);
+    void* (*loader_get_pixbuf)(void*);
+    int (*get_width)(void*); int (*get_height)(void*); int (*get_rowstride)(void*); int (*get_channels)(void*);
+    const unsigned char* (*get_pixels)(void*);
+};
+Pix PX; int g_pix_state = 0;
+std::unordered_map<int, void*> g_images; int g_next_image = 1;
+bool load_pix() {
+    if (g_pix_state) return g_pix_state > 0;
+    g_pix_state = -1;
+    void* g = dlopen("libgdk_pixbuf-2.0.so.0", RTLD_NOW | RTLD_GLOBAL);
+    void* go = dlopen("libgobject-2.0.so.0", RTLD_NOW | RTLD_GLOBAL);
+    if (!g || !go) { XEF_LOG(1, "xef_image: gdk-pixbuf not available on the host (image decoding disabled)"); return false; }
+    bool ok = true;
+    ok &= sym(g, "gdk_pixbuf_loader_new", PX.loader_new); ok &= sym(g, "gdk_pixbuf_loader_write", PX.loader_write);
+    ok &= sym(g, "gdk_pixbuf_loader_close", PX.loader_close); ok &= sym(g, "gdk_pixbuf_loader_get_pixbuf", PX.loader_get_pixbuf);
+    ok &= sym(g, "gdk_pixbuf_get_width", PX.get_width); ok &= sym(g, "gdk_pixbuf_get_height", PX.get_height);
+    ok &= sym(g, "gdk_pixbuf_get_rowstride", PX.get_rowstride); ok &= sym(g, "gdk_pixbuf_get_n_channels", PX.get_channels);
+    ok &= sym(g, "gdk_pixbuf_get_pixels", PX.get_pixels);
+    ok &= sym(go, "g_object_unref", A.g_object_unref);
+    if (!ok) return false;
+    g_pix_state = 1; return true;
+}
+
+
+// Decodes an encoded image (PNG, JPEG, GIF, TIFF, WebP, BMP, SVG ... whatever the host's loaders know). Returns a handle
+// (0 = not decodable) and the pixel size; xef_host_image_copy writes width*height*4 bytes RGBA, non-premultiplied.
+extern "C" int xef_host_image_decode(const void* data, unsigned long len, int* wh) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    if (!data || !len || !load_pix()) return 0;
+    void* l = PX.loader_new();
+    void* err = nullptr;
+    PX.loader_write(l, (const unsigned char*)data, len, &err);
+    void* err2 = nullptr;
+    PX.loader_close(l, &err2);
+    void* pb = PX.loader_get_pixbuf(l);
+    if (!pb) { A.g_object_unref(l); return 0; }
+    // the pixbuf belongs to the loader: keep the loader alive as the image handle
+    int w = PX.get_width(pb), h = PX.get_height(pb);
+    if (w <= 0 || h <= 0) { A.g_object_unref(l); return 0; }
+    wh[0] = w; wh[1] = h;
+    int id = g_next_image++; g_images[id] = l; return id;
+}
+extern "C" void xef_host_image_copy(int img, unsigned char* dst) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    auto it = g_images.find(img); if (it == g_images.end() || !dst) return;
+    void* pb = PX.loader_get_pixbuf(it->second);
+    int w = PX.get_width(pb), h = PX.get_height(pb), rs = PX.get_rowstride(pb), n = PX.get_channels(pb);
+    const unsigned char* px = PX.get_pixels(pb);
+    for (int y = 0; y < h; y++) {
+        const unsigned char* r = px + (size_t)y * rs; unsigned char* o = dst + (size_t)y * w * 4;
+        for (int x = 0; x < w; x++, r += n, o += 4) { o[0] = r[0]; o[1] = n >= 3 ? r[1] : r[0]; o[2] = n >= 3 ? r[2] : r[0]; o[3] = n == 4 ? r[3] : (n == 2 ? r[1] : 255); }
+    }
+}
+extern "C" void xef_host_image_free(int img) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    auto it = g_images.find(img); if (it == g_images.end()) return;
+    A.g_object_unref(it->second); g_images.erase(it);
+}
+
 struct Fn { const char* name; void* fn; };
 const Fn kFns[] = {
 #define F(n) {"_" #n, (void*)&n}
@@ -573,6 +638,7 @@ const Fn kFns[] = {
     F(xef_host_text_set_spacing), F(xef_host_text_font), F(xef_host_text_color), F(xef_host_text_background),
     F(xef_host_text_decoration), F(xef_host_text_kern), F(xef_host_text_size), F(xef_host_text_draw), F(xef_host_text_hit),
     F(xef_host_text_cursor), F(xef_host_text_char_rect), F(xef_host_text_lines), F(xef_host_font_metrics),
+    F(xef_host_image_decode), F(xef_host_image_copy), F(xef_host_image_free),
 #undef F
 };
 } // namespace
