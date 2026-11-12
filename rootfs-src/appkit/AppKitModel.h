@@ -116,3 +116,16 @@
 @interface NSIndexPath (XEFCollection)
 + (NSIndexPath *)indexPathForItem:(NSInteger)i inSection:(NSInteger)s; - (NSInteger)item; - (NSInteger)section;
 @end
+
+/* NSTreeNode / NSTreeController: a tree of represented objects built from the content and childrenKeyPath */
+@interface NSTreeNode : NSObject { @public id _obj; NSTreeNode *_parent; NSMutableArray *_kids; BOOL _leaf; }
++ (id)treeNodeWithRepresentedObject:(id)o; - (id)initWithRepresentedObject:(id)o; - (id)representedObject; - (NSTreeNode *)parentNode;
+- (NSArray *)childNodes; - (NSMutableArray *)mutableChildNodes; - (BOOL)isLeaf; - (NSIndexPath *)indexPath;
+@end
+@interface NSTreeController : NSObjectController {
+@public
+  NSString *_childrenKP, *_countKP, *_leafKP; NSTreeNode *_root; NSMutableArray *_selPaths; NSArray *_sorts;
+  BOOL _preserves, _selectsInserted, _avoidsEmpty, _multMarker;
+}
+- (NSTreeNode *)arrangedObjects; - (NSArray *)selectionIndexPaths; - (void)rearrangeObjects;
+@end

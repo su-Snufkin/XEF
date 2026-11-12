@@ -164,8 +164,6 @@ NSTitlebarAccessoryViewController
 NSTouch
 NSTouchBar
 NSTrackingSeparatorToolbarItem
-NSTreeController
-NSTreeNode
 NSUserDefaultsController
 NSUserInterfaceCompressionOptions
 NSViewAnimation

@@ -889,3 +889,123 @@ static NSSize content_size(NSGridCell *c) {
   if (ext && [_selection containsObject:p]) { [self deselectItemsAtIndexPaths:one]; if ([_delegate respondsToSelector:@selector(collectionView:didDeselectItemsAtIndexPaths:)]) [_delegate collectionView:self didDeselectItemsAtIndexPaths:one]; }
   else { [self selectItemsAtIndexPaths:ext ? one : one scrollPosition:0]; if ([_delegate respondsToSelector:@selector(collectionView:didSelectItemsAtIndexPaths:)]) [_delegate collectionView:self didSelectItemsAtIndexPaths:one]; } }
 @end
+
+/* ================================================================== NSTreeNode / NSTreeController */
+@implementation NSTreeNode
++ (id)treeNodeWithRepresentedObject:(id)o { return [[[self alloc] initWithRepresentedObject:o] autorelease]; }
+- (id)init { return [self initWithRepresentedObject:nil]; }
+- (id)initWithRepresentedObject:(id)o { if ((self = [super init])) { _obj = [o retain]; _kids = [[NSMutableArray alloc] init]; } return self; }
+- (void)dealloc { for (NSTreeNode *k in _kids) k->_parent = nil; [_obj release]; [_kids release]; [super dealloc]; }
+- (id)representedObject { return _obj; } - (NSTreeNode *)parentNode { return _parent; }
+- (NSArray *)childNodes { return [_kids count] ? _kids : nil; }
+- (NSMutableArray *)mutableChildNodes { return [self mutableArrayValueForKey:@"xefChildren"]; }
+- (NSUInteger)countOfXefChildren { return [_kids count]; }
+- (id)objectInXefChildrenAtIndex:(NSUInteger)i { return _kids[i]; }
+- (void)insertObject:(NSTreeNode *)n inXefChildrenAtIndex:(NSUInteger)i { n->_parent = self; [_kids insertObject:n atIndex:i]; }
+- (void)removeObjectFromXefChildrenAtIndex:(NSUInteger)i { ((NSTreeNode *)_kids[i])->_parent = nil; [_kids removeObjectAtIndex:i]; }
+- (BOOL)isLeaf { return [_kids count] == 0; }
+- (NSIndexPath *)indexPath {
+  NSUInteger idx[64]; NSUInteger n = 0;
+  for (NSTreeNode *x = self; x->_parent && n < 64; x = x->_parent) idx[n++] = [x->_parent->_kids indexOfObjectIdenticalTo:x];
+  NSUInteger rev[64]; for (NSUInteger i = 0; i < n; i++) rev[i] = idx[n - 1 - i];
+  return [NSIndexPath indexPathWithIndexes:rev length:n]; }
+- (NSTreeNode *)descendantNodeAtIndexPath:(NSIndexPath *)p {
+  NSTreeNode *x = self;
+  for (NSUInteger i = 0; i < [p length]; i++) { NSUInteger k = [p indexAtPosition:i]; if (k >= [x->_kids count]) return nil; x = x->_kids[k]; }
+  return x; }
+- (void)sortWithSortDescriptors:(NSArray *)d recursively:(BOOL)r {
+  if ([d count]) {   /* descriptors name keys of the represented objects */
+    NSMutableArray *m = [NSMutableArray array];
+    for (NSSortDescriptor *x in d) [m addObject:[NSSortDescriptor sortDescriptorWithKey:[@"representedObject." stringByAppendingString:[x key] ?: @""] ascending:[x ascending] selector:[x selector]]];
+    [_kids sortUsingDescriptors:m]; }
+  if (r) for (NSTreeNode *k in _kids) [k sortWithSortDescriptors:d recursively:YES]; }
+@end
+
+@implementation NSTreeController
+- (id)initWithContent:(id)c { if ((self = [super initWithContent:nil])) { _preserves = YES; _selectsInserted = YES; _avoidsEmpty = YES; _selPaths = [[NSMutableArray alloc] init]; _class = [NSMutableDictionary class]; [self setContent:c]; } return self; }
+- (void)dealloc { [_childrenKP release]; [_countKP release]; [_leafKP release]; [_root release]; [_selPaths release]; [_sorts release]; [super dealloc]; }
+- (NSArray *)_xefChildrenOf:(id)o { return _childrenKP && o ? [o valueForKeyPath:_childrenKP] : nil; }
+- (void)_xefFill:(NSTreeNode *)n {
+  NSArray *ch = [self _xefChildrenOf:n->_obj];
+  if (![ch isKindOfClass:[NSArray class]]) return;
+  for (id c in ch) { NSTreeNode *k = [[NSTreeNode alloc] initWithRepresentedObject:c]; k->_parent = n; [n->_kids addObject:k]; [self _xefFill:k]; [k release]; } }
+- (void)_xefRebuild {
+  [_root release]; _root = [[NSTreeNode alloc] initWithRepresentedObject:_childrenKP && _content ? @{_childrenKP: _content} : nil];
+  NSArray *top = [_content isKindOfClass:[NSArray class]] ? _content : (_content ? @[_content] : @[]);
+  for (id o in top) { NSTreeNode *k = [[NSTreeNode alloc] initWithRepresentedObject:o]; k->_parent = _root; [_root->_kids addObject:k]; [self _xefFill:k]; [k release]; }
+  if ([_sorts count]) [_root sortWithSortDescriptors:_sorts recursively:YES]; }
+- (void)setContent:(id)c { [super setContent:c]; [_selPaths removeAllObjects]; [self _xefRebuild];
+  if (_avoidsEmpty && [_root->_kids count]) [_selPaths addObject:[NSIndexPath indexPathWithIndex:0]]; }
+- (NSTreeNode *)arrangedObjects { if (!_root) [self _xefRebuild]; return _root; }
+- (void)rearrangeObjects {
+  NSMutableArray *objs = [NSMutableArray array];
+  for (NSIndexPath *p in _selPaths) { NSTreeNode *n = [_root descendantNodeAtIndexPath:p]; if (n) [objs addObject:n->_obj]; }
+  [self _xefRebuild]; [_selPaths removeAllObjects];
+  if (_preserves) [self _xefSelectObjects:objs under:_root]; }
+- (void)_xefSelectObjects:(NSArray *)objs under:(NSTreeNode *)n {
+  for (NSTreeNode *k in n->_kids) { if ([objs indexOfObjectIdenticalTo:k->_obj] != NSNotFound) [_selPaths addObject:[k indexPath]]; [self _xefSelectObjects:objs under:k]; } }
+- (NSString *)childrenKeyPath { return _childrenKP; } - (void)setChildrenKeyPath:(NSString *)k { [k retain]; [_childrenKP release]; _childrenKP = k; [self _xefRebuild]; }
+- (NSString *)countKeyPath { return _countKP; } - (void)setCountKeyPath:(NSString *)k { [k retain]; [_countKP release]; _countKP = k; }
+- (NSString *)leafKeyPath { return _leafKP; } - (void)setLeafKeyPath:(NSString *)k { [k retain]; [_leafKP release]; _leafKP = k; }
+- (NSString *)childrenKeyPathForNode:(NSTreeNode *)n { return _childrenKP; } - (NSString *)countKeyPathForNode:(NSTreeNode *)n { return _countKP; }
+- (NSString *)leafKeyPathForNode:(NSTreeNode *)n { return _leafKP; }
+- (NSArray *)sortDescriptors { return _sorts; } - (void)setSortDescriptors:(NSArray *)d { [d retain]; [_sorts release]; _sorts = d; [self rearrangeObjects]; }
+- (BOOL)preservesSelection { return _preserves; } - (void)setPreservesSelection:(BOOL)f { _preserves = f; }
+- (BOOL)selectsInsertedObjects { return _selectsInserted; } - (void)setSelectsInsertedObjects:(BOOL)f { _selectsInserted = f; }
+- (BOOL)avoidsEmptySelection { return _avoidsEmpty; } - (void)setAvoidsEmptySelection:(BOOL)f { _avoidsEmpty = f; }
+- (BOOL)alwaysUsesMultipleValuesMarker { return _multMarker; } - (void)setAlwaysUsesMultipleValuesMarker:(BOOL)f { _multMarker = f; }
+/* selection */
+- (NSArray *)selectionIndexPaths { return [[_selPaths copy] autorelease]; }
+- (NSIndexPath *)selectionIndexPath { return [_selPaths firstObject]; }
+- (BOOL)setSelectionIndexPaths:(NSArray *)ps {
+  NSMutableArray *ok = [NSMutableArray array];   /* AppKit takes paths as given, even ones that lead nowhere */
+  for (NSIndexPath *p in ps) if ([p length]) [ok addObject:p];
+  [self willChangeValueForKey:@"selectionIndexPaths"]; [_selPaths setArray:ok]; [self didChangeValueForKey:@"selectionIndexPaths"]; return YES; }
+- (BOOL)setSelectionIndexPath:(NSIndexPath *)p { return [self setSelectionIndexPaths:p ? @[p] : @[]]; }
+- (BOOL)addSelectionIndexPaths:(NSArray *)ps { NSMutableArray *a = [NSMutableArray arrayWithArray:_selPaths]; for (id p in ps) if (![a containsObject:p]) [a addObject:p]; return [self setSelectionIndexPaths:a]; }
+- (BOOL)removeSelectionIndexPaths:(NSArray *)ps { NSMutableArray *a = [NSMutableArray arrayWithArray:_selPaths]; [a removeObjectsInArray:ps]; return [self setSelectionIndexPaths:a]; }
+- (NSArray *)selectedNodes { NSMutableArray *r = [NSMutableArray array]; for (NSIndexPath *p in _selPaths) { id n = [_root descendantNodeAtIndexPath:p]; if (n) [r addObject:n]; } return r; }
+- (NSArray *)selectedObjects { NSMutableArray *r = [NSMutableArray array]; for (NSTreeNode *n in [self selectedNodes]) [r addObject:n->_obj ?: [NSNull null]]; return r; }
+/* editing the content: lists are made mutable in place */
+- (NSMutableArray *)_xefMutableChildrenOf:(NSTreeNode *)n {
+  if (n == _root || !n) {
+    if (![_content isKindOfClass:[NSMutableArray class]]) { NSMutableArray *m = [NSMutableArray arrayWithArray:[_content isKindOfClass:[NSArray class]] ? _content : (_content ? @[_content] : @[])]; [_content release]; _content = [m retain]; }
+    return _content; }
+  id cur = [n->_obj valueForKeyPath:_childrenKP];
+  if (![cur isKindOfClass:[NSMutableArray class]]) { NSMutableArray *m = [NSMutableArray arrayWithArray:cur ?: @[]]; [n->_obj setValue:m forKeyPath:_childrenKP]; cur = [n->_obj valueForKeyPath:_childrenKP]; }
+  return cur; }
+- (void)insertObject:(id)o atArrangedObjectIndexPath:(NSIndexPath *)p {
+  if (![p length]) return;
+  NSIndexPath *pp = [p indexPathByRemovingLastIndex]; NSTreeNode *parent = [_root descendantNodeAtIndexPath:pp];
+  if (!parent) return;
+  NSMutableArray *list = [self _xefMutableChildrenOf:parent]; NSUInteger i = [p indexAtPosition:[p length] - 1];
+  if (i > [list count]) i = [list count];
+  [list insertObject:o atIndex:i]; [self rearrangeObjects];
+  if (_selectsInserted) { NSTreeNode *n = [_root descendantNodeAtIndexPath:p]; if (n && n->_obj == o) [self setSelectionIndexPath:p]; } }
+- (void)insertObjects:(NSArray *)os atArrangedObjectIndexPaths:(NSArray *)ps { for (NSUInteger i = 0; i < [os count] && i < [ps count]; i++) [self insertObject:os[i] atArrangedObjectIndexPath:ps[i]]; }
+- (void)removeObjectAtArrangedObjectIndexPath:(NSIndexPath *)p {
+  NSTreeNode *n = [_root descendantNodeAtIndexPath:p]; if (!n || !n->_parent) return;
+  NSMutableArray *list = [self _xefMutableChildrenOf:n->_parent]; NSUInteger i = [list indexOfObjectIdenticalTo:n->_obj];
+  if (i != NSNotFound) [list removeObjectAtIndex:i];
+  [self rearrangeObjects]; }
+- (void)removeObjectsAtArrangedObjectIndexPaths:(NSArray *)ps {
+  NSArray *sorted = [ps sortedArrayUsingSelector:@selector(compare:)];
+  for (NSIndexPath *p in [sorted reverseObjectEnumerator]) [self removeObjectAtArrangedObjectIndexPath:p]; }
+- (void)moveNode:(NSTreeNode *)n toIndexPath:(NSIndexPath *)p {
+  id o = [[n->_obj retain] autorelease]; NSIndexPath *from = [n indexPath];
+  [self removeObjectAtArrangedObjectIndexPath:from]; [self insertObject:o atArrangedObjectIndexPath:p]; }
+- (void)moveNodes:(NSArray *)ns toIndexPath:(NSIndexPath *)p {
+  NSUInteger last = [p length] - 1; NSIndexPath *base = [p indexPathByRemovingLastIndex]; NSUInteger i = [p indexAtPosition:last];
+  for (NSTreeNode *n in ns) [self moveNode:n toIndexPath:[base indexPathByAddingIndex:i++]]; }
+- (BOOL)canInsert { return _editable; } - (BOOL)canInsertChild { return _editable && [[self selectedNodes] count] > 0; } - (BOOL)canAddChild { return [self canInsertChild]; }
+- (BOOL)canAdd { return _editable; } - (BOOL)canRemove { return _editable && [_selPaths count] > 0; }
+- (NSIndexPath *)_xefAfterSelection { NSIndexPath *s = [_selPaths firstObject]; if (!s) return [NSIndexPath indexPathWithIndex:[_root->_kids count]]; return [[s indexPathByRemovingLastIndex] indexPathByAddingIndex:[s indexAtPosition:[s length] - 1] + 1]; }
+- (void)insert:(id)s { [self insertObject:[self newObject] atArrangedObjectIndexPath:[self _xefAfterSelection]]; }
+- (void)add:(id)s { [self insert:s]; }
+- (void)insertChild:(id)s {
+  NSIndexPath *p = [_selPaths firstObject]; if (!p) { [self insert:s]; return; }
+  NSTreeNode *n = [_root descendantNodeAtIndexPath:p];
+  [self insertObject:[self newObject] atArrangedObjectIndexPath:[p indexPathByAddingIndex:[n->_kids count]]]; }
+- (void)addChild:(id)s { [self insertChild:s]; }
+- (void)remove:(id)s { [self removeObjectsAtArrangedObjectIndexPaths:[self selectionIndexPaths]]; [_selPaths removeAllObjects]; }
+@end

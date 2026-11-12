@@ -830,3 +830,14 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - Stan: **4427 z 8257** metod prawdziwych; zostają atrapy `NSImageRep` (poza bitmapą), `NSBrowser` (117 metod), `NSSound`, `NSTreeController`,
   `NSPathControl`, `NSTextLayoutManager`, `NSSpellChecker`. `metal_test` w `run_tests.sh` wymaga Vulkana i przerywa skrypt (znane).
 
+### 11. NSTreeController / NSTreeNode (2026-11-12)
+- `AppKitModel.m`, zgodne z Makiem (`tests/darwin/mac/appkit_tree.m`): drzewo budowane z `content` i `childrenKeyPath`, `arrangedObjects`
+  (korzeń z `childNodes`, `descendantNodeAtIndexPath:`, `indexPath`, `isLeaf`), zaznaczenie przez `NSIndexPath` (`avoidsEmptySelection` domyślnie
+  YES; ścieżki są przyjmowane bez walidacji jak w AppKit), `selectedNodes/Objects`, edycje (`insertObject:atArrangedObjectIndexPath:`,
+  `removeObject(s)…`, `move…`, `add:/addChild:/insert:/insertChild:/remove:`) wprost na listach w modelu (listy niezmienne zamieniane na zmienne),
+  sortowanie deskryptorami kluczy obiektów reprezentowanych. Różnica: u Maca rodzicem węzłów najwyższego poziomu jest ukryty węzeł, nie
+  `arrangedObjects`; test tego nie porównuje.
+- **Poprawka Foundation:** `-[NSArray componentsJoinedByString:]` Darlinga porównywał elementy z ostatnim przez tożsamość, więc wspólne obiekty
+  (np. `@0, @0`) traciły separator (`"00"`). Łatka w `tools/build_corefoundation.sh` (na Macu w źródle `darling/corefoundation/NSArray.m`).
+- Stan: **4477 z 8257** metod prawdziwych; `macref.sh` 13/13 dla testów AppKit.
+

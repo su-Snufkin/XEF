@@ -58,6 +58,15 @@ l = open(cf + 'CFLocale.c').read().replace('#define FALLBACK_LOCALE_NAME CFSTR("
 open(cf + 'CFLocale_xef.c', 'w').write(l)
 PY
 sed 's/    Class cls = objc_getClass(sup);/    if (objc_getClass(name)) return YES;\n    Class cls = objc_getClass(sup);/' $CF/NSBlock.m > $CF/NSBlock_xef.m
+# NSArray componentsJoinedByString: compared elements by identity with the last one, so equal (shared) objects lost their separator
+python3 - <<'PY'
+import os
+f = os.environ['HOME'] + '/xef-remote/src/darling/corefoundation/NSArray.m'
+t = open(f).read()
+old = "id last = [self lastObject];\n        for (id obj in self)\n        {\n            CFStringAppend(str, (CFStringRef)[obj description]);\n            if (obj != last)"
+new = "NSUInteger xefi = 0, xefn = [self count];\n        for (id obj in self)\n        {\n            CFStringAppend(str, (CFStringRef)[obj description]);\n            if (++xefi < xefn)"
+if old in t: open(f, 'w').write(t.replace(old, new))
+PY
 cp $W/apple-oss/libdispatch/dispatch/*.h $B/inc/dispatch/; cp $W/apple-oss/libdispatch/private/*.h $B/inc/dispatch/
 cp $W/apple-oss/libdispatch/os/*.h $B/inc/os/ 2>/dev/null || true
 sed -i '' -E 's/, *driverkit//g; s/driverkit, *//g; s/, *xros\([^)]*\)//g' $B/inc/dispatch/*.h $B/inc/os/*.h 2>/dev/null || true
