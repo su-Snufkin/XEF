@@ -81,6 +81,7 @@ static NSMutableArray *g_gc_stack;
 + (NSGraphicsContext *)graphicsContextWithBitmapImageRep:(NSBitmapImageRep *)r {
   CGContextRef c = [r _xefCreateContext];
   NSGraphicsContext *g = [self graphicsContextWithCGContext:c flipped:NO];
+  objc_setAssociatedObject(g, "xef.bitmapgc", @YES, OBJC_ASSOCIATION_RETAIN);   /* flushed into the rep's pixels when it stops being current */
   CGContextRelease(c); return g; }
 + (NSGraphicsContext *)graphicsContextWithAttributes:(NSDictionary *)a { return nil; }
 + (void)saveGraphicsState {
@@ -89,6 +90,7 @@ static NSMutableArray *g_gc_stack;
   [g_gc saveGraphicsState]; }
 + (void)restoreGraphicsState {
   if (![g_gc_stack count]) return;
+  if (g_gc && g_gc->_cg && objc_getAssociatedObject(g_gc, "xef.bitmapgc")) CGContextFlush(g_gc->_cg);
   id top = [[[g_gc_stack lastObject] retain] autorelease]; [g_gc_stack removeLastObject];
   [self setCurrentContext:top == [NSNull null] ? nil : top];
   [g_gc restoreGraphicsState]; }
@@ -919,7 +921,10 @@ static void draw_layout_in_rect(XEFTextLayout *l, NSRect r) {
 - (CGImageRef)CGImageForProposedRect:(NSRect *)r context:(NSGraphicsContext *)c hints:(NSDictionary *)h {
   for (id rep in _reps) if ([rep isKindOfClass:[NSBitmapImageRep class]]) return [rep CGImage];
   return NULL; }
-- (NSBitmapImageRep *)_xefBitmap { for (id rep in _reps) if ([rep isKindOfClass:[NSBitmapImageRep class]]) return rep; return nil; }
+- (NSBitmapImageRep *)_xefBitmap {
+  for (id rep in _reps) if ([rep isKindOfClass:[NSBitmapImageRep class]]) return rep;
+  if (objc_getAssociatedObject(self, "xef.handler")) { [self performSelector:@selector(_xefRenderHandler)]; for (id rep in _reps) if ([rep isKindOfClass:[NSBitmapImageRep class]]) return rep; }
+  return nil; }
 /* draws the from-rect (image points; zero = whole image) into rect; flip-aware when asked */
 - (void)_xefDrawInRect:(NSRect)d fromRect:(NSRect)s operation:(NSUInteger)op fraction:(CGFloat)f respectFlipped:(BOOL)rf {
   CGContextRef c = XEFCurrentCGContext(); NSBitmapImageRep *rep = [self _xefBitmap];
@@ -948,8 +953,6 @@ static void draw_layout_in_rect(XEFTextLayout *l, NSRect r) {
 - (NSString *)accessibilityDescription { return nil; } - (void)setAccessibilityDescription:(NSString *)d {}
 - (NSImage *)imageWithSymbolConfiguration:(id)c { return self; }
 - (BOOL)isFlipped { return NO; } - (void)setFlipped:(BOOL)f {}
-- (id)copyWithZone:(NSZone *)z { return [self retain]; }
-- (NSData *)TIFFRepresentation { return nil; }
 - (void)setCacheMode:(NSInteger)m {} - (void)recache {}
 - (NSEdgeInsets)capInsets { NSEdgeInsets e = {0, 0, 0, 0}; return e; } - (void)setCapInsets:(NSEdgeInsets)e {}
 - (NSInteger)resizingMode { return 0; } - (void)setResizingMode:(NSInteger)m {}
@@ -1228,4 +1231,109 @@ static void dump_shot(const unsigned char *px, size_t w, size_t h) {
 - (id)initWithContentsOfURL:(NSURL *)u { return [u isFileURL] ? [self initWithContentsOfFile:[u path]] : ([self release], nil); }
 - (id)initByReferencingFile:(NSString *)p { return [self initWithContentsOfFile:p]; }
 - (id)initByReferencingURL:(NSURL *)u { return [self initWithContentsOfURL:u]; }
+@end
+
+/* ---- encoding, pixel access, image focus and drawing handlers ---- */
+@interface NSColor (XEFPix)
++ (NSColor *)colorWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a;
+- (void)getRed:(CGFloat *)r green:(CGFloat *)g blue:(CGFloat *)b alpha:(CGFloat *)a;
+@end
+@implementation NSBitmapImageRep (XEFEncode)
+- (BOOL)isPlanar { return NO; } - (NSInteger)numberOfPlanes { return 1; } - (NSInteger)bytesPerPlane { return _bpr * _h; }
+- (NSBitmapFormat)bitmapFormat { return _fmt; }
+- (void)getBitmapDataPlanes:(unsigned char **)p { if (p) p[0] = _data; }
+/* RGBA8 non-premultiplied copy of the pixels (what the host encoder takes) */
+- (unsigned char *)_xefCopyRGBA {
+  if (!_data || _bps != 8 || _spp < 1) return NULL;
+  unsigned char *o = malloc((size_t)_w * _h * 4); if (!o) return NULL;
+  BOOL first = (_fmt & NSBitmapFormatAlphaFirst) != 0, nonpre = (_fmt & NSBitmapFormatAlphaNonpremultiplied) != 0;
+  for (NSInteger y = 0; y < _h; y++) for (NSInteger x = 0; x < _w; x++) {
+    const unsigned char *p = _data + y * _bpr + x * (_bpp / 8); unsigned char *q = o + (y * _w + x) * 4; unsigned a = 255, r, g, b;
+    NSInteger colors = _alpha ? _spp - 1 : _spp, base = (_alpha && first) ? 1 : 0;
+    if (_alpha) a = first ? p[0] : p[colors];
+    if (colors >= 3) { r = p[base]; g = p[base + 1]; b = p[base + 2]; } else { r = g = b = p[base]; }
+    if (_alpha && !nonpre && a && a != 255) { r = MIN(255, (r * 255 + a / 2) / a); g = MIN(255, (g * 255 + a / 2) / a); b = MIN(255, (b * 255 + a / 2) / a); }
+    q[0] = r; q[1] = g; q[2] = b; q[3] = a; }
+  return o; }
+- (NSData *)representationUsingType:(NSUInteger)type properties:(NSDictionary *)props {
+  static const char *names[] = { "tiff", "bmp", NULL /* GIF: no writer */, "jpeg", "png", NULL /* JPEG 2000 */ };
+  if (type > 5 || !names[type]) return nil;
+  unsigned char *rgba = [self _xefCopyRGBA]; if (!rgba) return nil;
+  NSNumber *q = props[@"NSImageCompressionFactor"];
+  unsigned long len = 0; int h = xef_host_image_encode(rgba, (int)_w, (int)_h, names[type], q ? (int)([q doubleValue] * 100) : -1, &len);
+  free(rgba); if (!h) return nil;
+  NSMutableData *d = [NSMutableData dataWithLength:len]; xef_host_blob_copy(h, [d mutableBytes]); xef_host_blob_free(h); return d; }
++ (NSData *)representationOfImageRepsInArray:(NSArray *)a usingType:(NSUInteger)t properties:(NSDictionary *)p {
+  for (id r in a) if ([r isKindOfClass:[NSBitmapImageRep class]]) return [r representationUsingType:t properties:p]; return nil; }
+- (NSData *)TIFFRepresentation { return [self representationUsingType:0 properties:nil]; }
+- (NSData *)TIFFRepresentationUsingCompression:(NSUInteger)c factor:(float)f { return [self TIFFRepresentation]; }
++ (NSData *)TIFFRepresentationOfImageRepsInArray:(NSArray *)a { return [self representationOfImageRepsInArray:a usingType:0 properties:nil]; }
++ (NSArray *)imageRepsWithData:(NSData *)d { id r = [[[self alloc] initWithData:d] autorelease]; return r ? @[r] : @[]; }
+- (void)getPixel:(NSUInteger *)px atX:(NSInteger)x y:(NSInteger)y {
+  if (x < 0 || y < 0 || x >= _w || y >= _h || !_data || _bps != 8) return;
+  const unsigned char *p = _data + y * _bpr + x * (_bpp / 8); for (NSInteger i = 0; i < _spp; i++) px[i] = p[i]; }
+- (void)setPixel:(NSUInteger *)px atX:(NSInteger)x y:(NSInteger)y {
+  if (x < 0 || y < 0 || x >= _w || y >= _h || !_data || _bps != 8) return;
+  unsigned char *p = _data + y * _bpr + x * (_bpp / 8); for (NSInteger i = 0; i < _spp; i++) p[i] = (unsigned char)px[i];
+  objc_setAssociatedObject(self, "xef.cgimage", nil, OBJC_ASSOCIATION_RETAIN); }
+- (NSColor *)colorAtX:(NSInteger)x y:(NSInteger)y {
+  if (x < 0 || y < 0 || x >= _w || y >= _h) return nil;
+  unsigned char *rgba = [self _xefCopyRGBA]; if (!rgba) return nil;
+  const unsigned char *q = rgba + (y * _w + x) * 4;
+  NSColor *c = [NSColor colorWithRed:q[0] / 255.0 green:q[1] / 255.0 blue:q[2] / 255.0 alpha:q[3] / 255.0]; free(rgba); return c; }
+- (void)setColor:(NSColor *)c atX:(NSInteger)x y:(NSInteger)y {
+  if (x < 0 || y < 0 || x >= _w || y >= _h || !_data || _bps != 8 || _spp < 3) return;
+  CGFloat r = 0, g = 0, b = 0, a = 1; [c getRed:&r green:&g blue:&b alpha:&a];
+  BOOL first = (_fmt & NSBitmapFormatAlphaFirst) != 0, nonpre = (_fmt & NSBitmapFormatAlphaNonpremultiplied) != 0; CGFloat m = (_alpha && !nonpre) ? a : 1;
+  unsigned char *p = _data + y * _bpr + x * (_bpp / 8); NSInteger base = (_alpha && first) ? 1 : 0;
+  p[base] = (unsigned char)(r * m * 255 + 0.5); p[base + 1] = (unsigned char)(g * m * 255 + 0.5); p[base + 2] = (unsigned char)(b * m * 255 + 0.5);
+  if (_alpha) p[first ? 0 : 3] = (unsigned char)(a * 255 + 0.5);
+  objc_setAssociatedObject(self, "xef.cgimage", nil, OBJC_ASSOCIATION_RETAIN); }
+@end
+
+typedef BOOL (^XEFImageDrawingHandler)(NSRect);
+@implementation NSImage (XEFFocus)
++ (NSImage *)imageWithSize:(NSSize)s flipped:(BOOL)f drawingHandler:(BOOL (^)(NSRect))h {
+  NSImage *i = [[[NSImage alloc] initWithSize:s] autorelease];
+  objc_setAssociatedObject(i, "xef.handler", [[h copy] autorelease], OBJC_ASSOCIATION_RETAIN);
+  objc_setAssociatedObject(i, "xef.handlerFlipped", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); return i; }
+/* a bitmap the image draws into while focused (also used for the handler render) */
+- (NSBitmapImageRep *)_xefNewTarget {
+  NSInteger w = (NSInteger)ceil(_size.width), h = (NSInteger)ceil(_size.height); if (w < 1) w = 1; if (h < 1) h = 1;
+  return [[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:w pixelsHigh:h bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+              colorSpaceName:@"NSDeviceRGBColorSpace" bitmapFormat:0 bytesPerRow:w * 4 bitsPerPixel:32] autorelease]; }
+- (void)lockFocusFlipped:(BOOL)f {
+  NSBitmapImageRep *t = [self _xefNewTarget]; objc_setAssociatedObject(self, "xef.focus", t, OBJC_ASSOCIATION_RETAIN);
+  [NSGraphicsContext saveGraphicsState];
+  NSGraphicsContext *gc = [NSGraphicsContext graphicsContextWithBitmapImageRep:t]; [NSGraphicsContext setCurrentContext:gc];
+  if (f) { CGContextRef c = XEFCurrentCGContext(); CGContextTranslateCTM(c, 0, _size.height); CGContextScaleCTM(c, 1, -1); } }
+- (void)lockFocus { [self lockFocusFlipped:NO]; }
+- (void)unlockFocus {
+  NSBitmapImageRep *t = objc_getAssociatedObject(self, "xef.focus"); if (!t) return;
+  [NSGraphicsContext restoreGraphicsState];
+  [_reps removeAllObjects]; [self addRepresentation:t]; objc_setAssociatedObject(self, "xef.focus", nil, OBJC_ASSOCIATION_RETAIN); }
+- (void)_xefRenderHandler {
+  XEFImageDrawingHandler h = objc_getAssociatedObject(self, "xef.handler"); if (!h) return;
+  BOOL f = [objc_getAssociatedObject(self, "xef.handlerFlipped") boolValue];
+  NSBitmapImageRep *t = [self _xefNewTarget];
+  [NSGraphicsContext saveGraphicsState];
+  [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:t]];
+  if (f) { CGContextRef c = XEFCurrentCGContext(); CGContextTranslateCTM(c, 0, _size.height); CGContextScaleCTM(c, 1, -1); }
+  h(NSMakeRect(0, 0, _size.width, _size.height));
+  [NSGraphicsContext restoreGraphicsState];
+  [self addRepresentation:t]; objc_setAssociatedObject(self, "xef.handler", nil, OBJC_ASSOCIATION_RETAIN); }
+- (void)addRepresentations:(NSArray *)a { for (id r in a) [self addRepresentation:r]; }
+- (void)removeRepresentation:(id)r { [_reps removeObjectIdenticalTo:r]; }
+- (id)bestRepresentationForRect:(NSRect)r context:(NSGraphicsContext *)c hints:(NSDictionary *)h { return [self _xefBitmap] ?: [_reps firstObject]; }
+- (id)bestRepresentationForDevice:(id)d { return [self _xefBitmap] ?: [_reps firstObject]; }
+- (void)drawRepresentation:(id)rep inRect:(NSRect)r { if ([rep respondsToSelector:@selector(drawInRect:)]) [rep drawInRect:r]; }
+- (id)initWithDataIgnoringOrientation:(NSData *)d { return [self initWithData:d]; }
+- (NSData *)TIFFRepresentation { return [[self _xefBitmap] TIFFRepresentation]; }
+- (NSData *)TIFFRepresentationUsingCompression:(NSUInteger)c factor:(float)f { return [self TIFFRepresentation]; }
+- (id)copyWithZone:(NSZone *)z { NSImage *c = [[NSImage alloc] initWithSize:_size]; [c addRepresentations:_reps]; return c; }
++ (NSArray *)imageTypes { return @[@"public.png", @"public.jpeg", @"public.tiff", @"com.compuserve.gif", @"com.microsoft.bmp", @"org.webmproject.webp"]; }
++ (NSArray *)imageUnfilteredTypes { return [self imageTypes]; }
++ (NSArray *)imageUnfilteredFileTypes { return @[@"png", @"jpg", @"jpeg", @"tif", @"tiff", @"gif", @"bmp", @"webp"]; }
++ (NSArray *)imageFileTypes { return [self imageUnfilteredFileTypes]; }
++ (BOOL)canInitWithPasteboard:(id)p { return NO; }
 @end

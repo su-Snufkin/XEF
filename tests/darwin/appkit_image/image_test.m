@@ -12,6 +12,7 @@ extern id objc_getClass(const char *);
 extern id objc_msgSend(id, SEL, ...);
 extern SEL sel_registerName(const char *);
 extern const char *getenv(const char *);
+extern void NSRectFill(Rc);
 #define S(s) sel_registerName(s)
 #define M0(r, o, s) ((r (*)(id, SEL))objc_msgSend)(o, S(s))
 #define M1(r, o, s, t, a) ((r (*)(id, SEL, t))objc_msgSend)(o, S(s), a)
@@ -56,6 +57,42 @@ int main(void) {
     printf("drawn %d %d %d %d | %d %d %d %d\n", c[0], c[1], c[2], c[3], e[0], e[1], e[2], e[3]);
     CHECK(c[0] >= 250 && c[1] < 5 && c[3] >= 250);
     CHECK(e[1] >= 120 && e[1] <= 136 && e[3] >= 120 && e[3] <= 136);
+    /* encode / decode round trip */
+    id enc = ((id (*)(id, SEL, unsigned long, id))objc_msgSend)(rep, S("representationUsingType:properties:"), 4, 0);   /* PNG */
+    CHECK(enc != 0);
+    long n = enc ? M0(long, enc, "length") : 0; printf("png bytes %ld\n", n); CHECK(n > 50);
+    id back = M1(id, M0(id, (id)objc_getClass("NSImage"), "alloc"), "initWithData:", id, enc);
+    CHECK(back != 0 && ((Sz (*)(id, SEL))objc_msgSend)(back, S("size")).w == 4);
+    id jpg = ((id (*)(id, SEL, unsigned long, id))objc_msgSend)(rep, S("representationUsingType:properties:"), 3, 0);
+    CHECK(jpg != 0);
+    id tiff = M0(id, rep, "TIFFRepresentation"); CHECK(tiff != 0);
+    CHECK(((id (*)(id, SEL, unsigned long, id))objc_msgSend)(rep, S("representationUsingType:properties:"), 2, 0) == 0);   /* GIF: no writer */
+    id img3 = M1(id, M0(id, (id)objc_getClass("NSImage"), "alloc"), "initWithData:", id, tiff); CHECK(img3 != 0);
+    /* lockFocus */
+    id blank = ((id (*)(id, SEL, Sz))objc_msgSend)(M0(id, (id)objc_getClass("NSImage"), "alloc"), S("initWithSize:"), (Sz){6, 6});
+    M0(void, blank, "lockFocus");
+    M0(void, M0(id, (id)objc_getClass("NSColor"), "blueColor"), "set");
+    NSRectFill((Rc){{0, 0}, {6, 6}});
+    M0(void, blank, "unlockFocus");
+    id brep = M1(id, M0(id, blank, "representations"), "objectAtIndex:", long, 0);
+    unsigned char *bp = M0(unsigned char *, brep, "bitmapData"); printf("focus px %d %d %d %d\n", bp[0], bp[1], bp[2], bp[3]);
+    CHECK(bp[2] == 255 && bp[0] == 0 && bp[3] == 255);
+    id cp = M0(id, blank, "copy"); CHECK(cp != blank && M0(long, M0(id, cp, "representations"), "count") == 1);
+    /* pixel access */
+    id col = ((id (*)(id, SEL, long, long))objc_msgSend)(rep, S("colorAtX:y:"), 0, 0); CHECK(col != 0);
+    /* drawing handler */
+    typedef BOOL (^H)(Rc);
+    H hh = ^BOOL(Rc r) { M0(void, M0(id, (id)objc_getClass("NSColor"), "greenColor"), "set"); NSRectFill(r); return 1; };
+    id hi = ((id (*)(id, SEL, Sz, BOOL, H))objc_msgSend)((id)objc_getClass("NSImage"), S("imageWithSize:flipped:drawingHandler:"), (Sz){3, 3}, 0, hh);
+    CHECK(hi != 0);
+    id dst2 = ((id (*)(id, SEL, void *, long, long, long, long, BOOL, BOOL, id, long, long))objc_msgSend)(M0(id, (id)objc_getClass("NSBitmapImageRep"), "alloc"),
+        S("initWithBitmapDataPlanes:pixelsWide:pixelsHigh:bitsPerSample:samplesPerPixel:hasAlpha:isPlanar:colorSpaceName:bytesPerRow:bitsPerPixel:"), 0, 3, 3, 8, 4, 1, 0, str("NSDeviceRGBColorSpace"), 0, 0);
+    M0(void, (id)objc_getClass("NSGraphicsContext"), "saveGraphicsState");
+    M1(void, (id)objc_getClass("NSGraphicsContext"), "setCurrentContext:", id, M1(id, (id)objc_getClass("NSGraphicsContext"), "graphicsContextWithBitmapImageRep:", id, dst2));
+    M1(void, hi, "drawInRect:", Rc, ((Rc){{0, 0}, {3, 3}}));
+    M0(void, (id)objc_getClass("NSGraphicsContext"), "restoreGraphicsState");
+    unsigned char *hp = M0(unsigned char *, dst2, "bitmapData"); printf("handler px %d %d %d %d\n", hp[16], hp[17], hp[18], hp[19]);
+    CHECK(hp[17] == 255 && hp[16] == 0 && hp[19] == 255);
     M0(void, pool, "release");
     printf(fails ? "FAIL image_test\n" : "PASS image_test\n");
     return fails != 0;

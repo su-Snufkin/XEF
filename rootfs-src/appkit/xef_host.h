@@ -115,6 +115,10 @@ void xef_host_font_metrics(const char *family, double size, int weight, int ital
 int  xef_host_image_decode(const void *data, unsigned long len, int *wh);
 void xef_host_image_copy(int img, unsigned char *dst);
 void xef_host_image_free(int img);
+/* encoding: RGBA8 non-premultiplied -> blob handle (0 = type not writable) of *out_len bytes; quality 0..100 for jpeg, -1 default */
+int  xef_host_image_encode(const unsigned char *rgba, int w, int h, const char *type, int quality, unsigned long *out_len);
+void xef_host_blob_copy(int blob, unsigned char *dst);
+void xef_host_blob_free(int blob);
 
 #ifdef __cplusplus
 }

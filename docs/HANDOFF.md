@@ -864,3 +864,16 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - Przy okazji: `NSCharacterSet +URLPathAllowedCharacterSet` nie istnieje w Foundation Darlinga.
 - Stan: **4637 z 8257** metod prawdziwych; `macref.sh` 15/15 dla testów AppKit.
 
+### 14. Obrazy: kodowanie, lockFocus, drawingHandler (2026-11-12)
+- **Host:** `xef_host_image_encode/blob_copy/blob_free` (`darwin_cg_host.cpp`) zapisują RGBA przez `gdk_pixbuf_save_to_bufferv` (png, jpeg z `quality`,
+  tiff, bmp; GIF i JPEG 2000 nie mają zapisu → nil).
+- **NSBitmapImageRep** (`AppKitGraphics.m`, kategoria `XEFEncode`): `representationUsingType:properties:` (`NSImageCompressionFactor` dla JPEG),
+  `TIFFRepresentation`, `+representationOfImageRepsInArray:…`, `+imageRepsWithData:`, `colorAtX:y:`, `setColor:atX:y:`, `getPixel:/setPixel:`,
+  `bitmapFormat`, `isPlanar`. Piksele są zwracane/ustawiane z uwzględnieniem premultiplikacji.
+- **NSImage:** działające `lockFocus`/`lockFocusFlipped:`/`unlockFocus` (rysowanie do nowej bitmapy, która zastępuje reprezentacje),
+  `+imageWithSize:flipped:drawingHandler:` (blok wykonywany leniwie przy pierwszym użyciu, jednorazowo — AppKit woła go przy każdym rysowaniu),
+  `addRepresentations:`, `removeRepresentation:`, `bestRepresentation…`, `TIFFRepresentation`, prawdziwe `copy`, `imageTypes` i pokrewne.
+- **Pułapka:** kontekst bitmapowy CG jest buforowany i trafia do pikseli reprezentacji dopiero po `CGContextFlush`/zwolnieniu. `+[NSGraphicsContext
+  restoreGraphicsState]` spłukuje teraz kontekst utworzony z `graphicsContextWithBitmapImageRep:`.
+- Test: `tests/darwin/image_test` (kodowanie PNG/JPEG/TIFF i odczyt z powrotem, `lockFocus`, handler). Stan: **4666 z 8257** metod prawdziwych.
+

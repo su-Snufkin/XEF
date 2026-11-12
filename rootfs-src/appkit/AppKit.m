@@ -1464,7 +1464,6 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 @implementation NSImage (XefSDL)
 - (id)init { return [self initWithSize:NSZeroSize]; }
 - (void)setSize:(NSSize)s { _size = s; } - (BOOL)isValid { return YES; }
-- (void)lockFocus {} - (void)unlockFocus {}
 @end
 
 @implementation NSColorSpace

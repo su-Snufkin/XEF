@@ -569,6 +569,9 @@ struct Pix {
     void* (*loader_get_pixbuf)(void*);
     int (*get_width)(void*); int (*get_height)(void*); int (*get_rowstride)(void*); int (*get_channels)(void*);
     const unsigned char* (*get_pixels)(void*);
+    void* (*new_from_data)(const unsigned char*, int, int, int, int, int, int, void*, void*);
+    int (*save_to_bufferv)(void*, char**, size_t*, const char*, char**, char**, void**);
+    void (*g_free)(void*);
 };
 Pix PX; int g_pix_state = 0;
 std::unordered_map<int, void*> g_images; int g_next_image = 1;
@@ -584,6 +587,8 @@ bool load_pix() {
     ok &= sym(g, "gdk_pixbuf_get_width", PX.get_width); ok &= sym(g, "gdk_pixbuf_get_height", PX.get_height);
     ok &= sym(g, "gdk_pixbuf_get_rowstride", PX.get_rowstride); ok &= sym(g, "gdk_pixbuf_get_n_channels", PX.get_channels);
     ok &= sym(g, "gdk_pixbuf_get_pixels", PX.get_pixels);
+    ok &= sym(g, "gdk_pixbuf_new_from_data", PX.new_from_data); ok &= sym(g, "gdk_pixbuf_save_to_bufferv", PX.save_to_bufferv);
+    void* gl = dlopen("libglib-2.0.so.0", RTLD_NOW | RTLD_GLOBAL); ok &= gl && sym(gl, "g_free", PX.g_free);
     ok &= sym(go, "g_object_unref", A.g_object_unref);
     if (!ok) return false;
     g_pix_state = 1; return true;
@@ -625,6 +630,35 @@ extern "C" void xef_host_image_free(int img) {
     A.g_object_unref(it->second); g_images.erase(it);
 }
 
+
+// Encodes RGBA8 non-premultiplied pixels ("png", "jpeg", "tiff", "bmp", "ico") into a blob held by the host; returns the blob handle
+// (0 = the host cannot write that type) and its size. xef_host_blob_copy writes the bytes, xef_host_blob_free drops it.
+struct Blob { char* data; size_t len; };
+std::unordered_map<int, Blob> g_blobs; int g_next_blob = 1;
+extern "C" int xef_host_image_encode(const unsigned char* rgba, int w, int h, const char* type, int quality, unsigned long* out_len) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    if (!rgba || w <= 0 || h <= 0 || !type || !load_pix()) return 0;
+    void* pb = PX.new_from_data(rgba, 0, 1, 8, w, h, w * 4, nullptr, nullptr);
+    if (!pb) return 0;
+    char* buf = nullptr; size_t len = 0; void* err = nullptr; int ok;
+    if (quality >= 0 && !strcmp(type, "jpeg")) {
+        char q[16]; snprintf(q, sizeof q, "%d", quality); char* keys[] = {(char*)"quality", nullptr}; char* vals[] = {q, nullptr};
+        ok = PX.save_to_bufferv(pb, &buf, &len, type, keys, vals, &err);
+    } else ok = PX.save_to_bufferv(pb, &buf, &len, type, nullptr, nullptr, &err);
+    A.g_object_unref(pb);
+    if (!ok || !buf) return 0;
+    int id = g_next_blob++; g_blobs[id] = {buf, len}; *out_len = len; return id;
+}
+extern "C" void xef_host_blob_copy(int id, unsigned char* dst) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    auto it = g_blobs.find(id); if (it != g_blobs.end() && dst) memcpy(dst, it->second.data, it->second.len);
+}
+extern "C" void xef_host_blob_free(int id) {
+    std::lock_guard<std::mutex> lk(g_lock);
+    auto it = g_blobs.find(id); if (it == g_blobs.end()) return;
+    PX.g_free(it->second.data); g_blobs.erase(it);
+}
+
 struct Fn { const char* name; void* fn; };
 const Fn kFns[] = {
 #define F(n) {"_" #n, (void*)&n}
@@ -639,6 +673,7 @@ const Fn kFns[] = {
     F(xef_host_text_decoration), F(xef_host_text_kern), F(xef_host_text_size), F(xef_host_text_draw), F(xef_host_text_hit),
     F(xef_host_text_cursor), F(xef_host_text_char_rect), F(xef_host_text_lines), F(xef_host_font_metrics),
     F(xef_host_image_decode), F(xef_host_image_copy), F(xef_host_image_free),
+    F(xef_host_image_encode), F(xef_host_blob_copy), F(xef_host_blob_free),
 #undef F
 };
 } // namespace
