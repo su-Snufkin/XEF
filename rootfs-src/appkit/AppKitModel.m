@@ -1157,3 +1157,136 @@ static NSSize content_size(NSGridCell *c) {
   [self sendAction:[self action] to:[self target]];
   if ([e clickCount] == 2 && _dbl) [self sendAction:_dbl to:[self target]]; }
 @end
+
+/* ================================================================== NSPathControl */
+@implementation NSPathControlItem
+- (void)dealloc { [_title release]; [_atitle release]; [_image release]; [_url release]; [super dealloc]; }
+- (NSString *)title { return _title ?: [_atitle string]; } - (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
+- (NSAttributedString *)attributedTitle { return _atitle ?: (_title ? [[[NSAttributedString alloc] initWithString:_title] autorelease] : nil); }
+- (void)setAttributedTitle:(NSAttributedString *)a { [a retain]; [_atitle release]; _atitle = a; }
+- (id)image { return _image; } - (void)setImage:(id)i { [i retain]; [_image release]; _image = i; }
+- (NSURL *)URL { return _url; }
+@end
+@implementation NSPathComponentCell
+- (void)dealloc { [_url release]; [super dealloc]; }
+- (NSURL *)URL { return _url; } - (void)setURL:(NSURL *)u { [u retain]; [_url release]; _url = u; }
+@end
+@implementation NSPathCell
+- (void)dealloc { [_url release]; [_cells release]; [_ph release]; [super dealloc]; }
+- (NSURL *)URL { return _url; } - (void)setURL:(NSURL *)u { [u retain]; [_url release]; _url = u; }
+- (NSInteger)pathStyle { return _style; } - (void)setPathStyle:(NSInteger)s { _style = s; }
+- (NSArray *)pathComponentCells { return _cells ?: @[]; } - (void)setPathComponentCells:(NSArray *)c { [c retain]; [_cells release]; _cells = c; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (NSString *)placeholderString { return _ph; } - (void)setPlaceholderString:(NSString *)s { [s retain]; [_ph release]; _ph = s; }
+@end
+
+@implementation NSPathControl
+- (id)initWithFrame:(NSRect)f {
+  if ((self = [super initWithFrame:f])) { _editable = YES; NSPathCell *c = [[NSPathCell alloc] init]; [self setCell:c]; [c release]; _items = [@[] retain]; }
+  return self; }
+- (void)dealloc { [_url release]; [_ph release]; [_aph release]; [_items release]; [_types release]; [_bg release]; [_menu release]; [super dealloc]; }
+- (NSURL *)URL { return _url; }
+- (NSArray *)_xefItemsForURL:(NSURL *)u {
+  NSMutableArray *r = [NSMutableArray array]; if (!u) return r;
+  BOOL file = [u isFileURL]; NSArray *comps = [[u path] pathComponents]; NSMutableString *acc = [NSMutableString string];
+  NSString *base = file ? @"file://" : [NSString stringWithFormat:@"%@://%@", [u scheme], [u host] ?: @""];
+  for (NSString *c in comps) {
+    NSPathControlItem *it = [[NSPathControlItem alloc] init];
+    if ([c isEqualToString:@"/"]) { if (!file) { [it release]; continue; } it->_title = [@"Macintosh HD" retain]; it->_url = [[NSURL URLWithString:@"file:///"] retain]; }
+    else { [acc appendFormat:@"/%@", ([c respondsToSelector:@selector(stringByAddingPercentEscapesUsingEncoding:)] ? [c stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding] : c)]; it->_title = [c retain]; it->_url = [[NSURL URLWithString:[base stringByAppendingString:acc]] retain]; }
+    [r addObject:it]; [it release]; }
+  return r; }
+- (void)_xefSyncCells {
+  NSMutableArray *cells = [NSMutableArray array];
+  for (NSPathControlItem *i in _items) { NSPathComponentCell *c = [[NSPathComponentCell alloc] init]; [c setTitle:[i title] ?: @""]; [c setURL:[i URL]]; [c setImage:[i image]]; [cells addObject:c]; [c release]; }
+  [(NSPathCell *)[self cell] setPathComponentCells:cells]; [self setNeedsDisplay:YES]; }
+- (void)setURL:(NSURL *)u { [u retain]; [_url release]; _url = u; [_items release]; _items = [[self _xefItemsForURL:u] retain]; [(NSPathCell *)[self cell] setURL:u]; [self _xefSyncCells]; }
+- (NSArray *)pathItems { return _items; }
+- (void)setPathItems:(NSArray *)i { [i retain]; [_items release]; _items = i ?: [@[] retain]; [self _xefSyncCells]; }
+- (NSArray *)pathComponentCells { return [(NSPathCell *)[self cell] pathComponentCells]; }
+- (void)setPathComponentCells:(NSArray *)cells {
+  NSMutableArray *its = [NSMutableArray array];
+  for (NSPathComponentCell *c in cells) { NSPathControlItem *it = [[NSPathControlItem alloc] init]; it->_title = [[c title] retain]; it->_url = [[c URL] retain]; it->_image = [[c image] retain]; [its addObject:it]; [it release]; }
+  [self setPathItems:its]; }
+- (NSInteger)pathStyle { return _style; } - (void)setPathStyle:(NSInteger)s { _style = s; [(NSPathCell *)[self cell] setPathStyle:s]; [self setNeedsDisplay:YES]; }
+- (BOOL)isEditable { return _editable; } - (void)setEditable:(BOOL)f { _editable = f; }
+- (NSString *)placeholderString { return _ph; } - (void)setPlaceholderString:(NSString *)s { [s retain]; [_ph release]; _ph = s; [self setNeedsDisplay:YES]; }
+- (NSAttributedString *)placeholderAttributedString { return _aph; } - (void)setPlaceholderAttributedString:(NSAttributedString *)s { [s retain]; [_aph release]; _aph = s; }
+- (NSArray *)allowedTypes { return _types; } - (void)setAllowedTypes:(NSArray *)t { [t retain]; [_types release]; _types = t; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (SEL)doubleAction { return _dbl; } - (void)setDoubleAction:(SEL)a { _dbl = a; }
+- (id)backgroundColor { return _bg; } - (void)setBackgroundColor:(id)c { [c retain]; [_bg release]; _bg = c; }
+- (NSPathControlItem *)clickedPathItem { return _clicked; }
+- (NSPathComponentCell *)clickedPathComponentCell { NSUInteger i = _clicked ? [_items indexOfObjectIdenticalTo:_clicked] : NSNotFound; NSArray *c = [self pathComponentCells]; return i < [c count] ? c[i] : nil; }
+- (void)setDraggingSourceOperationMask:(NSUInteger)m forLocal:(BOOL)l {}
+- (NSMenu *)menu { return _menu; } - (void)setMenu:(NSMenu *)m { [m retain]; [_menu release]; _menu = m; }
+- (BOOL)isFlipped { return YES; }
+/* items are drawn left to right, separated by an arrow; clicks find the item by drawn width */
+- (CGFloat)_xefWidthOf:(NSString *)t { return [t sizeWithAttributes:@{ NSFontAttributeName: [NSFont systemFontOfSize:12] }].width; }
+- (void)drawRect:(NSRect)dirty {
+  NSRect b = [self bounds]; if (_bg) { [_bg set]; NSRectFill(b); }
+  NSDictionary *at = @{ NSFontAttributeName: [NSFont systemFontOfSize:12] }; CGFloat x = 4;
+  if (![_items count]) { if (_ph) [_ph drawInRect:NSMakeRect(x, 3, b.size.width - 8, b.size.height - 6) withAttributes:at]; return; }
+  for (NSUInteger i = 0; i < [_items count]; i++) {
+    NSString *t = [_items[i] title] ?: @""; CGFloat w = [self _xefWidthOf:t];
+    [t drawInRect:NSMakeRect(x, 3, w + 2, b.size.height - 6) withAttributes:at]; x += w + 6;
+    if (i + 1 < [_items count]) { [@">" drawInRect:NSMakeRect(x, 3, 10, b.size.height - 6) withAttributes:at]; x += 14; } } }
+- (void)mouseDown:(NSEvent *)e {
+  NSPoint p = [self convertPoint:[e locationInWindow] fromView:nil]; CGFloat x = 4;
+  for (NSUInteger i = 0; i < [_items count]; i++) {
+    CGFloat w = [self _xefWidthOf:[_items[i] title] ?: @""];
+    if (p.x >= x && p.x <= x + w + 4) { _clicked = _items[i]; [self sendAction:[self action] to:[self target]]; if ([e clickCount] == 2 && _dbl) [self sendAction:_dbl to:[self target]]; return; }
+    x += w + 20; } }
+@end
+
+/* ================================================================== NSSound */
+static NSMutableDictionary *XEFNamedSounds(void) { static NSMutableDictionary *d; if (!d) d = [[NSMutableDictionary alloc] init]; return d; }
+static NSTimeInterval XEFWavDuration(NSData *d) {
+  const unsigned char *b = [d bytes]; NSUInteger n = [d length];
+  if (n < 12 || memcmp(b, "RIFF", 4) || memcmp(b + 8, "WAVE", 4)) return -1;
+  uint32_t rate = 0, bytesPerSec = 0, dataLen = 0; BOOL fmt = NO, dat = NO;
+  for (NSUInteger p = 12; p + 8 <= n;) {
+    uint32_t len; memcpy(&len, b + p + 4, 4);
+    if (!memcmp(b + p, "fmt ", 4) && p + 8 + 16 <= n) { memcpy(&rate, b + p + 12, 4); memcpy(&bytesPerSec, b + p + 16, 4); fmt = YES; }
+    else if (!memcmp(b + p, "data", 4)) { dataLen = len; if (p + 8 + len > n) dataLen = (uint32_t)(n - p - 8); dat = YES; }
+    p += 8 + len + (len & 1); }
+  if (!fmt || !dat || !bytesPerSec) return -1;
+  return (NSTimeInterval)dataLen / bytesPerSec; }
+@implementation NSSound
++ (NSSound *)soundNamed:(NSString *)n { return XEFNamedSounds()[n]; }
++ (NSArray *)soundUnfilteredTypes { return @[@"wav", @"wave", @"public.wav"]; } + (NSArray *)soundUnfilteredFileTypes { return @[@"wav", @"wave"]; } + (NSArray *)soundUnfilteredPasteboardTypes { return @[]; }
+- (id)initWithData:(NSData *)d {
+  NSTimeInterval t = d ? XEFWavDuration(d) : -1;
+  if (t < 0) { [self release]; return nil; }
+  if ((self = [super init])) { _data = [d retain]; _duration = t; _volume = 1; } return self; }
+- (id)initWithContentsOfFile:(NSString *)p byReference:(BOOL)r { NSData *d = p ? [NSData dataWithContentsOfFile:p] : nil; if (!d) { [self release]; return nil; } return [self initWithData:d]; }
+- (id)initWithContentsOfURL:(NSURL *)u byReference:(BOOL)r { return [u isFileURL] ? [self initWithContentsOfFile:[u path] byReference:r] : ([self release], nil); }
+- (void)dealloc { [_timer invalidate]; [_data release]; [_name release]; [super dealloc]; }
+- (id)copyWithZone:(NSZone *)z { return [[NSSound alloc] initWithData:_data]; }
+- (NSTimeInterval)duration { return _duration; }
+- (float)volume { return _volume; } - (void)setVolume:(float)v { _volume = v; }
+- (BOOL)loops { return _loops; } - (void)setLoops:(BOOL)f { _loops = f; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (BOOL)isPlaying { return _playing; }
+- (NSString *)name { return _name; } - (BOOL)setName:(NSString *)n { if (!n) return NO; [n retain]; [_name release]; _name = n; XEFNamedSounds()[n] = self; return YES; }
+- (NSTimeInterval)currentTime { if (_playing && !_paused) { NSTimeInterval t = _offset + ([NSDate timeIntervalSinceReferenceDate] - _started); return t > _duration ? _duration : t; } return _offset; }
+- (void)setCurrentTime:(NSTimeInterval)t { _offset = t < 0 ? 0 : t > _duration ? _duration : t; if (_playing && !_paused) { _started = [NSDate timeIntervalSinceReferenceDate]; [self _xefSchedule]; } }
+- (void)_xefSchedule {
+  [_timer invalidate]; _timer = nil;
+  NSTimeInterval left = _duration - _offset; if (left < 0) left = 0;
+  _timer = [NSTimer scheduledTimerWithTimeInterval:left target:self selector:@selector(_xefDone) userInfo:nil repeats:NO]; }
+- (void)_xefDone {
+  _timer = nil;
+  if (_loops) { _offset = 0; _started = [NSDate timeIntervalSinceReferenceDate]; [self _xefSchedule]; return; }
+  _playing = NO; _paused = NO; _offset = 0;
+  if ([_delegate respondsToSelector:@selector(sound:didFinishPlaying:)]) [_delegate sound:self didFinishPlaying:YES]; }
+- (BOOL)play { if (_playing) return NO; _playing = YES; _paused = NO; _started = [NSDate timeIntervalSinceReferenceDate]; [self _xefSchedule]; return YES; }
+- (BOOL)pause { if (!_playing || _paused) return NO; _offset = [self currentTime]; _paused = YES; [_timer invalidate]; _timer = nil; return YES; }
+- (BOOL)resume { if (!_playing || !_paused) return NO; _paused = NO; _started = [NSDate timeIntervalSinceReferenceDate]; [self _xefSchedule]; return YES; }
+- (BOOL)stop {
+  if (!_playing) return YES;
+  [_timer invalidate]; _timer = nil; _playing = NO; _paused = NO; _offset = 0;
+  if ([_delegate respondsToSelector:@selector(sound:didFinishPlaying:)]) [_delegate sound:self didFinishPlaying:NO];
+  return YES; }
+@end
+@interface NSObject (XEFSoundDelegate) - (void)sound:(id)s didFinishPlaying:(BOOL)f; @end

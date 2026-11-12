@@ -273,14 +273,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPageController @end
 @interface NSPageLayout : NSObject @end
 @implementation NSPageLayout @end
-@interface NSPathCell : NSActionCell @end
-@implementation NSPathCell @end
-@interface NSPathComponentCell : NSTextFieldCell @end
-@implementation NSPathComponentCell @end
-@interface NSPathControl : NSControl @end
-@implementation NSPathControl @end
-@interface NSPathControlItem : NSObject @end
-@implementation NSPathControlItem @end
 @interface NSPersistentDocument : NSDocument @end
 @implementation NSPersistentDocument @end
 @interface NSPickerTouchBarItem : NSTouchBarItem @end
@@ -339,8 +331,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSSliderAccessory @end
 @interface NSSliderTouchBarItem : NSTouchBarItem @end
 @implementation NSSliderTouchBarItem @end
-@interface NSSound : NSObject @end
-@implementation NSSound @end
 @interface NSSpeechRecognizer : NSObject @end
 @implementation NSSpeechRecognizer @end
 @interface NSSpeechSynthesizer : NSObject @end
@@ -2299,68 +2289,18 @@ static const GenEntry kTable[] = {
 {"NSPasteboardItem", '-', "setPropertyList:forType:", 'D', 'B', "@q"},
 {"NSPasteboardItem", '-', "writableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSPathCell", '+', "pathComponentCellClass", 'D', '#', ""},
-{"NSPathCell", '-', "URL", 'G', '@', ""},
 {"NSPathCell", '-', "allowedTypes", 'G', 'A', ""},
 {"NSPathCell", '-', "backgroundColor", 'G', '@', ""},
 {"NSPathCell", '-', "clickedPathComponentCell", 'D', '@', ""},
-{"NSPathCell", '-', "delegate", 'G', '@', ""},
 {"NSPathCell", '-', "doubleAction", 'G', ':', ""},
 {"NSPathCell", '-', "mouseEntered:withFrame:inView:", 'D', 'v', "@R@"},
 {"NSPathCell", '-', "mouseExited:withFrame:inView:", 'D', 'v', "@R@"},
 {"NSPathCell", '-', "pathComponentCellAtPoint:withFrame:inView:", 'D', '@', "PR@"},
-{"NSPathCell", '-', "pathComponentCells", 'G', 'A', ""},
-{"NSPathCell", '-', "pathStyle", 'G', 'q', ""},
-{"NSPathCell", '-', "placeholderAttributedString", 'G', '@', ""},
-{"NSPathCell", '-', "placeholderString", 'G', '@', ""},
 {"NSPathCell", '-', "rectOfPathComponentCell:withFrame:inView:", 'D', 'R', "@R@"},
 {"NSPathCell", '-', "setAllowedTypes:", 'S', 'v', "@"},
 {"NSPathCell", '-', "setBackgroundColor:", 'S', 'v', "@"},
-{"NSPathCell", '-', "setDelegate:", 'S', 'v', "@"},
 {"NSPathCell", '-', "setDoubleAction:", 'S', 'v', ":"},
-{"NSPathCell", '-', "setObjectValue:", 'S', 'v', "@"},
-{"NSPathCell", '-', "setPathComponentCells:", 'S', 'v', "@"},
-{"NSPathCell", '-', "setPathStyle:", 'S', 'v', "q"},
 {"NSPathCell", '-', "setPlaceholderAttributedString:", 'S', 'v', "@"},
-{"NSPathCell", '-', "setPlaceholderString:", 'S', 'v', "@"},
-{"NSPathCell", '-', "setURL:", 'S', 'v', "@"},
-{"NSPathComponentCell", '-', "URL", 'G', '@', ""},
-{"NSPathComponentCell", '-', "image", 'G', '@', ""},
-{"NSPathComponentCell", '-', "setImage:", 'S', 'v', "@"},
-{"NSPathComponentCell", '-', "setURL:", 'S', 'v', "@"},
-{"NSPathControl", '-', "URL", 'G', '@', ""},
-{"NSPathControl", '-', "allowedTypes", 'G', 'A', ""},
-{"NSPathControl", '-', "backgroundColor", 'G', '@', ""},
-{"NSPathControl", '-', "clickedPathComponentCell", 'D', '@', ""},
-{"NSPathControl", '-', "clickedPathItem", 'D', '@', ""},
-{"NSPathControl", '-', "delegate", 'G', '@', ""},
-{"NSPathControl", '-', "doubleAction", 'G', ':', ""},
-{"NSPathControl", '-', "isEditable", 'G', 'B', ""},
-{"NSPathControl", '-', "menu", 'G', '@', ""},
-{"NSPathControl", '-', "pathComponentCells", 'G', 'A', ""},
-{"NSPathControl", '-', "pathItems", 'G', 'A', ""},
-{"NSPathControl", '-', "pathStyle", 'G', 'q', ""},
-{"NSPathControl", '-', "placeholderAttributedString", 'G', '@', ""},
-{"NSPathControl", '-', "placeholderString", 'G', '@', ""},
-{"NSPathControl", '-', "setAllowedTypes:", 'S', 'v', "@"},
-{"NSPathControl", '-', "setBackgroundColor:", 'S', 'v', "@"},
-{"NSPathControl", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSPathControl", '-', "setDoubleAction:", 'S', 'v', ":"},
-{"NSPathControl", '-', "setDraggingSourceOperationMask:forLocal:", 'D', 'v', "qB"},
-{"NSPathControl", '-', "setEditable:", 'S', 'v', "B"},
-{"NSPathControl", '-', "setMenu:", 'S', 'v', "@"},
-{"NSPathControl", '-', "setPathComponentCells:", 'S', 'v', "@"},
-{"NSPathControl", '-', "setPathItems:", 'S', 'v', "@"},
-{"NSPathControl", '-', "setPathStyle:", 'S', 'v', "q"},
-{"NSPathControl", '-', "setPlaceholderAttributedString:", 'S', 'v', "@"},
-{"NSPathControl", '-', "setPlaceholderString:", 'S', 'v', "@"},
-{"NSPathControl", '-', "setURL:", 'S', 'v', "@"},
-{"NSPathControlItem", '-', "URL", 'D', '@', ""},
-{"NSPathControlItem", '-', "attributedTitle", 'G', '@', ""},
-{"NSPathControlItem", '-', "image", 'G', '@', ""},
-{"NSPathControlItem", '-', "setAttributedTitle:", 'S', 'v', "@"},
-{"NSPathControlItem", '-', "setImage:", 'S', 'v', "@"},
-{"NSPathControlItem", '-', "setTitle:", 'S', 'v', "@"},
-{"NSPathControlItem", '-', "title", 'G', '@', ""},
 {"NSPersistentDocument", '-', "configurePersistentStoreCoordinatorForURL:ofType:error:", 'D', 'B', "@@@"},
 {"NSPersistentDocument", '-', "configurePersistentStoreCoordinatorForURL:ofType:modelConfiguration:storeOptions:error:", 'D', 'B', "@@@@@"},
 {"NSPersistentDocument", '-', "managedObjectContext", 'G', '@', ""},
@@ -2974,34 +2914,11 @@ static const GenEntry kTable[] = {
 {"NSSliderTouchBarItem", '-', "view", 'D', '@', ""},
 {"NSSound", '+', "canInitWithPasteboard:", 'D', 'B', "@"},
 {"NSSound", '+', "readableTypesForPasteboard:", 'D', 'A', "@"},
-{"NSSound", '+', "soundNamed:", 'D', '@', "q"},
-{"NSSound", '+', "soundUnfilteredFileTypes", 'D', 'A', ""},
-{"NSSound", '+', "soundUnfilteredPasteboardTypes", 'D', 'A', ""},
-{"NSSound", '+', "soundUnfilteredTypes", 'D', 'A', ""},
 {"NSSound", '-', "channelMapping", 'G', 'A', ""},
-{"NSSound", '-', "currentTime", 'G', 'd', ""},
-{"NSSound", '-', "delegate", 'G', '@', ""},
-{"NSSound", '-', "duration", 'D', 'd', ""},
-{"NSSound", '-', "initWithContentsOfFile:byReference:", 'I', '@', "@B"},
-{"NSSound", '-', "initWithContentsOfURL:byReference:", 'I', '@', "@B"},
-{"NSSound", '-', "initWithData:", 'I', '@', "@"},
 {"NSSound", '-', "initWithPasteboard:", 'I', '@', "@"},
-{"NSSound", '-', "isPlaying", 'D', 'B', ""},
-{"NSSound", '-', "loops", 'G', 'B', ""},
-{"NSSound", '-', "name", 'G', 'q', ""},
-{"NSSound", '-', "pause", 'D', 'B', ""},
-{"NSSound", '-', "play", 'D', 'B', ""},
 {"NSSound", '-', "playbackDeviceIdentifier", 'G', 'q', ""},
-{"NSSound", '-', "resume", 'D', 'B', ""},
 {"NSSound", '-', "setChannelMapping:", 'S', 'v', "@"},
-{"NSSound", '-', "setCurrentTime:", 'S', 'v', "d"},
-{"NSSound", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSSound", '-', "setLoops:", 'S', 'v', "B"},
-{"NSSound", '-', "setName:", 'D', 'B', "q"},
 {"NSSound", '-', "setPlaybackDeviceIdentifier:", 'S', 'v', "q"},
-{"NSSound", '-', "setVolume:", 'S', 'v', "f"},
-{"NSSound", '-', "stop", 'D', 'B', ""},
-{"NSSound", '-', "volume", 'G', 'f', ""},
 {"NSSound", '-', "writableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSSound", '-', "writeToPasteboard:", 'D', 'v', "@"},
 {"NSSpeechRecognizer", '-', "blocksOtherRecognizers", 'G', 'B', ""},

@@ -90,10 +90,6 @@ NSPDFPanel
 NSPICTImageRep
 NSPageController
 NSPageLayout
-NSPathCell
-NSPathComponentCell
-NSPathControl
-NSPathControlItem
 NSPersistentDocument
 NSPickerTouchBarItem
 NSPopoverTouchBarItem
@@ -123,7 +119,6 @@ NSSharingServicePickerToolbarItem
 NSSharingServicePickerTouchBarItem
 NSSliderAccessory
 NSSliderTouchBarItem
-NSSound
 NSSpeechRecognizer
 NSSpeechSynthesizer
 NSSpellChecker

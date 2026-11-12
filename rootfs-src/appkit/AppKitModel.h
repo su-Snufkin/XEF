@@ -139,3 +139,27 @@
 }
 - (BOOL)isLoaded; - (void)loadColumnZero; - (NSInteger)lastColumn; - (void)selectRow:(NSInteger)r inColumn:(NSInteger)c;
 @end
+
+/* NSPathControl: path items from a URL, drawn as a row of titles */
+@interface NSPathControlItem : NSObject { @public NSString *_title; NSAttributedString *_atitle; id _image; NSURL *_url; }
+- (NSString *)title; - (void)setTitle:(NSString *)t; - (NSURL *)URL;
+@end
+@interface NSPathComponentCell : NSCell { @public NSURL *_url; }
+- (NSURL *)URL; - (void)setURL:(NSURL *)u;
+@end
+@interface NSPathCell : NSCell { @public NSURL *_url; NSInteger _style; NSArray *_cells; id _delegate; NSString *_ph; }
+@end
+@interface NSPathControl : NSControl {
+@public
+  NSURL *_url; NSInteger _style; BOOL _editable; NSString *_ph; NSAttributedString *_aph; NSArray *_items, *_types; id _delegate, _bg; SEL _dbl; NSPathControlItem *_clicked; NSMenu *_menu;
+}
+- (NSURL *)URL; - (void)setURL:(NSURL *)u; - (NSArray *)pathItems; - (void)setPathItems:(NSArray *)i;
+@end
+
+/* NSSound: the WAV is parsed (duration) and playback is timed; no audio device is driven */
+@interface NSSound : NSObject <NSCopying> {
+@public
+  NSData *_data; NSTimeInterval _duration, _offset, _started; float _volume; BOOL _loops, _playing, _paused; id _delegate; NSString *_name; NSTimer *_timer;
+}
+- (id)initWithData:(NSData *)d; - (BOOL)play; - (BOOL)stop; - (BOOL)isPlaying; - (NSTimeInterval)duration;
+@end

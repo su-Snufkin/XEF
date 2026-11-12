@@ -852,3 +852,15 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `rowHeight` na Macu rzuca wyjątek dla delegatów macierzowych — tu zwraca 17.
 - Stan: **4573 z 8257** metod prawdziwych.
 
+### 13. NSPathControl i NSSound (2026-11-12)
+- **NSPathControl / NSPathControlItem / NSPathComponentCell / NSPathCell** (`AppKitModel.m`, `appkit_pathcontrol.m`): elementy z adresu URL (plik: korzeń
+  „Macintosh HD” + składowe, inne schematy: bez korzenia), `pathComponentCells` zsynchronizowane z elementami, jawne `setPathItems:`, style,
+  `editable` domyślnie YES, placeholder, `clickedPathItem`; rysowanie rzędu tytułów i klik. Tytuł korzenia na Macu zależy od nazwy woluminu
+  — test go nie porównuje. Brak: rozwijanego menu stylu popup, przeciągania, edycji ścieżki.
+- **NSSound** (`appkit_sound.m`, zgodny z Makiem): parsowanie WAV (czas trwania), `volume`, `loops`, `play/pause/resume/stop`, `currentTime`,
+  `isPlaying`, delegat `sound:didFinishPlaying:` (NO przy `stop`, YES po końcu), `setName:`/`+soundNamed:`. **Dźwięk nie jest odtwarzany** (host
+  nie ma wyjścia audio w AppKit-lite) — odtwarzanie jest tylko mierzone w czasie. Inne formaty niż WAV → nil.
+- `tests/darwin/run_tests.sh` pomija `metal_test`, gdy nie ma użytecznego Vulkana, więc skrypt dochodzi do końca (testy 7–9 działają).
+- Przy okazji: `NSCharacterSet +URLPathAllowedCharacterSet` nie istnieje w Foundation Darlinga.
+- Stan: **4637 z 8257** metod prawdziwych; `macref.sh` 15/15 dla testów AppKit.
+
