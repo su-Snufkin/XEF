@@ -1245,3 +1245,31 @@ static void XEFCSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k, 
 - (id)horizontalRulerView { return XEFCGet(self, "xef.hruler"); } - (void)setHorizontalRulerView:(id)r { XEFCSet(self, "xef.hruler", r); }
 - (id)verticalRulerView { return XEFCGet(self, "xef.vruler"); } - (void)setVerticalRulerView:(id)r { XEFCSet(self, "xef.vruler", r); }
 @end
+
+/* ---- NSBox / NSSearchField / NSScroller additions ---- */
+@implementation NSBox (XEFMore)
+- (NSFont *)titleFont { return XEFCGet(self, "xef.tfont") ?: [NSFont systemFontOfSize:11]; } - (void)setTitleFont:(NSFont *)f { XEFCSet(self, "xef.tfont", f); }
+- (CGFloat)borderWidth { NSNumber *n = XEFCGet(self, "xef.bw"); return n ? [n doubleValue] : 1; } - (void)setBorderWidth:(CGFloat)w { XEFCSet(self, "xef.bw", [NSNumber numberWithDouble:w]); [self setNeedsDisplay:YES]; }
+- (CGFloat)cornerRadius { return [XEFCGet(self, "xef.cr") doubleValue]; } - (void)setCornerRadius:(CGFloat)r { XEFCSet(self, "xef.cr", [NSNumber numberWithDouble:r]); [self setNeedsDisplay:YES]; }
+- (NSColor *)borderColor { return XEFCGet(self, "xef.bc") ?: [NSColor gridColor]; } - (void)setBorderColor:(NSColor *)c { XEFCSet(self, "xef.bc", c); [self setNeedsDisplay:YES]; }
+- (NSUInteger)borderType { NSNumber *n = XEFCGet(self, "xef.bt"); return n ? [n unsignedIntegerValue] : 3; } - (void)setBorderType:(NSUInteger)t { XEFCSet(self, "xef.bt", [NSNumber numberWithUnsignedInteger:t]); }
+- (NSRect)borderRect { return [self bounds]; } - (NSRect)titleRect { NSRect b = [self bounds]; return NSMakeRect(b.origin.x + 10, NSMaxY(b) - 16, b.size.width - 20, 14); } - (id)titleCell { return nil; }
+- (void)sizeToFit {} - (void)setFrameFromContentFrame:(NSRect)r { [self setFrame:NSInsetRect(r, -5, -5)]; } - (void)setTitleWithMnemonic:(NSString *)t { [self setTitle:[t stringByReplacingOccurrencesOfString:@"&" withString:@""]]; }
+@end
+@implementation NSSearchField (XEFMore)
+- (NSArray *)recentSearches { return XEFCGet(self, "xef.recents") ?: @[]; } - (void)setRecentSearches:(NSArray *)a { XEFCSet(self, "xef.recents", [[a copy] autorelease]); }
+- (NSString *)recentsAutosaveName { return XEFCGet(self, "xef.rname"); } - (void)setRecentsAutosaveName:(NSString *)n { XEFCSet(self, "xef.rname", [[n copy] autorelease]); }
+- (NSMenu *)searchMenuTemplate { return XEFCGet(self, "xef.menu"); } - (void)setSearchMenuTemplate:(NSMenu *)m { XEFCSet(self, "xef.menu", m); }
+- (BOOL)sendsWholeSearchString { return [XEFCGet(self, "xef.whole") boolValue]; } - (void)setSendsWholeSearchString:(BOOL)f { XEFCSet(self, "xef.whole", [NSNumber numberWithBool:f]); }
+- (NSInteger)maximumRecents { NSNumber *n = XEFCGet(self, "xef.maxr"); return n ? [n integerValue] : -1; } - (void)setMaximumRecents:(NSInteger)n { XEFCSet(self, "xef.maxr", [NSNumber numberWithInteger:n]); }
+- (BOOL)sendsSearchStringImmediately { return [XEFCGet(self, "xef.imm") boolValue]; } - (void)setSendsSearchStringImmediately:(BOOL)f { XEFCSet(self, "xef.imm", [NSNumber numberWithBool:f]); }
+- (BOOL)centersPlaceholder { return [XEFCGet(self, "xef.cp") boolValue]; } - (void)setCentersPlaceholder:(BOOL)f { XEFCSet(self, "xef.cp", [NSNumber numberWithBool:f]); }
+- (NSRect)searchTextBounds { NSRect b = [self bounds]; return NSMakeRect(b.origin.x + 20, b.origin.y, MAX(0, b.size.width - 40), b.size.height); }
+- (NSRect)searchButtonBounds { NSRect b = [self bounds]; return NSMakeRect(b.origin.x + 2, b.origin.y, 18, b.size.height); } - (NSRect)cancelButtonBounds { NSRect b = [self bounds]; return NSMakeRect(NSMaxX(b) - 20, b.origin.y, 18, b.size.height); }
+- (NSRect)rectForSearchTextWhenCentered:(BOOL)c { return [self searchTextBounds]; } - (NSRect)rectForSearchButtonWhenCentered:(BOOL)c { return [self searchButtonBounds]; } - (NSRect)rectForCancelButtonWhenCentered:(BOOL)c { return [self cancelButtonBounds]; }
+@end
+@implementation NSScroller (XEFMore)
++ (BOOL)isCompatibleWithOverlayScrollers { return YES; } - (void)checkSpaceForParts {} - (NSUInteger)usableParts { return 0; } - (NSInteger)testPart:(NSPoint)p { return 0; } - (void)trackKnob:(NSEvent *)e {}
++ (CGFloat)scrollerWidthForControlSize:(NSInteger)s { return 15; } - (void)setFloatValue:(float)v knobProportion:(CGFloat)p { [self setDoubleValue:v]; [self setKnobProportion:p]; }
+- (NSInteger)arrowsPosition { return 0; } - (void)setArrowsPosition:(NSInteger)p {} - (NSInteger)controlTint { return 0; } - (void)setControlTint:(NSInteger)t {} - (void)highlight:(BOOL)f {} - (void)trackScrollButtons:(NSEvent *)e {} - (void)drawParts {} - (void)drawArrow:(NSInteger)a highlight:(BOOL)f {}
+@end

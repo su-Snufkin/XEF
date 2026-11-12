@@ -1893,3 +1893,36 @@ static NSMutableDictionary *g_exposed;
   return @{ @"NSObservedObject": ob->_object, @"NSObservedKeyPath": ob->_keyPath, @"NSOptions": ob->_options }; }
 - (NSArray *)optionDescriptionsForBinding:(NSString *)b { return @[]; }
 @end
+
+/* ---- NSScreen / NSCursor / NSAlert additions ---- */
+@implementation NSScreen (XEFMore)
++ (NSScreen *)deepestScreen { return [NSScreen mainScreen]; } + (BOOL)screensHaveSeparateSpaces { return YES; }
+- (const int *)supportedWindowDepths { static const int d[] = { 0x2200, 0x2201, 0 }; return d; } - (BOOL)canRepresentDisplayGamut:(NSInteger)g { return YES; }
+- (NSRect)convertRectFromBacking:(NSRect)r { CGFloat s = [self backingScaleFactor]; return NSMakeRect(r.origin.x / s, r.origin.y / s, r.size.width / s, r.size.height / s); }
+- (NSRect)backingAlignedRect:(NSRect)r options:(NSUInteger)o { return NSMakeRect(floor(r.origin.x), floor(r.origin.y), ceil(NSMaxX(r)) - floor(r.origin.x), ceil(NSMaxY(r)) - floor(r.origin.y)); }
+- (NSEdgeInsets)safeAreaInsets { return (NSEdgeInsets){0, 0, 0, 0}; } - (NSRect)auxiliaryTopLeftArea { return NSZeroRect; } - (NSRect)auxiliaryTopRightArea { return NSZeroRect; }
+- (unsigned int)CGDirectDisplayID { return 1; } - (CGFloat)maximumPotentialExtendedDynamicRangeColorComponentValue { return 1; } - (CGFloat)maximumReferenceExtendedDynamicRangeColorComponentValue { return 1; }
+- (NSInteger)maximumFramesPerSecond { return 60; } - (NSTimeInterval)minimumRefreshInterval { return 1.0 / 60; } - (NSTimeInterval)maximumRefreshInterval { return 1.0 / 60; } - (NSTimeInterval)displayUpdateGranularity { return 1.0 / 60; } - (NSTimeInterval)lastDisplayUpdateTimestamp { return [NSDate timeIntervalSinceReferenceDate]; }
+- (id)displayLinkWithTarget:(id)t selector:(SEL)s { return nil; } - (CGFloat)userSpaceScaleFactor { return [self backingScaleFactor]; }
+@end
+@implementation NSCursor (XEFMore)
++ (NSCursor *)zoomInCursor { return [self arrowCursor]; } + (NSCursor *)zoomOutCursor { return [self arrowCursor]; } + (NSCursor *)dragLinkCursor { return [self arrowCursor]; }
++ (NSCursor *)columnResizeCursor { return [self resizeLeftRightCursor]; } + (NSCursor *)columnResizeCursorInDirections:(NSUInteger)d { return [self resizeLeftRightCursor]; }
++ (NSCursor *)rowResizeCursor { return [self resizeUpDownCursor]; } + (NSCursor *)rowResizeCursorInDirections:(NSUInteger)d { return [self resizeUpDownCursor]; }
++ (NSCursor *)frameResizeCursorFromPosition:(NSInteger)p inDirections:(NSUInteger)d { return [self arrowCursor]; }
+- (id)initWithImage:(NSImage *)i foregroundColorHint:(NSColor *)f backgroundColorHint:(NSColor *)b hotSpot:(NSPoint)h { return [self initWithImage:i hotSpot:h]; }
+- (void)setOnMouseExited:(BOOL)f { objc_setAssociatedObject(self, "xef.onExit", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); } - (void)setOnMouseEntered:(BOOL)f { objc_setAssociatedObject(self, "xef.onEnter", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)isSetOnMouseExited { return [objc_getAssociatedObject(self, "xef.onExit") boolValue]; } - (BOOL)isSetOnMouseEntered { return [objc_getAssociatedObject(self, "xef.onEnter") boolValue]; }
+- (void)mouseEntered:(NSEvent *)e { if ([self isSetOnMouseEntered]) [self set]; } - (void)mouseExited:(NSEvent *)e { if ([self isSetOnMouseExited]) [self set]; }
+@end
+@implementation NSAlert (XEFMore)
++ (NSAlert *)alertWithError:(NSError *)e { NSAlert *a = [[[NSAlert alloc] init] autorelease]; [a setMessageText:[e localizedDescription] ?: @""]; [a setInformativeText:[e localizedRecoverySuggestion] ?: @""]; [a setAlertStyle:2]; return a; }
+- (NSImage *)icon { NSImage *i = XEFGet(self, "xef.icon"); if (!i) { i = [[[NSImage alloc] initWithSize:NSMakeSize(64, 64)] autorelease]; XEFSet(self, "xef.icon", i); } return i; } - (void)setIcon:(NSImage *)i { XEFSet(self, "xef.icon", i); }
+- (BOOL)showsHelp { return XEFFlag(self, "xef.help", NO); } - (void)setShowsHelp:(BOOL)f { XEFSet(self, "xef.help", [NSNumber numberWithBool:f]); }
+- (NSString *)helpAnchor { return XEFGet(self, "xef.anchor"); } - (void)setHelpAnchor:(NSString *)a { XEFSet(self, "xef.anchor", [[a copy] autorelease]); }
+- (id)delegate { return XEFGet(self, "xef.delegate"); } - (void)setDelegate:(id)d { objc_setAssociatedObject(self, "xef.delegate", d, OBJC_ASSOCIATION_ASSIGN); }
+- (NSView *)accessoryView { return XEFGet(self, "xef.accessory"); } - (void)setAccessoryView:(NSView *)v { XEFSet(self, "xef.accessory", v); }
+- (void)layout {}
+- (BOOL)showsSuppressionButton { return XEFFlag(self, "xef.suppress", NO); } - (void)setShowsSuppressionButton:(BOOL)f { XEFSet(self, "xef.suppress", [NSNumber numberWithBool:f]); }
+- (NSButton *)suppressionButton { if (![self showsSuppressionButton]) return nil; NSButton *b = XEFGet(self, "xef.suppressBtn"); if (!b) { b = [NSButton checkboxWithTitle:@"Do not show this message again" target:nil action:NULL]; XEFSet(self, "xef.suppressBtn", b); } return b; }
+@end

@@ -1487,3 +1487,11 @@ static void XEFImgSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k
   unsigned char *px = [b bitmapData]; for (NSInteger i = 0, n = (NSInteger)wh[0] * wh[1]; i < n; i++) { unsigned a = px[i * 4 + 3]; if (a != 255) { px[i*4] = px[i*4] * a / 255; px[i*4+1] = px[i*4+1] * a / 255; px[i*4+2] = px[i*4+2] * a / 255; } }
   CGImageRef img = [b CGImage]; if (img) CGContextDrawImage(c, r, img); [b release]; return img != NULL; }
 @end
+
+@implementation NSBezierPath (XEFDefaults)
++ (CGFloat)defaultMiterLimit { return 10; } + (CGFloat)defaultFlatness { return 0.6; } + (NSInteger)defaultWindingRule { return 0; } + (NSInteger)defaultLineCapStyle { return 0; } + (NSInteger)defaultLineJoinStyle { return 0; }
+- (void)relativeCurveToPoint:(NSPoint)e controlPoint1:(NSPoint)c1 controlPoint2:(NSPoint)c2 { NSPoint cp = [self currentPoint]; [self curveToPoint:NSMakePoint(cp.x + e.x, cp.y + e.y) controlPoint1:NSMakePoint(cp.x + c1.x, cp.y + c1.y) controlPoint2:NSMakePoint(cp.x + c2.x, cp.y + c2.y)]; }
+- (void)relativeCurveToPoint:(NSPoint)e controlPoint:(NSPoint)c { [self relativeCurveToPoint:e controlPoint1:c controlPoint2:c]; }
+- (BOOL)cachesBezierPath { return YES; } - (void)setCachesBezierPath:(BOOL)f {}
++ (void)drawPackedGlyphs:(const char *)g atPoint:(NSPoint)p {}
+@end

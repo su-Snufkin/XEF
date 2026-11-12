@@ -1077,3 +1077,11 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   zwraca instancję zarejestrowanej klasy, nil dla nieznanego identyfikatora). `itemViewForItemAtIndex:` zawsze nil (na Macu też, dopóki element nie jest widoczny) — **nic nie jest układane ani wyświetlane**.
 - Stan: **~5960 z 8257** metod prawdziwych (patrz `tools/appkit_gap.sh`).
 
+### 37. NSScreen, NSCursor, NSAlert, NSBox, NSSearchField, NSBezierPath, NSScroller — uzupełnienia (2026-11-12)
+- `AppKit.m`, `AppKitControls.m`, `AppKitGraphics.m`; test `appkit_misc2.m` zgodny z Makiem. **NSScreen**: `deepestScreen`, `maximumFramesPerSecond` (60), `convertRectFromBacking:`, `backingAlignedRect:…`, `safeAreaInsets` (zero),
+  `screensHaveSeparateSpaces` YES. **NSCursor**: brakujące kursory (zoom, dragLink, column/row resize) mapowane na istniejące, `setOnMouseEntered/Exited:`. **NSAlert**: `+alertWithError:` (styl 2, tekst z błędu),
+  `icon` (domyślna pusta ikona 64×64), `showsHelp`, `helpAnchor`, `accessoryView`, `delegate`, `suppressionButton` (tworzony, gdy `showsSuppressionButton` — **okno hosta tego nie pokazuje**). **NSBox**: `borderWidth` (1), `cornerRadius`,
+  `borderColor`, `titleFont`, `borderType` (3) — przechowywane, rysowanie boxa ich jeszcze nie używa. **NSSearchField**: `recentSearches`, `maximumRecents` (-1), `searchMenuTemplate`, `sendsWholeSearchString` itd.,
+  prostokąty przycisków. **NSBezierPath**: domyślne parametry (`defaultMiterLimit` 10, flatness 0.6), `relativeCurveToPoint:…`. **NSScroller**: `+isCompatibleWithOverlayScrollers` YES, stałe odpowiedzi dla reszty.
+- Stan: **6087 z 8257** metod prawdziwych; `macref.sh` 50/50; pełny `run_tests.sh` przechodzi.
+
