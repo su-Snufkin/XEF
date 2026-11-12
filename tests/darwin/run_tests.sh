@@ -60,7 +60,11 @@ echo "--- Test 5: OpenGL cube (Xvfb, gltri) ---"
 "$DIR/gl_test.sh"
 
 echo "--- Test 6: Metal render pipeline (cand4_metal offscreen) ---"
-"$DIR/metal_test.sh"
+if ls /usr/lib/*/libvulkan.so.1 /usr/lib/libvulkan.so.1 >/dev/null 2>&1 && { command -v vulkaninfo >/dev/null 2>&1 && vulkaninfo --summary >/dev/null 2>&1; }; then
+    "$DIR/metal_test.sh"
+else
+    echo "SKIP metal_test (no usable Vulkan device on this host)"
+fi
 
 echo "--- Test 7: generated stub frameworks (tools/build_framework_stubs.sh) ---"
 ROOTFS="$DIR/../../darwin-rootfs"
