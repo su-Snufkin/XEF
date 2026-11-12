@@ -28,12 +28,25 @@ static NSString *gkey(SEL s) {
   for (; i < l && k < sizeof b - 1; i++) b[k++] = n[i];
   b[k] = 0; if (i > 0 && k) b[0] = tolower((unsigned char)b[0]);
   return [NSString stringWithUTF8String:b]; }
-static id gget(id o, SEL s) { return [objc_getAssociatedObject(o, &kGenStore) objectForKey:gkey(s)]; }
+struct XEFDefault { const char *cls, *key; char shape; const char *val; };
+extern const struct XEFDefault kDefaultsTable[]; extern const unsigned long kDefaultsCount;
+/* values captured from the Mac for a fresh object (tools/capture_defaults.py): what a getter answers until something is set */
+static id gdefault(id o, SEL s) {
+  NSString *key = gkey(s); const char *k = [key UTF8String];
+  for (Class c = object_getClass(o); c; c = class_getSuperclass(c)) {
+    const char *cn = class_getName(c);
+    for (unsigned long i = 0; i < kDefaultsCount; i++) { const struct XEFDefault *d = &kDefaultsTable[i]; if (strcmp(d->cls, cn) || strcmp(d->key, k)) continue;
+      switch (d->shape) { case 'B': case 'q': return [NSNumber numberWithLongLong:atoll(d->val)]; case 'd': return [NSNumber numberWithDouble:atof(d->val)]; case '@': return [NSString stringWithUTF8String:d->val];
+        case 'S': { double w = 0, h = 0; sscanf(d->val, "%lf,%lf", &w, &h); NSSize v = NSMakeSize(w, h); return [NSValue valueWithBytes:&v objCType:@encode(NSSize)]; }
+        case 'P': { double x = 0, y = 0; sscanf(d->val, "%lf,%lf", &x, &y); NSPoint v = NSMakePoint(x, y); return [NSValue valueWithBytes:&v objCType:@encode(NSPoint)]; }
+        case 'R': { double x = 0, y = 0, w = 0, h = 0; sscanf(d->val, "%lf,%lf,%lf,%lf", &x, &y, &w, &h); NSRect v = NSMakeRect(x, y, w, h); return [NSValue valueWithBytes:&v objCType:@encode(NSRect)]; } } } }
+  return nil; }
+static id gget(id o, SEL s) { id v = [objc_getAssociatedObject(o, &kGenStore) objectForKey:gkey(s)]; return v ?: gdefault(o, s); }
 static void gset(id o, SEL s, id v) { gstore(o)[gkey(s)] = v ?: (id)[NSNull null]; }
 
 #define GET_NUM(N, T, M) static T N(id self, SEL _cmd) { NSNumber *v = gget(self, _cmd); return [v isKindOfClass:[NSNumber class]] ? (T)[v M] : (T)0; }
 #define SET_NUM(N, T, C) static void N(id self, SEL _cmd, T a) { gset(self, _cmd, [NSNumber C:a]); }
-#define DEF_NUM(N, T) static T N(id self, SEL _cmd) { return (T)0; }
+#define DEF_NUM(N, T) static T N(id self, SEL _cmd) { NSNumber *v = gget(self, _cmd); return [v isKindOfClass:[NSNumber class]] ? (T)[v doubleValue] : (T)0; }
 GET_NUM(g_q, long long, longLongValue) GET_NUM(g_B, BOOL, boolValue) GET_NUM(g_i, int, intValue) GET_NUM(g_s, short, shortValue) GET_NUM(g_c, signed char, charValue)
 GET_NUM(g_f, float, floatValue) GET_NUM(g_d, double, doubleValue)
 SET_NUM(s_q, long long, numberWithLongLong) SET_NUM(s_B, BOOL, numberWithBool) SET_NUM(s_i, int, numberWithInt) SET_NUM(s_s, short, numberWithShort) SET_NUM(s_c, signed char, numberWithChar)
@@ -41,7 +54,7 @@ SET_NUM(s_f, float, numberWithFloat) SET_NUM(s_d, double, numberWithDouble)
 DEF_NUM(d_q, long long) DEF_NUM(d_B, BOOL) DEF_NUM(d_i, int) DEF_NUM(d_s, short) DEF_NUM(d_c, signed char) DEF_NUM(d_f, float) DEF_NUM(d_d, double)
 static id g_at(id self, SEL _cmd) { id v = gget(self, _cmd); return v == (id)[NSNull null] ? nil : v; }
 static void s_at(id self, SEL _cmd, id a) { gset(self, _cmd, a); }
-static id d_at(id self, SEL _cmd) { return nil; }
+static id d_at(id self, SEL _cmd) { id v = gget(self, _cmd); return v == (id)[NSNull null] ? nil : v; }
 static id d_A(id self, SEL _cmd) { return @[]; }
 static id d_M(id self, SEL _cmd) { return @{}; }
 static id d_I(id self, SEL _cmd) { return [NSIndexSet indexSet]; }
@@ -57,7 +70,7 @@ static void d_v(id self, SEL _cmd) {}
 #define STRUCT_IMPS(K, T) \
   static T g_##K(id self, SEL _cmd) { T r; memset(&r, 0, sizeof r); NSValue *v = gget(self, _cmd); if ([v isKindOfClass:[NSValue class]]) [v getValue:&r]; return r; } \
   static void s_##K(id self, SEL _cmd, T a) { gset(self, _cmd, [NSValue valueWithBytes:&a objCType:@encode(T)]); } \
-  static T d_##K(id self, SEL _cmd) { T r; memset(&r, 0, sizeof r); return r; }
+  static T d_##K(id self, SEL _cmd) { T r; memset(&r, 0, sizeof r); NSValue *v = gget(self, _cmd); if ([v isKindOfClass:[NSValue class]]) [v getValue:&r]; return r; }
 STRUCT_IMPS(R, NSRect) STRUCT_IMPS(S, NSSize) STRUCT_IMPS(P, NSPoint) STRUCT_IMPS(E, NSEdgeInsets) STRUCT_IMPS(N, NSRange)
 static id f_init(id self, SEL _cmd) { return [self init]; }
 static id f_make(id self, SEL _cmd) { return [[[self alloc] init] autorelease]; }
@@ -2887,6 +2900,30 @@ static const GenEntry kTable[] = {
 {"NSWritingToolsCoordinatorContext", '-', "range", 'D', 'N', ""},
 {"NSWritingToolsCoordinatorContext", '-', "resolvedRange", 'D', 'N', ""},
 };
+const struct XEFDefault kDefaultsTable[] = {
+{"NSAccessibilityCustomRotor", "label", '@', "Custom"},
+{"NSCollectionLayoutAnchor", "isAbsoluteOffset", 'B', "1"},
+{"NSCollectionLayoutDimension", "isAbsolute", 'B', "1"},
+{"NSCollectionLayoutSpacing", "isFixedSpacing", 'B', "1"},
+{"NSColorPicker", "buttonToolTip", '@', "NSColorPicker"},
+{"NSDraggingSession", "draggingFormation", 'q', "-1"},
+{"NSDraggingSession", "draggingLeaderIndex", 'q', "-1"},
+{"NSPDFPanel", "defaultFileName", '@', "Untitled"},
+{"NSPrintPanel", "options", 'q', "3"},
+{"NSScrubberLayout", "automaticallyMirrorsInRightToLeftLayout", 'B', "1"},
+{"NSScrubberLayoutAttributes", "itemIndex", 'q', "-1"},
+{"NSScrubberLayoutAttributes", "alpha", 'd', "1"},
+{"NSScrubberProportionalLayout", "numberOfVisibleItems", 'q', "5"},
+{"NSTextContentManager", "automaticallySynchronizesTextLayoutManagers", 'B', "1"},
+{"NSTextLayoutManager", "usesFontLeading", 'B', "1"},
+{"NSUserInterfaceCompressionOptions", "isEmpty", 'B', "1"},
+{"NSWorkspaceOpenConfiguration", "promptsUserIfNeeded", 'B', "1"},
+{"NSWorkspaceOpenConfiguration", "allowsRunningApplicationSubstitution", 'B', "1"},
+{"NSWorkspaceOpenConfiguration", "architecture", 'q', "4294967295"},
+{"NSWritingToolsCoordinator", "behavior", 'q', "1"},
+{"NSWritingToolsCoordinator", "resultOptions", 'q', "15"},
+{0, 0, 0, 0} };
+const unsigned long kDefaultsCount = 21;
 
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }

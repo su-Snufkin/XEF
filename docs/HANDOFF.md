@@ -1046,3 +1046,11 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   brak zaznaczania/tekstu PDF.
 - Stan: **5836 z 8257** metod prawdziwych; `macref.sh` 44/44; pełny `run_tests.sh` przechodzi.
 
+### 33. Domyślne wartości atrap z Maca (2026-11-12)
+- **`tools/capture_defaults.py`** (wymaga Maca): dla każdej klasy, która nadal jest generowaną atrapą, tworzy obiekt na Macu (`init` / `initWithFrame:`), woła proste gettery (BOOL, liczby, NSString/NSNumber, NSRect/NSSize/NSPoint)
+  w procesie potomnym (awaria lub wyjątek gubi tylko tę klasę) i zapisuje `rootfs-src/appkit/generated_defaults.txt` (115 wartości z 49 klas; tylko 21 różni się od zera). `tools/gen_appkit_stubs.py` wstawia je do tabeli
+  `kDefaultsTable` w `AppKitGenerated.m`, a getter atrapy odpowiada wartością z Maca, dopóki nic nie ustawiono (np. `NSWorkspaceOpenConfiguration.promptsUserIfNeeded` = YES,
+  `NSScrubberProportionalLayout.numberOfVisibleItems` = 5, `NSTextLayoutManager.usesFontLeading` = YES). Test: `appkit_defaults.m`. To **nie** zamienia atrapy w implementację — `appkit_gap.sh` nadal liczy je jako brakujące.
+  Klasy, których nie da się utworzyć przez `init` (wymagają specjalnych inicjalizatorów), nie mają przechwyconych wartości.
+- Stan: **5836 z 8257** metod prawdziwych (bez zmian; atrapy wiernie odpowiadają); `macref.sh` 45/45.
+
