@@ -8,16 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-@class NSStoryboard;
-@interface NSViewController : NSResponder <NSCoding> {
-@public
-  NSView *_view; NSString *_nibName; NSBundle *_nibBundle; id _representedObject; NSString *_title;
-  NSStoryboard *_storyboard; BOOL _loading;
-}
-- (id)initWithNibName:(NSString *)n bundle:(NSBundle *)b;
-- (NSView *)view; - (void)setView:(NSView *)v; - (void)loadView; - (void)viewDidLoad; - (BOOL)isViewLoaded;
-- (void)viewWillAppear; - (void)viewDidAppear;
-@end
+#import "AppKitControllers.h"
 @interface NSWindow (XEFControllers)
 - (void)setContentViewController:(NSViewController *)vc; - (NSViewController *)contentViewController;
 - (NSWindowController *)windowController; - (void)setWindowController:(NSWindowController *)wc;
@@ -511,8 +502,14 @@ static NSStoryboard *g_main_storyboard;
 - (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
 - (BOOL)isViewLoaded { return _view != nil; }
 - (void)setView:(NSView *)v {
+  if (v == _view) return;
+  if (_view) { [_view->_extra removeObjectForKey:@"viewController"]; if ([_view nextResponder] == self) [_view setNextResponder:[self nextResponder]]; }
   [v retain]; [_view release]; _view = v;
-  if (v) [v setNextResponder:self];
+  if (v) {
+    NSResponder *next = [v nextResponder];
+    [v _xefExtra][@"viewController"] = [NSValue valueWithNonretainedObject:self];
+    [v setNextResponder:next == self ? nil : next];      /* view -> controller -> what followed the view */
+  }
 }
 - (void)loadView {
   if (_nibName) {
@@ -523,7 +520,7 @@ static NSStoryboard *g_main_storyboard;
       if (data) xef_nib_instantiate(data, self, nil);
     }
   }
-  if (!_view) [self setView:[[[NSView alloc] initWithFrame:NSMakeRect(0, 0, 480, 270)] autorelease]];
+  if (!_view) [self setView:[[[NSView alloc] initWithFrame:NSMakeRect(0, 0, 500, 500)] autorelease]];
 }
 - (NSView *)view {
   if (!_view && !_loading) {
@@ -537,8 +534,8 @@ static NSStoryboard *g_main_storyboard;
 - (void)viewDidLoad {}
 - (void)viewWillAppear {} - (void)viewDidAppear {} - (void)viewWillDisappear {} - (void)viewDidDisappear {}
 - (void)viewWillLayout {} - (void)viewDidLayout {} - (void)updateViewConstraints {}
-- (NSSize)preferredContentSize { return _view ? [_view frame].size : NSZeroSize; }
-- (void)dealloc { [_view release]; [_nibName release]; [_nibBundle release]; [_representedObject release]; [_title release]; [super dealloc]; }
+- (NSSize)preferredContentSize { NSValue *v = objc_getAssociatedObject(self, "xef.preferredContentSize"); return v ? [v sizeValue] : NSZeroSize; }
+- (void)dealloc { if (_view) [_view->_extra removeObjectForKey:@"viewController"]; if (_view && [_view nextResponder] == self) _view->_nextResponder = _nextResponder; [_view release]; [_nibName release]; [_nibBundle release]; [_representedObject release]; [_title release]; [super dealloc]; }
 @end
 
 

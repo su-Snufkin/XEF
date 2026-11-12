@@ -76,6 +76,7 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 @public
   NSEventType _type; unsigned short _keyCode; NSPoint _loc; NSEventModifierFlags _flags; NSString *_chars, *_charsIgnoring; NSInteger _clicks;
   id _window; double _ts; NSInteger _button; double _dx, _dy;
+  NSInteger _number, _data1, _data2, _tracking, _winNum; short _subtype; float _pressure; BOOL _repeat, _made; void *_userData;
 }
 - (NSEventType)type; - (unsigned short)keyCode; - (NSPoint)locationInWindow; - (NSEventModifierFlags)modifierFlags;
 - (NSString *)characters; - (NSString *)charactersIgnoringModifiers; - (id)window; - (NSTimeInterval)timestamp;

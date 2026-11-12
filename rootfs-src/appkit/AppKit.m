@@ -1,6 +1,7 @@
 /* AppKit-lite: small AppKit/NSOpenGL implementation for xef-osx. MRC (no ARC). */
 #import "AppKitLite.h"
 #import "AppKitLayout.h"
+BOOL XEFGestureDispatch(NSWindow *w, NSView *target, NSEvent *e);   /* AppKitControllers.m */
 #import "AppKitGraphics.h"
 #import "AppKitControls.h"
 #include "xef_host.h"
@@ -229,16 +230,36 @@ static NSUInteger g_guest_buttons = 0;
 - (NSString *)characters { return _chars ? _chars : @""; }
 - (NSString *)charactersIgnoringModifiers { return _charsIgnoring ? _charsIgnoring : [self characters]; }
 - (id)window { return _window; }
-- (NSInteger)windowNumber { return _window ? [(NSWindow *)_window windowNumber] : 0; }
+- (NSInteger)windowNumber { return _window ? [(NSWindow *)_window windowNumber] : _winNum; }
 - (NSTimeInterval)timestamp { return _ts; }
 - (NSInteger)buttonNumber { return _button; }
 - (CGFloat)deltaX { return _dx; } - (CGFloat)deltaY { return _dy; }
 - (CGFloat)scrollingDeltaX { return _dx; } - (CGFloat)scrollingDeltaY { return _dy; }
-- (BOOL)hasPreciseScrollingDeltas { return NO; } - (BOOL)isARepeat { return NO; } - (NSInteger)clickCount { return _clicks ? _clicks : 1; }
+- (BOOL)hasPreciseScrollingDeltas { return NO; } - (BOOL)isARepeat { return _repeat; } - (NSInteger)clickCount { return _clicks ? _clicks : 1; }
 + (NSEvent *)otherEventWithType:(NSEventType)t location:(NSPoint)p modifierFlags:(NSUInteger)f timestamp:(NSTimeInterval)ts
     windowNumber:(NSInteger)w context:(id)c subtype:(short)s data1:(NSInteger)d1 data2:(NSInteger)d2 {
-  NSEvent *e = [[[NSEvent alloc] init] autorelease]; e->_type = t; e->_loc = p; e->_flags = f; e->_ts = ts; return e;
+  NSEvent *e = [self _xefEventWithType:t location:p flags:f timestamp:ts windowNumber:w];
+  e->_subtype = s; e->_data1 = d1; e->_data2 = d2; return e;
 }
+/* events made by the application: the window is looked up by its number */
++ (NSEvent *)_xefEventWithType:(NSEventType)t location:(NSPoint)p flags:(NSUInteger)f timestamp:(NSTimeInterval)ts windowNumber:(NSInteger)w {
+  NSEvent *e = [[[NSEvent alloc] init] autorelease]; e->_type = t; e->_loc = p; e->_flags = f; e->_ts = ts; e->_winNum = w; e->_made = YES; e->_pressure = 1;
+  if (w) for (NSWindow *win in [NSApp windows]) if ([win windowNumber] == w) e->_window = win;
+  return e; }
++ (NSEvent *)mouseEventWithType:(NSEventType)t location:(NSPoint)p modifierFlags:(NSUInteger)f timestamp:(NSTimeInterval)ts windowNumber:(NSInteger)w context:(id)c
+                    eventNumber:(NSInteger)n clickCount:(NSInteger)clicks pressure:(float)pr {
+  NSEvent *e = [self _xefEventWithType:t location:p flags:f timestamp:ts windowNumber:w];
+  e->_number = n; e->_clicks = clicks; e->_pressure = pr; return e; }
++ (NSEvent *)keyEventWithType:(NSEventType)t location:(NSPoint)p modifierFlags:(NSUInteger)f timestamp:(NSTimeInterval)ts windowNumber:(NSInteger)w context:(id)c
+                   characters:(NSString *)chars charactersIgnoringModifiers:(NSString *)ign isARepeat:(BOOL)rep keyCode:(unsigned short)code {
+  NSEvent *e = [self _xefEventWithType:t location:p flags:f timestamp:ts windowNumber:w];
+  e->_chars = [chars copy]; e->_charsIgnoring = [ign copy]; e->_repeat = rep; e->_keyCode = code; return e; }
++ (NSEvent *)enterExitEventWithType:(NSEventType)t location:(NSPoint)p modifierFlags:(NSUInteger)f timestamp:(NSTimeInterval)ts windowNumber:(NSInteger)w context:(id)c
+                        eventNumber:(NSInteger)n trackingNumber:(NSInteger)tn userData:(void *)data {
+  NSEvent *e = [self _xefEventWithType:t location:p flags:f timestamp:ts windowNumber:w];
+  e->_number = n; e->_tracking = tn; e->_userData = data; return e; }
+- (NSInteger)eventNumber { return _number; } - (NSInteger)trackingNumber { return _tracking; } - (void *)userData { return _userData; }
+- (NSInteger)data1 { return _data1; } - (NSInteger)data2 { return _data2; }
 + (NSEventModifierFlags)modifierFlags { return 0; }
 + (NSUInteger)pressedMouseButtons {
   int hb = xef_host_mouse_buttons();
@@ -745,6 +766,10 @@ static void autoresize_axis(CGFloat *pos, CGFloat *len, CGFloat oldSuper, CGFloa
   for (NSView *s in [[_subviews copy] autorelease]) [s _setWindow:w];
   if (changes) [self viewDidMoveToWindow];
 }
+/* a view controller sits between its view and what would be the view's next responder */
+- (void)setNextResponder:(NSResponder *)r {
+  NSResponder *vc = [_extra[@"viewController"] nonretainedObjectValue];
+  if (vc && r != vc) { _nextResponder = vc; [vc setNextResponder:r]; } else _nextResponder = r; }
 - (void)viewWillMoveToWindow:(NSWindow *)w {} - (void)viewWillMoveToSuperview:(NSView *)s {} - (void)viewDidMoveToSuperview {}
 - (void)didAddSubview:(NSView *)s {} - (void)willRemoveSubview:(NSView *)s {}
 /* the callbacks come in AppKit's order: will move to superview, old superview will remove, did add, did move, then the
@@ -1033,6 +1058,7 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)sendEvent:(NSEvent *)e {
   NSResponder *t = _first ? _first : (NSResponder *)_content;
   NSView *target = _content ? [_content hitTest:[e locationInWindow]] : nil;
+  if (XEFGestureDispatch(self, target, e)) return;
   NSResponder *m = target ? (NSResponder *)target : (_content ? (NSResponder *)_content : (NSResponder *)self);
   switch (e->_type) {
   case NSEventTypeKeyDown: [t keyDown:e]; break; case NSEventTypeKeyUp: [t keyUp:e]; break;
@@ -1410,11 +1436,11 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 
 @implementation NSEvent (XefSDL)
 - (NSUInteger)phase { return 0; } - (NSUInteger)momentumPhase { return 0; }   /* NSEventPhaseNone */
-- (short)subtype { return 0; }                                                 /* NSEventSubtypeMouseEvent */
+- (short)subtype { return _subtype; }                                                 /* NSEventSubtypeMouseEvent */
 - (BOOL)isDirectionInvertedFromDevice { return NO; }
 - (NSSet *)touchesMatchingPhase:(NSUInteger)p inView:(NSView *)v { return [NSSet set]; }
 - (NSInteger)windowNumber { return _window ? [(NSWindow *)_window windowNumber] : 0; }
-- (float)pressure { return 1.0f; } - (CGFloat)deltaZ { return 0; }
+- (float)pressure { return _made ? _pressure : 1.0f; } - (CGFloat)deltaZ { return 0; }
 - (NSUInteger)deviceID { return 0; } - (void *)CGEvent { return NULL; }
 @end
 

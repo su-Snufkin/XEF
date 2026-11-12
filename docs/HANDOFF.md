@@ -719,3 +719,24 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
    brak rysowania toolbara i arkuszy „wysuwanych”; NSDatePicker bez kalendarza graficznego.
 6. Duplikaty klas między ręcznymi frameworkami (NSColor w AppKit i SceneKit, MDL* w SceneKit i ModelIO, CUICatalog
    w IconServices i CoreUI) — wciąż otwarte.
+
+### 6. Dodatek (2026-11-12, po Auto Layout): kontrolery, zdarzenia, gesty
+- **`AppKitControllers.m/.h`:** reszta NSViewController (dzieci w kolejności, `presentViewControllerAsSheet:` /
+  `AsModalWindow:` / `AsPopover…` jako okna, `dismissViewController:`, commitEditing), **NSSplitViewController +
+  NSSplitViewItem** (sidebar: canCollapse, holding 260; widok kontrolera to kontener, a `splitView` jest jego dzieckiem —
+  tak jak na Macu), **NSTabViewController** (tabView tworzony przy ładowaniu widoku; tytuł propaguje się z wybranej
+  zakładki; widok wybranego dziecka ładuje się dopiero z widokiem kontrolera), **rozpoznawacze gestów** (Click, Pan,
+  Press, Magnification, Rotation), reszta NSResponder (gesty, dotyk, odtwarzanie stanu, `presentError:`).
+  Deklaracja NSViewController przeniesiona z AppKitNib.m do `AppKitControllers.h`.
+- **Łańcuch odpowiedzi:** widok z kontrolerem ma `nextResponder` = kontroler, a ten dalej = to, co następowałoby po
+  widoku (`-[NSView setNextResponder:]`, klucz `viewController` w `_extra`).
+- **NSEvent:** `mouseEventWithType:…`, `keyEventWithType:…`, `enterExitEventWithType:…`, `otherEventWithType:` (data1/2,
+  subtype), `eventNumber`, `trackingNumber`, `userData`, `isARepeat`; okno wyszukiwane po `windowNumber`.
+- **Gesty: dyspozytor `XEFGestureDispatch`** w `-[NSWindow sendEvent:]` przekazuje mysz rozpoznawaczom widoku pod
+  kursorem i jego przodków, ale **nie wstrzymuje zdarzeń dla widoków** (prawdziwy AppKit opóźnia je do niepowodzenia
+  gestu — potrzebny model czasowy). Zmierzone na Macu: okno bez ekranu (`defer:YES`) nie dostarcza gestów w ogóle,
+  więc test pokrywa tylko wartości domyślne, podpinanie i odpinanie; samo rozpoznawanie jest nieweryfikowane.
+- Stan: `macref.sh` 74/75 (tylko stary `foundation_more`), `gl_test`, `frameworks_test` PASS, galeria bez zmian;
+  3912 z 8332 metod (47%). Zrobione z listy §5: NSSplitViewItem/Controller, NSTabViewController, gesty, NSViewController,
+  NSEvent, NSResponder. Zostają: NSToolbar, NSPopover (kontroler pokazuje okno), NSImageRep, NSSound, NSGridView,
+  NSCollectionView, kontrolery bindings.

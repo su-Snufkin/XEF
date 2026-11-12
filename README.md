@@ -145,12 +145,12 @@ XEF, and the two outputs must match line for line (`tests/darwin/macref.sh appki
 | Views and windows | NSView (hierarchy callbacks, autoresizing, bounds transforms, hit testing, layout passes), NSWindow, NSPanel, sheets |
 | Auto Layout | NSLayoutConstraint, anchors, NSLayoutGuide, visual format language; a Cassowary solver with strict priorities |
 | Controls | buttons, text fields, pop-ups, sliders, steppers, progress indicators, segmented controls, switches, combo boxes, date pickers, level indicators, colour wells, image views |
-| Containers | NSScrollView, NSTabView, NSSplitView, NSStackView, NSBox |
+| Containers | NSScrollView, NSTabView, NSSplitView, NSStackView, NSBox; view controllers (NSSplitViewController, NSTabViewController) and gesture recognizers |
 | Tables | NSTableView (cell- and view-based), NSOutlineView, headers with sorting and column resizing |
 | Drawing and text | NSBezierPath, NSColor, NSGradient, NSImage, NSFont, attributed strings, NSTextView |
 
 `tools/appkit_gap.sh` lists what of AppKit's public API (read from the SDK headers) is still missing, per class:
-3690 of 8332 public methods are implemented.
+3912 of 8332 public methods are implemented.
 
 ### Every other system framework: generated stubs
 
