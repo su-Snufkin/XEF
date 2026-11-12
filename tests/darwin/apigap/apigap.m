@@ -17,6 +17,7 @@ extern Class object_getClass(id);
 extern SEL sel_registerName(const char *);
 extern signed char class_respondsToSelector(Class, SEL);
 extern const char *class_getImageName(Class);
+extern signed char XEFClassImplements(Class, SEL) __attribute__((weak_import));   // AppKit-lite: not a catch-all stub
 
 int main(int argc, char **argv) {
     FILE *f = argc > 1 ? fopen(argv[1], "r") : 0;
@@ -44,7 +45,8 @@ int main(int argc, char **argv) {
         if (lastMissing) continue;
         Class c = (Class)objc_getClass(cls);
         if (kind[0] == '+') c = object_getClass((id)c);
-        if (!class_respondsToSelector(c, sel_registerName(sel)))
+        SEL s = sel_registerName(sel);
+        if (!(XEFClassImplements ? XEFClassImplements(c, s) : class_respondsToSelector(c, s)))
             printf("M\t%s\t%c%s%s\n", cls, kind[0], sel, dep[0] == 'D' ? "\tD" : "");
     }
     return 0;

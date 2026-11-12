@@ -86,6 +86,13 @@ BOOL XEFRespondsForReal(id o, SEL a) {
   if (!o || !a || ![o respondsToSelector:a]) return NO;
   Method m = class_getInstanceMethod(object_getClass(o), a);
   return !m || method_getImplementation(m) != (IMP)lite_stub; }
+/* YES when instances of c (or c itself, for a metaclass) really implement a: tools/appkit_gap.sh */
+BOOL XEFClassImplements(Class c, SEL a) {
+  g_stub_probe++;
+  Method m = class_getInstanceMethod(c, a);
+  g_stub_probe--;
+  IMP imp = m ? method_getImplementation(m) : NULL;
+  return imp && imp != (IMP)lite_stub && (!g_menu_stub_imp || imp != g_menu_stub_imp); }
 static id lite_stub(id self, SEL _cmd, ...) {
   static NSMutableSet *seen;
   @synchronized ([NSObject class]) {

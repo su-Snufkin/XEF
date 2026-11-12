@@ -876,6 +876,7 @@ enum { kPush = 0, kSwitch = 3, kRadio = 4, kToggle = 2, kMomentaryChange = 5, kO
 - (void)scrollWheel:(NSEvent *)e { [[self superview] scrollWheel:e]; }
 @end
 
+static char kXEFHeaderClip;
 @implementation NSScrollView
 + (NSSize)frameSizeForContentSize:(NSSize)s hasHorizontalScroller:(BOOL)h hasVerticalScroller:(BOOL)v borderType:(NSInteger)b { return s; }
 + (NSSize)contentSizeForFrameSize:(NSSize)s hasHorizontalScroller:(BOOL)h hasVerticalScroller:(BOOL)v borderType:(NSInteger)b { return s; }
@@ -940,7 +941,18 @@ enum { kPush = 0, kSwitch = 3, kRadio = 4, kToggle = 2, kMomentaryChange = 5, kO
 - (void)tile {
   CGFloat b = _border ? 1 : 0;
   NSRect inner = NSInsetRect(_bounds, b, b);
+  /* a document view with a header view (NSTableView) gets it in its own clip view above the content */
+  NSView *doc = [_clip documentView], *header = [doc respondsToSelector:@selector(headerView)] ? [(id)doc headerView] : nil;
+  NSClipView *hc = objc_getAssociatedObject(self, &kXEFHeaderClip);
+  if (header) {
+    if (!hc) { hc = [[[NSClipView alloc] initWithFrame:NSZeroRect] autorelease]; [hc setDrawsBackground:NO]; objc_setAssociatedObject(self, &kXEFHeaderClip, hc, OBJC_ASSOCIATION_RETAIN); [self addSubview:hc]; }
+    if ([hc documentView] != header) [hc setDocumentView:header];
+    CGFloat hh = [header frame].size.height;
+    [hc setFrame:NSMakeRect(inner.origin.x, inner.origin.y, inner.size.width, hh)];
+    inner.origin.y += hh; inner.size.height = fmax(0, inner.size.height - hh);
+  } else if (hc) { [hc removeFromSuperview]; objc_setAssociatedObject(self, &kXEFHeaderClip, nil, OBJC_ASSOCIATION_RETAIN); }
   if (_clip) [_clip setFrame:inner];
+  if ([doc respondsToSelector:@selector(tile)] && doc != (NSView *)self && header) [(id)doc tile];
   if (_vs) { [_vs setFrame:NSMakeRect(NSMaxX(inner) - 11, inner.origin.y, 11, inner.size.height - (_hasH ? 11 : 0))]; [_vs setHidden:!_hasV]; }
   if (_hs) { [_hs setFrame:NSMakeRect(inner.origin.x, NSMaxY(inner) - 11, inner.size.width - (_hasV ? 11 : 0), 11)]; [_hs setHidden:!_hasH]; }
   if (_vs) { [_subviews removeObjectIdenticalTo:_vs]; [_subviews addObject:_vs]; }   /* scrollers draw last */
@@ -952,6 +964,8 @@ enum { kPush = 0, kSwitch = 3, kRadio = 4, kToggle = 2, kMomentaryChange = 5, kO
 - (void)reflectScrolledClipView:(NSClipView *)c {
   if (c != _clip || !_clip) return;
   NSRect d = [_clip documentRect], v = [_clip bounds];
+  NSClipView *hc = objc_getAssociatedObject(self, &kXEFHeaderClip);
+  if (hc && [hc bounds].origin.x != v.origin.x) { NSRect hb = [hc bounds]; hb.origin.x = v.origin.x; [hc setBounds:hb]; [hc setNeedsDisplay:YES]; }
   if (_vs) {
     CGFloat over = d.size.height - v.size.height;
     [_vs setKnobProportion:d.size.height > 0 ? fmin(1, v.size.height / d.size.height) : 1];

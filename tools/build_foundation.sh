@@ -15,10 +15,12 @@ t = open(os.environ['HOME'] + '/xef-remote/src/darling/foundation/CMakeLists.txt
 m = re.search(r'set\(foundation_sources(.*?)\n\)', t, re.S).group(1)
 m = re.sub(r'#.*', '', m)
 skip = ('NSXPC', 'PortCoder', 'NSMachBootstrapServer', 'NSTask.m')
-print(' '.join(('src/NSLog_xef.m' if x == 'src/NSLog.m' else 'src/NSKeyValueObserving_xef.m' if x == 'src/NSKeyValueObserving.m' else x) for x in m.split() if x.endswith(('.m', '.c', '.mm')) and not x.startswith('$') and not any(k in x for k in skip)))
+print(' '.join(('src/NSLog_xef.m' if x == 'src/NSLog.m' else 'src/NSIndexSet_xef.m' if x == 'src/NSIndexSet.m' else 'src/NSKeyValueObserving_xef.m' if x == 'src/NSKeyValueObserving.m' else x) for x in m.split() if x.endswith(('.m', '.c', '.mm')) and not x.startswith('$') and not any(k in x for k in skip)))
 PY
 )
 cp $HOME/xef-remote/src/compat/xef_objc_msgsend.h $FB/
+# NSIndexSet: darling-foundation's keeps its ranges unsorted (rootfs-src/foundation/NSIndexSet_xef.m)
+cp $HOME/xef-remote/src/foundation-extras/NSIndexSet_xef.m $FD/src/NSIndexSet_xef.m
 # KVO: IMP has no prototype on arm64
 sed -e 's/cachedIMP(/((id(*)(id,SEL))cachedIMP)(/g' -e 's/kvcon\.cachedObservationInfoImplementation(/((id(*)(id,SEL))kvcon.cachedObservationInfoImplementation)(/g' $FD/src/NSKeyValueObserving.m > $FD/src/NSKeyValueObserving_xef.m
 # NSLog goes to stderr with [pid:thread-id] like on macOS

@@ -14,7 +14,7 @@ SDK=mac-out/sdk; F=$SDK/System/Library/Frameworks; B=build/apigap
 LD=$(command -v ld64.lld || command -v ld64.lld-18)
 clang -target arm64-apple-macos12.0 -fobjc-runtime=macosx-12.0 -fno-objc-arc -w -O1 -c tests/darwin/apigap/apigap.m -o $B.o
 $LD -arch arm64 -platform_version macos 12.0 12.0 -syslibroot $SDK $B.o $SDK/usr/lib/libSystem.B.tbd $SDK/usr/lib/libobjc.A.tbd \
-  $F/Foundation.framework/Versions/C/Foundation.tbd $F/AppKit.framework/Versions/C/AppKit.tbd -o $B
+  $F/Foundation.framework/Versions/C/Foundation.tbd $F/AppKit.framework/Versions/C/AppKit.tbd -undefined dynamic_lookup -o $B
 build/xef-osx -L darwin-rootfs $B "$PWD/mac-out/appkit_api.txt" 2>/dev/null > mac-out/appkit_gap.txt
 total=$(wc -l < mac-out/appkit_api.txt); missing=$(grep -c '^M' mac-out/appkit_gap.txt || true)
 absent=$(grep -c '^X' mac-out/appkit_gap.txt || true)
