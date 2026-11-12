@@ -1802,3 +1802,43 @@ static NSInteger g_speaking_count;
 - (id)target { return _target; } - (void)setTarget:(id)t { _target = t; } - (SEL)action { return _action; } - (void)setAction:(SEL)a { _action = a; }
 - (BOOL)isEnabled { return _enabled; } - (void)setEnabled:(BOOL)f { _enabled = f; } - (void)setCustomizationLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
 @end
+
+/* ================================================================== NSForm / NSFormCell / NSPageController */
+@implementation NSFormCell
+- (id)initTextCell:(NSString *)t { if ((self = [super initTextCell:@""])) { [self setTitle:t ?: @""]; _titleAlign = 2; _titleDir = -1; _prefW = -1; } return self; }
+- (void)dealloc { [_titleFont release]; [_atitle release]; [super dealloc]; }
+- (CGFloat)titleWidth { return _titleW; } - (void)setTitleWidth:(CGFloat)w { _titleW = w; } - (CGFloat)titleWidth:(NSSize)s { return _titleW > 0 ? _titleW : MIN(s.width, 60); }
+- (NSFont *)titleFont { return _titleFont ?: [NSFont systemFontOfSize:12]; } - (void)setTitleFont:(NSFont *)f { [f retain]; [_titleFont release]; _titleFont = f; }
+- (NSInteger)titleAlignment { return _titleAlign; } - (void)setTitleAlignment:(NSInteger)a { _titleAlign = a; }
+- (NSInteger)titleBaseWritingDirection { return _titleDir; } - (void)setTitleBaseWritingDirection:(NSInteger)d { _titleDir = d; }
+- (CGFloat)preferredTextFieldWidth { return _prefW; } - (void)setPreferredTextFieldWidth:(CGFloat)w { _prefW = w; }
+- (NSAttributedString *)attributedTitle { return _atitle ?: [[[NSAttributedString alloc] initWithString:[self title] ?: @""] autorelease]; } - (void)setAttributedTitle:(NSAttributedString *)a { [a retain]; [_atitle release]; _atitle = a; }
+- (void)setPlaceholderAttributedString:(NSAttributedString *)a { [self setPlaceholderString:[a string]]; }
+@end
+@implementation NSForm
+- (id)initWithFrame:(NSRect)f { if ((self = [super initWithFrame:f])) { [self _xefInit]; _mode = 2; _cellClass = [NSFormCell class]; _allowsEmpty = YES; [self renewRows:0 columns:1]; } return self; }
+- (id)addEntry:(NSString *)t { return [self insertEntry:t atIndex:[self numberOfRows]]; }
+- (id)insertEntry:(NSString *)t atIndex:(NSInteger)i { NSFormCell *c = [[[NSFormCell alloc] initTextCell:t] autorelease]; [self insertRow:i withCells:@[c]]; return c; }
+- (void)removeEntryAtIndex:(NSInteger)i { [self removeRow:i]; }
+- (id)cellAtIndex:(NSInteger)i { return [self cellAtRow:i column:0]; }
+- (NSInteger)indexOfCellWithTag:(NSInteger)t { for (NSInteger i = 0; i < [self numberOfRows]; i++) if ([[self cellAtIndex:i] tag] == t) return i; return -1; }
+- (NSInteger)indexOfSelectedItem { return [self selectedRow]; }
+- (void)drawCellAtIndex:(NSInteger)i { [self drawCellAtRow:i column:0]; } - (void)selectTextAtIndex:(NSInteger)i {}
+- (void)setEntryWidth:(CGFloat)w { _entryW = w; [self setCellSize:NSMakeSize(w, [self cellSize].height)]; } - (void)setInterlineSpacing:(CGFloat)s { [self setIntercellSpacing:NSMakeSize(0, s)]; }
+- (void)setBordered:(BOOL)f { for (NSFormCell *c in [self cells]) [c setBordered:f]; } - (void)setBezeled:(BOOL)f { for (NSFormCell *c in [self cells]) [c setBezeled:f]; }
+- (void)setTitleAlignment:(NSInteger)a { for (NSFormCell *c in [self cells]) [c setTitleAlignment:a == 1 ? 2 : a]; } - (void)setTextAlignment:(NSInteger)a { for (NSFormCell *c in [self cells]) [c setAlignment:a]; }
+- (void)setTitleFont:(NSFont *)f { for (NSFormCell *c in [self cells]) [c setTitleFont:f]; } - (void)setTextFont:(NSFont *)f { for (NSFormCell *c in [self cells]) [c setFont:f]; }
+- (void)setTitleBaseWritingDirection:(NSInteger)d { for (NSFormCell *c in [self cells]) [c setTitleBaseWritingDirection:d]; } - (void)setTextBaseWritingDirection:(NSInteger)d { for (NSFormCell *c in [self cells]) [c setBaseWritingDirection:d]; }
+- (void)setPreferredTextFieldWidth:(CGFloat)w { for (NSFormCell *c in [self cells]) [c setPreferredTextFieldWidth:w]; } - (CGFloat)preferredTextFieldWidth { return [[[self cells] firstObject] preferredTextFieldWidth]; }
+@end
+@implementation NSPageController
+- (id)init { if ((self = [super init])) { _objs = [@[] retain]; } return self; }
+- (void)dealloc { [_objs release]; [super dealloc]; }
+- (id)delegate { return _pcdelegate; } - (void)setDelegate:(id)d { _pcdelegate = d; }
+- (NSArray *)arrangedObjects { return _objs; } - (void)setArrangedObjects:(NSArray *)a { [a retain]; [_objs release]; _objs = a ?: [@[] retain]; if (_sel >= (NSInteger)[_objs count]) _sel = 0; }
+- (NSInteger)selectedIndex { return _sel; } - (void)setSelectedIndex:(NSInteger)i { if (i >= 0 && i < (NSInteger)[_objs count]) _sel = i; }
+- (NSInteger)transitionStyle { return _style; } - (void)setTransitionStyle:(NSInteger)s { _style = s; } - (id)selectedViewController { return nil; }
+- (void)navigateForwardToObject:(id)o { NSUInteger k = [_objs indexOfObject:o]; if (k != NSNotFound) _sel = k; } - (void)completeTransition {}
+- (void)navigateBack:(id)s { if (_sel > 0) _sel--; } - (void)navigateForward:(id)s { if (_sel + 1 < (NSInteger)[_objs count]) _sel++; } - (void)takeSelectedIndexFrom:(id)s { [self setSelectedIndex:[s integerValue]]; }
+- (id)animator { return self; } - (NSDictionary *)animations { return @{}; } - (void)setAnimations:(NSDictionary *)a {} - (id)animationForKey:(NSString *)k { return nil; } + (id)defaultAnimationForKey:(NSString *)k { return nil; }
+@end

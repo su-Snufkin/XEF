@@ -198,10 +198,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSFontAssetRequest @end
 @interface NSFontCollection : NSObject @end
 @implementation NSFontCollection @end
-@interface NSForm : NSMatrix @end
-@implementation NSForm @end
-@interface NSFormCell : NSActionCell @end
-@implementation NSFormCell @end
 @interface NSGlassEffectContainerView : NSView @end
 @implementation NSGlassEffectContainerView @end
 @interface NSGlassEffectView : NSView @end
@@ -250,8 +246,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPDFPanel @end
 @interface NSPICTImageRep : NSImageRep @end
 @implementation NSPICTImageRep @end
-@interface NSPageController : NSViewController @end
-@implementation NSPageController @end
 @interface NSPageLayout : NSObject @end
 @implementation NSPageLayout @end
 @interface NSPersistentDocument : NSDocument @end
@@ -1004,51 +998,6 @@ static const GenEntry kTable[] = {
 {"NSFontManager", '-', "fontDescriptorsInCollection:", 'D', 'A', "@"},
 {"NSFontManager", '-', "removeCollection:", 'D', 'B', "@"},
 {"NSFontManager", '-', "removeFontDescriptor:fromCollection:", 'D', 'v', "@@"},
-{"NSForm", '-', "addEntry:", 'D', '@', "@"},
-{"NSForm", '-', "cellAtIndex:", 'D', '@', "q"},
-{"NSForm", '-', "drawCellAtIndex:", 'D', 'v', "q"},
-{"NSForm", '-', "indexOfCellWithTag:", 'D', 'q', "q"},
-{"NSForm", '-', "indexOfSelectedItem", 'D', 'q', ""},
-{"NSForm", '-', "insertEntry:atIndex:", 'D', '@', "@q"},
-{"NSForm", '-', "preferredTextFieldWidth", 'G', 'd', ""},
-{"NSForm", '-', "removeEntryAtIndex:", 'D', 'v', "q"},
-{"NSForm", '-', "selectTextAtIndex:", 'D', 'v', "q"},
-{"NSForm", '-', "setBezeled:", 'S', 'v', "B"},
-{"NSForm", '-', "setBordered:", 'S', 'v', "B"},
-{"NSForm", '-', "setEntryWidth:", 'S', 'v', "d"},
-{"NSForm", '-', "setFrameSize:", 'S', 'v', "S"},
-{"NSForm", '-', "setInterlineSpacing:", 'S', 'v', "d"},
-{"NSForm", '-', "setPreferredTextFieldWidth:", 'S', 'v', "d"},
-{"NSForm", '-', "setTextAlignment:", 'S', 'v', "q"},
-{"NSForm", '-', "setTextBaseWritingDirection:", 'S', 'v', "q"},
-{"NSForm", '-', "setTextFont:", 'S', 'v', "@"},
-{"NSForm", '-', "setTitleAlignment:", 'S', 'v', "q"},
-{"NSForm", '-', "setTitleBaseWritingDirection:", 'S', 'v', "q"},
-{"NSForm", '-', "setTitleFont:", 'S', 'v', "@"},
-{"NSFormCell", '-', "attributedTitle", 'G', '@', ""},
-{"NSFormCell", '-', "initImageCell:", 'I', '@', "@"},
-{"NSFormCell", '-', "initTextCell:", 'I', '@', "@"},
-{"NSFormCell", '-', "initWithCoder:", 'I', '@', "@"},
-{"NSFormCell", '-', "isOpaque", 'D', 'B', ""},
-{"NSFormCell", '-', "placeholderAttributedString", 'G', '@', ""},
-{"NSFormCell", '-', "placeholderString", 'G', '@', ""},
-{"NSFormCell", '-', "preferredTextFieldWidth", 'G', 'd', ""},
-{"NSFormCell", '-', "setAttributedTitle:", 'S', 'v', "@"},
-{"NSFormCell", '-', "setPlaceholderAttributedString:", 'S', 'v', "@"},
-{"NSFormCell", '-', "setPlaceholderString:", 'S', 'v', "@"},
-{"NSFormCell", '-', "setPreferredTextFieldWidth:", 'S', 'v', "d"},
-{"NSFormCell", '-', "setTitle:", 'S', 'v', "@"},
-{"NSFormCell", '-', "setTitleAlignment:", 'S', 'v', "q"},
-{"NSFormCell", '-', "setTitleBaseWritingDirection:", 'S', 'v', "q"},
-{"NSFormCell", '-', "setTitleFont:", 'S', 'v', "@"},
-{"NSFormCell", '-', "setTitleWidth:", 'S', 'v', "d"},
-{"NSFormCell", '-', "setTitleWithMnemonic:", 'S', 'v', "@"},
-{"NSFormCell", '-', "title", 'G', '@', ""},
-{"NSFormCell", '-', "titleAlignment", 'G', 'q', ""},
-{"NSFormCell", '-', "titleBaseWritingDirection", 'G', 'q', ""},
-{"NSFormCell", '-', "titleFont", 'G', '@', ""},
-{"NSFormCell", '-', "titleWidth", 'G', 'd', ""},
-{"NSFormCell", '-', "titleWidth:", 'D', 'd', "S"},
 {"NSGestureRecognizer", '-', "modifierFlags", 'D', 'q', ""},
 {"NSGestureRecognizer", '-', "mouseCancelled:", 'D', 'v', "@"},
 {"NSGestureRecognizer", '-', "pressureChangeWithEvent:", 'D', 'v', "@"},
@@ -1396,25 +1345,6 @@ static const GenEntry kTable[] = {
 {"NSPICTImageRep", '-', "PICTRepresentation", 'D', '@', ""},
 {"NSPICTImageRep", '-', "boundingBox", 'D', 'R', ""},
 {"NSPICTImageRep", '-', "initWithData:", 'I', '@', "@"},
-{"NSPageController", '+', "defaultAnimationForKey:", 'D', '@', "q"},
-{"NSPageController", '-', "animationForKey:", 'D', '@', "q"},
-{"NSPageController", '-', "animations", 'G', 'M', ""},
-{"NSPageController", '-', "animator", 'D', '@', ""},
-{"NSPageController", '-', "arrangedObjects", 'G', 'A', ""},
-{"NSPageController", '-', "completeTransition", 'D', 'v', ""},
-{"NSPageController", '-', "delegate", 'G', '@', ""},
-{"NSPageController", '-', "navigateBack:", 'D', 'q', "@"},
-{"NSPageController", '-', "navigateForward:", 'D', 'q', "@"},
-{"NSPageController", '-', "navigateForwardToObject:", 'D', 'v', "@"},
-{"NSPageController", '-', "selectedIndex", 'G', 'q', ""},
-{"NSPageController", '-', "selectedViewController", 'D', '@', ""},
-{"NSPageController", '-', "setAnimations:", 'S', 'v', "@"},
-{"NSPageController", '-', "setArrangedObjects:", 'S', 'v', "@"},
-{"NSPageController", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSPageController", '-', "setSelectedIndex:", 'S', 'v', "q"},
-{"NSPageController", '-', "setTransitionStyle:", 'S', 'v', "q"},
-{"NSPageController", '-', "takeSelectedIndexFrom:", 'D', 'q', "@"},
-{"NSPageController", '-', "transitionStyle", 'G', 'q', ""},
 {"NSPageLayout", '+', "pageLayout", 'F', '@', ""},
 {"NSPageLayout", '-', "accessoryControllers", 'D', 'A', ""},
 {"NSPageLayout", '-', "accessoryView", 'G', '@', ""},
@@ -2466,12 +2396,6 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSColorPickerTouchBarItem", "isEnabled", 'B', "1"},
 {"NSDraggingSession", "draggingFormation", 'q', "-1"},
 {"NSDraggingSession", "draggingLeaderIndex", 'q', "-1"},
-{"NSForm", "indexOfSelectedItem", 'q', "-1"},
-{"NSFormCell", "titleWidth", 'd', "36.75390625"},
-{"NSFormCell", "title", '@', "Field:"},
-{"NSFormCell", "titleAlignment", 'q', "2"},
-{"NSFormCell", "titleBaseWritingDirection", 'q', "-1"},
-{"NSFormCell", "preferredTextFieldWidth", 'd', "-1"},
 {"NSGlassEffectView", "cornerRadius", 'd', "8"},
 {"NSMenuItemCell", "needsSizing", 'B', "1"},
 {"NSPDFInfo", "isFileExtensionHidden", 'B', "1"},
@@ -2498,7 +2422,7 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSWritingToolsCoordinator", "behavior", 'q', "1"},
 {"NSWritingToolsCoordinator", "resultOptions", 'q', "15"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 42;
+const unsigned long kDefaultsCount = 36;
 
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }

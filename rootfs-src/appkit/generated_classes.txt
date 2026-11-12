@@ -46,8 +46,6 @@ NSFilePromiseProvider
 NSFilePromiseReceiver
 NSFontAssetRequest
 NSFontCollection
-NSForm
-NSFormCell
 NSGlassEffectContainerView
 NSGlassEffectView
 NSGlyphGenerator
@@ -72,7 +70,6 @@ NSOpenGLPixelBuffer
 NSPDFInfo
 NSPDFPanel
 NSPICTImageRep
-NSPageController
 NSPageLayout
 NSPersistentDocument
 NSPopoverTouchBarItem

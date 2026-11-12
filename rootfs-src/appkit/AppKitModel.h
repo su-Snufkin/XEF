@@ -253,3 +253,12 @@
 @interface NSPickerTouchBarItem : NSTouchBarItem { @public NSMutableArray *_labels, *_images, *_enabledAt; NSInteger _sel, _mode, _repr; id _target, _selColor, _collapsedLabel, _collapsedImage; SEL _action; BOOL _enabled; }
 + (id)pickerTouchBarItemWithIdentifier:(NSString *)i labels:(NSArray *)l selectionMode:(NSInteger)m target:(id)t action:(SEL)a;
 @end
+
+/* NSForm: a one-column NSMatrix of NSFormCell entries; NSPageController: arranged objects with a selected index */
+@interface NSFormCell : NSTextFieldCell { @public CGFloat _titleW, _prefW; NSInteger _titleAlign, _titleDir; NSFont *_titleFont; NSAttributedString *_atitle; }
+@end
+@interface NSForm : NSMatrix { @public CGFloat _entryW; }
+- (id)addEntry:(NSString *)t; - (id)insertEntry:(NSString *)t atIndex:(NSInteger)i;
+@end
+@interface NSPageController : NSViewController { @public NSArray *_objs; NSInteger _sel, _style; id _pcdelegate; }
+@end

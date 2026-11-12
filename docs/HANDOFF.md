@@ -1113,3 +1113,10 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   **NSPrintPanel** — ustawienia (`options` domyślnie 3, tytuł przycisku, kotwica pomocy, kontrolery akcesoriów); **`runModal` zwraca 0 (anulowano)** — host nie ma okna druku.
 - Stan: patrz `tools/appkit_gap.sh`.
 
+### 42. NSForm, NSFormCell, NSPageController (2026-11-12)
+- `AppKitModel.m`, `appkit_form.m` zgodny z Makiem: **NSForm** jest jednokolumnową `NSMatrix` z komórkami `NSFormCell` (`addEntry:`, `insertEntry:atIndex:`, `removeEntryAtIndex:`, `cellAtIndex:`, `indexOfCellWithTag:` -1 gdy brak;
+  ustawienia całego formularza (`setTitleAlignment:`, czcionki, ramki) przechodzą na wszystkie komórki — `setTitleAlignment:` z wartością 1 daje u Maca 2, co odtworzono), **NSFormCell** (`titleWidth`, `titleAlignment` 2, `preferredTextFieldWidth` -1,
+  `titleBaseWritingDirection` -1). **NSPageController**: obiekty, `selectedIndex` (0; ustawianie ignoruje indeksy poza zakresem), style przejść — **bez widoków i animacji** (`selectedViewController` zawsze nil, nawigacja tylko zmienia indeks).
+  Pułapka: `NSMatrix -initWithFrame:mode:…` woła `[self initWithFrame:]`, więc podklasa nie może wywołać go ze swojego `initWithFrame:` (nieskończona rekurencja) — `NSForm` ustawia ivary bezpośrednio.
+- Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 56/56; pełny `run_tests.sh` przechodzi.
+
