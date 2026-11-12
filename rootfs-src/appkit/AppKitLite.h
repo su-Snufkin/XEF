@@ -37,6 +37,9 @@ typedef NS_OPTIONS(NSUInteger, NSTrackingAreaOptions) {
   NSTrackingEnabledDuringMouseDrag = 0x400 };
 typedef NS_ENUM(NSUInteger, NSBitmapFormat) { NSBitmapFormatAlphaFirst = 1, NSBitmapFormatAlphaNonpremultiplied = 2, NSBitmapFormatFloatingPointSamples = 4 };
 typedef NS_OPTIONS(NSUInteger, NSWindowOcclusionState) { NSWindowOcclusionStateVisible = 1 << 1 };
+typedef struct _NSModalSession *NSModalSession;
+enum { NSModalResponseContinue = -1002, NSModalResponseAbort = -1001, NSModalResponseStop = -1000 };
+extern NSString *const NSModalPanelRunLoopMode;
 typedef NS_ENUM(NSUInteger, NSApplicationTerminateReply) { NSTerminateCancel = 0, NSTerminateNow = 1, NSTerminateLater = 2 };
 typedef NS_ENUM(NSUInteger, NSRequestUserAttentionType) { NSCriticalRequest = 0, NSInformationalRequest = 10 };
 enum { NSOpenGLCPSwapInterval = 222, NSOpenGLCPSurfaceOrder = 235, NSOpenGLCPSurfaceOpacity = 236, NSOpenGLCPSwapRectangle = 200 };
@@ -313,6 +316,7 @@ typedef NSInteger NSModalResponse;
   NSEvent *_current; NSMenu *_services, *_windowsMenu;
 }
 + (NSApplication *)sharedApplication;
+- (void)_xefFinishTerminate;
 - (BOOL)setActivationPolicy:(NSApplicationActivationPolicy)p; - (void)activateIgnoringOtherApps:(BOOL)f; - (BOOL)isActive;
 - (void)run; - (void)stop:(id)s; - (void)terminate:(id)s; - (void)finishLaunching; - (BOOL)isRunning;
 - (NSEvent *)nextEventMatchingMask:(NSUInteger)m untilDate:(NSDate *)d inMode:(NSString *)mode dequeue:(BOOL)dq;

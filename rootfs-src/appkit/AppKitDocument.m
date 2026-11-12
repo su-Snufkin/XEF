@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 /* AppKit-lite document architecture: NSDocument, NSDocumentController and NSWindowController's document support,
  * plus the small NSPrintInfo / NSPrintOperation / NSWorkspace surface document apps touch. Document types come from
  * the main bundle's CFBundleDocumentTypes. File access is synchronous; "asynchronous" API runs its blocks in place.
@@ -438,20 +439,120 @@ static NSDocumentController *g_doc_controller;
 - (BOOL)openFile:(NSString *)p { return [self _xefXdgOpen:p]; }
 - (BOOL)selectFile:(NSString *)p inFileViewerRootedAtPath:(NSString *)r { return [self _xefXdgOpen:[p stringByDeletingLastPathComponent]]; }
 - (void)activateFileViewerSelectingURLs:(NSArray *)u { if ([u count]) [self selectFile:[[u objectAtIndex:0] path] inFileViewerRootedAtPath:@""]; }
-- (NSImage *)iconForFile:(NSString *)p { return [[[NSImage alloc] initWithSize:NSMakeSize(32, 32)] autorelease]; }
-- (NSImage *)iconForFileType:(NSString *)t { return [self iconForFile:nil]; }
-- (NSImage *)iconForContentType:(id)t { return [self iconForFile:nil]; }
 - (NSArray *)runningApplications { return @[[NSRunningApplication currentApplication]]; }
 - (NSRunningApplication *)frontmostApplication { return [NSRunningApplication currentApplication]; }
 - (NSRunningApplication *)menuBarOwningApplication { return [NSRunningApplication currentApplication]; }
-- (NSURL *)URLForApplicationWithBundleIdentifier:(NSString *)b { return nil; }
-- (NSURL *)URLForApplicationToOpenURL:(NSURL *)u { return nil; }
-- (NSString *)fullPathForApplication:(NSString *)a { return nil; }
-- (BOOL)isFilePackageAtPath:(NSString *)p { NSString *x = [[p pathExtension] lowercaseString]; return [@[@"app", @"bundle", @"framework", @"rtfd", @"pages"] containsObject:x]; }
-- (NSString *)typeOfFile:(NSString *)p error:(NSError **)e { return [p pathExtension]; }
 - (BOOL)setIcon:(NSImage *)i forFile:(NSString *)p options:(NSUInteger)o { return NO; }
 - (void)recycleURLs:(NSArray *)u completionHandler:(void (^)(NSDictionary *, NSError *))h { if (h) h(@{}, nil); }
 - (BOOL)accessibilityDisplayShouldReduceMotion { return NO; } - (BOOL)accessibilityDisplayShouldReduceTransparency { return NO; }
 - (BOOL)accessibilityDisplayShouldIncreaseContrast { return NO; } - (BOOL)accessibilityDisplayShouldDifferentiateWithoutColor { return NO; }
 - (BOOL)accessibilityDisplayShouldInvertColors { return NO; } - (BOOL)isVoiceOverEnabled { return NO; } - (BOOL)isSwitchControlEnabled { return NO; }
+@end
+
+/* ---- NSWorkspace: type identifiers, volumes, applications, labels ---- */
+typedef struct { const char *uti, *exts, *desc, *parent; } XEFType;
+static const XEFType kTypes[] = {
+  {"public.item", "", "item", ""}, {"public.data", "", "data", "public.item"}, {"public.content", "", "content", "public.item"},
+  {"public.text", "", "text", "public.data"}, {"public.plain-text", "txt text", "text", "public.text"}, {"public.utf8-plain-text", "txt", "text", "public.plain-text"},
+  {"public.html", "html htm", "HTML text", "public.text"}, {"public.xml", "xml", "XML text", "public.text"}, {"public.json", "json", "JSON", "public.text"},
+  {"public.rtf", "rtf", "Rich Text Format (RTF)", "public.text"}, {"public.csv", "csv", "comma-separated values", "public.text"},
+  {"public.source-code", "", "source code", "public.text"}, {"public.c-source", "c", "C source code", "public.source-code"}, {"public.objective-c-source", "m", "Objective-C source code", "public.source-code"},
+  {"public.python-script", "py", "Python script", "public.source-code"}, {"public.shell-script", "sh", "shell script", "public.source-code"},
+  {"public.image", "", "image", "public.data"}, {"public.png", "png", "PNG image", "public.image"}, {"public.jpeg", "jpeg jpg jpe", "JPEG image", "public.image"},
+  {"public.tiff", "tiff tif", "TIFF image", "public.image"}, {"com.compuserve.gif", "gif", "GIF image", "public.image"}, {"com.microsoft.bmp", "bmp", "Windows bitmap image", "public.image"},
+  {"public.heic", "heic", "HEIF image", "public.image"}, {"org.webmproject.webp", "webp", "WebP image", "public.image"}, {"public.svg-image", "svg", "SVG image", "public.image"},
+  {"com.adobe.pdf", "pdf", "PDF document", "public.data"}, {"public.audio", "", "audio", "public.data"}, {"public.mp3", "mp3", "MP3 audio", "public.audio"},
+  {"com.microsoft.waveform-audio", "wav", "Waveform audio", "public.audio"}, {"public.movie", "", "movie", "public.data"}, {"public.mpeg-4", "mp4", "MPEG-4 movie", "public.movie"},
+  {"public.zip-archive", "zip", "ZIP archive", "public.data"}, {"public.folder", "", "folder", "public.directory"}, {"public.directory", "", "folder", "public.item"},
+  {"public.symlink", "", "symbolic link", "public.item"}, {"com.apple.application-bundle", "app", "application", "public.directory"}, {"com.apple.bundle", "bundle", "bundle", "public.directory"},
+  {NULL, NULL, NULL, NULL} };
+static const XEFType *XEFTypeNamed(NSString *u) { for (const XEFType *t = kTypes; t->uti; t++) if (u && !strcmp(t->uti, [u UTF8String])) return t; return NULL; }
+static const XEFType *XEFTypeForExt(NSString *e) {
+  const char *x = [[e lowercaseString] UTF8String]; if (!x || !*x) return NULL;
+  for (const XEFType *t = kTypes; t->uti; t++) { char buf[64]; strlcpy(buf, t->exts, sizeof buf); for (char *sv = NULL, *w = strtok_r(buf, " ", &sv); w; w = strtok_r(NULL, " ", &sv)) if (!strcmp(w, x)) return t; }
+  return NULL; }
+@implementation NSWorkspace (XEFTypes)
+- (BOOL)type:(NSString *)a conformsToType:(NSString *)b {
+  for (const XEFType *t = XEFTypeNamed(a); t; t = t->parent[0] ? XEFTypeNamed(@(t->parent)) : NULL) if (!strcmp(t->uti, [b UTF8String])) return YES;
+  return [a isEqualToString:b]; }
+- (NSString *)preferredFilenameExtensionForType:(NSString *)u { const XEFType *t = XEFTypeNamed(u); if (!t || !t->exts[0]) return nil; char buf[64]; strlcpy(buf, t->exts, sizeof buf); char *sp = strchr(buf, ' '); if (sp) *sp = 0; return @(buf); }
+- (NSString *)localizedDescriptionForType:(NSString *)u { const XEFType *t = XEFTypeNamed(u); return t ? @(t->desc) : nil; }
+- (BOOL)filenameExtension:(NSString *)e isValidForType:(NSString *)u { const XEFType *t = XEFTypeForExt(e), *want = XEFTypeNamed(u); return t && want && (t == want || [self type:@(t->uti) conformsToType:u]); }
+- (NSString *)typeOfFile:(NSString *)p error:(NSError **)err {
+  BOOL dir = NO; NSFileManager *fm = [NSFileManager defaultManager];
+  struct stat st; if (p && lstat([p fileSystemRepresentation], &st) == 0 && S_ISLNK(st.st_mode)) return @"public.symlink";
+  if (![fm fileExistsAtPath:p isDirectory:&dir]) { if (err) *err = [NSError errorWithDomain:NSCocoaErrorDomain code:260 userInfo:@{ NSFilePathErrorKey: p ?: @"" }]; return nil; }
+  const XEFType *t = XEFTypeForExt([p pathExtension]);
+  if (dir) return t && [self type:@(t->uti) conformsToType:@"public.directory"] ? @(t->uti) : @"public.folder";
+  return t ? @(t->uti) : @"public.data"; }
+- (BOOL)isFilePackageAtPath:(NSString *)p { BOOL d = NO; if (![[NSFileManager defaultManager] fileExistsAtPath:p isDirectory:&d] || !d) return NO; return [@[@"app", @"bundle", @"framework", @"plugin", @"rtfd", @"kext", @"xpc"] containsObject:[[p pathExtension] lowercaseString]]; }
+- (NSArray *)fileLabels { return @[@"None", @"Gray", @"Green", @"Purple", @"Blue", @"Yellow", @"Red", @"Orange"]; }
+- (NSArray *)fileLabelColors {
+  return @[[NSColor clearColor], [NSColor colorWithRed:.66 green:.66 blue:.66 alpha:1], [NSColor colorWithRed:.4 green:.8 blue:.3 alpha:1], [NSColor colorWithRed:.7 green:.4 blue:.8 alpha:1],
+           [NSColor colorWithRed:.2 green:.5 blue:.95 alpha:1], [NSColor colorWithRed:.95 green:.8 blue:.2 alpha:1], [NSColor colorWithRed:.95 green:.3 blue:.3 alpha:1], [NSColor colorWithRed:.95 green:.6 blue:.2 alpha:1]]; }
+/* volumes come from /proc/mounts: the root and every device-backed mount point */
+- (NSArray *)_xefMounts {
+  NSMutableArray *r = [NSMutableArray array]; NSString *t = [NSString stringWithContentsOfFile:@"/proc/mounts" encoding:NSUTF8StringEncoding error:NULL];
+  for (NSString *line in [t componentsSeparatedByString:@"\n"]) { NSArray *f = [line componentsSeparatedByString:@" "]; if ([f count] >= 3) [r addObject:@{ @"dev": f[0], @"path": [f[1] stringByReplacingOccurrencesOfString:@"\\040" withString:@" "], @"type": f[2] }]; }
+  return r; }
+- (NSArray *)mountedLocalVolumePaths {
+  NSMutableArray *r = [NSMutableArray arrayWithObject:@"/"];
+  for (NSDictionary *m in [self _xefMounts]) if ([m[@"dev"] hasPrefix:@"/dev/"] && ![r containsObject:m[@"path"]]) [r addObject:m[@"path"]];
+  return r; }
+- (NSArray *)mountedRemovableMedia { return @[]; }
+- (BOOL)getFileSystemInfoForPath:(NSString *)path isRemovable:(BOOL *)rem isWritable:(BOOL *)wr isUnmountable:(BOOL *)un description:(NSString **)d type:(NSString **)t {
+  if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return NO;
+  NSString *best = @"/"; NSDictionary *bm = nil; NSString *full = [path stringByStandardizingPath];
+  for (NSDictionary *m in [self _xefMounts]) { NSString *mp = m[@"path"]; if (([full isEqualToString:mp] || [full hasPrefix:[mp hasSuffix:@"/"] ? mp : [mp stringByAppendingString:@"/"]]) && [mp length] >= [best length]) { best = mp; bm = m; } }
+  if (rem) *rem = NO; if (wr) *wr = access([path fileSystemRepresentation], W_OK) == 0; if (un) *un = ![best isEqualToString:@"/"];
+  if (d) *d = bm[@"type"] ?: @"local"; if (t) *t = bm[@"type"] ?: @"local"; return YES; }
+- (BOOL)unmountAndEjectDeviceAtPath:(NSString *)p { return NO; }
+- (BOOL)unmountAndEjectDeviceAtURL:(NSURL *)u error:(NSError **)e { if (e) *e = [NSError errorWithDomain:NSCocoaErrorDomain code:3328 userInfo:nil]; return NO; }
+/* applications are the .app bundles of /Applications and ~/Applications */
+- (NSArray *)_xefApps {
+  NSMutableArray *r = [NSMutableArray array];
+  for (NSString *dir in @[@"/Applications", [NSHomeDirectory() stringByAppendingPathComponent:@"Applications"]])
+    for (NSString *n in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:NULL]) if ([[n pathExtension] isEqualToString:@"app"]) [r addObject:[dir stringByAppendingPathComponent:n]];
+  return r; }
+- (NSArray *)URLsForApplicationsWithBundleIdentifier:(NSString *)b {
+  NSMutableArray *r = [NSMutableArray array];
+  for (NSString *p in [self _xefApps]) if ([[[NSBundle bundleWithPath:p] bundleIdentifier] isEqualToString:b]) [r addObject:[NSURL fileURLWithPath:p]];
+  return r; }
+- (NSURL *)URLForApplicationWithBundleIdentifier:(NSString *)b { return [[self URLsForApplicationsWithBundleIdentifier:b] firstObject]; }
+- (NSString *)absolutePathForAppBundleWithIdentifier:(NSString *)b { return [[[self URLsForApplicationsWithBundleIdentifier:b] firstObject] path]; }
+- (NSString *)fullPathForApplication:(NSString *)n {
+  NSString *want = [[n pathExtension] length] ? n : [n stringByAppendingPathExtension:@"app"];
+  for (NSString *p in [self _xefApps]) if ([[p lastPathComponent] caseInsensitiveCompare:want] == NSOrderedSame) return p;
+  return nil; }
+- (NSURL *)URLForApplicationToOpenURL:(NSURL *)u { return nil; }
+- (NSArray *)URLsForApplicationsToOpenURL:(NSURL *)u { return @[]; } - (NSArray *)URLsForApplicationsToOpenContentType:(id)t { return @[]; } - (NSURL *)URLForApplicationToOpenContentType:(id)t { return nil; }
+- (BOOL)launchApplication:(NSString *)n { NSString *p = [self fullPathForApplication:n]; return p ? [self openFile:p] : NO; }
+- (BOOL)openFile:(NSString *)p withApplication:(NSString *)a { return [self openFile:p]; }
+- (BOOL)openFile:(NSString *)p withApplication:(NSString *)a andDeactivate:(BOOL)d { return [self openFile:p]; }
+- (void)openURLs:(NSArray *)urls withApplicationAtURL:(NSURL *)app configuration:(id)c completionHandler:(void (^)(id, NSError *))h { for (NSURL *u in urls) [self openURL:u]; if (h) h(nil, nil); }
+- (void)openApplicationAtURL:(NSURL *)app configuration:(id)c completionHandler:(void (^)(id, NSError *))h { if (h) h(nil, [NSError errorWithDomain:NSCocoaErrorDomain code:256 userInfo:nil]); }
+- (BOOL)openURLs:(NSArray *)urls withAppBundleIdentifier:(NSString *)b options:(NSUInteger)o additionalEventParamDescriptor:(id)d launchIdentifiers:(NSArray **)ids { for (NSURL *u in urls) [self openURL:u]; return YES; }
+- (void)hideOtherApplications { } - (void)noteFileSystemChanged:(NSString *)p {} - (void)noteFileSystemChanged {} - (void)showSearchResultsForQueryString:(NSString *)q {}
+- (NSDictionary *)activeApplication { return @{ @"NSApplicationName": [[NSProcessInfo processInfo] processName], @"NSApplicationProcessIdentifier": @([[NSProcessInfo processInfo] processIdentifier]) }; }
+- (NSArray *)launchedApplications { return @[[self activeApplication]]; }
+- (void)duplicateURLs:(NSArray *)urls completionHandler:(void (^)(NSDictionary *, NSError *))h {
+  NSMutableDictionary *m = [NSMutableDictionary dictionary]; NSError *err = nil; NSFileManager *fm = [NSFileManager defaultManager];
+  for (NSURL *u in urls) {
+    NSString *p = [u path], *base = [p stringByDeletingPathExtension], *ext = [p pathExtension], *dst = nil;
+    for (int i = 1; i < 1000; i++) { dst = [NSString stringWithFormat:@"%@ copy%@%@", base, i > 1 ? [NSString stringWithFormat:@" %d", i] : @"", [ext length] ? [@"." stringByAppendingString:ext] : @""]; if (![fm fileExistsAtPath:dst]) break; }
+    if ([fm copyItemAtPath:p toPath:dst error:&err]) m[u] = [NSURL fileURLWithPath:dst]; else break; }
+  if (h) h(m, err); }
+- (NSURL *)desktopImageURLForScreen:(NSScreen *)s { return objc_getAssociatedObject(self, "xef.desktop"); }
+- (BOOL)setDesktopImageURL:(NSURL *)u forScreen:(NSScreen *)s options:(NSDictionary *)o error:(NSError **)e { objc_setAssociatedObject(self, "xef.desktop", u, OBJC_ASSOCIATION_RETAIN); return YES; }
+- (NSDictionary *)desktopImageOptionsForScreen:(NSScreen *)s { return @{}; }
+/* icons: a drawn generic page / folder badge (size 32 like AppKit's file icons) */
+- (NSImage *)_xefIconForKind:(int)kind label:(NSString *)label {
+  NSImage *i = [[[NSImage alloc] initWithSize:NSMakeSize(32, 32)] autorelease]; [i lockFocus];
+  if (kind == 1) { [[NSColor colorWithRed:.35 green:.65 blue:.95 alpha:1] setFill]; NSRectFill(NSMakeRect(2, 4, 28, 22)); [[NSColor colorWithRed:.25 green:.55 blue:.9 alpha:1] setFill]; NSRectFill(NSMakeRect(2, 22, 12, 6)); }
+  else { [[NSColor whiteColor] setFill]; NSRectFill(NSMakeRect(6, 2, 20, 28)); [[NSColor grayColor] setStroke]; NSFrameRect(NSMakeRect(6, 2, 20, 28)); }
+  [i unlockFocus]; return i; }
+- (NSImage *)iconForFile:(NSString *)p { BOOL d = NO; [[NSFileManager defaultManager] fileExistsAtPath:p isDirectory:&d]; return [self _xefIconForKind:d ? 1 : 0 label:[p pathExtension]]; }
+- (NSImage *)iconForFiles:(NSArray *)fs { return [self iconForFile:[fs firstObject]]; }
+- (NSImage *)iconForFileType:(NSString *)t { return [self _xefIconForKind:[t isEqualToString:@"public.folder"] ? 1 : 0 label:t]; }
+- (NSImage *)iconForContentType:(id)t { return [self iconForFileType:[t respondsToSelector:@selector(identifier)] ? [t identifier] : nil]; }
 @end

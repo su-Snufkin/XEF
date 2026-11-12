@@ -1079,7 +1079,7 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 + (NSApplication *)sharedApplication {
   if (!NSApp) { NSApp = [[self alloc] init]; } return NSApp; }
 - (id)init {
-  if ((self = [super init])) { _queue = [[NSMutableArray alloc] init]; _windows = [[NSMutableArray alloc] init]; if (!NSApp) NSApp = self; }
+  if ((self = [super init])) { _queue = [[NSMutableArray alloc] init]; _windows = [[NSMutableArray alloc] init]; _policy = NSApplicationActivationPolicyProhibited; if (!NSApp) NSApp = self; }
   return self; }
 - (BOOL)setActivationPolicy:(NSApplicationActivationPolicy)p { _policy = p; return YES; }
 - (void)activateIgnoringOtherApps:(BOOL)f { _active = YES; } - (BOOL)isActive { return _active; }
@@ -1234,7 +1234,10 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   _running = NO; _stop = NO; }
 - (void)stop:(id)s { _stop = YES; }
 - (void)terminate:(id)s {
-  if ([_delegate respondsToSelector:@selector(applicationShouldTerminate:)] && [_delegate applicationShouldTerminate:self] == NSTerminateCancel) return;
+  if ([_delegate respondsToSelector:@selector(applicationShouldTerminate:)]) { NSApplicationTerminateReply r = [_delegate applicationShouldTerminate:self]; if (r == NSTerminateCancel || r == NSTerminateLater) return; }
+  [self _xefFinishTerminate]; }
+- (void)replyToApplicationShouldTerminate:(BOOL)ok { if (ok) [self _xefFinishTerminate]; }
+- (void)_xefFinishTerminate {
   if ([_delegate respondsToSelector:@selector(applicationWillTerminate:)]) [_delegate applicationWillTerminate:[NSNotification notificationWithName:@"NSApplicationWillTerminateNotification" object:self]];
   for (NSWindow *w in [[_windows copy] autorelease]) xef_host_window_close(w->_handle);
   exit(0); }
@@ -1412,8 +1415,6 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (NSArray *)orderedWindows { return [[_windows reverseObjectEnumerator] allObjects]; }   /* front to back */
 - (NSWindow *)windowWithWindowNumber:(NSInteger)n { for (NSWindow *w in _windows) if (w->_handle == n) return w; return nil; }
 - (void)setApplicationIconImage:(NSImage *)i {} - (NSImage *)applicationIconImage { return nil; }   /* X11 icons are not set */
-- (NSInteger)runModalForWindow:(NSWindow *)w { return 1000; }   /* NSModalResponseOK-ish: nothing to wait for */
-- (void)stopModal {} - (void)stopModalWithCode:(NSInteger)c {} - (void)abortModal {}
 - (NSWindow *)modalWindow { return nil; }
 - (void)setPresentationOptions:(NSUInteger)o {} - (NSUInteger)presentationOptions { return 0; } - (NSUInteger)currentSystemPresentationOptions { return 0; }
 - (void)activate { _active = YES; }
@@ -1645,4 +1646,61 @@ void NSBeep(void) {}
                          colorSpaceName:cs bitmapFormat:0 bytesPerRow:bpr bitsPerPixel:bpp]; }
 - (NSInteger)samplesPerPixel { return _spp; } - (NSInteger)bitsPerSample { return _bps; } - (BOOL)hasAlpha { return _alpha; }
 - (NSSize)size { return NSMakeSize(_w, _h); } - (void)setSize:(NSSize)s {}
+@end
+
+
+/* ---- modal sessions, window enumeration, validation, misc NSApplication API ---- */
+@interface XEFModalSession : NSObject { @public NSWindow *_w; NSInteger _code; BOOL _running; } @end
+@implementation XEFModalSession @end
+NSString *const NSModalPanelRunLoopMode = @"NSModalPanelRunLoopMode";
+static NSMutableArray *g_modals;
+@implementation NSApplication (XEFModal)
+- (NSModalSession)beginModalSessionForWindow:(NSWindow *)w {
+  XEFModalSession *m = [[XEFModalSession alloc] init]; m->_w = w; m->_code = NSModalResponseContinue; m->_running = YES;
+  if (!g_modals) g_modals = [[NSMutableArray alloc] init];
+  [g_modals addObject:m]; [m release];
+  [w makeKeyAndOrderFront:nil]; return (NSModalSession)m; }
+- (NSInteger)runModalSession:(NSModalSession)s {
+  XEFModalSession *m = (XEFModalSession *)s; if (!m->_running) return m->_code;
+  NSEvent *e = [self nextEventMatchingMask:NSEventMaskAny untilDate:[NSDate dateWithTimeIntervalSinceNow:0.016] inMode:NSModalPanelRunLoopMode dequeue:YES];
+  /* events for other windows are not delivered while a modal window is up; closing the window ends the session */
+  if (e && (e->_window == m->_w || !e->_window || e->_type == NSEventTypeApplicationDefined)) [self sendEvent:e];
+  [self updateWindows];
+  return m->_code; }
+- (void)endModalSession:(NSModalSession)s { XEFModalSession *m = (XEFModalSession *)s; m->_running = NO; [g_modals removeObjectIdenticalTo:m]; }
+- (NSInteger)runModalForWindow:(NSWindow *)w {
+  NSModalSession s = [self beginModalSessionForWindow:w]; NSInteger r;
+  while ((r = [self runModalSession:s]) == NSModalResponseContinue) { NSAutoreleasePool *p = [[NSAutoreleasePool alloc] init]; [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.002]]; [p drain]; }
+  [self endModalSession:s]; return r; }
+- (NSInteger)runModalForWindow:(NSWindow *)w relativeToWindow:(NSWindow *)o { return [self runModalForWindow:w]; }
+- (NSModalSession)beginModalSessionForWindow:(NSWindow *)w relativeToWindow:(NSWindow *)o { return [self beginModalSessionForWindow:w]; }
+- (void)stopModalWithCode:(NSInteger)c { XEFModalSession *m = [g_modals lastObject]; if (m) { m->_code = c; m->_running = NO; } }
+- (void)stopModal { [self stopModalWithCode:NSModalResponseStop]; }
+- (void)abortModal { [self stopModalWithCode:NSModalResponseAbort]; }
+- (NSWindow *)modalWindow { XEFModalSession *m = [g_modals lastObject]; return m ? m->_w : nil; }
+- (NSApplicationActivationPolicy)activationPolicy { return _policy; }
+- (void)deactivate { _active = NO; }
+- (void)enumerateWindowsWithOptions:(NSUInteger)o usingBlock:(void (^)(NSWindow *, BOOL *))b {
+  BOOL stop = NO; NSArray *ws = (o & 1 /* NSWindowListOrderedFrontToBack */) ? [self orderedWindows] : [[_windows copy] autorelease];
+  for (NSWindow *w in ws) { b(w, &stop); if (stop) break; } }
+- (void)preventWindowOrdering {} - (void)setWindowsNeedUpdate:(BOOL)f { if (f) [self updateWindows]; }
+- (id)dockTile { id d = objc_getAssociatedObject(self, "xef.dock"); if (!d) { d = [[[NSClassFromString(@"NSDockTile") alloc] init] autorelease]; objc_setAssociatedObject(self, "xef.dock", d, OBJC_ASSOCIATION_RETAIN); } return d; }
+- (void)reportException:(NSException *)e { NSLog(@"%@", e); }
+- (void)replyToOpenOrPrint:(NSUInteger)r {}
+- (id)appearance { return objc_getAssociatedObject(self, "xef.appearance"); } - (void)setAppearance:(id)a { objc_setAssociatedObject(self, "xef.appearance", a, OBJC_ASSOCIATION_RETAIN); }
+- (NSUInteger)occlusionState { return _active ? 2 /* NSApplicationOcclusionStateVisible */ : 0; }
+- (NSInteger)userInterfaceLayoutDirection { return 0; }
+- (BOOL)validateUserInterfaceItem:(id)i { return YES; }
+- (BOOL)validateMenuItem:(NSMenuItem *)i { return [self validateUserInterfaceItem:i]; }
+- (void)miniaturizeAll:(id)s { for (NSWindow *w in [[_windows copy] autorelease]) [w miniaturize:s]; }
+- (NSArray *)orderedDocuments { NSMutableArray *r = [NSMutableArray array]; for (NSWindow *w in [self orderedWindows]) { id d = [[w windowController] document]; if (d && ![r containsObject:d]) [r addObject:d]; } return r; }
+- (void)disableRelaunchOnLogin {} - (void)enableRelaunchOnLogin {}
+- (void)yieldActivationToApplication:(id)a {} - (void)yieldActivationToApplicationWithBundleIdentifier:(NSString *)b {}
+- (BOOL)isProtectedDataAvailable { return YES; } - (BOOL)applicationShouldSuppressHighDynamicRangeContent { return NO; }
+- (void)registerServicesMenuSendTypes:(NSArray *)s returnTypes:(NSArray *)r {}
+- (void)orderFrontStandardAboutPanelWithOptions:(NSDictionary *)o { [self orderFrontStandardAboutPanel:nil]; }
+- (void)orderFrontColorPanel:(id)s { [[NSClassFromString(@"NSColorPanel") performSelector:@selector(sharedColorPanel)] performSelector:@selector(orderFront:) withObject:s]; }
+- (void)orderFrontCharacterPalette:(id)s {} - (void)activateContextHelpMode:(id)s {} - (void)showHelp:(id)s {} - (void)runPageLayout:(id)s {}
+- (void)extendStateRestoration {} - (void)completeStateRestoration {}
++ (void)detachDrawingThread:(SEL)s toTarget:(id)t withObject:(id)o { [NSThread detachNewThreadSelector:s toTarget:t withObject:o]; }
 @end

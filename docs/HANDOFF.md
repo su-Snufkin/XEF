@@ -877,3 +877,16 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   restoreGraphicsState]` spłukuje teraz kontekst utworzony z `graphicsContextWithBitmapImageRep:`.
 - Test: `tests/darwin/image_test` (kodowanie PNG/JPEG/TIFF i odczyt z powrotem, `lockFocus`, handler). Stan: **4666 z 8257** metod prawdziwych.
 
+### 15. NSWorkspace i NSApplication (2026-11-12)
+- **NSWorkspace** (`AppKitDocument.m`, kategoria `XEFTypes`, `appkit_workspace.m` zgodny z Makiem): tabela typów UTI (~40 wpisów: tekst, obrazy, audio, PDF,
+  foldery, pakiety…) z hierarchią — `type:conformsToType:`, `preferredFilenameExtensionForType:`, `localizedDescriptionForType:`, `filenameExtension:isValidForType:`,
+  `typeOfFile:error:` (symlink przez `lstat`, katalog → `public.folder`, nieistniejący → nil z błędem), `isFilePackageAtPath:`, `fileLabels/Colors`, woluminy z
+  `/proc/mounts` (`mountedLocalVolumePaths`, `getFileSystemInfoForPath:…`), aplikacje z `/Applications` i `~/Applications` (`URLsForApplicationsWithBundleIdentifier:`,
+  `fullPathForApplication:`), `duplicateURLs:`, obraz pulpitu, `launchApplication:`, `openURLs:withApplicationAtURL:…`. Ikony plików to rysowane (lockFocus)
+  uogólnione obrazki 32×32 — nie prawdziwe ikony typów. Brak: domyślnych aplikacji dla typów, wysuwania nośników.
+- **NSApplication** (`AppKit.m`, kategoria `XEFModal`, `appkit_modal.m` zgodny z Makiem): **prawdziwe sesje modalne** — `runModalForWindow:` wcześniej wracało od razu z 1000;
+  teraz `beginModalSessionForWindow:`/`runModalSession:`/`endModalSession:`, `stopModal`, `stopModalWithCode:`, `abortModal`, `modalWindow` (zdarzenia innych okien są wtedy
+  pomijane), `enumerateWindowsWithOptions:usingBlock:`, `activationPolicy` (domyślnie Prohibited jak w programie bez bundla), `replyToApplicationShouldTerminate:` oraz
+  `NSTerminateLater` w `terminate:`, `dockTile`, `miniaturizeAll:`, `orderedDocuments`, drobiazgi. `validateMenuItem:` zwraca YES (Mac też).
+- Stan: **4736 z 8257** metod prawdziwych; `macref.sh` 17/17.
+
