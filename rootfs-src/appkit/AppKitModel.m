@@ -1279,6 +1279,7 @@ static NSTimeInterval XEFWavDuration(NSData *d) {
   return (NSTimeInterval)dataLen / bytesPerSec; }
 @implementation NSSound
 + (NSSound *)soundNamed:(NSString *)n { return XEFNamedSounds()[n]; }
+- (id)init { [self release]; return nil; }   /* a sound needs data: AppKit answers nil here too */
 + (NSArray *)soundUnfilteredTypes { return @[@"wav", @"wave", @"public.wav"]; } + (NSArray *)soundUnfilteredFileTypes { return @[@"wav", @"wave"]; } + (NSArray *)soundUnfilteredPasteboardTypes { return @[]; }
 - (id)initWithData:(NSData *)d {
   NSTimeInterval t = d ? XEFWavDuration(d) : -1;
@@ -1403,7 +1404,7 @@ static BOOL XEFAssocBool(id o, const char *k, BOOL def) { NSNumber *n = objc_get
 - (BOOL)isLeaf { return _leaf; } - (void)setLeaf:(BOOL)f { _leaf = f; } - (BOOL)isLoaded { return _loaded; } - (void)setLoaded:(BOOL)f { _loaded = f; }
 - (id)alternateImage { return _alt; } - (void)setAlternateImage:(id)i { [i retain]; [_alt release]; _alt = i; }
 - (void)reset { _loaded = NO; } - (void)set {}
-+ (id)branchImage { return nil; } + (id)highlightedBranchImage { return nil; }
++ (id)branchImage { static NSImage *i; if (!i) { i = [[NSImage alloc] initWithSize:NSMakeSize(7, 9)]; } return i; } + (id)highlightedBranchImage { static NSImage *i; if (!i) { i = [[NSImage alloc] initWithSize:NSMakeSize(7, 9)]; } return i; }
 @end
 
 /* ================================================================== NSRuleEditor */

@@ -55,7 +55,6 @@ NSGlassEffectContainerView
 NSGlassEffectView
 NSGlyphGenerator
 NSGlyphInfo
-NSHapticFeedbackManager
 NSHelpManager
 NSImageSymbolConfiguration
 NSInputManager

@@ -239,3 +239,7 @@
 }
 - (NSInteger)numberOfItems; - (void)reloadData;
 @end
+
+@interface NSHapticFeedbackManager : NSObject
++ (id)defaultPerformer;
+@end

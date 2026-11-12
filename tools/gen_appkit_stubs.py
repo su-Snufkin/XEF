@@ -156,6 +156,9 @@ __attribute__((constructor)) static void xef_register_generated(void) {
 '''
 
 
+NIL_FACTORIES = {('NSTextInputContext', 'currentInputContext')}
+
+
 def load_gap(path):
     missing, absent = {}, set()
     for line in open(path, errors='replace'):
@@ -254,6 +257,8 @@ def main():
             base = H.norm(m.ret).rstrip('* ').strip()
             if m.sel.startswith('init') and r == '@' and (H.norm(m.ret) == 'instancetype' or base == cname or base.startswith('id')) and m.kind == '-':
                 role = 'I'
+            elif m.kind == '+' and r == '@' and not a and (cname, m.sel) in NIL_FACTORIES:
+                role = 'D'   # the real class answers nil here (checked on the Mac)
             elif m.kind == '+' and r == '@' and not a and (H.norm(m.ret) == 'instancetype' or base == cname):
                 role = 'T' if m.sel.startswith(SINGLETON) else 'F'
             elif m.kind == '+' and r == '@' and (H.norm(m.ret) == 'instancetype') and m.sel.endswith(':'):

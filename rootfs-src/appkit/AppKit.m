@@ -4,6 +4,8 @@
 BOOL XEFGestureDispatch(NSWindow *w, NSView *target, NSEvent *e);   /* AppKitControllers.m */
 #import "AppKitGraphics.h"
 #import "AppKitControls.h"
+#import "AppKitModel.h"
+#import "AppKitDocument.h"
 #include "xef_host.h"
 #include <unistd.h>
 #include <string.h>
@@ -1925,4 +1927,19 @@ static NSMutableDictionary *g_exposed;
 - (void)layout {}
 - (BOOL)showsSuppressionButton { return XEFFlag(self, "xef.suppress", NO); } - (void)setShowsSuppressionButton:(BOOL)f { XEFSet(self, "xef.suppress", [NSNumber numberWithBool:f]); }
 - (NSButton *)suppressionButton { if (![self showsSuppressionButton]) return nil; NSButton *b = XEFGet(self, "xef.suppressBtn"); if (!b) { b = [NSButton checkboxWithTitle:@"Do not show this message again" target:nil action:NULL]; XEFSet(self, "xef.suppressBtn", b); } return b; }
+@end
+
+/* ---- singletons / class factories that the real classes answer (found by comparing every +shared… / +default… factory with the Mac) ---- */
+@implementation NSHapticFeedbackManager
++ (id)defaultPerformer { static NSHapticFeedbackManager *p; if (!p) p = [[NSHapticFeedbackManager alloc] init]; return p; }
+- (void)performFeedbackPattern:(NSInteger)pattern performanceTime:(NSInteger)t {}
+@end
+@implementation NSPrintInfo (XEFDefaultPrinter)
++ (NSPrinter *)defaultPrinter { static NSPrinter *p; if (!p) p = [[NSPrinter alloc] init]; return p; }
+@end
+@implementation NSTokenField (XEFTokenizing)
++ (NSCharacterSet *)defaultTokenizingCharacterSet { return [NSCharacterSet characterSetWithCharactersInString:@","]; }
+@end
+@implementation NSTokenFieldCell (XEFTokenizing)
++ (NSCharacterSet *)defaultTokenizingCharacterSet { return [NSCharacterSet characterSetWithCharactersInString:@","]; }
 @end

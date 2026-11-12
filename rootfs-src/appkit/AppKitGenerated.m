@@ -216,8 +216,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSGlyphGenerator @end
 @interface NSGlyphInfo : NSObject @end
 @implementation NSGlyphInfo @end
-@interface NSHapticFeedbackManager : NSObject @end
-@implementation NSHapticFeedbackManager @end
 @interface NSHelpManager : NSObject @end
 @implementation NSHelpManager @end
 @interface NSImageSymbolConfiguration : NSObject @end
@@ -1121,7 +1119,6 @@ static const GenEntry kTable[] = {
 {"NSGlyphInfo", '-', "glyphName", 'D', '@', ""},
 {"NSGraphicsContext", '+', "setGraphicsState:", 'S', 'v', "q"},
 {"NSGraphicsContext", '-', "CIContext", 'D', '@', ""},
-{"NSHapticFeedbackManager", '+', "defaultPerformer", 'D', '@', ""},
 {"NSHelpManager", '+', "isContextHelpModeActive", 'G', 'B', ""},
 {"NSHelpManager", '+', "setContextHelpModeActive:", 'S', 'v', "B"},
 {"NSHelpManager", '+', "sharedHelpManager", 'T', '@', ""},
@@ -1597,7 +1594,6 @@ static const GenEntry kTable[] = {
 {"NSPreviewRepresentingActivityItem", '-', "initWithItem:title:image:icon:", 'I', '@', "@@@@"},
 {"NSPreviewRepresentingActivityItem", '-', "initWithItem:title:imageProvider:iconProvider:", 'I', '@', "@@@@"},
 {"NSPreviewRepresentingActivityItem", '-', "item", 'D', '@', ""},
-{"NSPrintInfo", '+', "defaultPrinter", 'G', '@', ""},
 {"NSPrintInfo", '+', "setDefaultPrinter:", 'S', 'v', "@"},
 {"NSPrintInfo", '+', "sizeForPaperName:", 'D', 'S', "q"},
 {"NSPrintInfo", '-', "PMPageFormat", 'D', '^', ""},
@@ -2174,7 +2170,7 @@ static const GenEntry kTable[] = {
 {"NSTextFinder", '-', "setFindIndicatorNeedsUpdate:", 'S', 'v', "B"},
 {"NSTextFinder", '-', "setIncrementalSearchingEnabled:", 'S', 'v', "B"},
 {"NSTextFinder", '-', "setIncrementalSearchingShouldDimContentView:", 'S', 'v', "B"},
-{"NSTextInputContext", '+', "currentInputContext", 'T', '@', ""},
+{"NSTextInputContext", '+', "currentInputContext", 'D', '@', ""},
 {"NSTextInputContext", '+', "localizedNameForInputSource:", 'D', '@', "q"},
 {"NSTextInputContext", '-', "acceptsGlyphInfo", 'G', 'B', ""},
 {"NSTextInputContext", '-', "activate", 'D', 'v', ""},
@@ -2433,7 +2429,6 @@ static const GenEntry kTable[] = {
 {"NSTitlebarAccessoryViewController", '-', "viewDidDisappear", 'D', 'v', ""},
 {"NSTitlebarAccessoryViewController", '-', "viewWillAppear", 'D', 'v', ""},
 {"NSTokenField", '+', "defaultCompletionDelay", 'D', 'd', ""},
-{"NSTokenField", '+', "defaultTokenizingCharacterSet", 'D', '@', ""},
 {"NSTokenField", '-', "completionDelay", 'G', 'd', ""},
 {"NSTokenField", '-', "setCompletionDelay:", 'S', 'v', "d"},
 {"NSTokenField", '-', "setTokenStyle:", 'S', 'v', "q"},
@@ -2441,7 +2436,6 @@ static const GenEntry kTable[] = {
 {"NSTokenField", '-', "tokenStyle", 'G', 'q', ""},
 {"NSTokenField", '-', "tokenizingCharacterSet", 'G', '@', ""},
 {"NSTokenFieldCell", '+', "defaultCompletionDelay", 'D', 'd', ""},
-{"NSTokenFieldCell", '+', "defaultTokenizingCharacterSet", 'D', '@', ""},
 {"NSTokenFieldCell", '-', "completionDelay", 'G', 'd', ""},
 {"NSTokenFieldCell", '-', "delegate", 'G', '@', ""},
 {"NSTokenFieldCell", '-', "setCompletionDelay:", 'S', 'v', "d"},

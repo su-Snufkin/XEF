@@ -1092,3 +1092,10 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   (`setColor:forKey:` nie zmienia pozycji istniejącego klucza, `insertColor:key:atIndex:`), `+availableColorLists` zawiera tylko listy utworzone w programie (bez wbudowanych list Apple), brak zapisu do pliku.
 - Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 52/52.
 
+### 39. Porównanie fabryk klas z Makiem (2026-11-12)
+- **`tools/probe_factories.py`** (wymaga Maca): dla każdej klasowej metody bez argumentów zwracającej obiekt (`+shared…`, `+default…`, `+current…` i ok. 160 innych getterów) porównuje, czy wynik jest nil, na Macu i w XEF (proces na klasę).
+  Znalazło: `NSHapticFeedbackManager +defaultPerformer`, `NSPrintInfo +defaultPrinter`, `NSTokenField(Cell) +defaultTokenizingCharacterSet` (brakowały), `NSTextInputContext +currentInputContext` (u Maca nil, u nas obiekt;
+  generator ma teraz listę `NIL_FACTORIES`), `NSBrowserCell +branchImage` oraz `[[NSSound alloc] init]` (nil jak u Maca). Po poprawkach różnice są tylko dla `NSAdaptiveImageGlyph.contentType` (UTType) i `NSSliderAccessory` (brak klasy).
+- Podobna próba **tworzenia każdej klasy przez `init`/`initWithFrame:`** (322 klasy): XEF tworzy wszystko, co Mac; różnice to klasy, które u Maca rzucają wyjątek (XEF jest łagodniejszy) oraz `[[NSURL alloc] init]` (u nas nil — Foundation Darlinga).
+- Stan: patrz `tools/appkit_gap.sh`.
+
