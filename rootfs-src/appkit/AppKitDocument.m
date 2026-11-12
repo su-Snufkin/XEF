@@ -645,3 +645,19 @@ static const XEFType *XEFTypeForExt(NSString *e) {
 - (void)setDefaultApplicationAtURL:(NSURL *)a toOpenFileAtURL:(NSURL *)f completionHandler:(void (^)(NSError *))h { if (h) h(nil); }
 - (void)setDefaultApplicationAtURL:(NSURL *)a toOpenContentType:(id)t completionHandler:(void (^)(NSError *))h { if (h) h(nil); }
 @end
+
+@implementation NSPrintPanel
++ (NSPrintPanel *)printPanel { return [[[self alloc] init] autorelease]; }
+- (id)init { if ((self = [super init])) { _options = 3; _acc = [[NSMutableArray alloc] init]; } return self; }
+- (void)dealloc { [_title release]; [_anchor release]; [_hint release]; [_acc release]; [_info release]; [super dealloc]; }
+- (NSUInteger)options { return _options; } - (void)setOptions:(NSUInteger)o { _options = o; }
+- (NSString *)defaultButtonTitle { return _title; } - (void)setDefaultButtonTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
+- (NSString *)helpAnchor { return _anchor; } - (void)setHelpAnchor:(NSString *)a { [a retain]; [_anchor release]; _anchor = a; }
+- (NSString *)jobStyleHint { return _hint; } - (void)setJobStyleHint:(NSString *)h { [h retain]; [_hint release]; _hint = h; }
+- (NSArray *)accessoryControllers { return [NSArray arrayWithArray:_acc]; } - (void)addAccessoryController:(id)c { [_acc addObject:c]; } - (void)removeAccessoryController:(id)c { [_acc removeObject:c]; }
+- (id)printInfo { return _info ?: [NSPrintInfo sharedPrintInfo]; }
+- (NSInteger)runModal { return 0; } - (NSInteger)runModalWithPrintInfo:(id)i { [i retain]; [_info release]; _info = i; return 0; }
+- (void)beginSheetUsingPrintInfo:(id)i onWindow:(NSWindow *)w completionHandler:(void (^)(NSInteger))h { if (h) h(0); }
+- (void)beginSheetWithPrintInfo:(id)i modalForWindow:(NSWindow *)w delegate:(id)d didEndSelector:(SEL)s contextInfo:(void *)c { if (d && s) ((void (*)(id, SEL, id, NSInteger, void *))objc_msgSend)(d, s, self, 0, c); }
+- (id)accessoryView { return nil; } - (void)setAccessoryView:(id)v {} - (void)updateFromPrintInfo {} - (NSInteger)finalWritePrintInfo { return 0; }
+@end

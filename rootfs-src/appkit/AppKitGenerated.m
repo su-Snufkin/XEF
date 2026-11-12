@@ -266,8 +266,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPressureConfiguration @end
 @interface NSPreviewRepresentingActivityItem : NSObject @end
 @implementation NSPreviewRepresentingActivityItem @end
-@interface NSPrintPanel : NSObject @end
-@implementation NSPrintPanel @end
 @interface NSScrubberArrangedView : NSView @end
 @implementation NSScrubberArrangedView @end
 @interface NSScrubberLayout : NSObject @end
@@ -1544,27 +1542,6 @@ static const GenEntry kTable[] = {
 {"NSPrintOperation", '-', "setJobStyleHint:", 'S', 'v', "@"},
 {"NSPrintOperation", '-', "setShowPanels:", 'S', 'v', "B"},
 {"NSPrintOperation", '-', "showPanels", 'G', 'B', ""},
-{"NSPrintPanel", '+', "printPanel", 'F', '@', ""},
-{"NSPrintPanel", '-', "accessoryControllers", 'D', 'A', ""},
-{"NSPrintPanel", '-', "accessoryView", 'G', '@', ""},
-{"NSPrintPanel", '-', "addAccessoryController:", 'D', 'v', "@"},
-{"NSPrintPanel", '-', "beginSheetUsingPrintInfo:onWindow:completionHandler:", 'D', 'v', "@@@"},
-{"NSPrintPanel", '-', "beginSheetWithPrintInfo:modalForWindow:delegate:didEndSelector:contextInfo:", 'D', 'v', "@@@:^"},
-{"NSPrintPanel", '-', "defaultButtonTitle", 'G', '@', ""},
-{"NSPrintPanel", '-', "finalWritePrintInfo", 'D', 'v', ""},
-{"NSPrintPanel", '-', "helpAnchor", 'G', 'q', ""},
-{"NSPrintPanel", '-', "jobStyleHint", 'G', 'q', ""},
-{"NSPrintPanel", '-', "options", 'G', 'q', ""},
-{"NSPrintPanel", '-', "printInfo", 'D', '@', ""},
-{"NSPrintPanel", '-', "removeAccessoryController:", 'D', 'v', "@"},
-{"NSPrintPanel", '-', "runModal", 'D', 'q', ""},
-{"NSPrintPanel", '-', "runModalWithPrintInfo:", 'D', 'q', "@"},
-{"NSPrintPanel", '-', "setAccessoryView:", 'S', 'v', "@"},
-{"NSPrintPanel", '-', "setDefaultButtonTitle:", 'S', 'v', "@"},
-{"NSPrintPanel", '-', "setHelpAnchor:", 'S', 'v', "q"},
-{"NSPrintPanel", '-', "setJobStyleHint:", 'S', 'v', "q"},
-{"NSPrintPanel", '-', "setOptions:", 'S', 'v', "q"},
-{"NSPrintPanel", '-', "updateFromPrintInfo", 'D', 'v', ""},
 {"NSResponder", '-', "interfaceStyle", 'G', 'q', ""},
 {"NSResponder", '-', "performMnemonic:", 'D', 'B', "@"},
 {"NSResponder", '-', "setInterfaceStyle:", 'S', 'v', "q"},
@@ -1631,27 +1608,6 @@ static const GenEntry kTable[] = {
 {"NSScrubberTextItemView", '-', "setTitle:", 'S', 'v', "@"},
 {"NSScrubberTextItemView", '-', "textField", 'D', '@', ""},
 {"NSScrubberTextItemView", '-', "title", 'G', '@', ""},
-{"NSSearchFieldCell", '-', "cancelButtonCell", 'G', '@', ""},
-{"NSSearchFieldCell", '-', "cancelButtonRectForBounds:", 'D', 'R', "R"},
-{"NSSearchFieldCell", '-', "maximumRecents", 'G', 'q', ""},
-{"NSSearchFieldCell", '-', "recentSearches", 'G', 'A', ""},
-{"NSSearchFieldCell", '-', "recentsAutosaveName", 'G', 'q', ""},
-{"NSSearchFieldCell", '-', "resetCancelButtonCell", 'D', 'v', ""},
-{"NSSearchFieldCell", '-', "resetSearchButtonCell", 'D', 'v', ""},
-{"NSSearchFieldCell", '-', "searchButtonCell", 'G', '@', ""},
-{"NSSearchFieldCell", '-', "searchButtonRectForBounds:", 'D', 'R', "R"},
-{"NSSearchFieldCell", '-', "searchMenuTemplate", 'G', '@', ""},
-{"NSSearchFieldCell", '-', "searchTextRectForBounds:", 'D', 'R', "R"},
-{"NSSearchFieldCell", '-', "sendsSearchStringImmediately", 'G', 'B', ""},
-{"NSSearchFieldCell", '-', "sendsWholeSearchString", 'G', 'B', ""},
-{"NSSearchFieldCell", '-', "setCancelButtonCell:", 'S', 'v', "@"},
-{"NSSearchFieldCell", '-', "setMaximumRecents:", 'S', 'v', "q"},
-{"NSSearchFieldCell", '-', "setRecentSearches:", 'S', 'v', "@"},
-{"NSSearchFieldCell", '-', "setRecentsAutosaveName:", 'S', 'v', "q"},
-{"NSSearchFieldCell", '-', "setSearchButtonCell:", 'S', 'v', "@"},
-{"NSSearchFieldCell", '-', "setSearchMenuTemplate:", 'S', 'v', "@"},
-{"NSSearchFieldCell", '-', "setSendsSearchStringImmediately:", 'S', 'v', "B"},
-{"NSSearchFieldCell", '-', "setSendsWholeSearchString:", 'S', 'v', "B"},
 {"NSSearchToolbarItem", '-', "beginSearchInteraction", 'D', 'v', ""},
 {"NSSearchToolbarItem", '-', "endSearchInteraction", 'D', 'v', ""},
 {"NSSearchToolbarItem", '-', "preferredWidthForSearchField", 'G', 'd', ""},
@@ -2521,7 +2477,6 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSPDFInfo", "isFileExtensionHidden", 'B', "1"},
 {"NSPDFInfo", "paperSize", 'S', "612,792"},
 {"NSPDFPanel", "defaultFileName", '@', "Untitled"},
-{"NSPrintPanel", "options", 'q', "3"},
 {"NSScrubberFlowLayout", "itemSize", 'S', "50,30"},
 {"NSScrubberLayout", "automaticallyMirrorsInRightToLeftLayout", 'B', "1"},
 {"NSScrubberLayoutAttributes", "itemIndex", 'q', "-1"},
@@ -2543,7 +2498,7 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSWritingToolsCoordinator", "behavior", 'q', "1"},
 {"NSWritingToolsCoordinator", "resultOptions", 'q', "15"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 43;
+const unsigned long kDefaultsCount = 42;
 
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }

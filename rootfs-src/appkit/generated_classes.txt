@@ -80,7 +80,6 @@ NSPredicateEditor
 NSPredicateEditorRowTemplate
 NSPressureConfiguration
 NSPreviewRepresentingActivityItem
-NSPrintPanel
 NSScrubberArrangedView
 NSScrubberLayout
 NSScrubberFlowLayout

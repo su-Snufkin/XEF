@@ -1107,3 +1107,9 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   klasa istnieje tylko dla zgodności API.
 - Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 54/54; pełny `run_tests.sh` przechodzi.
 
+### 41. NSSearchFieldCell i NSPrintPanel (2026-11-12)
+- `AppKitControls.m`, `AppKitDocument.m`, test `appkit_searchcell.m` zgodny z Makiem: **NSSearchFieldCell** — te same ustawienia co `NSSearchField` (ostatnie wyszukiwania, `maximumRecents` -1, menu szablonu, flagi wysyłania),
+  komórki przycisków wyszukiwania/anulowania (tworzone leniwie, `reset…` je zeruje), prostokąty tekstu i przycisków. `NSSearchField` trzyma własne wartości osobno (nie przekazuje ich do komórki).
+  **NSPrintPanel** — ustawienia (`options` domyślnie 3, tytuł przycisku, kotwica pomocy, kontrolery akcesoriów); **`runModal` zwraca 0 (anulowano)** — host nie ma okna druku.
+- Stan: patrz `tools/appkit_gap.sh`.
+

@@ -50,3 +50,8 @@
 @end
 @interface NSWorkspace : NSObject
 @end
+
+/* NSPrintPanel: settings only; there is no print dialog on the host */
+@interface NSPrintPanel : NSObject { @public NSUInteger _options; NSString *_title, *_anchor, *_hint; NSMutableArray *_acc; id _info; }
++ (NSPrintPanel *)printPanel;
+@end

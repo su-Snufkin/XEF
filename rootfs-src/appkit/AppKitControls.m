@@ -1273,3 +1273,17 @@ static void XEFCSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k, 
 + (CGFloat)scrollerWidthForControlSize:(NSInteger)s { return 15; } - (void)setFloatValue:(float)v knobProportion:(CGFloat)p { [self setDoubleValue:v]; [self setKnobProportion:p]; }
 - (NSInteger)arrowsPosition { return 0; } - (void)setArrowsPosition:(NSInteger)p {} - (NSInteger)controlTint { return 0; } - (void)setControlTint:(NSInteger)t {} - (void)highlight:(BOOL)f {} - (void)trackScrollButtons:(NSEvent *)e {} - (void)drawParts {} - (void)drawArrow:(NSInteger)a highlight:(BOOL)f {}
 @end
+
+@implementation NSSearchFieldCell (XEFMore)
+- (NSArray *)recentSearches { return XEFCGet(self, "xef.recents") ?: @[]; } - (void)setRecentSearches:(NSArray *)a { XEFCSet(self, "xef.recents", [[a copy] autorelease]); }
+- (NSString *)recentsAutosaveName { return XEFCGet(self, "xef.rname"); } - (void)setRecentsAutosaveName:(NSString *)n { XEFCSet(self, "xef.rname", [[n copy] autorelease]); }
+- (NSMenu *)searchMenuTemplate { return XEFCGet(self, "xef.menu"); } - (void)setSearchMenuTemplate:(NSMenu *)m { XEFCSet(self, "xef.menu", m); }
+- (BOOL)sendsWholeSearchString { return [XEFCGet(self, "xef.whole") boolValue]; } - (void)setSendsWholeSearchString:(BOOL)f { XEFCSet(self, "xef.whole", [NSNumber numberWithBool:f]); }
+- (NSInteger)maximumRecents { NSNumber *n = XEFCGet(self, "xef.maxr"); return n ? [n integerValue] : -1; } - (void)setMaximumRecents:(NSInteger)n { XEFCSet(self, "xef.maxr", [NSNumber numberWithInteger:n]); }
+- (BOOL)sendsSearchStringImmediately { return [XEFCGet(self, "xef.imm") boolValue]; } - (void)setSendsSearchStringImmediately:(BOOL)f { XEFCSet(self, "xef.imm", [NSNumber numberWithBool:f]); }
+- (id)searchButtonCell { id c = XEFCGet(self, "xef.sbc"); if (!c) { c = [[[NSButtonCell alloc] initImageCell:nil] autorelease]; XEFCSet(self, "xef.sbc", c); } return c; } - (void)setSearchButtonCell:(id)c { XEFCSet(self, "xef.sbc", c); }
+- (id)cancelButtonCell { id c = XEFCGet(self, "xef.cbc"); if (!c) { c = [[[NSButtonCell alloc] initImageCell:nil] autorelease]; XEFCSet(self, "xef.cbc", c); } return c; } - (void)setCancelButtonCell:(id)c { XEFCSet(self, "xef.cbc", c); }
+- (void)resetSearchButtonCell { XEFCSet(self, "xef.sbc", nil); } - (void)resetCancelButtonCell { XEFCSet(self, "xef.cbc", nil); }
+- (NSRect)searchTextRectForBounds:(NSRect)b { return NSMakeRect(b.origin.x + 20, b.origin.y, MAX(0, b.size.width - 40), b.size.height); }
+- (NSRect)searchButtonRectForBounds:(NSRect)b { return NSMakeRect(b.origin.x + 2, b.origin.y, 18, b.size.height); } - (NSRect)cancelButtonRectForBounds:(NSRect)b { return NSMakeRect(NSMaxX(b) - 20, b.origin.y, 18, b.size.height); }
+@end
