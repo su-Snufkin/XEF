@@ -947,3 +947,10 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   (domyślnie NO), `+paletteMenuWithColors:titles:…` (pozycje z próbkami koloru, brak rysowania palety), `menuBarHeight`, `appearance`.
 - Stan: **5123 z 8257** metod prawdziwych; `macref.sh` 25/25.
 
+### 22. NSCollectionView — uzupełnienia (2026-11-12)
+- `AppKitModel.m` (kategoria `XEFMore`), `appkit_collection2.m` zgodny z Makiem: `backgroundView` (dodawany pod elementami, bez rozciągania przy zmianie rozmiaru), `backgroundViewScrollsWithContent`,
+  `prefetchDataSource`, `content` (stara właściwość; tylko przechowywana), `setSelectionIndexes:` (sekcja 0), `isFirstResponder`, metody widoków dodatkowych (nagłówki/stopki — zwracają puste wyniki,
+  bo `NSCollectionViewFlowLayout` tu ich nie tworzy), `moveItemAtIndexPath:`/`moveSection:` (tylko unieważniają układ), przeciąganie (puste). Na Macu `selectionIndexes=` i `toggleSectionCollapse:` rzucają wyjątek
+  dla widoku z dataSource — test ich nie porównuje.
+- Stan: **5146 z 8257** metod prawdziwych; `macref.sh` 26/26.
+

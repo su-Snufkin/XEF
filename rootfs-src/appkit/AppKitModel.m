@@ -1346,3 +1346,33 @@ static BOOL XEFAssocBool(id o, const char *k, BOOL def) { NSNumber *n = objc_get
 @implementation NSCell (XEFCompare)
 - (NSComparisonResult)compare:(id)o { if (![o isKindOfClass:[NSCell class]]) return NSOrderedSame; return [[self stringValue] compare:[o stringValue]]; }
 @end
+
+/* ---- NSCollectionView: background view, legacy selection / content, supplementary views, moves ---- */
+@implementation NSCollectionView (XEFMore)
+- (NSView *)backgroundView { return objc_getAssociatedObject(self, "xef.bgview"); }
+- (void)setBackgroundView:(NSView *)v {
+  NSView *old = [self backgroundView]; if (old == v) return; [old removeFromSuperview];
+  objc_setAssociatedObject(self, "xef.bgview", v, OBJC_ASSOCIATION_RETAIN);
+  if (v) { [v setFrame:[self bounds]]; [self addSubview:v positioned:-1 relativeTo:nil]; } }
+- (BOOL)backgroundViewScrollsWithContent { return [objc_getAssociatedObject(self, "xef.bgscrolls") boolValue]; }
+- (void)setBackgroundViewScrollsWithContent:(BOOL)f { objc_setAssociatedObject(self, "xef.bgscrolls", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (id)prefetchDataSource { return objc_getAssociatedObject(self, "xef.prefetch"); } - (void)setPrefetchDataSource:(id)d { objc_setAssociatedObject(self, "xef.prefetch", d, OBJC_ASSOCIATION_ASSIGN); }
+- (NSArray *)content { return objc_getAssociatedObject(self, "xef.content") ?: @[]; } - (void)setContent:(NSArray *)c { objc_setAssociatedObject(self, "xef.content", [[c copy] autorelease], OBJC_ASSOCIATION_RETAIN); }
+- (void)setSelectionIndexes:(NSIndexSet *)ix {
+  NSMutableSet *s = [NSMutableSet set]; [ix enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *stop) { [s addObject:[NSIndexPath indexPathForItem:i inSection:0]]; }];
+  [self setSelectionIndexPaths:s]; }
+- (BOOL)isFirstResponder { return [[self window] firstResponder] == self; }
+- (NSRect)frameForItemAtIndex:(NSUInteger)i withNumberOfItems:(NSUInteger)n { return [self frameForItemAtIndex:i]; }
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForSupplementaryElementOfKind:(NSString *)k atIndexPath:(NSIndexPath *)p { return nil; }
+- (NSView *)makeSupplementaryViewOfKind:(NSString *)k withIdentifier:(NSString *)i forIndexPath:(NSIndexPath *)p { return nil; }
+- (NSView *)supplementaryViewForElementKind:(NSString *)k atIndexPath:(NSIndexPath *)p { return nil; }
+- (NSArray *)visibleSupplementaryViewsOfKind:(NSString *)k { return @[]; }
+- (NSSet *)indexPathsForVisibleSupplementaryElementsOfKind:(NSString *)k { return [NSSet set]; }
+- (void)moveItemAtIndexPath:(NSIndexPath *)a toIndexPath:(NSIndexPath *)b { [_layout invalidateLayout]; [self setNeedsDisplay:YES]; }
+- (void)moveSection:(NSInteger)a toSection:(NSInteger)b { [_layout invalidateLayout]; [self setNeedsDisplay:YES]; }
+- (void)toggleSectionCollapse:(id)s {}
+- (void)setDraggingSourceOperationMask:(NSUInteger)m forLocal:(BOOL)l {}
+- (NSImage *)draggingImageForItemsAtIndexPaths:(NSSet *)p withEvent:(NSEvent *)e offset:(NSPointPointer)o { return nil; }
+- (NSImage *)draggingImageForItemsAtIndexes:(NSIndexSet *)i withEvent:(NSEvent *)e offset:(NSPointPointer)o { return nil; }
+- (NSUInteger)draggingSession:(id)s sourceOperationMaskForDraggingContext:(NSInteger)c { return 1; }
+@end
