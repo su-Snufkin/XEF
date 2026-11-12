@@ -797,8 +797,8 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   poza zakresem, `invokeWithTarget:`), proxy NSProxy i wrapper z `forwardInvocation:` (wyniki struktur i argumenty na stosie
   przez forwarding), `performSelector:`, `NSPredicate`, `NSUndoManager`.
 - **Skutki:** `NSPredicate` i `filteredArrayUsingPredicate:` działają (NSArrayController używa już natywnych); starsze stuby
-  „Generated from Darling specs” z `forwardInvocation:` przestały abortować; undo działa. **Zostaje:** KVO (`addObserver:` +
-  zmiana wartości) wywraca się w `_NSKeyValueDidChangeBySetting` w Foundation Darlinga (nie w wywołaniach: kopiowanie
-  struktury `NSKeyValueChangeDetails` przez wskaźnik; fault z adresem o wyzerowanej dolnej połowie — podejrzenie o skracanie
-  wskaźnika do 32 bitów w kodzie Darlinga). `NSUndoManager.prepareWithInvocationTarget:` Darlinga zwraca samego siebie, więc
+  „Generated from Darling specs” z `forwardInvocation:` przestały abortować; undo działa. KVO działa (`tests/darwin/mac/kvo.m`: settery int/obiekt/double/BOOL, KVC, powiadomienia ręczne z prior, initial).
+  **Zostaje jedna ścieżka:** `setValue:forKey:` na obserwowanym obiekcie dla klucza bez settera (zapis wprost do ivara) wywraca się w
+  `_NSKeyValueWillChangeBySetting` w Foundation Darlinga (argument `self` dostaje śmieci: `x1 = 0xe00001683`; typedefy wskaźników
+  funkcji zgadzają się z definicjami, więc to nie zła sygnatura — zacznij od `NSKeyValueIvarSetter makeNSKVONotifying`). `NSUndoManager.prepareWithInvocationTarget:` Darlinga zwraca samego siebie, więc
   metody NSObject (np. `setValue:forKey:`) nie są rejestrowane — prawdziwy AppKit zwraca proxy.
