@@ -13,7 +13,7 @@ for n in "${names[@]}"; do
   case $src in
     *.c)   extra=""; grep -q "arm_neon.h" tests/darwin/mac/$src && extra="-mcpu=apple-m1"; grep -q "<resolv.h>" tests/darwin/mac/$src && extra="-lresolv"; grep -q sqlite3.h tests/darwin/mac/$src && extra="-lsqlite3 -lz -liconv -lxml2 -lcurses -I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/libxml2"; if grep -q CoreFoundation tests/darwin/mac/$src; then cc="clang -O1 -framework CoreFoundation"; else cc="clang -O1"; fi; cc="$cc $extra";;
     *.cpp) cc="clang++ -O1 -std=c++20";;
-    *.m)   if grep -q Foundation.h tests/darwin/mac/$src; then cc="clang -framework Foundation"; else cc="clang -lobjc"; fi;;
+    *.m)   if grep -q Cocoa.h tests/darwin/mac/$src; then cc="clang -fobjc-arc -w -framework Cocoa"; elif grep -q Foundation.h tests/darwin/mac/$src; then cc="clang -framework Foundation"; else cc="clang -lobjc"; fi;;
   esac
   ssh mac "cd ~/xef-remote/src/macref && $cc $src -o $n && ./$n a b > $n.expected 2>/dev/null; echo \$? > $n.rc" || { echo "BUILD FAIL $n"; fail=$((fail+1)); continue; }
   rsync -az mac:xef-remote/src/macref/$n mac:xef-remote/src/macref/$n.expected mac:xef-remote/src/macref/$n.rc $OUT/
