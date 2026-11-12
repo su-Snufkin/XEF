@@ -930,3 +930,12 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   prawdziwy słownik Apple, więc rzadkie słowa mogą być oceniane inaczej niż na Macu. Brak: gramatyki, panelu pisowni, `checkString:range:types:` zwraca pustą listę.
 - Stan: **5011 z 8257** metod prawdziwych; `macref.sh` 23/23.
 
+### 20. NSLayoutManager — atrybuty tymczasowe i pomocniki glifów (2026-11-12)
+- **Atrybuty tymczasowe działają** (`AppKitText.m`, `appkit_layout2.m` zgodny z Makiem): wcześniej `addTemporaryAttribute…` było pustą metodą. Teraz cień (`NSMutableAttributedString`
+  długości storage'u) trzyma je, `temporaryAttributesAtCharacterIndex:effectiveRange:` (także `longestEffectiveRange:inRange:`) i `temporaryAttribute:…` zwracają zakresy jak AppKit,
+  a układ/rysowanie używa storage'u z nałożonymi atrybutami (`_xefDisplayString`; podkreślenia, kolory tła i tekstu z podświetleń wyszukiwania). Storage pozostaje nietknięty.
+  Cień jest przycinany/uzupełniany przy zmianie długości tekstu — nie śledzi pozycji edycji (prawdziwy AppKit przesuwa zakresy).
+- Pomocniki glifów (glif = znak): `CGGlyphAtIndex:isValidIndex:`, `getGlyphsInRange:…bidiLevels:`, `notShownAttribute…`, `attachmentSizeForGlyphAtIndex:`, `usesDefaultHyphenation`,
+  `attributedString`, `fillBackgroundRectArray:…`, `underline/strikethroughGlyphRange:…`, `showAttachmentCell:…`; settery układu (`setLineFragmentRect:…`, `setLocation:…`) przyjmowane bez efektu.
+- Stan: **5049 z 8257** metod prawdziwych; `macref.sh` 24/24; pełny `run_tests.sh` przechodzi (metal_test pominięty bez Vulkana).
+

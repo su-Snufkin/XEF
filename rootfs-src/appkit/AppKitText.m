@@ -201,7 +201,7 @@ enum { kEditedAttributes = 1, kEditedCharacters = 2 };
   CGFloat w = [self _xefWidth];
   if (_layout && _layoutWidth == w) return _layout;
   [_layout release];
-  _layout = [[XEFTextLayout alloc] initWithAttributedString:_storage ?: [[[NSAttributedString alloc] init] autorelease] width:w];
+  _layout = [[XEFTextLayout alloc] initWithAttributedString:[self _xefDisplayString] ?: [[[NSAttributedString alloc] init] autorelease] width:w];
   _layoutWidth = w;
   return _layout; }
 - (void)processEditingForTextStorage:(NSTextStorage *)ts edited:(NSUInteger)mask range:(NSRange)r changeInLength:(NSInteger)d invalidatedRange:(NSRange)ir {
@@ -305,13 +305,34 @@ enum { kEditedAttributes = 1, kEditedCharacters = 2 };
 - (void)drawGlyphsForGlyphRange:(NSRange)r atPoint:(NSPoint)p { [[self _xefLayout] drawAtTopLeft:NSMakePoint(p.x + [self _xefPad], p.y)]; }
 - (void)drawUnderlineForGlyphRange:(NSRange)g underlineType:(NSInteger)t baselineOffset:(CGFloat)b lineFragmentRect:(NSRect)l lineFragmentGlyphRange:(NSRange)lg containerOrigin:(NSPoint)o {}
 - (void)showCGGlyphs:(const CGGlyph *)g positions:(const CGPoint *)p count:(NSInteger)n font:(NSFont *)f textMatrix:(CGAffineTransform)m attributes:(NSDictionary *)a inContext:(CGContextRef)c {}
-/* temporary attributes: kept, not drawn */
-- (void)addTemporaryAttribute:(NSString *)n value:(id)v forCharacterRange:(NSRange)r {}
-- (void)addTemporaryAttributes:(NSDictionary *)a forCharacterRange:(NSRange)r {}
-- (void)setTemporaryAttributes:(NSDictionary *)a forCharacterRange:(NSRange)r {}
-- (void)removeTemporaryAttribute:(NSString *)n forCharacterRange:(NSRange)r {}
-- (NSDictionary *)temporaryAttributesAtCharacterIndex:(NSUInteger)i effectiveRange:(NSRangePointer)r { if (r) *r = NSMakeRange(0, [_storage length]); return @{}; }
-- (id)temporaryAttribute:(NSString *)n atCharacterIndex:(NSUInteger)i effectiveRange:(NSRangePointer)r { return nil; }
+/* temporary attributes: a shadow attributed string of the storage's length holds them; layout and drawing use the storage with them applied */
+- (NSMutableAttributedString *)_xefTemp {
+  NSMutableAttributedString *t = objc_getAssociatedObject(self, "xef.temp"); NSUInteger n = [_storage length];
+  if (!t) { t = [[[NSMutableAttributedString alloc] initWithString:@""] autorelease]; objc_setAssociatedObject(self, "xef.temp", t, OBJC_ASSOCIATION_RETAIN); }
+  if ([t length] < n) [t replaceCharactersInRange:NSMakeRange([t length], 0) withString:[@"" stringByPaddingToLength:n - [t length] withString:@" " startingAtIndex:0]];
+  else if ([t length] > n) [t deleteCharactersInRange:NSMakeRange(n, [t length] - n)];
+  return t; }
+- (NSAttributedString *)_xefDisplayString {
+  if (!objc_getAssociatedObject(self, "xef.hasTemp") || !_storage) return _storage;
+  NSMutableAttributedString *t = [self _xefTemp]; NSMutableAttributedString *r = [[[NSMutableAttributedString alloc] initWithAttributedString:_storage] autorelease];
+  [t enumerateAttributesInRange:NSMakeRange(0, [t length]) options:0 usingBlock:^(NSDictionary *a, NSRange rg, BOOL *stop) { if ([a count]) [r addAttributes:a range:rg]; }];
+  return r; }
+- (void)_xefTempChanged { objc_setAssociatedObject(self, "xef.hasTemp", @YES, OBJC_ASSOCIATION_RETAIN); [self _xefInvalidate]; for (NSTextContainer *c in _containers) [[c textView] setNeedsDisplay:YES]; }
+- (NSRange)_xefClip:(NSRange)r { NSUInteger n = [_storage length]; if (r.location > n) return NSMakeRange(n, 0); if (NSMaxRange(r) > n) r.length = n - r.location; return r; }
+- (void)addTemporaryAttribute:(NSString *)n value:(id)v forCharacterRange:(NSRange)r { r = [self _xefClip:r]; if (!r.length || !n || !v) return; [[self _xefTemp] addAttribute:n value:v range:r]; [self _xefTempChanged]; }
+- (void)addTemporaryAttributes:(NSDictionary *)a forCharacterRange:(NSRange)r { r = [self _xefClip:r]; if (!r.length) return; [[self _xefTemp] addAttributes:a range:r]; [self _xefTempChanged]; }
+- (void)setTemporaryAttributes:(NSDictionary *)a forCharacterRange:(NSRange)r { r = [self _xefClip:r]; if (!r.length) return; [[self _xefTemp] setAttributes:a range:r]; [self _xefTempChanged]; }
+- (void)removeTemporaryAttribute:(NSString *)n forCharacterRange:(NSRange)r { r = [self _xefClip:r]; if (!r.length) return; [[self _xefTemp] removeAttribute:n range:r]; [self _xefTempChanged]; }
+- (NSDictionary *)temporaryAttributesAtCharacterIndex:(NSUInteger)i effectiveRange:(NSRangePointer)r {
+  NSMutableAttributedString *t = [self _xefTemp]; if (i >= [t length]) { if (r) *r = NSMakeRange([t length], 0); return nil; }
+  return [t attributesAtIndex:i effectiveRange:r]; }
+- (NSDictionary *)temporaryAttributesAtCharacterIndex:(NSUInteger)i longestEffectiveRange:(NSRangePointer)r inRange:(NSRange)rg {
+  NSMutableAttributedString *t = [self _xefTemp]; if (i >= [t length]) { if (r) *r = NSMakeRange([t length], 0); return nil; }
+  return [t attributesAtIndex:i longestEffectiveRange:r inRange:[self _xefClip:rg]]; }
+- (id)temporaryAttribute:(NSString *)n atCharacterIndex:(NSUInteger)i effectiveRange:(NSRangePointer)r {
+  NSMutableAttributedString *t = [self _xefTemp]; if (i >= [t length]) return nil; return [t attribute:n atIndex:i effectiveRange:r]; }
+- (id)temporaryAttribute:(NSString *)n atCharacterIndex:(NSUInteger)i longestEffectiveRange:(NSRangePointer)r inRange:(NSRange)rg {
+  NSMutableAttributedString *t = [self _xefTemp]; if (i >= [t length]) return nil; return [t attribute:n atIndex:i longestEffectiveRange:r inRange:[self _xefClip:rg]]; }
 - (NSUInteger)layoutOptions { return 0; }
 - (NSUInteger)firstUnlaidCharacterIndex { return [_storage length]; } - (NSUInteger)firstUnlaidGlyphIndex { return [_storage length]; }
 @end
@@ -1124,4 +1145,40 @@ static BOOL XEFNextWord(NSString *s, NSUInteger from, NSUInteger limit, NSRange 
 - (BOOL)preventsAutocorrectionBeforeString:(NSString *)s language:(NSString *)l { return NO; } - (BOOL)deletesAutospaceBetweenString:(NSString *)a andString:(NSString *)b language:(NSString *)l { return NO; }
 - (void)recordResponse:(NSInteger)r toCorrection:(NSString *)c forWord:(NSString *)w language:(NSString *)l inSpellDocumentWithTag:(NSInteger)t {}
 - (void)dismissCorrectionIndicatorForView:(NSView *)v {}
+@end
+
+/* ---- NSLayoutManager: glyph helpers (glyphs are the characters here), hyphenation, drawing helpers ---- */
+@implementation NSLayoutManager (XEFMore)
+- (BOOL)usesDefaultHyphenation { return [objc_getAssociatedObject(self, "xef.hyph") boolValue]; } - (void)setUsesDefaultHyphenation:(BOOL)f { objc_setAssociatedObject(self, "xef.hyph", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (NSAttributedString *)attributedString { return _storage; }
+- (CGGlyph)CGGlyphAtIndex:(NSUInteger)i isValidIndex:(BOOL *)ok { BOOL v = i < [_storage length]; if (ok) *ok = v; return v ? (CGGlyph)([[_storage string] characterAtIndex:i]) : 0; }
+- (NSInteger)propertyForGlyphAtIndex:(NSUInteger)i { return 0; }
+- (NSUInteger)getGlyphsInRange:(NSRange)r glyphs:(CGGlyph *)g properties:(NSInteger *)p characterIndexes:(NSUInteger *)ci bidiLevels:(unsigned char *)b {
+  NSUInteger n = 0; for (NSUInteger i = r.location; i < NSMaxRange(r) && i < [_storage length]; i++, n++) { if (g) g[n] = [[_storage string] characterAtIndex:i]; if (p) p[n] = 0; if (ci) ci[n] = i; if (b) b[n] = 0; } return n; }
+- (BOOL)notShownAttributeForGlyphAtIndex:(NSUInteger)i { if (i >= [_storage length]) return NO; unichar c = [[_storage string] characterAtIndex:i]; return c == '\\n' || c == '\\r' || c == 0x2028 || c == 0x2029; }
+- (void)setNotShownAttribute:(BOOL)f forGlyphAtIndex:(NSUInteger)i {}
+- (BOOL)drawsOutsideLineFragmentForGlyphAtIndex:(NSUInteger)i { return NO; } - (void)setDrawsOutsideLineFragment:(BOOL)f forGlyphAtIndex:(NSUInteger)i {}
+- (NSSize)attachmentSizeForGlyphAtIndex:(NSUInteger)i { id a = i < [_storage length] ? [_storage attribute:@"NSAttachment" atIndex:i effectiveRange:NULL] : nil; return a && [a respondsToSelector:@selector(bounds)] ? [a bounds].size : NSMakeSize(-1, -1); }
+- (void)setAttachmentSize:(NSSize)s forGlyphRange:(NSRange)r {}
+- (NSRange)truncatedGlyphRangeInLineFragmentForGlyphAtIndex:(NSUInteger)i { return NSMakeRange(NSNotFound, 0); }
+- (NSRange)rangeOfNominallySpacedGlyphsContainingIndex:(NSUInteger)i { NSRange r; [self lineFragmentRectForGlyphAtIndex:i effectiveRange:&r]; return r; }
+- (NSRect)lineFragmentUsedRectForGlyphAtIndex:(NSUInteger)i effectiveRange:(NSRangePointer)r withoutAdditionalLayout:(BOOL)f { return [self lineFragmentUsedRectForGlyphAtIndex:i effectiveRange:r]; }
+- (void)getFirstUnlaidCharacterIndex:(NSUInteger *)c glyphIndex:(NSUInteger *)g { if (c) *c = [_storage length]; if (g) *g = [_storage length]; }
+- (void)textContainerChangedTextView:(NSTextContainer *)c { [self _xefInvalidate]; }
+- (void)setTextContainer:(NSTextContainer *)c forGlyphRange:(NSRange)r {} - (void)setLineFragmentRect:(NSRect)f forGlyphRange:(NSRange)r usedRect:(NSRect)u {}
+- (void)setExtraLineFragmentRect:(NSRect)f usedRect:(NSRect)u textContainer:(NSTextContainer *)c {} - (void)setLocation:(NSPoint)p forStartOfGlyphRange:(NSRange)r {}
+- (void)setGlyphs:(const CGGlyph *)g properties:(const NSInteger *)p characterIndexes:(const NSUInteger *)ci font:(NSFont *)f forGlyphRange:(NSRange)r {}
+- (void)fillBackgroundRectArray:(const NSRect *)rects count:(NSUInteger)n forCharacterRange:(NSRange)r color:(NSColor *)c { [c set]; for (NSUInteger i = 0; i < n; i++) NSRectFill(rects[i]); }
+- (void)underlineGlyphRange:(NSRange)g underlineType:(NSInteger)t lineFragmentRect:(NSRect)l lineFragmentGlyphRange:(NSRange)lg containerOrigin:(NSPoint)o {
+  NSRect b = [self boundingRectForGlyphRange:g inTextContainer:[_containers firstObject]]; b.origin.x += o.x; b.origin.y += o.y; NSRectFill(NSMakeRect(b.origin.x, NSMaxY(b) - 1, b.size.width, 1)); }
+- (void)strikethroughGlyphRange:(NSRange)g strikethroughType:(NSInteger)t lineFragmentRect:(NSRect)l lineFragmentGlyphRange:(NSRange)lg containerOrigin:(NSPoint)o {
+  NSRect b = [self boundingRectForGlyphRange:g inTextContainer:[_containers firstObject]]; b.origin.x += o.x; b.origin.y += o.y; NSRectFill(NSMakeRect(b.origin.x, NSMidY(b), b.size.width, 1)); }
+- (void)drawStrikethroughForGlyphRange:(NSRange)g strikethroughType:(NSInteger)t baselineOffset:(CGFloat)b lineFragmentRect:(NSRect)l lineFragmentGlyphRange:(NSRange)lg containerOrigin:(NSPoint)o { [self strikethroughGlyphRange:g strikethroughType:t lineFragmentRect:l lineFragmentGlyphRange:lg containerOrigin:o]; }
+- (void)showAttachmentCell:(id)cell inRect:(NSRect)r characterIndex:(NSUInteger)i { [cell drawWithFrame:r inView:[self firstTextView]]; }
+- (void)setLayoutRect:(NSRect)r forTextBlock:(id)b glyphRange:(NSRange)g {} - (void)setBoundsRect:(NSRect)r forTextBlock:(id)b glyphRange:(NSRange)g {}
+- (NSRect)layoutRectForTextBlock:(id)b glyphRange:(NSRange)g { return NSZeroRect; } - (NSRect)boundsRectForTextBlock:(id)b glyphRange:(NSRange)g { return NSZeroRect; }
+- (NSRect)layoutRectForTextBlock:(id)b atIndex:(NSUInteger)i effectiveRange:(NSRangePointer)r { return NSZeroRect; } - (NSRect)boundsRectForTextBlock:(id)b atIndex:(NSUInteger)i effectiveRange:(NSRangePointer)r { return NSZeroRect; }
+- (NSArray *)rulerMarkersForTextView:(NSTextView *)tv paragraphStyle:(NSParagraphStyle *)p ruler:(id)r { return @[]; }
+- (NSView *)rulerAccessoryViewForTextView:(NSTextView *)tv paragraphStyle:(NSParagraphStyle *)p ruler:(id)r enabled:(BOOL)e { return nil; }
+- (BOOL)layoutManagerOwnsFirstResponderInWindow:(NSWindow *)w { id fr = [w firstResponder]; for (NSTextContainer *c in _containers) if ([c textView] == fr) return YES; return NO; }
 @end
