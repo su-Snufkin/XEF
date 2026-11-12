@@ -928,8 +928,9 @@ static char kXEFHeaderClip;
 - (BOOL)usesPredominantAxisScrolling { return YES; } - (void)setUsesPredominantAxisScrolling:(BOOL)f {}
 - (NSInteger)horizontalScrollElasticity { return 0; } - (void)setHorizontalScrollElasticity:(NSInteger)e {}
 - (NSInteger)verticalScrollElasticity { return 0; } - (void)setVerticalScrollElasticity:(NSInteger)e {}
-- (BOOL)allowsMagnification { return NO; } - (void)setAllowsMagnification:(BOOL)f {}
-- (CGFloat)magnification { return 1; } - (void)setMagnification:(CGFloat)m {}
+- (BOOL)allowsMagnification { return [objc_getAssociatedObject(self, "xef.allowmag") boolValue]; } - (void)setAllowsMagnification:(BOOL)f { objc_setAssociatedObject(self, "xef.allowmag", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (CGFloat)magnification { NSNumber *n = objc_getAssociatedObject(self, "xef.mag"); return n ? [n doubleValue] : 1; }
+- (void)setMagnification:(CGFloat)m { NSNumber *lon = objc_getAssociatedObject(self, "xef.minmag"), *hin = objc_getAssociatedObject(self, "xef.maxmag"); CGFloat lo = lon ? [lon doubleValue] : 0.25, hi = hin ? [hin doubleValue] : 4; if (m < lo) m = lo; if (m > hi) m = hi; objc_setAssociatedObject(self, "xef.mag", [NSNumber numberWithDouble:m], OBJC_ASSOCIATION_RETAIN); }   /* stored and clamped; content is not scaled */
 - (BOOL)hasVerticalRuler { return NO; } - (void)setHasVerticalRuler:(BOOL)f {} - (BOOL)hasHorizontalRuler { return NO; } - (void)setHasHorizontalRuler:(BOOL)f {}
 - (BOOL)rulersVisible { return NO; } - (void)setRulersVisible:(BOOL)f {}
 - (NSEdgeInsets)contentInsets { NSEdgeInsets e = {0, 0, 0, 0}; return e; } - (void)setContentInsets:(NSEdgeInsets)e {}
@@ -1173,4 +1174,74 @@ static NSButton *find_button(NSView *v, NSString *key) {
 - (NSInteger)controlTint { return 0; } - (void)setControlTint:(NSInteger)t {} - (NSInteger)entryType { return 0; } - (void)setEntryType:(NSInteger)t {} - (BOOL)isEntryAcceptable:(NSString *)s { return YES; }
 - (void)setFloatingPointFormat:(BOOL)a left:(NSUInteger)l right:(NSUInteger)r {}
 - (NSInteger)mnemonicLocation { return NSNotFound; } - (void)setMnemonicLocation:(NSUInteger)l {} - (NSString *)mnemonic { return @""; } - (void)setTitleWithMnemonic:(NSString *)t { [self setTitle:[t stringByReplacingOccurrencesOfString:@"&" withString:@""]]; }
+@end
+
+/* ---- NSTextField / NSButton / NSView additions ---- */
+@interface NSObject (XEFTextFieldDelegate)
+- (BOOL)control:(NSControl *)c textShouldBeginEditing:(NSText *)t; - (BOOL)control:(NSControl *)c textShouldEndEditing:(NSText *)t;
+- (void)controlTextDidBeginEditing:(NSNotification *)n; - (void)controlTextDidEndEditing:(NSNotification *)n; - (void)controlTextDidChange:(NSNotification *)n;
+@end
+static id XEFCGet(id o, const char *k) { return objc_getAssociatedObject(o, k); }
+static void XEFCSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k, v, OBJC_ASSOCIATION_RETAIN); }
+@implementation NSTextField (XEFMore)
+- (BOOL)textShouldBeginEditing:(NSText *)t { id d = [self delegate]; return [d respondsToSelector:@selector(control:textShouldBeginEditing:)] ? [d control:self textShouldBeginEditing:t] : YES; }
+- (BOOL)textShouldEndEditing:(NSText *)t { id d = [self delegate]; return [d respondsToSelector:@selector(control:textShouldEndEditing:)] ? [d control:self textShouldEndEditing:t] : YES; }
+- (void)_xefNotify:(NSString *)name selector:(SEL)sel from:(NSNotification *)n {
+  NSNotification *c = [NSNotification notificationWithName:name object:self userInfo:@{ @"NSFieldEditor": [n object] ?: [NSNull null] }];
+  [[NSNotificationCenter defaultCenter] postNotification:c]; id d = [self delegate]; if ([d respondsToSelector:sel]) [d performSelector:sel withObject:c]; }
+- (void)textDidBeginEditing:(NSNotification *)n { [self _xefNotify:@"NSControlTextDidBeginEditingNotification" selector:@selector(controlTextDidBeginEditing:) from:n]; }
+- (void)textDidEndEditing:(NSNotification *)n { [self _xefNotify:@"NSControlTextDidEndEditingNotification" selector:@selector(controlTextDidEndEditing:) from:n]; }
+- (void)textDidChange:(NSNotification *)n { [self _xefNotify:@"NSControlTextDidChangeNotification" selector:@selector(controlTextDidChange:) from:n]; }
+- (NSUInteger)lineBreakStrategy { return [XEFCGet(self, "xef.lbs") unsignedIntegerValue]; } - (void)setLineBreakStrategy:(NSUInteger)s { XEFCSet(self, "xef.lbs", [NSNumber numberWithUnsignedInteger:s]); }
+- (BOOL)allowsWritingTools { NSNumber *n = XEFCGet(self, "xef.wt"); return n ? [n boolValue] : YES; } - (void)setAllowsWritingTools:(BOOL)f { XEFCSet(self, "xef.wt", [NSNumber numberWithBool:f]); }
+- (BOOL)allowsWritingToolsAffordance { return [XEFCGet(self, "xef.wta") boolValue]; } - (void)setAllowsWritingToolsAffordance:(BOOL)f { XEFCSet(self, "xef.wta", [NSNumber numberWithBool:f]); }
+- (NSArray *)placeholderStrings { return XEFCGet(self, "xef.phs") ?: @[]; } - (void)setPlaceholderStrings:(NSArray *)a { XEFCSet(self, "xef.phs", [[a copy] autorelease]); }
+- (NSArray *)placeholderAttributedStrings { return XEFCGet(self, "xef.phas") ?: @[]; } - (void)setPlaceholderAttributedStrings:(NSArray *)a { XEFCSet(self, "xef.phas", [[a copy] autorelease]); }
+- (BOOL)resolvesNaturalAlignmentWithBaseWritingDirection { return [XEFCGet(self, "xef.rna") boolValue]; } - (void)setResolvesNaturalAlignmentWithBaseWritingDirection:(BOOL)f { XEFCSet(self, "xef.rna", [NSNumber numberWithBool:f]); }
+- (id)contentType { return XEFCGet(self, "xef.ctype"); } - (void)setContentType:(id)t { XEFCSet(self, "xef.ctype", t); }
+- (BOOL)allowsCharacterPickerTouchBarItem { return [XEFCGet(self, "xef.cp") boolValue]; } - (void)setAllowsCharacterPickerTouchBarItem:(BOOL)f { XEFCSet(self, "xef.cp", [NSNumber numberWithBool:f]); }
++ (NSTextField *)labelWithAttributedString:(NSAttributedString *)a { NSTextField *t = [NSTextField labelWithString:[a string]]; [t setAttributedStringValue:a]; return t; }
+- (void)setTitleWithMnemonic:(NSString *)t { [self setStringValue:[t stringByReplacingOccurrencesOfString:@"&" withString:@""]]; }
+- (BOOL)validateUserInterfaceItem:(id)i { return YES; }
+@end
+@implementation NSButton (XEFMore)
++ (NSButton *)buttonWithTitle:(NSString *)t image:(NSImage *)i target:(id)tg action:(SEL)a { NSButton *b = [NSButton buttonWithTitle:t target:tg action:a]; [b setImage:i]; [b setImagePosition:7]; [b setBezelStyle:0]; return b; }
+- (NSAttributedString *)attributedAlternateTitle { return XEFCGet(self, "xef.aat") ?: [[[NSAttributedString alloc] initWithString:@""] autorelease]; } - (void)setAttributedAlternateTitle:(NSAttributedString *)a { XEFCSet(self, "xef.aat", [[a copy] autorelease]); }
+- (BOOL)isSpringLoaded { return [XEFCGet(self, "xef.spring") boolValue]; } - (void)setSpringLoaded:(BOOL)f { XEFCSet(self, "xef.spring", [NSNumber numberWithBool:f]); }
+- (NSInteger)maxAcceleratorLevel { NSNumber *n = XEFCGet(self, "xef.accel"); return n ? [n integerValue] : 1; } - (void)setMaxAcceleratorLevel:(NSInteger)l { XEFCSet(self, "xef.accel", [NSNumber numberWithInteger:l]); }
+- (void)getPeriodicDelay:(float *)d interval:(float *)i { if (d) *d = 0.4f; if (i) *i = 0.075f; }
+- (NSInteger)tintProminence { return [XEFCGet(self, "xef.tint") integerValue]; } - (void)setTintProminence:(NSInteger)p { XEFCSet(self, "xef.tint", [NSNumber numberWithInteger:p]); }
+- (BOOL)imageHugsTitle { return [XEFCGet(self, "xef.hug") boolValue]; } - (void)setImageHugsTitle:(BOOL)f { XEFCSet(self, "xef.hug", [NSNumber numberWithBool:f]); }
+- (id)symbolConfiguration { return XEFCGet(self, "xef.sym"); } - (void)setSymbolConfiguration:(id)c { XEFCSet(self, "xef.sym", c); }
+- (NSInteger)borderShape { return [XEFCGet(self, "xef.shape") integerValue]; } - (void)setBorderShape:(NSInteger)s { XEFCSet(self, "xef.shape", [NSNumber numberWithInteger:s]); }
+- (NSSize)minimumSizeWithPrioritizedCompressionOptions:(NSArray *)o { return [self fittingSize]; } - (void)compressWithPrioritizedCompressionOptions:(NSArray *)o {} - (id)activeCompressionOptions { return nil; }
+- (void)setTitleWithMnemonic:(NSString *)t { [self setTitle:[t stringByReplacingOccurrencesOfString:@"&" withString:@""]]; } - (BOOL)validateUserInterfaceItem:(id)i { return YES; }
+@end
+@implementation NSView (XEFMore2)
+- (id)appearance { return XEFCGet(self, "xef.appearance"); } - (void)setAppearance:(id)a { XEFCSet(self, "xef.appearance", a); }
+- (id)effectiveAppearance { for (NSView *v = self; v; v = [v superview]) { id a = XEFCGet(v, "xef.appearance"); if (a) return a; } return [[self window] effectiveAppearance] ?: [NSApp effectiveAppearance] ?: [NSClassFromString(@"NSAppearance") performSelector:@selector(currentAppearance)]; }
+- (id)animator { return self; } - (NSDictionary *)animations { return XEFCGet(self, "xef.animations") ?: @{}; } - (void)setAnimations:(NSDictionary *)a { XEFCSet(self, "xef.animations", [[a copy] autorelease]); }
+- (id)animationForKey:(NSString *)k { return [[self animations] objectForKey:k]; } + (id)defaultAnimationForKey:(NSString *)k { return nil; }
+- (BOOL)acceptsTouchEvents { return NO; } - (BOOL)wantsBestResolutionOpenGLSurface { return NO; } - (BOOL)wantsExtendedDynamicRangeOpenGLSurface { return NO; } - (void)setWantsExtendedDynamicRangeOpenGLSurface:(BOOL)f {}
+- (BOOL)lockFocusIfCanDrawInContext:(NSGraphicsContext *)c { return NO; } - (void)scrollRect:(NSRect)r by:(NSSize)d { [self setNeedsDisplay:YES]; }
+- (NSSize)convertSizeToBase:(NSSize)s { return [self convertRect:NSMakeRect(0, 0, s.width, s.height) toView:nil].size; } - (NSSize)convertSizeFromBase:(NSSize)s { return [self convertRect:NSMakeRect(0, 0, s.width, s.height) fromView:nil].size; }
+- (BOOL)performMnemonic:(NSString *)s { return NO; } - (BOOL)shouldDrawColor { return YES; }
+- (NSInteger)gState { return 0; } - (void)allocateGState {} - (void)releaseGState {} - (void)setUpGState {} - (void)renewGState {}
+- (void)drawSheetBorderWithSize:(NSSize)s {} - (BOOL)dragFile:(NSString *)f fromRect:(NSRect)r slideBack:(BOOL)b event:(NSEvent *)e { return NO; } - (BOOL)dragPromisedFilesOfTypes:(NSArray *)t fromRect:(NSRect)r source:(id)s slideBack:(BOOL)b event:(NSEvent *)e { return NO; }
+- (void)dragImage:(NSImage *)i at:(NSPoint)p offset:(NSSize)o event:(NSEvent *)e pasteboard:(id)pb source:(id)s slideBack:(BOOL)b {}
+@end
+
+@implementation NSScrollView (XEFMore)
+- (CGFloat)minMagnification { NSNumber *n = XEFCGet(self, "xef.minmag"); return n ? [n doubleValue] : 0.25; } - (void)setMinMagnification:(CGFloat)m { XEFCSet(self, "xef.minmag", [NSNumber numberWithDouble:m]); }
+- (CGFloat)maxMagnification { NSNumber *n = XEFCGet(self, "xef.maxmag"); return n ? [n doubleValue] : 4; } - (void)setMaxMagnification:(CGFloat)m { XEFCSet(self, "xef.maxmag", [NSNumber numberWithDouble:m]); }
+- (void)setMagnification:(CGFloat)m centeredAtPoint:(NSPoint)p { [self setMagnification:m]; }
+- (void)magnifyToFitRect:(NSRect)r { NSSize c = [[self contentView] bounds].size; if (r.size.width <= 0 || r.size.height <= 0) return; [self setMagnification:MIN(c.width / r.size.width, c.height / r.size.height)]; }
+- (CGFloat)horizontalPageScroll { NSNumber *n = XEFCGet(self, "xef.hps"); return n ? [n doubleValue] : 10; } - (CGFloat)verticalPageScroll { NSNumber *n = XEFCGet(self, "xef.vps"); return n ? [n doubleValue] : 10; }
+- (NSCursor *)documentCursor { return XEFCGet(self, "xef.cursor"); } - (void)setDocumentCursor:(NSCursor *)c { XEFCSet(self, "xef.cursor", c); }
+- (void)addFloatingSubview:(NSView *)v forAxis:(NSInteger)a { [self addSubview:v]; }
+- (void)setFindBarView:(NSView *)v { XEFCSet(self, "xef.findbar", v); } - (BOOL)isFindBarVisible { return NO; } - (void)findBarViewDidChangeHeight {}
+- (NSInteger)findBarPosition { return [XEFCGet(self, "xef.fbpos") integerValue]; } - (void)setFindBarPosition:(NSInteger)p { XEFCSet(self, "xef.fbpos", [NSNumber numberWithInteger:p]); }
++ (Class)rulerViewClass { return XEFCGet([NSScrollView class], "xef.rulerClass") ?: NSClassFromString(@"NSRulerView"); } + (void)setRulerViewClass:(Class)c { XEFCSet([NSScrollView class], "xef.rulerClass", c); }
+- (id)horizontalRulerView { return XEFCGet(self, "xef.hruler"); } - (void)setHorizontalRulerView:(id)r { XEFCSet(self, "xef.hruler", r); }
+- (id)verticalRulerView { return XEFCGet(self, "xef.vruler"); } - (void)setVerticalRulerView:(id)r { XEFCSet(self, "xef.vruler", r); }
 @end

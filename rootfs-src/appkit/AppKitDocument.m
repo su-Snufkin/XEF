@@ -627,3 +627,21 @@ static const XEFType *XEFTypeForExt(NSString *e) {
 - (void)encodeRestorableStateWithCoder:(NSCoder *)c backgroundQueue:(id)q {}
 + (NSArray *)allowedClassesForRestorableStateKeyPath:(NSString *)k { return @[]; }
 @end
+
+@implementation NSWorkspace (XEFDeprecated)
+- (BOOL)openTempFile:(NSString *)p { return [[NSFileManager defaultManager] fileExistsAtPath:p] ? [self openFile:p] : NO; }
+- (BOOL)getInfoForFile:(NSString *)p application:(NSString **)a type:(NSString **)t { BOOL d = NO; if (![[NSFileManager defaultManager] fileExistsAtPath:p isDirectory:&d]) return NO; if (a) *a = nil; if (t) *t = d ? @"" : [p pathExtension]; return YES; }
+- (BOOL)launchApplication:(NSString *)n showIcon:(BOOL)i autolaunch:(BOOL)a { return [self launchApplication:n]; }
+- (BOOL)launchAppWithBundleIdentifier:(NSString *)b options:(NSUInteger)o additionalEventParamDescriptor:(id)d launchIdentifier:(NSNumber **)l { NSString *p = [self absolutePathForAppBundleWithIdentifier:b]; return p ? [self openFile:p] : NO; }
+- (NSRunningApplication *)launchApplicationAtURL:(NSURL *)u options:(NSUInteger)o configuration:(NSDictionary *)c error:(NSError **)e { if (e) *e = [NSError errorWithDomain:NSCocoaErrorDomain code:256 userInfo:nil]; return nil; }
+- (NSRunningApplication *)openURL:(NSURL *)u options:(NSUInteger)o configuration:(NSDictionary *)c error:(NSError **)e { return [self openURL:u] ? [NSRunningApplication currentApplication] : nil; }
+- (NSRunningApplication *)openURLs:(NSArray *)us withApplicationAtURL:(NSURL *)a options:(NSUInteger)o configuration:(NSDictionary *)c error:(NSError **)e { for (NSURL *u in us) [self openURL:u]; return [NSRunningApplication currentApplication]; }
+- (BOOL)openFile:(NSString *)p fromImage:(NSImage *)i at:(NSPoint)pt inView:(NSView *)v { return [self openFile:p]; }
+- (BOOL)performFileOperation:(NSString *)op source:(NSString *)s destination:(NSString *)d files:(NSArray *)f tag:(NSInteger *)t { if (t) *t = 0; return NO; }
+- (void)slideImage:(NSImage *)i from:(NSPoint)a to:(NSPoint)b {} - (void)findApplications {} - (void)noteUserDefaultsChanged {} - (void)checkForRemovableMedia {} - (void)fileSystemChanged {} - (void)userDefaultsChanged {} - (void)mountNewRemovableMedia {}
+- (NSInteger)extendPowerOffBy:(NSInteger)s { return s; }
+- (void)setDefaultApplicationAtURL:(NSURL *)a toOpenContentTypeOfFileAtURL:(NSURL *)f completionHandler:(void (^)(NSError *))h { if (h) h(nil); }
+- (void)setDefaultApplicationAtURL:(NSURL *)a toOpenURLsWithScheme:(NSString *)s completionHandler:(void (^)(NSError *))h { if (h) h(nil); }
+- (void)setDefaultApplicationAtURL:(NSURL *)a toOpenFileAtURL:(NSURL *)f completionHandler:(void (^)(NSError *))h { if (h) h(nil); }
+- (void)setDefaultApplicationAtURL:(NSURL *)a toOpenContentType:(id)t completionHandler:(void (^)(NSError *))h { if (h) h(nil); }
+@end

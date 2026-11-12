@@ -1016,3 +1016,13 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   (próbkowanie alfy), przestarzałe `compositeToPoint:…`, `dissolveToPoint:fromRect:fraction:`, symbole SF (`imageWithSystemSymbolName:variableValue:…` → nil).
 - Stan: **5576 z 8257** metod prawdziwych; `macref.sh` 38/38.
 
+### 30. NSTextField, NSButton, NSView, NSScrollView, NSTableView, NSWorkspace — uzupełnienia (2026-11-12)
+- `AppKitControls.m`, `AppKitTable.m`, `AppKitDocument.m`; testy `appkit_controls2.m` i `appkit_scroll2.m` zgodne z Makiem.
+  **NSTextField**: wywołania delegata edycji (`textDidBeginEditing:` → powiadomienie + `controlTextDidBeginEditing:`, analogicznie koniec i zmiana; `textShouldBegin/EndEditing:` pyta delegata), `placeholderStrings`,
+  `lineBreakStrategy`, `+labelWithAttributedString:`. **NSButton**: `+buttonWithTitle:image:target:action:` (bezel 0 jak u Maca), `maxAcceleratorLevel` (1), `springLoaded`, `tintProminence`, `imageHugsTitle`, `borderShape`,
+  opóźnienie okresowe 0.4/0.075. **NSView**: `appearance`/`effectiveAppearance` (dziedziczone po przodkach, potem okno/aplikacja), `animator` (zmiany od razu), `convertSizeToBase:`, stare API gState.
+  **NSScrollView**: **limity powiększenia** (min 0.25, max 4; `setMagnification:` przycina i zapamiętuje, **ale treść nie jest skalowana**), `magnifyToFitRect:`, `documentCursor`, strony przewijania (10), `rulerViewClass`,
+  linijki (tylko przechowywane), pasek wyszukiwania (tylko pozycja). **NSTableView**: `focusedColumn`, `drawsGrid`, enumeratory zaznaczenia, `textShouldBegin/EndEditing:`.
+  **NSWorkspace**: przestarzałe API uruchamiania (`launchApplication:`, `openTempFile:`, `getInfoForFile:…` — zgodnie z Makiem zwracają NO dla nieistniejących).
+- Stan: **5715 z 8257** metod prawdziwych; `macref.sh` 40/40; pełny `run_tests.sh` przechodzi.
+

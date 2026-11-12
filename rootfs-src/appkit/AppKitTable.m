@@ -735,3 +735,24 @@ INTP(draggingDestinationFeedbackStyle, setDraggingDestinationFeedbackStyle, _dra
   else if (k == 123 && item) { if ([self isItemExpanded:item]) [self collapseItem:item]; else { NSInteger pr = [self rowForItem:[self parentForItem:item]]; if (pr >= 0) [self selectRowIndexes:[NSIndexSet indexSetWithIndex:pr] byExtendingSelection:NO]; } }
   else [super keyDown:e]; }
 @end
+
+static id XEFCGet(id o, const char *k) { return objc_getAssociatedObject(o, k); }
+static void XEFCSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k, v, OBJC_ASSOCIATION_RETAIN); }
+@interface NSObject (XEFTableTextDelegate)
+- (BOOL)control:(id)c textShouldBeginEditing:(id)t; - (BOOL)control:(id)c textShouldEndEditing:(id)t;
+@end
+@implementation NSTableView (XEFMore)
+- (NSInteger)focusedColumn { NSNumber *n = XEFCGet(self, "xef.fcol"); return n ? [n integerValue] : -1; } - (void)setFocusedColumn:(NSInteger)c { XEFCSet(self, "xef.fcol", [NSNumber numberWithInteger:c]); }
+- (BOOL)autoresizesAllColumnsToFit { return [XEFCGet(self, "xef.autoall") boolValue]; } - (void)setAutoresizesAllColumnsToFit:(BOOL)f { XEFCSet(self, "xef.autoall", [NSNumber numberWithBool:f]); }
+- (BOOL)drawsGrid { return [self gridStyleMask] != 0; } - (void)setDrawsGrid:(BOOL)f { [self setGridStyleMask:f ? 3 : 0]; }
+- (BOOL)textShouldBeginEditing:(NSText *)t { id d = [self delegate]; return [d respondsToSelector:@selector(control:textShouldBeginEditing:)] ? [d control:self textShouldBeginEditing:t] : YES; }
+- (BOOL)textShouldEndEditing:(NSText *)t { id d = [self delegate]; return [d respondsToSelector:@selector(control:textShouldEndEditing:)] ? [d control:self textShouldEndEditing:t] : YES; }
+- (void)textDidBeginEditing:(NSNotification *)n {} - (void)textDidEndEditing:(NSNotification *)n {} - (void)textDidChange:(NSNotification *)n {}
+- (BOOL)shouldFocusCell:(NSCell *)c atColumn:(NSInteger)col row:(NSInteger)r { return YES; } - (void)performClickOnCellAtColumn:(NSInteger)c row:(NSInteger)r { [self selectRowIndexes:[NSIndexSet indexSetWithIndex:r] byExtendingSelection:NO]; }
+- (void)selectColumn:(NSInteger)c byExtendingSelection:(BOOL)e { [self selectColumnIndexes:[NSIndexSet indexSetWithIndex:c] byExtendingSelection:e]; }
+- (NSEnumerator *)selectedColumnEnumerator { NSMutableArray *a = [NSMutableArray array]; [[self selectedColumnIndexes] enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *s) { [a addObject:@(i)]; }]; return [a objectEnumerator]; }
+- (NSEnumerator *)selectedRowEnumerator { NSMutableArray *a = [NSMutableArray array]; [[self selectedRowIndexes] enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *s) { [a addObject:@(i)]; }]; return [a objectEnumerator]; }
+- (NSImage *)dragImageForRows:(NSArray *)r event:(NSEvent *)e dragImageOffset:(NSPointPointer)o { return nil; }
+- (void)didAddRowView:(NSTableRowView *)v forRow:(NSInteger)r {} - (void)didRemoveRowView:(NSTableRowView *)v forRow:(NSInteger)r {}
+- (BOOL)validateUserInterfaceItem:(id)i { return YES; } - (NSUInteger)draggingSession:(id)s sourceOperationMaskForDraggingContext:(NSInteger)c { return 1; }
+@end
