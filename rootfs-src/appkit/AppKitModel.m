@@ -1728,3 +1728,27 @@ static NSInteger g_speaking_count;
 - (void)addSpeechDictionary:(NSDictionary *)d {} - (NSString *)phonemesFromText:(NSString *)t { return t; }
 - (id)objectForProperty:(NSString *)p error:(NSError **)e { return _props[p]; } - (BOOL)setObject:(id)o forProperty:(NSString *)p error:(NSError **)e { if (o) _props[p] = o; else [_props removeObjectForKey:p]; return YES; }
 @end
+
+/* ================================================================== NSScrubber */
+@interface NSObject (XEFScrubberDataSource) - (NSInteger)numberOfItemsForScrubber:(id)s; @end
+@implementation NSScrubber
+- (id)initWithFrame:(NSRect)f { if ((self = [super initWithFrame:f])) { _sel = _high = -1; _classes = [[NSMutableDictionary alloc] init]; Class fl = NSClassFromString(@"NSScrubberFlowLayout"); if (fl) _layout = [[fl alloc] init]; } return self; }
+- (void)dealloc { [_classes release]; [_layout release]; [_bgView release]; [super dealloc]; }
+- (id)dataSource { return _ds; } - (void)setDataSource:(id)d { _ds = d; } - (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (id)scrubberLayout { return _layout; } - (void)setScrubberLayout:(id)l { [l retain]; [_layout release]; _layout = l; }
+- (NSInteger)numberOfItems { return _count; } - (NSInteger)highlightedIndex { return _high; }
+- (NSInteger)selectedIndex { return _sel; }
+- (void)setSelectedIndex:(NSInteger)i { if ([_ds respondsToSelector:@selector(numberOfItemsForScrubber:)]) _count = [_ds numberOfItemsForScrubber:self]; _sel = (i >= 0 && i < _count) ? i : -1; }
+- (NSInteger)mode { return _mode; } - (void)setMode:(NSInteger)m { _mode = m; } - (NSInteger)itemAlignment { return _align; } - (void)setItemAlignment:(NSInteger)a { _align = a; }
+- (BOOL)isContinuous { return _continuous; } - (void)setContinuous:(BOOL)f { _continuous = f; } - (BOOL)floatsSelectionViews { return _floats; } - (void)setFloatsSelectionViews:(BOOL)f { _floats = f; }
+- (BOOL)showsArrowButtons { return _arrows; } - (void)setShowsArrowButtons:(BOOL)f { _arrows = f; } - (BOOL)showsAdditionalContentIndicators { return _additional; } - (void)setShowsAdditionalContentIndicators:(BOOL)f { _additional = f; }
+- (id)selectionBackgroundStyle { return nil; } - (void)setSelectionBackgroundStyle:(id)s {} - (id)selectionOverlayStyle { return nil; } - (void)setSelectionOverlayStyle:(id)s {}
+- (void)setBackgroundColor:(NSColor *)c { objc_setAssociatedObject(self, "xef.bg", c, OBJC_ASSOCIATION_RETAIN); } - (id)backgroundView { return _bgView; } - (void)setBackgroundView:(id)v { [v retain]; [_bgView release]; _bgView = v; }
+- (void)reloadData { _count = [_ds respondsToSelector:@selector(numberOfItemsForScrubber:)] ? [_ds numberOfItemsForScrubber:self] : 0; if (_sel >= _count) _sel = -1; if (_high >= _count) _high = -1; }
+- (void)performSequentialBatchUpdates:(void (^)(void))b { if (b) b(); [self reloadData]; }
+- (void)insertItemsAtIndexes:(NSIndexSet *)i { [self reloadData]; } - (void)removeItemsAtIndexes:(NSIndexSet *)i { [self reloadData]; } - (void)reloadItemsAtIndexes:(NSIndexSet *)i {} - (void)moveItemAtIndex:(NSInteger)a toIndex:(NSInteger)b {}
+- (void)scrollItemAtIndex:(NSInteger)i toAlignment:(NSInteger)a {}
+- (id)itemViewForItemAtIndex:(NSInteger)i { return nil; }   /* items are only created while visible, and nothing is laid out */
+- (void)registerClass:(Class)c forItemIdentifier:(NSString *)i { if (c) _classes[i] = c; else [_classes removeObjectForKey:i]; } - (void)registerNib:(id)n forItemIdentifier:(NSString *)i {}
+- (id)makeItemWithIdentifier:(NSString *)i owner:(id)o { Class c = _classes[i]; return c ? [[[c alloc] initWithFrame:NSZeroRect] autorelease] : nil; }
+@end

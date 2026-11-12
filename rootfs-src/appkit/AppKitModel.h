@@ -231,3 +231,11 @@
 @interface NSSpeechSynthesizer : NSObject { @public id _delegate; NSString *_voice; float _rate, _volume; BOOL _speaking, _feedback; NSTimer *_timer; NSMutableDictionary *_props; }
 - (BOOL)startSpeakingString:(NSString *)s; - (void)stopSpeaking; - (BOOL)isSpeaking;
 @end
+
+/* NSScrubber: data source bookkeeping, item reuse and selection (nothing is laid out or shown) */
+@interface NSScrubber : NSView {
+@public
+  id _ds, _delegate, _layout, _bgView; NSInteger _count, _sel, _high, _mode, _align; BOOL _continuous, _floats, _arrows, _additional; NSMutableDictionary *_classes; NSInteger _selStyle, _overlay;
+}
+- (NSInteger)numberOfItems; - (void)reloadData;
+@end

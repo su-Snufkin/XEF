@@ -1071,3 +1071,9 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   używa `initWithIdentifier:`. Przechwycono 208 wartości (50 różnych od zera). Skrypt nie nadpisuje tabeli, gdy nic nie przechwycił.
 - Stan: **5938 z 8257** metod prawdziwych; `macref.sh` 48/48.
 
+### 36. NSScrubber (2026-11-12)
+- `AppKitModel.m`, `appkit_scrubber.m` zgodny z Makiem: źródło danych (`numberOfItemsForScrubber:`, odczytywane przy `reloadData` i `setSelectedIndex:`), `selectedIndex` (-1; poza zakresem po przeładowaniu wraca do -1; **delegat nie jest wołany**
+  przy ustawianiu programowym), `mode`/`itemAlignment`/`continuous` i pozostałe flagi, domyślny `scrubberLayout` (`NSScrubberFlowLayout`), rejestr klas elementów (`registerClass:forItemIdentifier:`, `makeItemWithIdentifier:owner:`
+  zwraca instancję zarejestrowanej klasy, nil dla nieznanego identyfikatora). `itemViewForItemAtIndex:` zawsze nil (na Macu też, dopóki element nie jest widoczny) — **nic nie jest układane ani wyświetlane**.
+- Stan: **~5960 z 8257** metod prawdziwych (patrz `tools/appkit_gap.sh`).
+

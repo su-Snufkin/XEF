@@ -280,8 +280,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPreviewRepresentingActivityItem @end
 @interface NSPrintPanel : NSObject @end
 @implementation NSPrintPanel @end
-@interface NSScrubber : NSView @end
-@implementation NSScrubber @end
 @interface NSScrubberArrangedView : NSView @end
 @implementation NSScrubberArrangedView @end
 @interface NSScrubberLayout : NSObject @end
@@ -1787,49 +1785,6 @@ static const GenEntry kTable[] = {
 {"NSScroller", '-', "trackKnob:", 'D', 'v', "@"},
 {"NSScroller", '-', "trackScrollButtons:", 'D', 'v', "@"},
 {"NSScroller", '-', "usableParts", 'D', 'q', ""},
-{"NSScrubber", '-', "backgroundColor", 'G', '@', ""},
-{"NSScrubber", '-', "backgroundView", 'G', '@', ""},
-{"NSScrubber", '-', "dataSource", 'G', '@', ""},
-{"NSScrubber", '-', "delegate", 'G', '@', ""},
-{"NSScrubber", '-', "floatsSelectionViews", 'G', 'B', ""},
-{"NSScrubber", '-', "highlightedIndex", 'D', 'q', ""},
-{"NSScrubber", '-', "initWithCoder:", 'I', '@', "@"},
-{"NSScrubber", '-', "initWithFrame:", 'I', '@', "R"},
-{"NSScrubber", '-', "insertItemsAtIndexes:", 'D', 'v', "@"},
-{"NSScrubber", '-', "isContinuous", 'G', 'B', ""},
-{"NSScrubber", '-', "itemAlignment", 'G', 'q', ""},
-{"NSScrubber", '-', "itemViewForItemAtIndex:", 'D', '@', "q"},
-{"NSScrubber", '-', "makeItemWithIdentifier:owner:", 'D', '@', "q@"},
-{"NSScrubber", '-', "mode", 'G', 'q', ""},
-{"NSScrubber", '-', "moveItemAtIndex:toIndex:", 'D', 'v', "qq"},
-{"NSScrubber", '-', "numberOfItems", 'D', 'q', ""},
-{"NSScrubber", '-', "performSequentialBatchUpdates:", 'D', 'v', "q"},
-{"NSScrubber", '-', "registerClass:forItemIdentifier:", 'D', 'v', "#q"},
-{"NSScrubber", '-', "registerNib:forItemIdentifier:", 'D', 'v', "@q"},
-{"NSScrubber", '-', "reloadData", 'D', 'v', ""},
-{"NSScrubber", '-', "reloadItemsAtIndexes:", 'D', 'v', "@"},
-{"NSScrubber", '-', "removeItemsAtIndexes:", 'D', 'v', "@"},
-{"NSScrubber", '-', "scrollItemAtIndex:toAlignment:", 'D', 'v', "qq"},
-{"NSScrubber", '-', "scrubberLayout", 'G', '@', ""},
-{"NSScrubber", '-', "selectedIndex", 'G', 'q', ""},
-{"NSScrubber", '-', "selectionBackgroundStyle", 'G', '@', ""},
-{"NSScrubber", '-', "selectionOverlayStyle", 'G', '@', ""},
-{"NSScrubber", '-', "setBackgroundColor:", 'S', 'v', "@"},
-{"NSScrubber", '-', "setBackgroundView:", 'S', 'v', "@"},
-{"NSScrubber", '-', "setContinuous:", 'S', 'v', "B"},
-{"NSScrubber", '-', "setDataSource:", 'S', 'v', "@"},
-{"NSScrubber", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSScrubber", '-', "setFloatsSelectionViews:", 'S', 'v', "B"},
-{"NSScrubber", '-', "setItemAlignment:", 'S', 'v', "q"},
-{"NSScrubber", '-', "setMode:", 'S', 'v', "q"},
-{"NSScrubber", '-', "setScrubberLayout:", 'S', 'v', "@"},
-{"NSScrubber", '-', "setSelectedIndex:", 'S', 'v', "q"},
-{"NSScrubber", '-', "setSelectionBackgroundStyle:", 'S', 'v', "@"},
-{"NSScrubber", '-', "setSelectionOverlayStyle:", 'S', 'v', "@"},
-{"NSScrubber", '-', "setShowsAdditionalContentIndicators:", 'S', 'v', "B"},
-{"NSScrubber", '-', "setShowsArrowButtons:", 'S', 'v', "B"},
-{"NSScrubber", '-', "showsAdditionalContentIndicators", 'G', 'B', ""},
-{"NSScrubber", '-', "showsArrowButtons", 'G', 'B', ""},
 {"NSScrubberArrangedView", '-', "applyLayoutAttributes:", 'D', 'v', "@"},
 {"NSScrubberArrangedView", '-', "isHighlighted", 'G', 'B', ""},
 {"NSScrubberArrangedView", '-', "isSelected", 'G', 'B', ""},
@@ -2817,7 +2772,6 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSPDFPanel", "defaultFileName", '@', "Untitled"},
 {"NSPickerTouchBarItem", "isEnabled", 'B', "1"},
 {"NSPrintPanel", "options", 'q', "3"},
-{"NSScrubber", "highlightedIndex", 'q', "-1"},
 {"NSScrubberFlowLayout", "itemSize", 'S', "50,30"},
 {"NSScrubberLayout", "automaticallyMirrorsInRightToLeftLayout", 'B', "1"},
 {"NSScrubberLayoutAttributes", "itemIndex", 'q', "-1"},
@@ -2842,7 +2796,7 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSWritingToolsCoordinator", "behavior", 'q', "1"},
 {"NSWritingToolsCoordinator", "resultOptions", 'q', "15"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 50;
+const unsigned long kDefaultsCount = 49;
 
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }
