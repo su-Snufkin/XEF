@@ -1741,3 +1741,65 @@ static NSTimer *g_periodic_timer; static BOOL g_coalesce = YES;
 - (void)trackSwipeEventWithOptions:(NSUInteger)o dampenAmountThresholdMin:(CGFloat)mn max:(CGFloat)mx usingHandler:(void (^)(CGFloat, NSInteger, BOOL, BOOL *))h {}
 + (id)eventWithEventRef:(const void *)r { return nil; } + (id)eventWithCGEvent:(void *)c { return nil; }
 @end
+
+/* ---- NSSavePanel properties / legacy API and NSMenu extras ---- */
+static id XEFGet(id o, const char *k) { return objc_getAssociatedObject(o, k); }
+static void XEFSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k, v, OBJC_ASSOCIATION_RETAIN); }
+static BOOL XEFFlag(id o, const char *k, BOOL def) { NSNumber *n = XEFGet(o, k); return n ? [n boolValue] : def; }
+@implementation NSSavePanel (XEFMore)
+- (NSString *)identifier { return XEFGet(self, "xef.identifier"); } - (void)setIdentifier:(NSString *)i { XEFSet(self, "xef.identifier", [[i copy] autorelease]); }
+- (id)accessoryView { return XEFGet(self, "xef.accessory"); } - (void)setAccessoryView:(id)v { XEFSet(self, "xef.accessory", v); }
+- (id)currentContentType { return XEFGet(self, "xef.ctype"); } - (void)setCurrentContentType:(id)t { XEFSet(self, "xef.ctype", t); }
+- (BOOL)isExpanded { return XEFFlag(self, "xef.expanded", NO); }
+- (BOOL)canSelectHiddenExtension { return XEFFlag(self, "xef.canHide", NO); } - (void)setCanSelectHiddenExtension:(BOOL)f { XEFSet(self, "xef.canHide", [NSNumber numberWithBool:f]); }
+- (BOOL)isExtensionHidden { return XEFFlag(self, "xef.extHidden", YES); } - (void)setExtensionHidden:(BOOL)f { XEFSet(self, "xef.extHidden", [NSNumber numberWithBool:f]); }
+- (BOOL)treatsFilePackagesAsDirectories { return XEFFlag(self, "xef.pkgDirs", NO); } - (void)setTreatsFilePackagesAsDirectories:(BOOL)f { XEFSet(self, "xef.pkgDirs", [NSNumber numberWithBool:f]); }
+- (BOOL)showsHiddenFiles { return XEFFlag(self, "xef.hidden", NO); } - (void)setShowsHiddenFiles:(BOOL)f { XEFSet(self, "xef.hidden", [NSNumber numberWithBool:f]); }
+- (BOOL)showsTagField { return XEFFlag(self, "xef.tagField", YES); } - (void)setShowsTagField:(BOOL)f { XEFSet(self, "xef.tagField", [NSNumber numberWithBool:f]); }
+- (BOOL)showsContentTypes { return XEFFlag(self, "xef.ctypes", NO); } - (void)setShowsContentTypes:(BOOL)f { XEFSet(self, "xef.ctypes", [NSNumber numberWithBool:f]); }
+- (NSString *)nameFieldLabel { return XEFGet(self, "xef.nameLabel") ?: @"Save As:"; } - (void)setNameFieldLabel:(NSString *)l { XEFSet(self, "xef.nameLabel", [[l copy] autorelease]); }
+- (NSArray *)tagNames { return [self showsTagField] ? (XEFGet(self, "xef.tags") ?: @[]) : @[]; } - (void)setTagNames:(NSArray *)t { XEFSet(self, "xef.tags", [[t copy] autorelease]); }
+- (void)validateVisibleColumns {} - (void)selectText:(id)s {}
+- (void)ok:(id)s { [NSApp stopModalWithCode:NSModalResponseOK]; } - (void)cancel:(id)s { [NSApp stopModalWithCode:NSModalResponseCancel]; }
+/* the deprecated file-name API maps onto the URL-based one */
+- (NSString *)filename { return [[self URL] path]; }
+- (NSString *)directory { return [[self directoryURL] path]; } - (void)setDirectory:(NSString *)d { [self setDirectoryURL:d ? [NSURL fileURLWithPath:d] : nil]; }
+- (NSString *)requiredFileType { return [[self allowedFileTypes] firstObject]; } - (void)setRequiredFileType:(NSString *)t { [self setAllowedFileTypes:t ? @[t] : nil]; }
+- (NSInteger)runModalForDirectory:(NSString *)d file:(NSString *)f { if (d) [self setDirectory:d]; if (f) [self setNameFieldStringValue:f]; return [self runModal]; }
+- (void)beginSheetForDirectory:(NSString *)d file:(NSString *)f modalForWindow:(NSWindow *)w modalDelegate:(id)dl didEndSelector:(SEL)sel contextInfo:(void *)ci {
+  NSInteger r = [self runModalForDirectory:d file:f];
+  if (dl && sel) ((void (*)(id, SEL, id, NSInteger, void *))objc_msgSend)(dl, sel, self, r, ci); }
+@end
+@implementation NSOpenPanel (XEFLegacy)
+- (NSArray *)filenames { NSMutableArray *a = [NSMutableArray array]; for (NSURL *u in [self URLs]) [a addObject:[u path]]; return a; }
+- (NSInteger)runModalForDirectory:(NSString *)d file:(NSString *)f types:(NSArray *)t { if (t) [self setAllowedFileTypes:t]; return [self runModalForDirectory:d file:f]; }
+- (NSInteger)runModalForTypes:(NSArray *)t { if (t) [self setAllowedFileTypes:t]; return [self runModal]; }
+@end
+
+@implementation NSMenu (XEFMore)
+- (NSString *)identifier { return XEFGet(self, "xef.identifier"); } - (void)setIdentifier:(NSString *)i { XEFSet(self, "xef.identifier", [[i copy] autorelease]); }
+- (id)appearance { return XEFGet(self, "xef.appearance"); } - (void)setAppearance:(id)a { XEFSet(self, "xef.appearance", a); }
+- (id)effectiveAppearance { return [self appearance] ?: [NSApp appearance]; }
+- (BOOL)allowsContextMenuPlugIns { return XEFFlag(self, "xef.plugins", YES); } - (void)setAllowsContextMenuPlugIns:(BOOL)f { XEFSet(self, "xef.plugins", [NSNumber numberWithBool:f]); }
+- (BOOL)automaticallyInsertsWritingToolsItems { return XEFFlag(self, "xef.wt", YES); } - (void)setAutomaticallyInsertsWritingToolsItems:(BOOL)f { XEFSet(self, "xef.wt", [NSNumber numberWithBool:f]); }
+- (CGFloat)menuBarHeight { return 24; }
+- (NSInteger)presentationStyle { return [XEFGet(self, "xef.style") integerValue]; } - (void)setPresentationStyle:(NSInteger)s { XEFSet(self, "xef.style", [NSNumber numberWithInteger:s]); }
+- (NSInteger)selectionMode { return [XEFGet(self, "xef.selMode") integerValue]; } - (void)setSelectionMode:(NSInteger)m { XEFSet(self, "xef.selMode", [NSNumber numberWithInteger:m]); }
+- (NSArray *)selectedItems { NSMutableArray *a = [NSMutableArray array]; for (NSMenuItem *i in [self itemArray]) if ([i state] == 1) [a addObject:i]; return a; }
+- (void)setSelectedItems:(NSArray *)s { for (NSMenuItem *i in [self itemArray]) [i setState:[s containsObject:i] ? 1 : 0]; }
+- (BOOL)menuChangedMessagesEnabled { return XEFFlag(self, "xef.changeMsgs", NO); } - (void)setMenuChangedMessagesEnabled:(BOOL)f { XEFSet(self, "xef.changeMsgs", [NSNumber numberWithBool:f]); }
+- (BOOL)isTornOff { return NO; } - (BOOL)isAttached { return NO; } - (NSMenu *)attachedMenu { return nil; }
+- (void)sizeToFit {} - (NSPoint)locationForSubmenu:(NSMenu *)m { return NSZeroPoint; } - (void)helpRequested:(NSEvent *)e {} - (void)submenuAction:(id)s {}
+- (NSArray *)propertiesToUpdate { return @[]; }
+- (id)menuRepresentation { return XEFGet(self, "xef.rep"); } - (void)setMenuRepresentation:(id)r { XEFSet(self, "xef.rep", r); }
+- (id)contextMenuRepresentation { return XEFGet(self, "xef.crep"); } - (void)setContextMenuRepresentation:(id)r { XEFSet(self, "xef.crep", r); }
+- (id)tearOffMenuRepresentation { return XEFGet(self, "xef.trep"); } - (void)setTearOffMenuRepresentation:(id)r { XEFSet(self, "xef.trep", r); }
++ (NSZone *)menuZone { return NULL; } + (void)setMenuZone:(NSZone *)z {}
++ (NSMenu *)paletteMenuWithColors:(NSArray *)colors titles:(NSArray *)titles templateImage:(NSImage *)tpl selectionHandler:(void (^)(NSMenu *))h {
+  NSMenu *m = [[[NSMenu alloc] initWithTitle:@""] autorelease];
+  for (NSUInteger i = 0; i < [colors count]; i++) {
+    NSMenuItem *it = [m addItemWithTitle:i < [titles count] ? titles[i] : @"" action:NULL keyEquivalent:@""];
+    NSImage *sw = [[[NSImage alloc] initWithSize:NSMakeSize(16, 16)] autorelease]; [sw lockFocus]; [colors[i] set]; NSRectFill(NSMakeRect(0, 0, 16, 16)); [sw unlockFocus]; [it setImage:sw]; }
+  [m setPresentationStyle:1]; [m setSelectionMode:1]; XEFSet(m, "xef.handler", [[h copy] autorelease]); return m; }
++ (NSMenu *)paletteMenuWithColors:(NSArray *)colors titles:(NSArray *)titles selectionHandler:(void (^)(NSMenu *))h { return [self paletteMenuWithColors:colors titles:titles templateImage:nil selectionHandler:h]; }
+@end

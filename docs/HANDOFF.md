@@ -939,3 +939,11 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `attributedString`, `fillBackgroundRectArray:…`, `underline/strikethroughGlyphRange:…`, `showAttachmentCell:…`; settery układu (`setLineFragmentRect:…`, `setLocation:…`) przyjmowane bez efektu.
 - Stan: **5049 z 8257** metod prawdziwych; `macref.sh` 24/24; pełny `run_tests.sh` przechodzi (metal_test pominięty bez Vulkana).
 
+### 21. NSMenu i NSSavePanel — uzupełnienia (2026-11-12)
+- `AppKit.m` (kategorie `XEFMore`/`XEFLegacy`), `appkit_menu_panel.m` zgodny z Makiem: **NSSavePanel** — `identifier`, `accessoryView`, `nameFieldLabel` ("Save As:"), `extensionHidden` (domyślnie YES),
+  `canSelectHiddenExtension`, `treatsFilePackagesAsDirectories`, `showsHiddenFiles`, `showsTagField` (YES), `tagNames` (puste, gdy pole tagów ukryte — jak u Maca), przestarzałe
+  `filename/directory/requiredFileType/runModalForDirectory:file:/beginSheetForDirectory:…` (mapowane na API URL; `beginSheet…` jest synchroniczne), `NSOpenPanel filenames`. Same właściwości
+  panelu nie zmieniają okna hosta (`xef_host_file_dialog`). **NSMenu** — `identifier`, `presentationStyle`, `selectionMode`, `selectedItems` (stan włączony elementów), `menuChangedMessagesEnabled`
+  (domyślnie NO), `+paletteMenuWithColors:titles:…` (pozycje z próbkami koloru, brak rysowania palety), `menuBarHeight`, `appearance`.
+- Stan: **5123 z 8257** metod prawdziwych; `macref.sh` 25/25.
+
