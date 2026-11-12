@@ -979,3 +979,11 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   (popupy, przyciski +/−) i animacji.
 - Stan: **5294 z 8257** metod prawdziwych; `macref.sh` 29/29.
 
+### 26. NSColor i NSWindow — uzupełnienia (2026-11-12)
+- **NSColor** (`AppKitGraphics.m`, kategoria `XEFMore`, `appkit_color2.m` zgodny z Makiem): komponenty CMYK (`colorWithDeviceCyan:…` zachowuje dokładne wartości CMYK, kolory RGB liczą
+  je wzorem naiwnym — bez profilu kolorów, więc wynik różni się od Apple'owej konwersji), `colorWithColorSpace:hue:saturation:brightness:alpha:`, **kolory wzorcowe** (`colorWithPatternImage:`,
+  `patternImage` — kopia obrazu, `type` = 1; rysowanie wzorem nie jest zaimplementowane), brakujące kolory systemowe, `currentControlTint`. Brak nazw katalogowych (`catalogNameComponent`).
+- **NSWindow** (`AppKit.m`, kategoria `XEFMore`, `appkit_window2.m`): `identifier`, `validateMenuItem:` (`performClose:`/`performMiniaturize:`/`performZoom:` zależne od `styleMask`), `animator`
+  (zmiany stosują się od razu — AppKit animuje, więc odczyt tuż po ustawieniu daje tam starą wartość), `convertBaseToScreen:`, `showsResizeIndicator` (NO) itd.
+- Stan: **5349 z 8257** metod prawdziwych; `macref.sh` 31/31.
+

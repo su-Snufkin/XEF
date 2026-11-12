@@ -181,7 +181,8 @@ void NSShowAnimationEffect(NSUInteger e, NSPoint p, NSSize s, id d, SEL sel, voi
 + (NSColor *)colorWithDeviceWhite:(CGFloat)w alpha:(CGFloat)a { return [self colorWithCalibratedRed:w green:w blue:w alpha:a]; }
 + (NSColor *)colorWithGenericGamma22White:(CGFloat)w alpha:(CGFloat)a { return [self colorWithCalibratedRed:w green:w blue:w alpha:a]; }
 + (NSColor *)colorWithDeviceCyan:(CGFloat)c magenta:(CGFloat)m yellow:(CGFloat)y black:(CGFloat)k alpha:(CGFloat)a {
-  return [self colorWithCalibratedRed:(1 - c) * (1 - k) green:(1 - m) * (1 - k) blue:(1 - y) * (1 - k) alpha:a]; }
+  NSColor *col = [self colorWithCalibratedRed:(1 - c) * (1 - k) green:(1 - m) * (1 - k) blue:(1 - y) * (1 - k) alpha:a];
+  objc_setAssociatedObject(col, "xef.cmyk", @[@(c), @(m), @(y), @(k)], OBJC_ASSOCIATION_RETAIN); return col; }
 + (NSColor *)colorWithCalibratedHue:(CGFloat)h saturation:(CGFloat)s brightness:(CGFloat)v alpha:(CGFloat)a {
   h = fmod(h, 1.0); if (h < 0) h += 1; h *= 6; int i = (int)floor(h); CGFloat f = h - i, p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
   CGFloat rr, gg, bb;
@@ -259,7 +260,7 @@ void NSShowAnimationEffect(NSUInteger e, NSPoint p, NSSize s, id d, SEL sel, voi
 - (NSColor *)colorUsingColorSpaceName:(NSString *)n { return self; }
 - (NSColor *)colorUsingColorSpaceName:(NSString *)n device:(NSDictionary *)d { return self; }
 - (NSColor *)colorUsingType:(NSInteger)t { return self; }
-- (NSInteger)type { return 0; }
+- (NSInteger)type { return objc_getAssociatedObject(self, "xef.pattern") ? 1 : 0; }
 - (NSColor *)colorWithSystemEffect:(NSInteger)e { return self; }
 - (NSString *)colorSpaceName { return @"NSCalibratedRGBColorSpace"; }
 - (id)colorSpace { return [NSColorSpace sRGBColorSpace]; }
@@ -1401,4 +1402,28 @@ static NSMutableArray *XEFRepClasses(void) { if (!g_rep_classes) g_rep_classes =
   if (_handler) ok = ((BOOL (^)(NSRect))_handler)(NSMakeRect(0, 0, s.width, s.height));
   else if (_delegate && _sel) ok = ((BOOL (*)(id, SEL, id))objc_msgSend)(_delegate, _sel, self);
   CGContextRestoreGState(c); return ok; }
+@end
+
+/* ---- NSColor: CMYK components, HSB factory with a colour space, pattern colours, extra system colours ---- */
+@implementation NSColor (XEFMore)
+- (void)_xefCMYK:(CGFloat *)c m:(CGFloat *)m y:(CGFloat *)y k:(CGFloat *)k {
+  NSArray *st = objc_getAssociatedObject(self, "xef.cmyk");
+  if (st) { *c = [st[0] doubleValue]; *m = [st[1] doubleValue]; *y = [st[2] doubleValue]; *k = [st[3] doubleValue]; return; }
+  CGFloat kk = 1 - MAX(r, MAX(g, b)); if (kk >= 1) { *c = *m = *y = 0; *k = 1; return; }
+  *k = kk; *c = (1 - r - kk) / (1 - kk); *m = (1 - g - kk) / (1 - kk); *y = (1 - b - kk) / (1 - kk); }
+- (CGFloat)cyanComponent { CGFloat c, m, y, k; [self _xefCMYK:&c m:&m y:&y k:&k]; return c; } - (CGFloat)magentaComponent { CGFloat c, m, y, k; [self _xefCMYK:&c m:&m y:&y k:&k]; return m; }
+- (CGFloat)yellowComponent { CGFloat c, m, y, k; [self _xefCMYK:&c m:&m y:&y k:&k]; return y; } - (CGFloat)blackComponent { CGFloat c, m, y, k; [self _xefCMYK:&c m:&m y:&y k:&k]; return k; }
+- (void)getCyan:(CGFloat *)c magenta:(CGFloat *)m yellow:(CGFloat *)y black:(CGFloat *)k alpha:(CGFloat *)al { CGFloat cc, mm, yy, kk; [self _xefCMYK:&cc m:&mm y:&yy k:&kk]; if (c) *c = cc; if (m) *m = mm; if (y) *y = yy; if (k) *k = kk; if (al) *al = a; }
++ (NSColor *)colorWithColorSpace:(id)cs hue:(CGFloat)h saturation:(CGFloat)s brightness:(CGFloat)v alpha:(CGFloat)al { return [self colorWithHue:h saturation:s brightness:v alpha:al]; }
++ (NSColor *)colorWithPatternImage:(NSImage *)i { NSColor *c = [NSColor colorWithCalibratedRed:.5 green:.5 blue:.5 alpha:1]; objc_setAssociatedObject(c, "xef.pattern", [[i copy] autorelease], OBJC_ASSOCIATION_RETAIN); return c; }
+- (NSImage *)patternImage { return objc_getAssociatedObject(self, "xef.pattern"); }
++ (NSColor *)colorWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)al exposure:(CGFloat)e { return [self colorWithRed:r green:g blue:b alpha:al]; }
++ (NSColor *)colorWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)al linearExposure:(CGFloat)e { return [self colorWithRed:r green:g blue:b alpha:al]; }
+- (CGFloat)linearExposure { return 1; } - (NSColor *)standardDynamicRangeColor { return self; } - (NSColor *)colorByApplyingContentHeadroom:(CGFloat)h { return self; }
++ (NSColor *)selectedMenuItemTextColor { return [NSColor whiteColor]; } + (NSColor *)selectedMenuItemColor { return [NSColor colorWithCalibratedRed:.04 green:.52 blue:1 alpha:1]; }
++ (NSColor *)textInsertionPointColor { return [NSColor blackColor]; } + (NSColor *)quinarySystemFillColor { return [NSColor colorWithCalibratedRed:.5 green:.5 blue:.5 alpha:.04]; }
++ (NSColor *)scrubberTexturedBackgroundColor { return [NSColor colorWithCalibratedRed:.2 green:.2 blue:.2 alpha:1]; }
++ (NSInteger)currentControlTint { return 1; } + (NSColor *)colorForControlTint:(NSInteger)t { return [NSColor colorWithCalibratedRed:.04 green:.52 blue:1 alpha:1]; }
++ (NSColor *)colorWithCIColor:(id)c { return nil; } + (NSColor *)colorFromPasteboard:(id)p { return nil; } - (void)writeToPasteboard:(id)p {}
+- (NSString *)localizedCatalogNameComponent { return nil; } - (NSString *)localizedColorNameComponent { return nil; }
 @end

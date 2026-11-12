@@ -1803,3 +1803,27 @@ static BOOL XEFFlag(id o, const char *k, BOOL def) { NSNumber *n = XEFGet(o, k);
   [m setPresentationStyle:1]; [m setSelectionMode:1]; XEFSet(m, "xef.handler", [[h copy] autorelease]); return m; }
 + (NSMenu *)paletteMenuWithColors:(NSArray *)colors titles:(NSArray *)titles selectionHandler:(void (^)(NSMenu *))h { return [self paletteMenuWithColors:colors titles:titles templateImage:nil selectionHandler:h]; }
 @end
+
+/* ---- NSWindow: identifier, animation proxy, validation, deprecated coordinate and caching API ---- */
+@implementation NSWindow (XEFMore)
+- (NSString *)identifier { return XEFGet(self, "xef.identifier"); } - (void)setIdentifier:(NSString *)i { XEFSet(self, "xef.identifier", [[i copy] autorelease]); }
+- (id)animator { return self; }   /* changes apply at once */
+- (NSDictionary *)animations { return XEFGet(self, "xef.animations") ?: @{}; } - (void)setAnimations:(NSDictionary *)a { XEFSet(self, "xef.animations", [[a copy] autorelease]); }
+- (id)animationForKey:(NSString *)k { return [[self animations] objectForKey:k]; } + (id)defaultAnimationForKey:(NSString *)k { return nil; }
+- (BOOL)validateUserInterfaceItem:(id)i {
+  SEL a = [i action]; NSUInteger m = [self styleMask];
+  if (a == @selector(performClose:)) return (m & NSWindowStyleMaskClosable) != 0;
+  if (a == @selector(performMiniaturize:)) return (m & NSWindowStyleMaskMiniaturizable) != 0;
+  if (a == @selector(performZoom:)) return (m & NSWindowStyleMaskResizable) != 0;
+  return YES; }
+- (BOOL)validateMenuItem:(NSMenuItem *)i { return [self validateUserInterfaceItem:i]; }
+- (NSPoint)convertBaseToScreen:(NSPoint)p { return [self convertPointToScreen:p]; } - (NSPoint)convertScreenToBase:(NSPoint)p { return [self convertPointFromScreen:p]; }
+- (NSArray *)drawers { return @[]; } - (BOOL)showsToolbarButton { return XEFFlag(self, "xef.tbButton", NO); } - (void)setShowsToolbarButton:(BOOL)f { XEFSet(self, "xef.tbButton", [NSNumber numberWithBool:f]); }
+- (BOOL)showsResizeIndicator { return NO; } - (void)setShowsResizeIndicator:(BOOL)f {}
+- (void)cacheImageInRect:(NSRect)r {} - (void)restoreCachedImage {} - (void)discardCachedImage {}
+- (NSInteger)gState { return 0; } - (CGFloat)userSpaceScaleFactor { return [self backingScaleFactor]; } - (BOOL)canStoreColor { return YES; } - (BOOL)isOneShot { return NO; }
+- (NSInteger)backingLocation { return 2; } - (NSInteger)preferredBackingLocation { return 0; } - (void)setPreferredBackingLocation:(NSInteger)l {}
+- (void)disableScreenUpdatesUntilFlush {} + (void)menuChanged:(NSMenu *)m {}
+- (void *)windowRef { return NULL; } - (id)initWithWindowRef:(void *)r { return nil; }
+- (void)dragImage:(NSImage *)i at:(NSPoint)p offset:(NSSize)o event:(NSEvent *)e pasteboard:(id)pb source:(id)s slideBack:(BOOL)b {}
+@end
