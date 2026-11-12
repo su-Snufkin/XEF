@@ -1120,3 +1120,10 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   Pułapka: `NSMatrix -initWithFrame:mode:…` woła `[self initWithFrame:]`, więc podklasa nie może wywołać go ze swojego `initWithFrame:` (nieskończona rekurencja) — `NSForm` ustawia ivary bezpośrednio.
 - Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 56/56; pełny `run_tests.sh` przechodzi.
 
+### 43. NSColorSpace, NSRunningApplication (2026-11-12)
+- `AppKit.m`, test `appkit_colorspace.m` zgodny z Makiem: **NSColorSpace** to teraz tabela nazwanych przestrzeni (sRGB, Generic/Device RGB, Gray, CMYK, Gamma 2.2, Display P3, Adobe RGB 1998) z modelem, liczbą składowych i nazwą lokalizowaną
+  (`colorSpaceModel`, `numberOfColorComponents`, `localizedName`, `+availableColorSpacesWithModel:`); **to etykiety — konwersje kolorów nadal są naiwne** (bez profili ICC; `ICCProfileData` nil, `initWithICCProfileData:` nil —
+  na Macu `ICCProfileData` sRGB nie jest nil). `+extendedSRGBColorSpace` to ten sam obiekt co sRGB. **NSRunningApplication**: `activationPolicy`, `bundleURL`/`executableURL` z głównego bundla, `icon` (pusty obraz),
+  `executableArchitecture` arm64, `terminate`, `+runningApplicationWithProcessIdentifier:` (tylko bieżący proces; inne procesy nie są modelowane).
+- Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 57/57.
+

@@ -1475,9 +1475,27 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 @end
 
 @implementation NSColorSpace
-+ (NSColorSpace *)sRGBColorSpace { static NSColorSpace *s; if (!s) s = [[NSColorSpace alloc] init]; return s; }
-+ (NSColorSpace *)deviceRGBColorSpace { return [self sRGBColorSpace]; } + (NSColorSpace *)genericRGBColorSpace { return [self sRGBColorSpace]; }
-- (NSData *)ICCProfileData { return nil; } - (void *)CGColorSpace { return NULL; } - (NSInteger)numberOfColorComponents { return 3; }
+static NSMutableDictionary *g_spaces;
++ (NSColorSpace *)_xefNamed:(NSString *)n model:(NSInteger)m components:(NSInteger)c {
+  if (!g_spaces) g_spaces = [[NSMutableDictionary alloc] init]; NSColorSpace *s = g_spaces[n];
+  if (!s) { s = [[NSColorSpace alloc] init]; s->_name = [n copy]; s->_model = m; s->_n = c; g_spaces[n] = s; [s release]; } return s; }
++ (NSColorSpace *)sRGBColorSpace { return [self _xefNamed:@"sRGB IEC61966-2.1" model:1 components:3]; } + (NSColorSpace *)genericRGBColorSpace { return [self _xefNamed:@"Generic RGB" model:1 components:3]; }
++ (NSColorSpace *)deviceRGBColorSpace { return [self _xefNamed:@"Device RGB" model:1 components:3]; } + (NSColorSpace *)genericGrayColorSpace { return [self _xefNamed:@"Generic Gray" model:0 components:1]; }
++ (NSColorSpace *)deviceGrayColorSpace { return [self _xefNamed:@"Device Gray" model:0 components:1]; } + (NSColorSpace *)genericCMYKColorSpace { return [self _xefNamed:@"Generic CMYK" model:2 components:4]; }
++ (NSColorSpace *)deviceCMYKColorSpace { return [self _xefNamed:@"Device CMYK" model:2 components:4]; } + (NSColorSpace *)genericGamma22GrayColorSpace { return [self _xefNamed:@"Generic Gray Gamma 2.2 Profile" model:0 components:1]; }
++ (NSColorSpace *)extendedGenericGamma22GrayColorSpace { return [self _xefNamed:@"Generic Gray Gamma 2.2 Profile" model:0 components:1]; } + (NSColorSpace *)extendedSRGBColorSpace { return [self sRGBColorSpace]; }
++ (NSColorSpace *)displayP3ColorSpace { return [self _xefNamed:@"Display P3" model:1 components:3]; } + (NSColorSpace *)adobeRGB1998ColorSpace { return [self _xefNamed:@"Adobe RGB (1998)" model:1 components:3]; }
++ (NSArray *)availableColorSpacesWithModel:(NSInteger)m { NSMutableArray *r = [NSMutableArray array]; [self sRGBColorSpace]; [self genericGrayColorSpace]; [self genericCMYKColorSpace]; [self displayP3ColorSpace]; [self adobeRGB1998ColorSpace]; for (NSColorSpace *s in [g_spaces allValues]) if (m < 0 || s->_model == m) [r addObject:s]; return r; }
+- (id)initWithICCProfileData:(NSData *)d { [self release]; return nil; } - (id)initWithCGColorSpace:(void *)c { [self release]; return [[NSColorSpace sRGBColorSpace] retain]; } - (id)initWithColorSyncProfile:(void *)p { [self release]; return nil; } - (void *)colorSyncProfile { return NULL; }
+- (NSData *)ICCProfileData { return nil; } - (void *)CGColorSpace { return NULL; } - (NSInteger)numberOfColorComponents { return _n ?: 3; } - (NSInteger)colorSpaceModel { return _model; } - (NSString *)localizedName { return _name ?: @"sRGB IEC61966-2.1"; }
+@end
+@implementation NSRunningApplication (XEFMore)
+- (BOOL)isTerminated { return NO; } - (BOOL)ownsMenuBar { return NO; } - (NSInteger)activationPolicy { return NSApp ? [NSApp activationPolicy] : 2; }
+- (NSURL *)bundleURL { return [[NSBundle mainBundle] bundleURL]; } - (NSURL *)executableURL { return [[NSBundle mainBundle] executableURL]; } - (NSDate *)launchDate { return nil; }
+- (NSImage *)icon { NSImage *i = objc_getAssociatedObject(self, "xef.icon"); if (!i) { i = [[[NSImage alloc] initWithSize:NSMakeSize(32, 32)] autorelease]; objc_setAssociatedObject(self, "xef.icon", i, OBJC_ASSOCIATION_RETAIN); } return i; } - (NSInteger)executableArchitecture { return 0x0100000c; }
+- (BOOL)hide { return NO; } - (BOOL)unhide { return NO; } - (BOOL)activateFromApplication:(NSRunningApplication *)a options:(NSUInteger)o { return NO; }
+- (BOOL)terminate { [NSApp terminate:nil]; return YES; } - (BOOL)forceTerminate { exit(0); return YES; }
++ (NSRunningApplication *)runningApplicationWithProcessIdentifier:(pid_t)pid { return pid == getpid() ? [self currentApplication] : nil; } + (void)terminateAutomaticallyTerminableApplications {}
 @end
 
 /* ------------------------------------------------------------- file dialogs */

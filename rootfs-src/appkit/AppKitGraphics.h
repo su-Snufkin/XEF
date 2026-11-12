@@ -16,7 +16,7 @@ void NSFrameRect(NSRect r);
 void NSFrameRectWithWidth(NSRect r, CGFloat w);
 void NSRectClip(NSRect r);
 
-@interface NSColorSpace : NSObject
+@interface NSColorSpace : NSObject { @public NSInteger _model, _n; NSString *_name; }
 + (NSColorSpace *)sRGBColorSpace;
 @end
 
