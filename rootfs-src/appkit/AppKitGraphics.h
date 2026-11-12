@@ -162,3 +162,7 @@ typedef struct { NSUInteger start; CGFloat top, height, baseline; } XEFLineInfo;
 @interface NSWindow (XEFScreenConversion)
 - (NSPoint)convertPointFromScreen:(NSPoint)p; - (NSPoint)convertPointToScreen:(NSPoint)p; - (NSRect)convertRectFromScreen:(NSRect)r;
 @end
+
+@interface NSCustomImageRep : NSImageRep { @public id _delegate; SEL _sel; id _handler; BOOL _flipped; }
+- (id)initWithDrawSelector:(SEL)s delegate:(id)d; - (id)initWithSize:(NSSize)s flipped:(BOOL)f drawingHandler:(BOOL (^)(NSRect))h;
+@end

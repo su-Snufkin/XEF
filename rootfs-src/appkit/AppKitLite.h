@@ -97,7 +97,10 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (NSRect)rect; - (NSTrackingAreaOptions)options; - (id)owner; - (NSDictionary *)userInfo;
 @end
 
-@interface NSBitmapImageRep : NSObject { @public unsigned char *_data; NSInteger _w, _h, _bps, _spp, _bpr, _bpp; BOOL _alpha, _planar, _owns; NSBitmapFormat _fmt; NSString *_cs; }
+@interface NSImageRep : NSObject <NSCopying, NSCoding> { @public NSSize _repSize; NSInteger _rbps, _rpw, _rph, _rdir; BOOL _ralpha, _ropaque, _sizeSet; NSString *_rcs; }
+- (NSSize)size; - (void)setSize:(NSSize)s; - (BOOL)drawInRect:(NSRect)r; - (BOOL)draw;
+@end
+@interface NSBitmapImageRep : NSImageRep { @public unsigned char *_data; NSInteger _w, _h, _bps, _spp, _bpr, _bpp; BOOL _alpha, _planar, _owns; NSBitmapFormat _fmt; NSString *_cs; }
 - (id)initWithBitmapDataPlanes:(unsigned char **)planes pixelsWide:(NSInteger)w pixelsHigh:(NSInteger)h bitsPerSample:(NSInteger)bps
     samplesPerPixel:(NSInteger)spp hasAlpha:(BOOL)a isPlanar:(BOOL)p colorSpaceName:(NSString *)cs bitmapFormat:(NSBitmapFormat)f
     bytesPerRow:(NSInteger)bpr bitsPerPixel:(NSInteger)bpp;

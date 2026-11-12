@@ -902,3 +902,13 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   właściwością. Uzupełnianie słów (`completionsForPartialWordRange:`) zwraca pustą listę (Mac: podpowiedzi słownika).
 - Stan: **4838 z 8257** metod prawdziwych; `macref.sh` 19/19.
 
+### 17. NSImageRep (2026-11-12)
+- `AppKitGraphics.m` / `AppKitLite.h`, `appkit_imagerep.m` (zgodny z Makiem): **`NSImageRep` jest prawdziwą klasą bazową** (`NSBitmapImageRep` dziedziczy po niej): `size`/`setSize:` (rozmiar
+  w punktach niezależny od pikseli), `hasAlpha`, `bitsPerSample`, `colorSpaceName`, `isOpaque` (domyślnie YES też z alfą), `draw/drawAtPoint:/drawInRect:`, **rejestr klas**
+  (`registerImageRepClass:`, `registeredImageRepClasses`, `imageRepClassForData:` po sygnaturze PNG/JPEG/GIF/TIFF/BMP/WebP), `+imageRepsWithContentsOfFile:` i pokrewne.
+  **`NSCustomImageRep`** (selektor rysujący z delegatem albo blok `drawingHandler`), a `NSImage` potrafi narysować taką reprezentację.
+- Różnice: Mac zapisuje DPI w PNG, więc rozmiar odczytanej z pliku reprezentacji bywa inny niż piksele (tu rozmiar = piksele); `+imageUnfilteredTypes` bazowej klasy jest
+  pusta (jak u Maca). Brak: `NSPDFImageRep`, `NSEPSImageRep`, `NSCachedImageRep` (nadal atrapy).
+- Test `appkit_*` w `macref.sh` zdarzył się raz niestabilny (jedno FAIL przy 20 testach, brak powtórzenia przy dwóch kolejnych biegach) — podejrzewany ssh/Xvfb.
+- Stan: **4886 z 8257** metod prawdziwych.
+

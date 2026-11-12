@@ -929,6 +929,8 @@ static void draw_layout_in_rect(XEFTextLayout *l, NSRect r) {
 - (void)_xefDrawInRect:(NSRect)d fromRect:(NSRect)s operation:(NSUInteger)op fraction:(CGFloat)f respectFlipped:(BOOL)rf {
   CGContextRef c = XEFCurrentCGContext(); NSBitmapImageRep *rep = [self _xefBitmap];
   CGImageRef img = [rep CGImage];
+  if (c && !img && [_reps count] && _size.width > 0 && _size.height > 0) {   /* representations that draw themselves (NSCustomImageRep) */
+    id r0 = _reps[0]; CGContextSaveGState(c); CGContextSetAlpha(c, f); CGContextClipToRect(c, d); [r0 drawInRect:d]; CGContextRestoreGState(c); return; }
   if (!c || !img || _size.width <= 0 || _size.height <= 0) return;
   CGContextSaveGState(c);
   CGContextSetBlendMode(c, XEFBlendModeForOperation(op)); CGContextSetAlpha(c, f);
@@ -1336,4 +1338,67 @@ typedef BOOL (^XEFImageDrawingHandler)(NSRect);
 + (NSArray *)imageUnfilteredFileTypes { return @[@"png", @"jpg", @"jpeg", @"tif", @"tiff", @"gif", @"bmp", @"webp"]; }
 + (NSArray *)imageFileTypes { return [self imageUnfilteredFileTypes]; }
 + (BOOL)canInitWithPasteboard:(id)p { return NO; }
+@end
+
+/* ---- NSImageRep: the base class, the registry, and NSCustomImageRep ---- */
+static NSMutableArray *g_rep_classes;
+static NSMutableArray *XEFRepClasses(void) { if (!g_rep_classes) g_rep_classes = [[NSMutableArray alloc] initWithObjects:[NSBitmapImageRep class], nil]; return g_rep_classes; }
+@implementation NSImageRep
+- (void)dealloc { [_rcs release]; [super dealloc]; }
+- (id)copyWithZone:(NSZone *)z { return [self retain]; }
+- (void)encodeWithCoder:(NSCoder *)c {} - (id)initWithCoder:(NSCoder *)c { return [self init]; }
+- (NSSize)size { return _sizeSet ? _repSize : NSMakeSize([self pixelsWide], [self pixelsHigh]); } - (void)setSize:(NSSize)s { _repSize = s; _sizeSet = YES; }
+- (BOOL)hasAlpha { return _ralpha; } - (void)setAlpha:(BOOL)f { _ralpha = f; }
+- (BOOL)isOpaque { return _ropaque; } - (void)setOpaque:(BOOL)f { _ropaque = f; }
+- (NSString *)colorSpaceName { return _rcs; } - (void)setColorSpaceName:(NSString *)n { [n retain]; [_rcs release]; _rcs = n; }
+- (NSInteger)bitsPerSample { return _rbps; } - (void)setBitsPerSample:(NSInteger)n { _rbps = n; }
+- (NSInteger)pixelsWide { return _rpw; } - (void)setPixelsWide:(NSInteger)n { _rpw = n; }
+- (NSInteger)pixelsHigh { return _rph; } - (void)setPixelsHigh:(NSInteger)n { _rph = n; }
+- (NSInteger)layoutDirection { return _rdir; } - (void)setLayoutDirection:(NSInteger)d { _rdir = d; }
+- (BOOL)drawInRect:(NSRect)r { return NO; }
+- (BOOL)draw { NSSize s = [self size]; return [self drawInRect:NSMakeRect(0, 0, s.width, s.height)]; }
+- (BOOL)drawAtPoint:(NSPoint)p { NSSize s = [self size]; return [self drawInRect:NSMakeRect(p.x, p.y, s.width, s.height)]; }
+- (BOOL)drawInRect:(NSRect)r fromRect:(NSRect)s operation:(NSUInteger)op fraction:(CGFloat)f respectFlipped:(BOOL)rf hints:(NSDictionary *)h { return [self drawInRect:r]; }
+- (CGImageRef)CGImageForProposedRect:(NSRect *)r context:(NSGraphicsContext *)c hints:(NSDictionary *)h { return NULL; }
++ (void)registerImageRepClass:(Class)c { if (![XEFRepClasses() containsObject:c]) [XEFRepClasses() addObject:c]; }
++ (void)unregisterImageRepClass:(Class)c { [XEFRepClasses() removeObject:c]; }
++ (NSArray *)registeredImageRepClasses { return [[XEFRepClasses() copy] autorelease]; }
++ (BOOL)canInitWithData:(NSData *)d { return NO; } + (BOOL)canInitWithPasteboard:(id)p { return NO; }
++ (Class)imageRepClassForData:(NSData *)d { for (Class c in [[XEFRepClasses() copy] autorelease]) if ([c canInitWithData:d]) return c; return nil; }
++ (Class)imageRepClassForType:(NSString *)t { return [self imageRepClassForFileType:t]; }
++ (Class)imageRepClassForFileType:(NSString *)t { for (Class c in XEFRepClasses()) if ([[c imageUnfilteredFileTypes] containsObject:[t lowercaseString]] || [[c imageUnfilteredTypes] containsObject:t]) return c; return nil; }
++ (Class)imageRepClassForPasteboardType:(NSString *)t { return nil; }
++ (NSArray *)imageUnfilteredTypes { return @[]; } + (NSArray *)imageTypes { return [self imageUnfilteredTypes]; }
++ (NSArray *)imageUnfilteredFileTypes { return @[]; } + (NSArray *)imageFileTypes { return [self imageUnfilteredFileTypes]; }
++ (NSArray *)imageUnfilteredPasteboardTypes { return @[]; } + (NSArray *)imagePasteboardTypes { return @[]; }
++ (NSArray *)imageRepsWithContentsOfFile:(NSString *)p { NSData *d = p ? [NSData dataWithContentsOfFile:p] : nil; if (!d) return nil; Class c = [self imageRepClassForData:d]; return c ? [c imageRepsWithData:d] : nil; }
++ (id)imageRepWithContentsOfFile:(NSString *)p { return [[self imageRepsWithContentsOfFile:p] firstObject]; }
++ (NSArray *)imageRepsWithContentsOfURL:(NSURL *)u { return [u isFileURL] ? [self imageRepsWithContentsOfFile:[u path]] : nil; }
++ (id)imageRepWithContentsOfURL:(NSURL *)u { return [[self imageRepsWithContentsOfURL:u] firstObject]; }
++ (NSArray *)imageRepsWithData:(NSData *)d { return @[]; }
++ (NSArray *)imageRepsWithPasteboard:(id)p { return nil; } + (id)imageRepWithPasteboard:(id)p { return nil; }
+@end
+@implementation NSBitmapImageRep (XEFRepBase)
++ (BOOL)canInitWithData:(NSData *)d {
+  const unsigned char *b = [d bytes]; NSUInteger n = [d length]; if (n < 4) return NO;
+  return !memcmp(b, "\x89PNG", 4) || !memcmp(b, "\xff\xd8\xff", 3) || !memcmp(b, "GIF8", 4) || !memcmp(b, "II*\0", 4) || !memcmp(b, "MM\0*", 4) || !memcmp(b, "BM", 2) || (n > 12 && !memcmp(b, "RIFF", 4) && !memcmp(b + 8, "WEBP", 4)); }
++ (NSArray *)imageUnfilteredFileTypes { return @[@"png", @"jpg", @"jpeg", @"tif", @"tiff", @"gif", @"bmp", @"webp"]; }
++ (NSArray *)imageUnfilteredTypes { return @[@"public.png", @"public.jpeg", @"public.tiff", @"com.compuserve.gif", @"com.microsoft.bmp", @"org.webmproject.webp"]; }
+- (BOOL)hasAlpha { return _alpha; } - (NSInteger)bitsPerSample { return _bps; } - (NSString *)colorSpaceName { return _cs; } - (BOOL)isOpaque { return _sizeSet ? _ropaque : !_alpha || YES; }
+- (NSSize)size { return _sizeSet ? _repSize : NSMakeSize(_w, _h); }
+@end
+
+@implementation NSCustomImageRep
+- (id)initWithDrawSelector:(SEL)s delegate:(id)d { if ((self = [super init])) { _sel = s; _delegate = d; } return self; }
+- (id)initWithSize:(NSSize)s flipped:(BOOL)f drawingHandler:(BOOL (^)(NSRect))h { if ((self = [super init])) { [self setSize:s]; _flipped = f; _handler = [h copy]; } return self; }
+- (void)dealloc { [_handler release]; [super dealloc]; }
+- (id)delegate { return _delegate; } - (SEL)drawSelector { return _sel; } - (id)drawingHandler { return _handler; }
+- (BOOL)drawInRect:(NSRect)r {
+  CGContextRef c = XEFCurrentCGContext(); if (!c) return NO;
+  NSSize s = [self size]; if (s.width <= 0 || s.height <= 0) return NO;
+  CGContextSaveGState(c); CGContextTranslateCTM(c, r.origin.x, r.origin.y); CGContextScaleCTM(c, r.size.width / s.width, r.size.height / s.height);
+  BOOL ok = NO;
+  if (_handler) ok = ((BOOL (^)(NSRect))_handler)(NSMakeRect(0, 0, s.width, s.height));
+  else if (_delegate && _sel) ok = ((BOOL (*)(id, SEL, id))objc_msgSend)(_delegate, _sel, self);
+  CGContextRestoreGState(c); return ok; }
 @end

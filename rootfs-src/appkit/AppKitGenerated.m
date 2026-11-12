@@ -121,8 +121,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSTouchBarItem @end
 @interface NSButtonTouchBarItem : NSTouchBarItem @end
 @implementation NSButtonTouchBarItem @end
-@interface NSImageRep : NSObject @end
-@implementation NSImageRep @end
 @interface NSCIImageRep : NSImageRep @end
 @implementation NSCIImageRep @end
 @interface NSCachedImageRep : NSImageRep @end
@@ -179,8 +177,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSColorSampler @end
 @interface NSComboButton : NSControl @end
 @implementation NSComboButton @end
-@interface NSCustomImageRep : NSImageRep @end
-@implementation NSCustomImageRep @end
 @interface NSCustomTouchBarItem : NSTouchBarItem @end
 @implementation NSCustomTouchBarItem @end
 @interface NSDataAsset : NSObject @end
@@ -1207,11 +1203,6 @@ static const GenEntry kTable[] = {
 {"NSCursor", '-', "mouseExited:", 'D', 'v', "@"},
 {"NSCursor", '-', "setOnMouseEntered:", 'S', 'v', "B"},
 {"NSCursor", '-', "setOnMouseExited:", 'S', 'v', "B"},
-{"NSCustomImageRep", '-', "delegate", 'D', '@', ""},
-{"NSCustomImageRep", '-', "drawSelector", 'D', ':', ""},
-{"NSCustomImageRep", '-', "drawingHandler", 'D', '@', ""},
-{"NSCustomImageRep", '-', "initWithDrawSelector:delegate:", 'I', '@', ":@"},
-{"NSCustomImageRep", '-', "initWithSize:flipped:drawingHandler:", 'I', '@', "SB@"},
 {"NSCustomTouchBarItem", '-', "customizationLabel", 'G', '@', ""},
 {"NSCustomTouchBarItem", '-', "setCustomizationLabel:", 'S', 'v', "@"},
 {"NSCustomTouchBarItem", '-', "setView:", 'S', 'v', "@"},
@@ -1634,50 +1625,6 @@ static const GenEntry kTable[] = {
 {"NSImage", '-', "symbolConfiguration", 'D', '@', ""},
 {"NSImage", '-', "usesEPSOnResolutionMismatch", 'G', 'B', ""},
 {"NSImage", '-', "writableTypesForPasteboard:", 'D', 'A', "@"},
-{"NSImageRep", '+', "canInitWithData:", 'D', 'B', "@"},
-{"NSImageRep", '+', "canInitWithPasteboard:", 'D', 'B', "@"},
-{"NSImageRep", '+', "imageFileTypes", 'D', 'A', ""},
-{"NSImageRep", '+', "imagePasteboardTypes", 'D', 'A', ""},
-{"NSImageRep", '+', "imageRepClassForData:", 'D', '#', "@"},
-{"NSImageRep", '+', "imageRepClassForFileType:", 'D', '#', "@"},
-{"NSImageRep", '+', "imageRepClassForPasteboardType:", 'D', '#', "q"},
-{"NSImageRep", '+', "imageRepClassForType:", 'D', '#', "@"},
-{"NSImageRep", '+', "imageRepWithContentsOfFile:", 'D', '@', "@"},
-{"NSImageRep", '+', "imageRepWithContentsOfURL:", 'D', '@', "@"},
-{"NSImageRep", '+', "imageRepWithPasteboard:", 'D', '@', "@"},
-{"NSImageRep", '+', "imageRepsWithContentsOfFile:", 'D', 'A', "@"},
-{"NSImageRep", '+', "imageRepsWithContentsOfURL:", 'D', 'A', "@"},
-{"NSImageRep", '+', "imageRepsWithPasteboard:", 'D', 'A', "@"},
-{"NSImageRep", '+', "imageTypes", 'D', 'A', ""},
-{"NSImageRep", '+', "imageUnfilteredFileTypes", 'D', 'A', ""},
-{"NSImageRep", '+', "imageUnfilteredPasteboardTypes", 'D', 'A', ""},
-{"NSImageRep", '+', "imageUnfilteredTypes", 'D', 'A', ""},
-{"NSImageRep", '+', "registerImageRepClass:", 'D', 'v', "#"},
-{"NSImageRep", '+', "registeredImageRepClasses", 'D', 'A', ""},
-{"NSImageRep", '+', "unregisterImageRepClass:", 'D', 'v', "#"},
-{"NSImageRep", '-', "CGImageForProposedRect:context:hints:", 'D', '^', "^@@"},
-{"NSImageRep", '-', "bitsPerSample", 'G', 'q', ""},
-{"NSImageRep", '-', "colorSpaceName", 'G', 'q', ""},
-{"NSImageRep", '-', "draw", 'D', 'B', ""},
-{"NSImageRep", '-', "drawAtPoint:", 'D', 'B', "P"},
-{"NSImageRep", '-', "drawInRect:", 'D', 'B', "R"},
-{"NSImageRep", '-', "drawInRect:fromRect:operation:fraction:respectFlipped:hints:", 'D', 'B', "RRqdB@"},
-{"NSImageRep", '-', "hasAlpha", 'D', 'B', ""},
-{"NSImageRep", '-', "init", 'I', '@', ""},
-{"NSImageRep", '-', "initWithCoder:", 'I', '@', "@"},
-{"NSImageRep", '-', "isOpaque", 'G', 'B', ""},
-{"NSImageRep", '-', "layoutDirection", 'G', 'q', ""},
-{"NSImageRep", '-', "pixelsHigh", 'G', 'q', ""},
-{"NSImageRep", '-', "pixelsWide", 'G', 'q', ""},
-{"NSImageRep", '-', "setAlpha:", 'S', 'v', "B"},
-{"NSImageRep", '-', "setBitsPerSample:", 'S', 'v', "q"},
-{"NSImageRep", '-', "setColorSpaceName:", 'S', 'v', "q"},
-{"NSImageRep", '-', "setLayoutDirection:", 'S', 'v', "q"},
-{"NSImageRep", '-', "setOpaque:", 'S', 'v', "B"},
-{"NSImageRep", '-', "setPixelsHigh:", 'S', 'v', "q"},
-{"NSImageRep", '-', "setPixelsWide:", 'S', 'v', "q"},
-{"NSImageRep", '-', "setSize:", 'S', 'v', "S"},
-{"NSImageRep", '-', "size", 'G', 'S', ""},
 {"NSImageSymbolConfiguration", '+', "configurationPreferringHierarchical", 'F', '@', ""},
 {"NSImageSymbolConfiguration", '+', "configurationPreferringMonochrome", 'F', '@', ""},
 {"NSImageSymbolConfiguration", '+', "configurationPreferringMulticolor", 'F', '@', ""},

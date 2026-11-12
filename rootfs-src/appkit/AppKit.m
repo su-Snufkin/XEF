@@ -1645,7 +1645,7 @@ void NSBeep(void) {}
   return [self initWithBitmapDataPlanes:planes pixelsWide:w pixelsHigh:h bitsPerSample:bps samplesPerPixel:spp hasAlpha:a isPlanar:p
                          colorSpaceName:cs bitmapFormat:0 bytesPerRow:bpr bitsPerPixel:bpp]; }
 - (NSInteger)samplesPerPixel { return _spp; } - (NSInteger)bitsPerSample { return _bps; } - (BOOL)hasAlpha { return _alpha; }
-- (NSSize)size { return NSMakeSize(_w, _h); } - (void)setSize:(NSSize)s {}
+
 @end
 
 
