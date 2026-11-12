@@ -1223,10 +1223,11 @@ static void dump_shot(const unsigned char *px, size_t w, size_t h) {
 
 @implementation NSImage (XEFDecode)
 - (id)initWithData:(NSData *)data {
-  NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithData:data];
+  Class rc = [NSImageRep imageRepClassForData:data]; id rep = rc ? [[rc imageRepsWithData:data] firstObject] : nil;
   if (!rep) { [self release]; return nil; }
-  if (!(self = [self initWithSize:NSMakeSize([rep pixelsWide], [rep pixelsHigh])])) { [rep release]; return nil; }
-  [self addRepresentation:rep]; [rep release]; return self; }
+  NSSize sz = [rep isKindOfClass:[NSBitmapImageRep class]] ? NSMakeSize([rep pixelsWide], [rep pixelsHigh]) : [rep size];
+  if (!(self = [self initWithSize:sz])) return nil;
+  [self addRepresentation:rep]; return self; }
 - (id)initWithContentsOfFile:(NSString *)path {
   NSData *d = path ? [NSData dataWithContentsOfFile:path] : nil;
   if (!d) { [self release]; return nil; }
@@ -1343,7 +1344,7 @@ typedef BOOL (^XEFImageDrawingHandler)(NSRect);
 
 /* ---- NSImageRep: the base class, the registry, and NSCustomImageRep ---- */
 static NSMutableArray *g_rep_classes;
-static NSMutableArray *XEFRepClasses(void) { if (!g_rep_classes) g_rep_classes = [[NSMutableArray alloc] initWithObjects:[NSBitmapImageRep class], nil]; return g_rep_classes; }
+static NSMutableArray *XEFRepClasses(void) { if (!g_rep_classes) g_rep_classes = [[NSMutableArray alloc] initWithObjects:[NSBitmapImageRep class], [NSPDFImageRep class], nil]; return g_rep_classes; }
 @implementation NSImageRep
 - (void)dealloc { [_rcs release]; [super dealloc]; }
 - (id)copyWithZone:(NSZone *)z { return [self retain]; }
@@ -1460,4 +1461,29 @@ static void XEFImgSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k
 - (void)compositeToPoint:(NSPoint)p operation:(NSUInteger)op fraction:(CGFloat)f { [self drawAtPoint:p fromRect:NSZeroRect operation:op fraction:f]; }
 - (void)compositeToPoint:(NSPoint)p fromRect:(NSRect)s operation:(NSUInteger)op fraction:(CGFloat)f { [self drawAtPoint:p fromRect:s operation:op fraction:f]; }
 - (void)lockFocusOnRepresentation:(id)rep { [self lockFocus]; } - (void)cancelIncrementalLoad {}
+@end
+
+/* ---- NSPDFImageRep: pages rendered by the host (poppler-utils) on demand ---- */
+@implementation NSPDFImageRep
++ (BOOL)canInitWithData:(NSData *)d { return [d length] > 4 && !memcmp([d bytes], "%PDF", 4); }
++ (NSArray *)imageUnfilteredTypes { return @[@"com.adobe.pdf"]; } + (NSArray *)imageUnfilteredFileTypes { return @[@"pdf"]; }
++ (NSArray *)imageRepsWithData:(NSData *)d { id r = [[[self alloc] initWithData:d] autorelease]; return r ? @[r] : @[]; }
++ (id)imageRepWithData:(NSData *)d { return [[[self alloc] initWithData:d] autorelease]; }
+- (id)initWithData:(NSData *)d {
+  int pages = 0; double wh[2] = {0, 0};
+  if (![d length] || !xef_host_pdf_info([d bytes], [d length], &pages, wh)) { [self release]; return nil; }
+  if ((self = [super init])) { _pdf = [d copy]; _pages = pages; _bounds = NSMakeRect(0, 0, wh[0], wh[1]); _ralpha = YES; _rbps = 0; _rcs = [@"NSDeviceRGBColorSpace" retain]; }
+  return self; }
+- (void)dealloc { [_pdf release]; [super dealloc]; }
+- (NSInteger)pageCount { return _pages; } - (NSInteger)currentPage { return _page; } - (void)setCurrentPage:(NSInteger)p { _page = p < 0 ? 0 : p >= _pages ? _pages - 1 : p; }
+- (NSRect)bounds { return _bounds; } - (NSData *)PDFRepresentation { return _pdf; }
+- (NSSize)size { return _sizeSet ? _repSize : _bounds.size; }
+- (BOOL)drawInRect:(NSRect)r {
+  CGContextRef c = XEFCurrentCGContext(); if (!c || r.size.width <= 0 || r.size.height <= 0 || _bounds.size.width <= 0) return NO;
+  double dpi = 72.0 * r.size.width / _bounds.size.width; if (dpi < 8) dpi = 8; if (dpi > 600) dpi = 600;
+  int wh[2] = {0, 0}; int h = xef_host_pdf_render([_pdf bytes], [_pdf length], (int)_page + 1, dpi, wh); if (!h) return NO;
+  NSBitmapImageRep *b = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:wh[0] pixelsHigh:wh[1] bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:@"NSDeviceRGBColorSpace" bitmapFormat:0 bytesPerRow:wh[0] * 4 bitsPerPixel:32];
+  xef_host_image_copy(h, [b bitmapData]); xef_host_image_free(h);
+  unsigned char *px = [b bitmapData]; for (NSInteger i = 0, n = (NSInteger)wh[0] * wh[1]; i < n; i++) { unsigned a = px[i * 4 + 3]; if (a != 255) { px[i*4] = px[i*4] * a / 255; px[i*4+1] = px[i*4+1] * a / 255; px[i*4+2] = px[i*4+2] * a / 255; } }
+  CGImageRef img = [b CGImage]; if (img) CGContextDrawImage(c, r, img); [b release]; return img != NULL; }
 @end

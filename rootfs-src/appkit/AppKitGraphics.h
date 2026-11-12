@@ -166,3 +166,7 @@ typedef struct { NSUInteger start; CGFloat top, height, baseline; } XEFLineInfo;
 @interface NSCustomImageRep : NSImageRep { @public id _delegate; SEL _sel; id _handler; BOOL _flipped; }
 - (id)initWithDrawSelector:(SEL)s delegate:(id)d; - (id)initWithSize:(NSSize)s flipped:(BOOL)f drawingHandler:(BOOL (^)(NSRect))h;
 @end
+
+@interface NSPDFImageRep : NSImageRep { @public NSData *_pdf; NSInteger _pages, _page; NSRect _bounds; }
++ (id)imageRepWithData:(NSData *)d; - (id)initWithData:(NSData *)d; - (NSInteger)pageCount; - (NSRect)bounds;
+@end

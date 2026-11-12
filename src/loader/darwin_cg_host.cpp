@@ -659,6 +659,37 @@ extern "C" void xef_host_blob_free(int id) {
     PX.g_free(it->second.data); g_blobs.erase(it);
 }
 
+
+// ---- PDF pages through poppler-utils (pdfinfo / pdftoppm): page count and size, and a page rendered to an image handle ----
+#include <stdio.h>
+#include <unistd.h>
+static bool write_temp_pdf(const void* data, unsigned long len, char* path, size_t cap) {
+    snprintf(path, cap, "/tmp/xef-pdf-XXXXXX");
+    int fd = mkstemp(path); if (fd < 0) return false;
+    bool ok = write(fd, data, len) == (ssize_t)len; close(fd); return ok;
+}
+extern "C" int xef_host_pdf_info(const void* data, unsigned long len, int* pages, double* wh) {
+    char path[64]; if (!data || !len || !write_temp_pdf(data, len, path, sizeof path)) return 0;
+    char cmd[160]; snprintf(cmd, sizeof cmd, "pdfinfo '%s' 2>/dev/null", path);
+    FILE* f = popen(cmd, "r"); int ok = 0; *pages = 0; wh[0] = wh[1] = 0;
+    if (f) { char line[256]; while (fgets(line, sizeof line, f)) { int n; double w, h;
+        if (sscanf(line, "Pages: %d", &n) == 1) { *pages = n; ok = 1; }
+        else if (sscanf(line, "Page size: %lf x %lf", &w, &h) == 2) { wh[0] = w; wh[1] = h; } }
+        pclose(f); }
+    unlink(path); return ok && *pages > 0;
+}
+extern "C" int xef_host_pdf_render(const void* data, unsigned long len, int page, double dpi, int* wh) {
+    char path[64]; if (!data || !len || !write_temp_pdf(data, len, path, sizeof path)) return 0;
+    char base[80]; snprintf(base, sizeof base, "%s-out", path);
+    char cmd[320]; snprintf(cmd, sizeof cmd, "pdftocairo -r %.1f -f %d -l %d -png -transp -singlefile '%s' '%s' 2>/dev/null", dpi, page, page, path, base);
+    int rc = system(cmd); unlink(path); if (rc != 0) return 0;
+    char png[96]; snprintf(png, sizeof png, "%s.png", base);
+    FILE* f = fopen(png, "rb"); if (!f) return 0;
+    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+    unsigned char* buf = (unsigned char*)malloc(n > 0 ? n : 1); size_t got = n > 0 ? fread(buf, 1, n, f) : 0; fclose(f); unlink(png);
+    int h = got ? xef_host_image_decode(buf, got, wh) : 0; free(buf); return h;
+}
+
 struct Fn { const char* name; void* fn; };
 const Fn kFns[] = {
 #define F(n) {"_" #n, (void*)&n}
@@ -673,7 +704,7 @@ const Fn kFns[] = {
     F(xef_host_text_decoration), F(xef_host_text_kern), F(xef_host_text_size), F(xef_host_text_draw), F(xef_host_text_hit),
     F(xef_host_text_cursor), F(xef_host_text_char_rect), F(xef_host_text_lines), F(xef_host_font_metrics),
     F(xef_host_image_decode), F(xef_host_image_copy), F(xef_host_image_free),
-    F(xef_host_image_encode), F(xef_host_blob_copy), F(xef_host_blob_free),
+    F(xef_host_pdf_info), F(xef_host_pdf_render), F(xef_host_image_encode), F(xef_host_blob_copy), F(xef_host_blob_free),
 #undef F
 };
 } // namespace

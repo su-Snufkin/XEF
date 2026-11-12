@@ -1035,3 +1035,14 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   pozostałe elementy (`NSPickerTouchBarItem`, `NSSliderTouchBarItem`, `NSScrubber`…) nadal atrapy.
 - Stan: **5775 z 8257** metod prawdziwych; `macref.sh` 42/42.
 
+### 32. NSDrawer, NSPrinter, NSPDFImageRep (2026-11-12)
+- **NSDrawer** (`AppKitModel.m`, `appkit_drawer.m` zgodny z Makiem): maszyna stanów — `open` → Opening (1) + `drawerWillOpen:`, po 0.25 s Open (2) + `drawerDidOpen:`; `close` → Closing (3), `close:`
+  pyta `drawerShouldClose:` (a `close` nie), `toggle:`; z Closing `open` wraca do Opening, a `openOnEdge:` działa tylko ze stanu Closed. Domyślne offsety (0/15), min/max rozmiaru (FLT_MAX), domyślny widok zawartości.
+  **Szuflada nie jest rysowana** — to model.
+- **NSPrinter**: brak drukarek (`printerNames` puste, `printerWithName:` nil), stałe odpowiedzi dla reszty.
+- **NSPDFImageRep** (`AppKitGraphics.m`, host `xef_host_pdf_info/render` w `darwin_cg_host.cpp`, `appkit_pdfrep.m` zgodny z Makiem): liczba stron i rozmiar z **`pdfinfo`**, strona renderowana przez **`pdftocairo -png -transp`**
+  (poppler-utils na hoście; bez nich `NSPDFImageRep` zwraca nil), `pageCount`, `currentPage` (przycinane), `bounds`, `PDFRepresentation`, `drawInRect:` (dpi dobrane do rozmiaru docelowego, przezroczyste tło);
+  `NSImage initWithData:` wybiera klasę reprezentacji z rejestru (PDF i bitmapy), `+imageRepClassForData:` rozpoznaje `%PDF`. Brak: ładowania z pliku `.pdf` przez `NSImage initWithContentsOfFile:`? — działa przez `initWithData:`;
+  brak zaznaczania/tekstu PDF.
+- Stan: **5836 z 8257** metod prawdziwych; `macref.sh` 44/44; pełny `run_tests.sh` przechodzi.
+

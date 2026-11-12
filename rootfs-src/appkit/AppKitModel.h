@@ -205,3 +205,13 @@
 }
 - (NSArray *)defaultItemIdentifiers; - (void)setDefaultItemIdentifiers:(NSArray *)a; - (id)itemForIdentifier:(NSString *)i; - (void)setTemplateItems:(NSSet *)s;
 @end
+
+/* NSDrawer: the open / close state machine (no window is shown); NSPrinter: no printers */
+@interface NSDrawer : NSObject {
+@public
+  NSWindow *_parent; NSView *_content; NSSize _size, _min, _max; NSUInteger _pref, _edge; CGFloat _lead, _trail; id _delegate; NSInteger _state; NSTimer *_timer;
+}
+- (id)initWithContentSize:(NSSize)s preferredEdge:(NSUInteger)e; - (NSInteger)state; - (void)open; - (void)close;
+@end
+@interface NSPrinter : NSObject { @public NSString *_name, *_type; }
+@end

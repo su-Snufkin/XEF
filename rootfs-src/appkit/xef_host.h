@@ -119,6 +119,9 @@ void xef_host_image_free(int img);
 int  xef_host_image_encode(const unsigned char *rgba, int w, int h, const char *type, int quality, unsigned long *out_len);
 void xef_host_blob_copy(int blob, unsigned char *dst);
 void xef_host_blob_free(int blob);
+/* PDF (poppler-utils on the host): page count and first page size in points; a page rendered at dpi into an image handle (see xef_host_image_copy) */
+int  xef_host_pdf_info(const void *data, unsigned long len, int *pages, double *wh);
+int  xef_host_pdf_render(const void *data, unsigned long len, int page, double dpi, int *wh);
 
 #ifdef __cplusplus
 }

@@ -46,7 +46,6 @@ NSDockTile
 NSDraggingImageComponent
 NSDraggingItem
 NSDraggingSession
-NSDrawer
 NSEPSImageRep
 NSFilePromiseProvider
 NSFilePromiseReceiver
@@ -76,7 +75,6 @@ NSNibControlConnector
 NSNibOutletConnector
 NSOpenGLLayer
 NSOpenGLPixelBuffer
-NSPDFImageRep
 NSPDFInfo
 NSPDFPanel
 NSPICTImageRep
@@ -90,7 +88,6 @@ NSPredicateEditorRowTemplate
 NSPressureConfiguration
 NSPreviewRepresentingActivityItem
 NSPrintPanel
-NSPrinter
 NSScrubber
 NSScrubberArrangedView
 NSScrubberLayout

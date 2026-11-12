@@ -185,8 +185,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSDraggingItem @end
 @interface NSDraggingSession : NSObject @end
 @implementation NSDraggingSession @end
-@interface NSDrawer : NSResponder @end
-@implementation NSDrawer @end
 @interface NSEPSImageRep : NSImageRep @end
 @implementation NSEPSImageRep @end
 @interface NSFilePromiseProvider : NSObject @end
@@ -245,8 +243,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSOpenGLLayer @end
 @interface NSOpenGLPixelBuffer : NSObject @end
 @implementation NSOpenGLPixelBuffer @end
-@interface NSPDFImageRep : NSImageRep @end
-@implementation NSPDFImageRep @end
 @interface NSPDFInfo : NSObject @end
 @implementation NSPDFInfo @end
 @interface NSPDFPanel : NSObject @end
@@ -273,8 +269,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPreviewRepresentingActivityItem @end
 @interface NSPrintPanel : NSObject @end
 @implementation NSPrintPanel @end
-@interface NSPrinter : NSObject @end
-@implementation NSPrinter @end
 @interface NSScrubber : NSView @end
 @implementation NSScrubber @end
 @interface NSScrubberArrangedView : NSView @end
@@ -1091,33 +1085,6 @@ static const GenEntry kTable[] = {
 {"NSDraggingSession", '-', "setAnimatesToStartingPositionsOnCancelOrFail:", 'S', 'v', "B"},
 {"NSDraggingSession", '-', "setDraggingFormation:", 'S', 'v', "q"},
 {"NSDraggingSession", '-', "setDraggingLeaderIndex:", 'S', 'v', "q"},
-{"NSDrawer", '-', "close", 'D', 'v', ""},
-{"NSDrawer", '-', "close:", 'D', 'v', "@"},
-{"NSDrawer", '-', "contentSize", 'G', 'S', ""},
-{"NSDrawer", '-', "contentView", 'G', '@', ""},
-{"NSDrawer", '-', "delegate", 'G', '@', ""},
-{"NSDrawer", '-', "edge", 'D', 'q', ""},
-{"NSDrawer", '-', "initWithContentSize:preferredEdge:", 'I', '@', "Sq"},
-{"NSDrawer", '-', "leadingOffset", 'G', 'd', ""},
-{"NSDrawer", '-', "maxContentSize", 'G', 'S', ""},
-{"NSDrawer", '-', "minContentSize", 'G', 'S', ""},
-{"NSDrawer", '-', "open", 'D', 'v', ""},
-{"NSDrawer", '-', "open:", 'D', 'v', "@"},
-{"NSDrawer", '-', "openOnEdge:", 'D', 'v', "q"},
-{"NSDrawer", '-', "parentWindow", 'G', '@', ""},
-{"NSDrawer", '-', "preferredEdge", 'G', 'q', ""},
-{"NSDrawer", '-', "setContentSize:", 'S', 'v', "S"},
-{"NSDrawer", '-', "setContentView:", 'S', 'v', "@"},
-{"NSDrawer", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSDrawer", '-', "setLeadingOffset:", 'S', 'v', "d"},
-{"NSDrawer", '-', "setMaxContentSize:", 'S', 'v', "S"},
-{"NSDrawer", '-', "setMinContentSize:", 'S', 'v', "S"},
-{"NSDrawer", '-', "setParentWindow:", 'S', 'v', "@"},
-{"NSDrawer", '-', "setPreferredEdge:", 'S', 'v', "q"},
-{"NSDrawer", '-', "setTrailingOffset:", 'S', 'v', "d"},
-{"NSDrawer", '-', "state", 'D', 'q', ""},
-{"NSDrawer", '-', "toggle:", 'D', 'v', "@"},
-{"NSDrawer", '-', "trailingOffset", 'G', 'd', ""},
 {"NSEPSImageRep", '+', "imageRepWithData:", 'F', '@', "@"},
 {"NSEPSImageRep", '-', "EPSRepresentation", 'D', '@', ""},
 {"NSEPSImageRep", '-', "boundingBox", 'D', 'R', ""},
@@ -1567,13 +1534,6 @@ static const GenEntry kTable[] = {
 {"NSOpenPanel", '-', "setCanDownloadUbiquitousContents:", 'S', 'v', "B"},
 {"NSOpenPanel", '-', "setCanResolveUbiquitousConflicts:", 'S', 'v', "B"},
 {"NSOpenPanel", '-', "setResolvesAliases:", 'S', 'v', "B"},
-{"NSPDFImageRep", '+', "imageRepWithData:", 'F', '@', "@"},
-{"NSPDFImageRep", '-', "PDFRepresentation", 'D', '@', ""},
-{"NSPDFImageRep", '-', "bounds", 'D', 'R', ""},
-{"NSPDFImageRep", '-', "currentPage", 'G', 'q', ""},
-{"NSPDFImageRep", '-', "initWithData:", 'I', '@', "@"},
-{"NSPDFImageRep", '-', "pageCount", 'D', 'q', ""},
-{"NSPDFImageRep", '-', "setCurrentPage:", 'S', 'v', "q"},
 {"NSPDFInfo", '-', "URL", 'G', '@', ""},
 {"NSPDFInfo", '-', "attributes", 'D', 'M', ""},
 {"NSPDFInfo", '-', "isFileExtensionHidden", 'G', 'B', ""},
@@ -1795,33 +1755,6 @@ static const GenEntry kTable[] = {
 {"NSPrintPanel", '-', "setJobStyleHint:", 'S', 'v', "q"},
 {"NSPrintPanel", '-', "setOptions:", 'S', 'v', "q"},
 {"NSPrintPanel", '-', "updateFromPrintInfo", 'D', 'v', ""},
-{"NSPrinter", '+', "printerNames", 'D', 'A', ""},
-{"NSPrinter", '+', "printerTypes", 'D', 'A', ""},
-{"NSPrinter", '+', "printerWithName:", 'D', '@', "@"},
-{"NSPrinter", '+', "printerWithName:domain:includeUnavailable:", 'D', '@', "@@B"},
-{"NSPrinter", '+', "printerWithType:", 'D', '@', "q"},
-{"NSPrinter", '-', "acceptsBinary", 'D', 'B', ""},
-{"NSPrinter", '-', "booleanForKey:inTable:", 'D', 'B', "@@"},
-{"NSPrinter", '-', "deviceDescription", 'D', 'M', ""},
-{"NSPrinter", '-', "domain", 'D', '@', ""},
-{"NSPrinter", '-', "floatForKey:inTable:", 'D', 'f', "@@"},
-{"NSPrinter", '-', "host", 'D', '@', ""},
-{"NSPrinter", '-', "imageRectForPaper:", 'D', 'R', "@"},
-{"NSPrinter", '-', "intForKey:inTable:", 'D', 'i', "@@"},
-{"NSPrinter", '-', "isColor", 'D', 'B', ""},
-{"NSPrinter", '-', "isFontAvailable:", 'D', 'B', "@"},
-{"NSPrinter", '-', "isKey:inTable:", 'D', 'B', "@@"},
-{"NSPrinter", '-', "isOutputStackInReverseOrder", 'D', 'B', ""},
-{"NSPrinter", '-', "languageLevel", 'D', 'q', ""},
-{"NSPrinter", '-', "name", 'D', '@', ""},
-{"NSPrinter", '-', "note", 'D', '@', ""},
-{"NSPrinter", '-', "pageSizeForPaper:", 'D', 'S', "q"},
-{"NSPrinter", '-', "rectForKey:inTable:", 'D', 'R', "@@"},
-{"NSPrinter", '-', "sizeForKey:inTable:", 'D', 'S', "@@"},
-{"NSPrinter", '-', "statusForTable:", 'D', 'q', "@"},
-{"NSPrinter", '-', "stringForKey:inTable:", 'D', '@', "@@"},
-{"NSPrinter", '-', "stringListForKey:inTable:", 'D', 'A', "@@"},
-{"NSPrinter", '-', "type", 'D', 'q', ""},
 {"NSResponder", '-', "interfaceStyle", 'G', 'q', ""},
 {"NSResponder", '-', "performMnemonic:", 'D', 'B', "@"},
 {"NSResponder", '-', "setInterfaceStyle:", 'S', 'v', "q"},

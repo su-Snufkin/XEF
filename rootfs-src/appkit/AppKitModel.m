@@ -1617,3 +1617,42 @@ static BOOL g_auto_customize;
   if (it) _cache[i] = it; return it; }
 + (BOOL)isAutomaticCustomizeTouchBarMenuItemEnabled { return g_auto_customize; } + (void)setAutomaticCustomizeTouchBarMenuItemEnabled:(BOOL)f { g_auto_customize = f; }
 @end
+
+/* ================================================================== NSDrawer / NSPrinter */
+@interface NSObject (XEFDrawerDelegate) - (BOOL)drawerShouldOpen:(id)d; - (BOOL)drawerShouldClose:(id)d; - (void)drawerWillOpen:(NSNotification *)n; - (void)drawerDidOpen:(NSNotification *)n; - (void)drawerWillClose:(NSNotification *)n; - (void)drawerDidClose:(NSNotification *)n; @end
+@implementation NSDrawer
+- (id)init { return [self initWithContentSize:NSMakeSize(100, 100) preferredEdge:2]; }
+- (id)initWithContentSize:(NSSize)s preferredEdge:(NSUInteger)e {
+  if ((self = [super init])) { _size = s; _pref = e; _edge = e; _trail = 15; _max = NSMakeSize(3.40282e+38, 3.40282e+38); _content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, s.width, s.height)]; }
+  return self; }
+- (void)dealloc { [_timer invalidate]; [_content release]; [super dealloc]; }
+- (NSWindow *)parentWindow { return _parent; } - (void)setParentWindow:(NSWindow *)w { _parent = w; }
+- (NSView *)contentView { return _content; } - (void)setContentView:(NSView *)v { [v retain]; [_content release]; _content = v; }
+- (NSUInteger)preferredEdge { return _pref; } - (void)setPreferredEdge:(NSUInteger)e { _pref = e; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (NSInteger)state { return _state; } - (NSUInteger)edge { return _edge; }
+- (NSSize)contentSize { return _size; } - (void)setContentSize:(NSSize)s { _size = NSMakeSize(MIN(MAX(s.width, _min.width), _max.width), MIN(MAX(s.height, _min.height), _max.height)); }
+- (NSSize)minContentSize { return _min; } - (void)setMinContentSize:(NSSize)s { _min = s; } - (NSSize)maxContentSize { return _max; } - (void)setMaxContentSize:(NSSize)s { _max = s; }
+- (CGFloat)leadingOffset { return _lead; } - (void)setLeadingOffset:(CGFloat)o { _lead = o; } - (CGFloat)trailingOffset { return _trail; } - (void)setTrailingOffset:(CGFloat)o { _trail = o; }
+- (void)_xefNote:(NSString *)n sel:(SEL)s { NSNotification *nt = [NSNotification notificationWithName:n object:self]; [[NSNotificationCenter defaultCenter] postNotification:nt]; if ([_delegate respondsToSelector:s]) [_delegate performSelector:s withObject:nt]; }
+- (void)_xefFinish { _timer = nil;
+  if (_state == 1) { _state = 2; [self _xefNote:@"NSDrawerDidOpenNotification" sel:@selector(drawerDidOpen:)]; }
+  else if (_state == 3) { _state = 0; [self _xefNote:@"NSDrawerDidCloseNotification" sel:@selector(drawerDidClose:)]; } }
+- (void)_xefAnimate { [_timer invalidate]; _timer = [NSTimer scheduledTimerWithTimeInterval:0.25 target:self selector:@selector(_xefFinish) userInfo:nil repeats:NO]; }
+- (void)openOnEdge:(NSUInteger)e { if (_state != 0) return; _edge = e; _state = 1; [self _xefNote:@"NSDrawerWillOpenNotification" sel:@selector(drawerWillOpen:)]; [self _xefAnimate]; }
+- (void)open { if (_state == 3) { _state = 1; [self _xefNote:@"NSDrawerWillOpenNotification" sel:@selector(drawerWillOpen:)]; [self _xefAnimate]; return; } [self openOnEdge:_pref]; }
+- (void)open:(id)s { if ([_delegate respondsToSelector:@selector(drawerShouldOpen:)] && ![_delegate drawerShouldOpen:self]) return; [self open]; }
+- (void)close { if (_state == 0 || _state == 3) return; _state = 3; [self _xefNote:@"NSDrawerWillCloseNotification" sel:@selector(drawerWillClose:)]; [self _xefAnimate]; }
+- (void)close:(id)s { if (_state == 3 || _state == 0) return; if ([_delegate respondsToSelector:@selector(drawerShouldClose:)] && ![_delegate drawerShouldClose:self]) return; [self close]; }
+- (void)toggle:(id)s { if (_state == 1 || _state == 2) [self close:s]; else [self open:s]; }
+@end
+@implementation NSPrinter
++ (NSArray *)printerNames { return @[]; } + (NSArray *)printerTypes { return @[]; }
++ (NSPrinter *)printerWithName:(NSString *)n { return nil; } + (NSPrinter *)printerWithType:(NSString *)t { return nil; } + (NSPrinter *)printerWithName:(NSString *)n domain:(NSString *)d includeUnavailable:(BOOL)u { return nil; }
+- (NSString *)name { return _name; } - (NSString *)type { return _type; } - (NSInteger)languageLevel { return 2; } - (NSSize)pageSizeForPaper:(NSString *)p { return NSMakeSize(612, 792); } - (NSDictionary *)deviceDescription { return @{}; }
+- (NSString *)domain { return @""; } - (NSString *)host { return @""; } - (NSString *)note { return @""; }
+- (BOOL)acceptsBinary { return NO; } - (BOOL)isColor { return NO; } - (BOOL)isFontAvailable:(NSString *)f { return NO; } - (BOOL)isOutputStackInReverseOrder { return NO; }
+- (NSInteger)statusForTable:(NSString *)t { return 0; } - (BOOL)isKey:(NSString *)k inTable:(NSString *)t { return NO; } - (BOOL)booleanForKey:(NSString *)k inTable:(NSString *)t { return NO; } - (float)floatForKey:(NSString *)k inTable:(NSString *)t { return 0; } - (int)intForKey:(NSString *)k inTable:(NSString *)t { return 0; }
+- (NSRect)rectForKey:(NSString *)k inTable:(NSString *)t { return NSZeroRect; } - (NSSize)sizeForKey:(NSString *)k inTable:(NSString *)t { return NSZeroSize; } - (NSString *)stringForKey:(NSString *)k inTable:(NSString *)t { return nil; } - (NSArray *)stringListForKey:(NSString *)k inTable:(NSString *)t { return nil; }
+- (NSRect)imageRectForPaper:(NSString *)p { return NSMakeRect(0, 0, 612, 792); }
+@end
