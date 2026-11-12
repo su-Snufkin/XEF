@@ -1007,3 +1007,12 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `registerUnitWithName:…`, znaczniki (`addMarker:`, położenie, ruchomość), rysowanie kresek co jednostkę. Nie podpięte do `NSScrollView` (`hasHorizontalRuler`) ani do przewijania.
 - Stan: **5526 z 8257** metod prawdziwych; `macref.sh` 36/36; pełny `run_tests.sh` przechodzi.
 
+### 29. Bindings (NSObject) i NSImage — ustawienia (2026-11-12)
+- **Cocoa bindings** (`AppKit.m`, kategoria `XEFBindings`, `appkit_bindings.m` zgodny z Makiem): `bind:toObject:withKeyPath:options:`, `unbind:`, `infoForBinding:` (opcje zawsze słownik, też puste),
+  `exposeBinding:`/`exposedBindings` (łańcuch klas; NSView: hidden/toolTip, NSControl: enabled/value/…), opcje `NSValueTransformerName` (w tym `NSNegateBoolean`) i `NSNullPlaceholder`. **Tylko w jedną stronę**
+  (model → właściwość; obserwacja KVO, więc właściwość modelu musi mieć setter): zmiana pola tekstowego przez użytkownika nie wraca do modelu — kontrolki trzeba by wołać `-[NSObject _xefPropagate…]`, którego nie ma.
+  `NSController` ma własne bindowanie przez kontrolery z §6. Nie zaimplementowano protokołów delegata z `NSObject` (`controlTextDid…`, `changeFont:` itd. — świadomie, bo zmieniłyby `respondsToSelector:`).
+- **NSImage** (`AppKitGraphics.m`, kategoria `XEFSettings`, `appkit_image2.m` zgodny z Makiem): ustawienia (`backgroundColor`, `matchesOnMultipleResolution`, `prefersColorMatch`, `cacheMode`…), `hitTestRect:…`
+  (próbkowanie alfy), przestarzałe `compositeToPoint:…`, `dissolveToPoint:fromRect:fraction:`, symbole SF (`imageWithSystemSymbolName:variableValue:…` → nil).
+- Stan: **5576 z 8257** metod prawdziwych; `macref.sh` 38/38.
+

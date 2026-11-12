@@ -1849,3 +1849,47 @@ static BOOL XEFFlag(id o, const char *k, BOOL def) { NSNumber *n = XEFGet(o, k);
 - (NSString *)toolTip { return [_button toolTip]; } - (void)setToolTip:(NSString *)t { [_button setToolTip:t]; } - (void)sendActionOn:(NSInteger)m {}
 - (void)drawStatusBarBackgroundInRect:(NSRect)r withHighlight:(BOOL)h {} - (void)popUpStatusItemMenu:(NSMenu *)m {}
 @end
+
+/* ================================================================== Cocoa bindings (NSObject): one-way, from the model to the bound property */
+@interface XEFBindingObserver : NSObject { @public id _target; NSString *_binding, *_keyPath; id _object; NSDictionary *_options; BOOL _live; } @end
+@implementation XEFBindingObserver
+- (void)apply {
+  id v = [_object valueForKeyPath:_keyPath];
+  NSString *tn = [_options objectForKey:@"NSValueTransformerName"];
+  if ([tn isEqualToString:@"NSNegateBoolean"]) v = [NSNumber numberWithBool:![v boolValue]];
+  else if (tn) { NSValueTransformer *t = [NSValueTransformer valueTransformerForName:tn]; if (t) v = [t transformedValue:v]; }
+  id ph = (!v || v == [NSNull null]) ? [_options objectForKey:@"NSNullPlaceholder"] : nil; if (ph) v = ph;
+  if (v == [NSNull null]) v = nil;
+  if ([_binding isEqualToString:@"value"] && [_target respondsToSelector:@selector(setObjectValue:)]) [_target setObjectValue:v];
+  else if ([_binding isEqualToString:@"value"] && [_target respondsToSelector:@selector(setStringValue:)]) [_target setStringValue:[v description]];
+  else @try { [_target setValue:v forKey:_binding]; } @catch (id e) {} }
+- (void)observeValueForKeyPath:(NSString *)k ofObject:(id)o change:(NSDictionary *)c context:(void *)ctx { if (_live) [self apply]; }
+@end
+static NSMutableDictionary *XEFBindingTable(id o, BOOL create) {
+  NSMutableDictionary *d = objc_getAssociatedObject(o, "xef.bindings"); if (!d && create) { d = [NSMutableDictionary dictionary]; objc_setAssociatedObject(o, "xef.bindings", d, OBJC_ASSOCIATION_RETAIN); } return d; }
+static NSMutableDictionary *g_exposed;
+@implementation NSObject (XEFBindings)
++ (void)exposeBinding:(NSString *)b { if (!g_exposed) g_exposed = [[NSMutableDictionary alloc] init]; NSString *k = NSStringFromClass(self); NSMutableSet *s = g_exposed[k]; if (!s) { s = [NSMutableSet set]; g_exposed[k] = s; } [s addObject:b]; }
+- (NSArray *)exposedBindings {
+  NSMutableArray *r = [NSMutableArray array];
+  for (Class c = [self class]; c; c = class_getSuperclass(c)) {
+    for (NSString *b in g_exposed[NSStringFromClass(c)]) if (![r containsObject:b]) [r addObject:b];
+    NSString *n = NSStringFromClass(c);
+    if ([n isEqualToString:@"NSView"]) for (NSString *b in @[@"hidden", @"toolTip"]) if (![r containsObject:b]) [r addObject:b];
+    if ([n isEqualToString:@"NSControl"]) for (NSString *b in @[@"enabled", @"value", @"fontBold", @"fontFamilyName", @"fontItalic", @"fontName", @"fontSize"]) if (![r containsObject:b]) [r addObject:b];
+    if ([n isEqualToString:@"NSButton"]) for (NSString *b in @[@"title", @"alternateTitle", @"image", @"alternateImage", @"argument", @"target"]) if (![r containsObject:b]) [r addObject:b]; }
+  return r; }
+- (Class)valueClassForBinding:(NSString *)b { return nil; }
+- (void)bind:(NSString *)binding toObject:(id)obj withKeyPath:(NSString *)kp options:(NSDictionary *)o {
+  [self unbind:binding]; if (!obj || !kp) return;
+  XEFBindingObserver *ob = [[XEFBindingObserver alloc] init]; ob->_target = self; ob->_binding = [binding copy]; ob->_keyPath = [kp copy]; ob->_object = obj; ob->_options = [o copy] ?: @{};
+  XEFBindingTable(self, YES)[binding] = ob; [obj addObserver:ob forKeyPath:kp options:0 context:NULL]; ob->_live = YES; [ob apply]; [ob release]; }
+- (void)unbind:(NSString *)binding {
+  XEFBindingObserver *ob = XEFBindingTable(self, NO)[binding]; if (!ob) return; ob->_live = NO;
+  @try { [ob->_object removeObserver:ob forKeyPath:ob->_keyPath]; } @catch (id e) {}
+  [XEFBindingTable(self, NO) removeObjectForKey:binding]; }
+- (NSDictionary *)infoForBinding:(NSString *)binding {
+  XEFBindingObserver *ob = XEFBindingTable(self, NO)[binding]; if (!ob) return nil;
+  return @{ @"NSObservedObject": ob->_object, @"NSObservedKeyPath": ob->_keyPath, @"NSOptions": ob->_options }; }
+- (NSArray *)optionDescriptionsForBinding:(NSString *)b { return @[]; }
+@end

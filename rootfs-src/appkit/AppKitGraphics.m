@@ -1427,3 +1427,37 @@ static NSMutableArray *XEFRepClasses(void) { if (!g_rep_classes) g_rep_classes =
 + (NSColor *)colorWithCIColor:(id)c { return nil; } + (NSColor *)colorFromPasteboard:(id)p { return nil; } - (void)writeToPasteboard:(id)p {}
 - (NSString *)localizedCatalogNameComponent { return nil; } - (NSString *)localizedColorNameComponent { return nil; }
 @end
+
+/* ---- NSImage: stored settings, deprecated compositing, hit testing ---- */
+static id XEFImgGet(id o, const char *k) { return objc_getAssociatedObject(o, k); }
+static void XEFImgSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k, v, OBJC_ASSOCIATION_RETAIN); }
+@implementation NSImage (XEFSettings)
+- (NSColor *)backgroundColor { return XEFImgGet(self, "xef.bg") ?: [NSColor clearColor]; } - (void)setBackgroundColor:(NSColor *)c { XEFImgSet(self, "xef.bg", c); }
+- (id)delegate { return XEFImgGet(self, "xef.delegate"); } - (void)setDelegate:(id)d { objc_setAssociatedObject(self, "xef.delegate", d, OBJC_ASSOCIATION_ASSIGN); }
+- (BOOL)usesEPSOnResolutionMismatch { return [XEFImgGet(self, "xef.eps") boolValue]; } - (void)setUsesEPSOnResolutionMismatch:(BOOL)f { XEFImgSet(self, "xef.eps", [NSNumber numberWithBool:f]); }
+- (BOOL)prefersColorMatch { return [XEFImgGet(self, "xef.pcm") ?: @YES boolValue]; } - (void)setPrefersColorMatch:(BOOL)f { XEFImgSet(self, "xef.pcm", [NSNumber numberWithBool:f]); }
+- (BOOL)matchesOnMultipleResolution { return [XEFImgGet(self, "xef.mmr") ?: @YES boolValue]; } - (void)setMatchesOnMultipleResolution:(BOOL)f { XEFImgSet(self, "xef.mmr", [NSNumber numberWithBool:f]); }
+- (BOOL)matchesOnlyOnBestFittingAxis { return [XEFImgGet(self, "xef.mba") boolValue]; } - (void)setMatchesOnlyOnBestFittingAxis:(BOOL)f { XEFImgSet(self, "xef.mba", [NSNumber numberWithBool:f]); }
+- (NSInteger)cacheMode { return [XEFImgGet(self, "xef.cm") integerValue]; } - (void)setCacheMode:(NSInteger)m { XEFImgSet(self, "xef.cm", [NSNumber numberWithInteger:m]); }
+- (void)setAlignmentRect:(NSRect)r { XEFImgSet(self, "xef.align", [NSValue valueWithRect:r]); }
+- (BOOL)scalesWhenResized { return [XEFImgGet(self, "xef.swr") boolValue]; } - (void)setScalesWhenResized:(BOOL)f { XEFImgSet(self, "xef.swr", [NSNumber numberWithBool:f]); }
+- (BOOL)isDataRetained { return [XEFImgGet(self, "xef.dr") boolValue]; } - (void)setDataRetained:(BOOL)f { XEFImgSet(self, "xef.dr", [NSNumber numberWithBool:f]); }
+- (BOOL)isCachedSeparately { return [XEFImgGet(self, "xef.cs") boolValue]; } - (void)setCachedSeparately:(BOOL)f { XEFImgSet(self, "xef.cs", [NSNumber numberWithBool:f]); }
+- (BOOL)cacheDepthMatchesImageDepth { return [XEFImgGet(self, "xef.cdm") boolValue]; } - (void)setCacheDepthMatchesImageDepth:(BOOL)f { XEFImgSet(self, "xef.cdm", [NSNumber numberWithBool:f]); }
+- (id)symbolConfiguration { return nil; } - (NSLocale *)locale { return nil; } - (NSImage *)imageWithLocale:(NSLocale *)l { return self; }
++ (NSImage *)imageWithSystemSymbolName:(NSString *)n variableValue:(double)v accessibilityDescription:(NSString *)d { return nil; }
++ (NSImage *)imageWithSymbolName:(NSString *)n variableValue:(double)v { return nil; } + (NSImage *)imageWithSymbolName:(NSString *)n bundle:(NSBundle *)b variableValue:(double)v { return nil; }
+- (id)initWithPasteboard:(id)p { [self release]; return nil; } - (id)initWithIconRef:(void *)r { return [self initWithSize:NSMakeSize(32, 32)]; }
++ (NSArray *)readableTypesForPasteboard:(id)p { return @[]; } - (NSArray *)writableTypesForPasteboard:(id)p { return @[]; } + (NSArray *)imageUnfilteredPasteboardTypes { return @[]; } + (NSArray *)imagePasteboardTypes { return @[]; }
+- (CGFloat)recommendedLayerContentsScale:(CGFloat)s { return s < 1 ? 1 : ceil(s); } - (id)layerContentsForContentsScale:(CGFloat)s { return (id)[self CGImageForProposedRect:NULL context:nil hints:nil]; }
+- (BOOL)hitTestRect:(NSRect)r withImageDestinationRect:(NSRect)d context:(NSGraphicsContext *)c hints:(NSDictionary *)h flipped:(BOOL)f {
+  NSBitmapImageRep *b = [self _xefBitmap]; if (!b || NSIsEmptyRect(d)) return NO;
+  NSRect hit = NSIntersectionRect(r, d); if (NSIsEmptyRect(hit)) return NO;
+  NSInteger px = (NSInteger)((NSMidX(hit) - d.origin.x) / d.size.width * [b pixelsWide]), py = (NSInteger)((NSMidY(hit) - d.origin.y) / d.size.height * [b pixelsHigh]);
+  if (!f) py = [b pixelsHigh] - 1 - py; NSColor *col = [b colorAtX:px y:py]; return col && [col alphaComponent] > 0.01; }
+- (void)dissolveToPoint:(NSPoint)p fromRect:(NSRect)s fraction:(CGFloat)f { [self drawAtPoint:p fromRect:s operation:2 fraction:f]; }
+- (void)compositeToPoint:(NSPoint)p fromRect:(NSRect)s operation:(NSUInteger)op { [self drawAtPoint:p fromRect:s operation:op fraction:1]; }
+- (void)compositeToPoint:(NSPoint)p operation:(NSUInteger)op fraction:(CGFloat)f { [self drawAtPoint:p fromRect:NSZeroRect operation:op fraction:f]; }
+- (void)compositeToPoint:(NSPoint)p fromRect:(NSRect)s operation:(NSUInteger)op fraction:(CGFloat)f { [self drawAtPoint:p fromRect:s operation:op fraction:f]; }
+- (void)lockFocusOnRepresentation:(id)rep { [self lockFocus]; } - (void)cancelIncrementalLoad {}
+@end
