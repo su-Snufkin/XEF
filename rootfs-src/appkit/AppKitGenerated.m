@@ -115,8 +115,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSBackgroundExtensionView @end
 @interface NSBindingSelectionMarker : NSObject @end
 @implementation NSBindingSelectionMarker @end
-@interface NSBrowserCell : NSCell @end
-@implementation NSBrowserCell @end
 @interface NSTouchBarItem : NSObject @end
 @implementation NSTouchBarItem @end
 @interface NSButtonTouchBarItem : NSTouchBarItem @end
@@ -647,40 +645,20 @@ static const GenEntry kTable[] = {
 {"NSBox", '-', "titleRect", 'D', 'R', ""},
 {"NSBrowser", '+', "removeSavedColumnsWithAutosaveName:", 'D', 'v', "q"},
 {"NSBrowser", '-', "canDragRowsWithIndexes:inColumn:withEvent:", 'D', 'B', "@q@"},
-{"NSBrowser", '-', "columnOfMatrix:", 'D', 'q', "@"},
 {"NSBrowser", '-', "columnsAutosaveName", 'G', 'q', ""},
 {"NSBrowser", '-', "draggingImageForRowsWithIndexes:inColumn:withEvent:offset:", 'D', '@', "@q@^"},
 {"NSBrowser", '-', "drawTitleOfColumn:inRect:", 'D', 'v', "qR"},
 {"NSBrowser", '-', "editItemAtIndexPath:withEvent:select:", 'D', 'v', "@@B"},
 {"NSBrowser", '-', "itemAtIndexPath:", 'D', '@', "@"},
-{"NSBrowser", '-', "loadedCellAtRow:column:", 'D', '@', "qq"},
-{"NSBrowser", '-', "matrixInColumn:", 'D', '@', "q"},
 {"NSBrowser", '-', "noteHeightOfRowsWithIndexesChanged:inColumn:", 'D', 'v', "@q"},
 {"NSBrowser", '-', "prefersAllColumnUserResizing", 'G', 'B', ""},
 {"NSBrowser", '-', "scrollColumnsLeftBy:", 'D', 'v', "q"},
 {"NSBrowser", '-', "scrollColumnsRightBy:", 'D', 'v', "q"},
 {"NSBrowser", '-', "scrollViaScroller:", 'D', 'v', "@"},
-{"NSBrowser", '-', "selectedCellInColumn:", 'D', '@', "q"},
-{"NSBrowser", '-', "selectedCells", 'D', 'A', ""},
 {"NSBrowser", '-', "setColumnsAutosaveName:", 'S', 'v', "q"},
 {"NSBrowser", '-', "setDraggingSourceOperationMask:forLocal:", 'D', 'v', "qB"},
 {"NSBrowser", '-', "setPrefersAllColumnUserResizing:", 'S', 'v', "B"},
-{"NSBrowserCell", '+', "branchImage", 'D', '@', ""},
-{"NSBrowserCell", '+', "highlightedBranchImage", 'D', '@', ""},
-{"NSBrowserCell", '-', "alternateImage", 'G', '@', ""},
 {"NSBrowserCell", '-', "highlightColorInView:", 'D', '@', "@"},
-{"NSBrowserCell", '-', "image", 'G', '@', ""},
-{"NSBrowserCell", '-', "initImageCell:", 'I', '@', "@"},
-{"NSBrowserCell", '-', "initTextCell:", 'I', '@', "@"},
-{"NSBrowserCell", '-', "initWithCoder:", 'I', '@', "@"},
-{"NSBrowserCell", '-', "isLeaf", 'G', 'B', ""},
-{"NSBrowserCell", '-', "isLoaded", 'G', 'B', ""},
-{"NSBrowserCell", '-', "reset", 'D', 'v', ""},
-{"NSBrowserCell", '-', "set", 'D', 'v', ""},
-{"NSBrowserCell", '-', "setAlternateImage:", 'S', 'v', "@"},
-{"NSBrowserCell", '-', "setImage:", 'S', 'v', "@"},
-{"NSBrowserCell", '-', "setLeaf:", 'S', 'v', "B"},
-{"NSBrowserCell", '-', "setLoaded:", 'S', 'v', "B"},
 {"NSBundle", '+', "loadNibFile:externalNameTable:withZone:", 'D', 'B', "@@^"},
 {"NSBundle", '-', "URLForImageResource:", 'D', '@', "q"},
 {"NSBundle", '-', "contextHelpForKey:", 'D', '@', "q"},

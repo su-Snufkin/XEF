@@ -11,7 +11,6 @@ NSAdaptiveImageGlyph
 NSAlignmentFeedbackFilter
 NSBackgroundExtensionView
 NSBindingSelectionMarker
-NSBrowserCell
 NSTouchBarItem
 NSButtonTouchBarItem
 NSCIImageRep

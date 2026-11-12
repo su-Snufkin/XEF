@@ -163,3 +163,7 @@
 }
 - (id)initWithData:(NSData *)d; - (BOOL)play; - (BOOL)stop; - (BOOL)isPlaying; - (NSTimeInterval)duration;
 @end
+
+@interface NSBrowserCell : NSCell { @public BOOL _leaf, _loaded; id _alt; }
+- (BOOL)isLeaf; - (void)setLeaf:(BOOL)f; - (BOOL)isLoaded; - (void)setLoaded:(BOOL)f;
+@end

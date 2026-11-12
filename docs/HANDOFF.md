@@ -954,3 +954,12 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   dla widoku z dataSource — test ich nie porównuje.
 - Stan: **5146 z 8257** metod prawdziwych; `macref.sh` 26/26.
 
+### 23. NSBrowser — klasyczne API z macierzami, NSBrowserCell (2026-11-12)
+- `AppKitModel.m`, `appkit_browser2.m` zgodny z Makiem: gdy delegat ma `browser:numberOfRowsInColumn:` (a nie `numberOfChildrenOfItem:`), kolumna to `NSMatrix` jednokolumnowa
+  z komórkami `NSBrowserCell` (klasa komórki i macierzy ustawialne; domyślnie `+cellClass` = NSBrowserCell, `matrixClass` = NSMatrix). **Komórki ładują się leniwie** —
+  `browser:willDisplayCell:atRow:column:` wołany jest przy pierwszym dostępie (`loadedCellAtRow:column:`, `selectedCell`, ścieżka), nie przy `loadColumnZero` (kolejność wywołań
+  jak na Macu: `rows0`, `cell0.1`, `rows1`). `setLeaf:` komórki decyduje o otwarciu następnej kolumny, ścieżka bierze `stringValue` komórek, `setPath:` je dopasowuje,
+  `matrixInColumn:`, `columnOfMatrix:`, `selectedCell(s)`. `NSBrowserCell` jest prawdziwą klasą (`isLeaf`, `isLoaded`, `reset`). W trybie klasycznym `titleOfColumn:` zwraca `@""`.
+- Nadal brak: przewijania kolumn, przeciągania, klawiszy strzałek, `browser:createRowsForColumn:inMatrix:`, `browser:selectRow:inColumn:` i innych rzadkich callbacków.
+- Stan: **5161 z 8257** metod prawdziwych; `macref.sh` 27/27.
+

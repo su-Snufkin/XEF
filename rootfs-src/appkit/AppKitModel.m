@@ -1016,9 +1016,27 @@ static NSSize content_size(NSGridCell *c) {
 /* ================================================================== NSBrowser */
 @interface NSObject (XEFBrowserDelegate)
 - (id)rootItemForBrowser:(id)b; - (NSInteger)browser:(id)b numberOfChildrenOfItem:(id)i; - (id)browser:(id)b child:(NSInteger)n ofItem:(id)i;
+- (NSInteger)browser:(id)b numberOfRowsInColumn:(NSInteger)c; - (void)browser:(id)b willDisplayCell:(id)cell atRow:(NSInteger)r column:(NSInteger)c;
 - (BOOL)browser:(id)b isLeafItem:(id)i; - (id)browser:(id)b objectValueForItem:(id)i; - (void)browserSelectionDidChange:(id)b;
 @end
 @implementation NSBrowser
+- (BOOL)_xefClassic { return [_delegate respondsToSelector:@selector(browser:numberOfRowsInColumn:)] && ![_delegate respondsToSelector:@selector(browser:numberOfChildrenOfItem:)]; }
+- (NSInteger)_xefRows:(NSInteger)c { if (c < 0 || c >= (NSInteger)[_items count]) return 0; id x = _items[c]; return [x isKindOfClass:[NSMatrix class]] ? [(NSMatrix *)x numberOfRows] : (NSInteger)[x count]; }
+- (NSMatrix *)_xefMatrixForColumn:(NSInteger)c {
+  NSInteger n = [_delegate browser:self numberOfRowsInColumn:c]; Class cc = _cellClass ?: [NSBrowserCell class], mc = [self matrixClass];
+  NSRect f = [self frameOfInsideOfColumn:c]; if (f.size.width < 1) f.size.width = 100;
+  NSMatrix *m = [[[mc alloc] initWithFrame:NSMakeRect(0, 0, f.size.width, n * _rowH) mode:2 cellClass:cc numberOfRows:n numberOfColumns:1] autorelease];
+  [m setCellSize:NSMakeSize(f.size.width, _rowH)]; return m; }
+- (id)_xefLoadedCell:(NSInteger)r column:(NSInteger)c {
+  NSMatrix *m = c >= 0 && c < (NSInteger)[_items count] ? _items[c] : nil; NSBrowserCell *cell = [m cellAtRow:r column:0]; if (!cell) return nil;
+  if (![cell isLoaded]) { [cell setLoaded:YES]; if ([_delegate respondsToSelector:@selector(browser:willDisplayCell:atRow:column:)]) [_delegate browser:self willDisplayCell:cell atRow:r column:c]; }
+  return cell; }
+- (id)loadedCellAtRow:(NSInteger)r column:(NSInteger)c { return [self _xefClassic] ? [self _xefLoadedCell:r column:c] : nil; }
+- (NSMatrix *)matrixInColumn:(NSInteger)c { return [self _xefClassic] && c >= 0 && c < (NSInteger)[_items count] ? _items[c] : nil; }
+- (NSInteger)columnOfMatrix:(NSMatrix *)m { NSUInteger i = [_items indexOfObjectIdenticalTo:m]; return i == NSNotFound ? -1 : (NSInteger)i; }
+- (id)selectedCellInColumn:(NSInteger)c { NSInteger r = [self selectedRowInColumn:c]; return r < 0 ? nil : [self itemAtRow:r inColumn:c]; }
+- (id)selectedCell { NSInteger c = [self selectedColumn]; return c < 0 ? nil : [self selectedCellInColumn:c]; }
+- (NSArray *)selectedCells { NSInteger c = [self selectedColumn]; NSMutableArray *a = [NSMutableArray array]; if (c < 0) return a; [_sel[c] enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *stop) { id x = [self itemAtRow:i inColumn:c]; if (x) [a addObject:x]; }]; return a; }
 - (id)initWithFrame:(NSRect)f {
   if ((self = [super initWithFrame:f])) {
     _titled = YES; _empty = YES; _separates = YES; _typeSelect = YES; _minW = 100; _defW = 100; _rowH = 17; _resizing = 1; _sep = @"/"; _clickedRow = _clickedCol = -1;
@@ -1032,21 +1050,23 @@ static NSSize content_size(NSGridCell *c) {
   NSInteger n = [_delegate respondsToSelector:@selector(browser:numberOfChildrenOfItem:)] ? [_delegate browser:self numberOfChildrenOfItem:p] : 0;
   NSMutableArray *a = [NSMutableArray array]; for (NSInteger i = 0; i < n; i++) { id c = [self _xefChild:i of:p]; [a addObject:c ?: [NSNull null]]; } return a; }
 - (void)_xefTruncate:(NSInteger)keep { while ((NSInteger)[_items count] > keep) { [_items removeLastObject]; [_parents removeLastObject]; [_sel removeLastObject]; } }
-- (void)_xefAddColumnFor:(id)parent { [_parents addObject:parent]; [_items addObject:[self _xefChildrenOf:parent]]; [_sel addObject:[NSIndexSet indexSet]]; }
+- (void)_xefAddColumnFor:(id)parent { [_parents addObject:parent ?: [NSNull null]]; NSInteger c = [_items count]; [_items addObject:[self _xefClassic] ? (id)[self _xefMatrixForColumn:c] : (id)[self _xefChildrenOf:parent]]; [_sel addObject:[NSIndexSet indexSet]]; }
 - (void)loadColumnZero {
   [_root release]; _root = nil;
+  if ([self _xefClassic]) { [self _xefTruncate:0]; [self _xefAddColumnFor:nil]; _loaded = YES; [self setNeedsDisplay:YES]; return; }
   if ([_delegate respondsToSelector:@selector(rootItemForBrowser:)]) _root = [[_delegate rootItemForBrowser:self] retain];
   [self _xefTruncate:0]; [self _xefAddColumnFor:_root]; _loaded = YES; [self setNeedsDisplay:YES]; }
 - (NSInteger)lastColumn { return [_items count] ? (NSInteger)[_items count] - 1 : 0; }
 - (void)setLastColumn:(NSInteger)c { if (c >= 0) [self _xefTruncate:c + 1]; }
 - (id)itemAtRow:(NSInteger)r inColumn:(NSInteger)c {
-  if (c < 0 || c >= (NSInteger)[_items count] || r < 0 || r >= (NSInteger)[_items[c] count]) return nil;
+  if (c < 0 || c >= (NSInteger)[_items count] || r < 0 || r >= [self _xefRows:c]) return nil;
+  if ([self _xefClassic]) return [self _xefLoadedCell:r column:c];
   id x = _items[c][r]; return x == [NSNull null] ? nil : x; }
 - (id)parentForItemsInColumn:(NSInteger)c { if (c < 0 || c >= (NSInteger)[_parents count]) return nil; id x = _parents[c]; return x == [NSNull null] ? nil : x; }
-- (BOOL)isLeafItem:(id)i { return [_delegate respondsToSelector:@selector(browser:isLeafItem:)] ? [_delegate browser:self isLeafItem:i] : [self _xefChildrenOf:i].count == 0; }
+- (BOOL)isLeafItem:(id)i { if ([i isKindOfClass:[NSBrowserCell class]]) return [(NSBrowserCell *)i isLeaf]; return [_delegate respondsToSelector:@selector(browser:isLeafItem:)] ? [_delegate browser:self isLeafItem:i] : [self _xefChildrenOf:i].count == 0; }
 - (void)selectRowIndexes:(NSIndexSet *)ix inColumn:(NSInteger)c {
   if (!_loaded || c < 0 || c >= (NSInteger)[_items count]) return;
-  NSUInteger n = [_items[c] count];
+  NSUInteger n = [self _xefRows:c];
   NSMutableIndexSet *ok = [NSMutableIndexSet indexSet]; [ix enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *stop) { if (i < n) [ok addIndex:i]; }];
   [self _xefTruncate:c + 1]; _sel[c] = [[ok copy] autorelease];
   if ([ok count] == 1) { id it = [self itemAtRow:[ok firstIndex] inColumn:c]; if (it && ![self isLeafItem:it]) [self _xefAddColumnFor:it]; }
@@ -1055,7 +1075,7 @@ static NSSize content_size(NSGridCell *c) {
 - (NSInteger)selectedColumn { for (NSInteger c = (NSInteger)[_sel count] - 1; c >= 0; c--) if ([_sel[c] count]) return c; return -1; }
 - (NSInteger)selectedRowInColumn:(NSInteger)c { if (c < 0 || c >= (NSInteger)[_sel count] || ![_sel[c] count]) return -1; return [_sel[c] lastIndex]; }
 - (NSIndexSet *)selectedRowIndexesInColumn:(NSInteger)c { return c >= 0 && c < (NSInteger)[_sel count] ? _sel[c] : [NSIndexSet indexSet]; }
-- (NSString *)_xefNameOf:(id)it { id v = [_delegate respondsToSelector:@selector(browser:objectValueForItem:)] ? [_delegate browser:self objectValueForItem:it] : nil; return [v isKindOfClass:[NSString class]] ? v : [v description] ?: @""; }
+- (NSString *)_xefNameOf:(id)it { if ([it isKindOfClass:[NSCell class]]) return [it stringValue] ?: @""; id v = [_delegate respondsToSelector:@selector(browser:objectValueForItem:)] ? [_delegate browser:self objectValueForItem:it] : nil; return [v isKindOfClass:[NSString class]] ? v : [v description] ?: @""; }
 - (NSString *)pathToColumn:(NSInteger)c {
   NSMutableString *s = [NSMutableString string];
   for (NSInteger i = 0; i < c && i < (NSInteger)[_sel count]; i++) { NSInteger r = [self selectedRowInColumn:i]; if (r < 0) break; [s appendString:_sep]; [s appendString:[self _xefNameOf:[self itemAtRow:r inColumn:i]]]; }
@@ -1083,7 +1103,7 @@ static NSSize content_size(NSGridCell *c) {
   NSArray *parts = [path componentsSeparatedByString:_sep]; NSInteger col = 0;
   for (NSString *name in parts) {
     if (![name length]) continue;
-    NSInteger found = -1, n = [_items[col] count];
+    NSInteger found = -1, n = [self _xefRows:col];
     for (NSInteger r = 0; r < n; r++) if ([[self _xefNameOf:[self itemAtRow:r inColumn:col]] isEqualToString:name]) { found = r; break; }
     if (found < 0) { [self _xefTruncate:1]; _sel[0] = [NSIndexSet indexSet]; return NO; }
     [self selectRow:found inColumn:col]; col++;
@@ -1091,15 +1111,16 @@ static NSSize content_size(NSGridCell *c) {
   return YES; }
 - (void)reloadColumn:(NSInteger)c {
   if (c < 0 || c >= (NSInteger)[_items count]) return;
-  _items[c] = [self _xefChildrenOf:_parents[c]]; [self setNeedsDisplay:YES]; }
+  if ([self _xefClassic]) _items[c] = [self _xefMatrixForColumn:c]; else _items[c] = [self _xefChildrenOf:_parents[c]];
+  [self setNeedsDisplay:YES]; }
 - (void)reloadDataForRowIndexes:(NSIndexSet *)r inColumn:(NSInteger)c { [self reloadColumn:c]; }
 - (void)addColumn { [self _xefAddColumnFor:[NSNull null]]; }
 - (void)displayColumn:(NSInteger)c { [self setNeedsDisplay:YES]; } - (void)displayAllColumns { [self setNeedsDisplay:YES]; }
 - (void)scrollColumnToVisible:(NSInteger)c {} - (void)scrollRowToVisible:(NSInteger)r inColumn:(NSInteger)c {} - (void)tile {} - (void)updateScroller {}
-- (void)selectAll:(id)s { if (_multi && [self selectedColumn] >= 0) { NSInteger c = [self selectedColumn]; [self selectRowIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, [_items[c] count])] inColumn:c]; } }
+- (void)selectAll:(id)s { if (_multi && [self selectedColumn] >= 0) { NSInteger c = [self selectedColumn]; [self selectRowIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, [self _xefRows:c])] inColumn:c]; } }
 /* titles and geometry */
 - (void)setTitle:(NSString *)t ofColumn:(NSInteger)c { if (t) _titles[@(c)] = t; else [_titles removeObjectForKey:@(c)]; }
-- (NSString *)titleOfColumn:(NSInteger)c { return _titles[@(c)]; }
+- (NSString *)titleOfColumn:(NSInteger)c { return _titles[@(c)] ?: ([self _xefClassic] ? @"" : nil); }
 - (CGFloat)titleHeight { return 17; }
 - (CGFloat)widthOfColumn:(NSInteger)c { NSNumber *w = _widths[@(c)]; return w ? [w doubleValue] : _defW; }
 - (void)setWidth:(CGFloat)w ofColumn:(NSInteger)c { if (w < _minW) w = _minW; _widths[@(c)] = @(w); }
@@ -1135,7 +1156,8 @@ static NSSize content_size(NSGridCell *c) {
 - (SEL)doubleAction { return _dbl; } - (void)setDoubleAction:(SEL)a { _dbl = a; }
 - (id)backgroundColor { return _bg; } - (void)setBackgroundColor:(id)c { [c retain]; [_bg release]; _bg = c; }
 - (Class)cellClass { return _cellClass; } - (void)setCellClass:(Class)c { _cellClass = c; }
-- (Class)matrixClass { return _matrixClass; } - (void)setMatrixClass:(Class)c { _matrixClass = c; }
++ (Class)cellClass { return [NSBrowserCell class]; }
+- (Class)matrixClass { return _matrixClass ?: [NSMatrix class]; } - (void)setMatrixClass:(Class)c { _matrixClass = c; }
 - (id)cellPrototype { return _proto; } - (void)setCellPrototype:(id)c { [c retain]; [_proto release]; _proto = c; }
 - (BOOL)sendAction { return [self sendAction:[self action] to:[self target]]; }
 - (void)doClick:(id)s {} - (void)doDoubleClick:(id)s {}
@@ -1147,7 +1169,7 @@ static NSSize content_size(NSGridCell *c) {
   for (NSInteger c = 0; c < (NSInteger)[_items count]; c++) {
     NSRect in = [self frameOfInsideOfColumn:c];
     if (_titled && _titles[@(c)]) [_titles[@(c)] drawInRect:[self titleFrameOfColumn:c] withAttributes:at];
-    for (NSInteger r = 0; r < (NSInteger)[_items[c] count]; r++) {
+    for (NSInteger r = 0; r < [self _xefRows:c]; r++) {
       NSRect f = [self frameOfRow:r inColumn:c]; BOOL on = [_sel[c] containsIndex:r];
       if (on) { [[NSColor selectedControlColor] set]; NSRectFill(f); }
       id it = [self itemAtRow:r inColumn:c]; [[self _xefNameOf:it] drawInRect:NSInsetRect(f, 4, 0) withAttributes:at]; }
@@ -1375,4 +1397,11 @@ static BOOL XEFAssocBool(id o, const char *k, BOOL def) { NSNumber *n = objc_get
 - (NSImage *)draggingImageForItemsAtIndexPaths:(NSSet *)p withEvent:(NSEvent *)e offset:(NSPointPointer)o { return nil; }
 - (NSImage *)draggingImageForItemsAtIndexes:(NSIndexSet *)i withEvent:(NSEvent *)e offset:(NSPointPointer)o { return nil; }
 - (NSUInteger)draggingSession:(id)s sourceOperationMaskForDraggingContext:(NSInteger)c { return 1; }
+@end
+
+@implementation NSBrowserCell
+- (BOOL)isLeaf { return _leaf; } - (void)setLeaf:(BOOL)f { _leaf = f; } - (BOOL)isLoaded { return _loaded; } - (void)setLoaded:(BOOL)f { _loaded = f; }
+- (id)alternateImage { return _alt; } - (void)setAlternateImage:(id)i { [i retain]; [_alt release]; _alt = i; }
+- (void)reset { _loaded = NO; } - (void)set {}
++ (id)branchImage { return nil; } + (id)highlightedBranchImage { return nil; }
 @end
