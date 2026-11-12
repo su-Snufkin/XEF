@@ -1494,3 +1494,74 @@ static BOOL XEFAssocBool(id o, const char *k, BOOL def) { NSNumber *n = objc_get
     if ([_selRows containsIndex:i]) { [[NSColor selectedControlColor] set]; NSRectFill(NSMakeRect(0, i * _rowH, [self bounds].size.width, _rowH)); }
     [[[self displayValuesForRow:i] componentsJoinedByString:@"  "] drawInRect:NSInsetRect(f, 0, 6) withAttributes:at]; } }
 @end
+
+/* ---- NSCollectionViewLayout: the overridable hooks of the base class (all default behaviour: nothing changes, no extra elements) ---- */
+@implementation NSCollectionViewLayout (XEFHooks)
++ (Class)layoutAttributesClass { return [NSCollectionViewLayoutAttributes class]; } + (Class)invalidationContextClass { return NSClassFromString(@"NSCollectionViewLayoutInvalidationContext") ?: [NSObject class]; }
+- (void)invalidateLayoutWithContext:(id)c { [self invalidateLayout]; }
+- (void)registerClass:(Class)c forDecorationViewOfKind:(NSString *)k { NSMutableDictionary *d = objc_getAssociatedObject(self, "xef.decor"); if (!d) { d = [NSMutableDictionary dictionary]; objc_setAssociatedObject(self, "xef.decor", d, OBJC_ASSOCIATION_RETAIN); } if (c) d[k] = c; else [d removeObjectForKey:k]; }
+- (void)registerNib:(id)n forDecorationViewOfKind:(NSString *)k { }
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForSupplementaryViewOfKind:(NSString *)k atIndexPath:(NSIndexPath *)p { return nil; }
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForDecorationViewOfKind:(NSString *)k atIndexPath:(NSIndexPath *)p { return nil; }
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForDropTargetAtPoint:(NSPoint)p { return nil; }
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForInterItemGapBeforeIndexPath:(NSIndexPath *)p { return nil; }
+- (id)invalidationContextForBoundsChange:(NSRect)b { return nil; }
+- (BOOL)shouldInvalidateLayoutForPreferredLayoutAttributes:(NSCollectionViewLayoutAttributes *)p withOriginalAttributes:(NSCollectionViewLayoutAttributes *)o { return NO; }
+- (id)invalidationContextForPreferredLayoutAttributes:(NSCollectionViewLayoutAttributes *)p withOriginalAttributes:(NSCollectionViewLayoutAttributes *)o { return nil; }
+- (NSPoint)targetContentOffsetForProposedContentOffset:(NSPoint)p withScrollingVelocity:(NSPoint)v { return p; } - (NSPoint)targetContentOffsetForProposedContentOffset:(NSPoint)p { return p; }
+- (void)prepareForCollectionViewUpdates:(NSArray *)u {} - (void)finalizeCollectionViewUpdates {} - (void)prepareForAnimatedBoundsChange:(NSRect)b {} - (void)finalizeAnimatedBoundsChange {}
+- (void)prepareForTransitionToLayout:(NSCollectionViewLayout *)l {} - (void)prepareForTransitionFromLayout:(NSCollectionViewLayout *)l {} - (void)finalizeLayoutTransition {}
+- (NSCollectionViewLayoutAttributes *)initialLayoutAttributesForAppearingItemAtIndexPath:(NSIndexPath *)p { return nil; } - (NSCollectionViewLayoutAttributes *)finalLayoutAttributesForDisappearingItemAtIndexPath:(NSIndexPath *)p { return nil; }
+- (NSCollectionViewLayoutAttributes *)initialLayoutAttributesForAppearingSupplementaryElementOfKind:(NSString *)k atIndexPath:(NSIndexPath *)p { return nil; } - (NSCollectionViewLayoutAttributes *)finalLayoutAttributesForDisappearingSupplementaryElementOfKind:(NSString *)k atIndexPath:(NSIndexPath *)p { return nil; }
+- (NSCollectionViewLayoutAttributes *)initialLayoutAttributesForAppearingDecorationElementOfKind:(NSString *)k atIndexPath:(NSIndexPath *)p { return nil; } - (NSCollectionViewLayoutAttributes *)finalLayoutAttributesForDisappearingDecorationElementOfKind:(NSString *)k atIndexPath:(NSIndexPath *)p { return nil; }
+- (NSArray *)indexPathsToDeleteForSupplementaryViewOfKind:(NSString *)k { return @[]; } - (NSArray *)indexPathsToDeleteForDecorationViewOfKind:(NSString *)k { return @[]; }
+- (NSArray *)indexPathsToInsertForSupplementaryViewOfKind:(NSString *)k { return @[]; } - (NSArray *)indexPathsToInsertForDecorationViewOfKind:(NSString *)k { return @[]; }
+@end
+
+/* ================================================================== NSRulerView / NSRulerMarker */
+static NSMutableDictionary *g_ruler_units;
+static NSDictionary *XEFRulerUnits(void) {
+  if (!g_ruler_units) g_ruler_units = [[NSMutableDictionary alloc] initWithObjectsAndKeys:
+    @{ @"abbr": @"in", @"factor": @72.0 }, @"Inches", @{ @"abbr": @"cm", @"factor": @28.3464567 }, @"Centimeters", @{ @"abbr": @"pt", @"factor": @1.0 }, @"Points", @{ @"abbr": @"pc", @"factor": @12.0 }, @"Picas", nil];
+  return g_ruler_units; }
+@implementation NSRulerMarker
+- (id)initWithRulerView:(NSRulerView *)r markerLocation:(CGFloat)l image:(NSImage *)i imageOrigin:(NSPoint)o { if ((self = [super init])) { _ruler = r; _loc = l; _image = [i retain]; _origin = o; _movable = YES; } return self; }
+- (void)dealloc { [_image release]; [_rep release]; [super dealloc]; }
+- (id)copyWithZone:(NSZone *)z { NSRulerMarker *m = [[NSRulerMarker alloc] initWithRulerView:_ruler markerLocation:_loc image:_image imageOrigin:_origin]; m->_movable = _movable; m->_removable = _removable; return m; }
+- (id)initWithCoder:(NSCoder *)c { return [self init]; } - (void)encodeWithCoder:(NSCoder *)c {}
+- (NSRulerView *)ruler { return _ruler; } - (CGFloat)markerLocation { return _loc; } - (void)setMarkerLocation:(CGFloat)l { _loc = l; [_ruler setNeedsDisplay:YES]; }
+- (NSImage *)image { return _image; } - (void)setImage:(NSImage *)i { [i retain]; [_image release]; _image = i; } - (NSPoint)imageOrigin { return _origin; } - (void)setImageOrigin:(NSPoint)o { _origin = o; }
+- (BOOL)isMovable { return _movable; } - (void)setMovable:(BOOL)f { _movable = f; } - (BOOL)isRemovable { return _removable; } - (void)setRemovable:(BOOL)f { _removable = f; } - (BOOL)isDragging { return _dragging; }
+- (id)representedObject { return _rep; } - (void)setRepresentedObject:(id)o { [o retain]; [_rep release]; _rep = o; }
+- (NSRect)imageRectInRuler { NSSize s = [_image size]; BOOL h = [_ruler orientation] == 0; return h ? NSMakeRect(_loc - _origin.x, [_ruler ruleThickness] - s.height + _origin.y, s.width, s.height) : NSMakeRect(_origin.x, _loc - _origin.y, s.width, s.height); }
+- (CGFloat)thicknessRequiredInRuler { NSSize s = [_image size]; return [_ruler orientation] == 0 ? s.height : s.width; }
+- (void)drawRect:(NSRect)r { NSRect f = [self imageRectInRuler]; [_image drawInRect:f fromRect:NSZeroRect operation:2 fraction:1]; }
+- (BOOL)trackMouse:(NSEvent *)e adding:(BOOL)a { return NO; }
+@end
+@implementation NSRulerView
++ (void)registerUnitWithName:(NSString *)n abbreviation:(NSString *)a unitToPointsConversionFactor:(CGFloat)f stepUpCycle:(NSArray *)up stepDownCycle:(NSArray *)down { ((NSMutableDictionary *)XEFRulerUnits())[n] = @{ @"abbr": a ?: @"", @"factor": @(f) }; }
+- (id)initWithScrollView:(NSScrollView *)s orientation:(NSInteger)o {
+  if ((self = [super initWithFrame:NSZeroRect])) { _sv = s; _orient = o; _rule = 17; _markersT = 15; _units = @"Centimeters"; _markers = [[NSMutableArray alloc] init]; } return self; }
+- (void)dealloc { [_markers release]; [_accessory release]; [_units release]; [super dealloc]; }
+- (BOOL)isFlipped { return YES; }
+- (NSScrollView *)scrollView { return _sv; } - (void)setScrollView:(NSScrollView *)s { _sv = s; }
+- (NSInteger)orientation { return _orient; } - (void)setOrientation:(NSInteger)o { _orient = o; [self setNeedsDisplay:YES]; }
+- (CGFloat)baselineLocation { return 0; }
+- (CGFloat)requiredThickness { return _rule + _markersT + _accT; }
+- (CGFloat)ruleThickness { return _rule; } - (void)setRuleThickness:(CGFloat)t { _rule = t; }
+- (CGFloat)reservedThicknessForMarkers { return _markersT; } - (void)setReservedThicknessForMarkers:(CGFloat)t { _markersT = t; }
+- (CGFloat)reservedThicknessForAccessoryView { return _accT; } - (void)setReservedThicknessForAccessoryView:(CGFloat)t { _accT = t; }
+- (NSString *)measurementUnits { return _units; } - (void)setMeasurementUnits:(NSString *)u { [u retain]; [_units release]; _units = u; [self setNeedsDisplay:YES]; }
+- (CGFloat)originOffset { return _origin; } - (void)setOriginOffset:(CGFloat)o { _origin = o; [self setNeedsDisplay:YES]; }
+- (NSView *)clientView { return _client; } - (void)setClientView:(NSView *)v { _client = v; [self setNeedsDisplay:YES]; }
+- (NSArray *)markers { return [NSArray arrayWithArray:_markers]; } - (void)setMarkers:(NSArray *)m { [_markers setArray:m ?: @[]]; [self setNeedsDisplay:YES]; }
+- (void)addMarker:(NSRulerMarker *)m { if (![_markers containsObject:m]) [_markers addObject:m]; [self setNeedsDisplay:YES]; } - (void)removeMarker:(NSRulerMarker *)m { [_markers removeObject:m]; [self setNeedsDisplay:YES]; }
+- (BOOL)trackMarker:(NSRulerMarker *)m withMouseEvent:(NSEvent *)e { return NO; }
+- (NSView *)accessoryView { return _accessory; } - (void)setAccessoryView:(NSView *)v { [v retain]; [_accessory release]; _accessory = v; }
+- (void)moveRulerlineFromLocation:(CGFloat)a toLocation:(CGFloat)b { [self setNeedsDisplay:YES]; } - (void)invalidateHashMarks { [self setNeedsDisplay:YES]; }
+- (void)drawHashMarksAndLabelsInRect:(NSRect)r {
+  NSDictionary *ud = [XEFRulerUnits() objectForKey:_units] ?: [XEFRulerUnits() objectForKey:@"Inches"]; CGFloat unit = [[ud objectForKey:@"factor"] doubleValue] ?: 72, len = _orient == 0 ? [self bounds].size.width : [self bounds].size.height;
+  [[NSColor grayColor] set]; for (CGFloat v = 0; v * unit - _origin < len; v += 1) { CGFloat pos = v * unit + _origin; if (pos < 0) continue; if (_orient == 0) NSRectFill(NSMakeRect(pos, _rule - 6, 1, 6)); else NSRectFill(NSMakeRect(_rule - 6, pos, 6, 1)); } }
+- (void)drawMarkersInRect:(NSRect)r { for (NSRulerMarker *m in _markers) [m drawRect:r]; }
+- (void)drawRect:(NSRect)r { [[NSColor colorWithCalibratedWhite:.93 alpha:1] set]; NSRectFill(r); [self drawHashMarksAndLabelsInRect:r]; [self drawMarkersInRect:r]; }
+@end

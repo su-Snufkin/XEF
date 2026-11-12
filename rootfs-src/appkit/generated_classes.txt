@@ -94,8 +94,6 @@ NSPressureConfiguration
 NSPreviewRepresentingActivityItem
 NSPrintPanel
 NSPrinter
-NSRulerMarker
-NSRulerView
 NSScrubber
 NSScrubberArrangedView
 NSScrubberLayout

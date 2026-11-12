@@ -429,16 +429,21 @@ static NSMutableDictionary *g_boards;
 - (id)button { return _button; }
 - (id)menu { return _menu; }
 - (void)setMenu:(id)m { [m retain]; [_menu release]; _menu = m; }
-- (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; }
-- (void)setImage:(id)i { [i retain]; [_image release]; _image = i; }
+- (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; [_button setTitle:t]; }
+- (void)setImage:(id)i { [i retain]; [_image release]; _image = i; [_button setImage:i]; }
 - (void)setHighlightMode:(BOOL)f {}
 - (void)dealloc { [_menu release]; [_title release]; [_image release]; [_button release]; [super dealloc]; }
 @end
 
 @implementation NSStatusBar
 + (NSStatusBar *)systemStatusBar { static NSStatusBar *sb; if (!sb) sb = [[NSStatusBar alloc] init]; return sb; }
-- (NSStatusItem *)statusItemWithLength:(CGFloat)length { return [[[NSStatusItem alloc] init] autorelease]; }
-- (void)removeStatusItem:(NSStatusItem *)item {}
+- (NSStatusItem *)statusItemWithLength:(CGFloat)length {
+  static int n = 0; NSStatusItem *it = [[[NSStatusItem alloc] init] autorelease];
+  Class bc = NSClassFromString(@"NSStatusBarButton") ?: [NSButton class]; it->_button = [[bc alloc] initWithFrame:NSMakeRect(0, 0, 24, 22)];
+  objc_setAssociatedObject(it, "xef.bar", self, OBJC_ASSOCIATION_ASSIGN); objc_setAssociatedObject(it, "xef.length", [NSNumber numberWithDouble:length], OBJC_ASSOCIATION_RETAIN);
+  objc_setAssociatedObject(it, "xef.autosave", [NSString stringWithFormat:@"Item-%d", n++], OBJC_ASSOCIATION_RETAIN); return it; }
+- (void)removeStatusItem:(NSStatusItem *)item { objc_setAssociatedObject(item, "xef.removed", @YES, OBJC_ASSOCIATION_RETAIN); }
+- (CGFloat)thickness { return 22; } - (BOOL)isVertical { return NO; }
 @end
 
 @implementation NSRunningApplication
@@ -1826,4 +1831,21 @@ static BOOL XEFFlag(id o, const char *k, BOOL def) { NSNumber *n = XEFGet(o, k);
 - (void)disableScreenUpdatesUntilFlush {} + (void)menuChanged:(NSMenu *)m {}
 - (void *)windowRef { return NULL; } - (id)initWithWindowRef:(void *)r { return nil; }
 - (void)dragImage:(NSImage *)i at:(NSPoint)p offset:(NSSize)o event:(NSEvent *)e pasteboard:(id)pb source:(id)s slideBack:(BOOL)b {}
+@end
+
+@implementation NSStatusItem (XEFMore)
+- (NSStatusBar *)statusBar { return objc_getAssociatedObject(self, "xef.bar"); }
+- (CGFloat)length { return [XEFGet(self, "xef.length") doubleValue]; } - (void)setLength:(CGFloat)l { XEFSet(self, "xef.length", [NSNumber numberWithDouble:l]); }
+- (NSUInteger)behavior { return [XEFGet(self, "xef.behavior") unsignedIntegerValue]; } - (void)setBehavior:(NSUInteger)b { XEFSet(self, "xef.behavior", [NSNumber numberWithUnsignedInteger:b]); }
+- (BOOL)isVisible { return XEFFlag(self, "xef.visible", YES); } - (void)setVisible:(BOOL)f { XEFSet(self, "xef.visible", [NSNumber numberWithBool:f]); }
+- (NSString *)autosaveName { return XEFGet(self, "xef.autosave"); } - (void)setAutosaveName:(NSString *)n { XEFSet(self, "xef.autosave", [[n copy] autorelease]); }
+- (id)view { return XEFGet(self, "xef.view"); } - (void)setView:(id)v { XEFSet(self, "xef.view", v); }
+/* deprecated: the item used to be the button itself */
+- (SEL)action { return [_button action]; } - (void)setAction:(SEL)a { [_button setAction:a]; } - (SEL)doubleAction { return NULL; } - (void)setDoubleAction:(SEL)a {}
+- (id)target { return [_button target]; } - (void)setTarget:(id)t { [_button setTarget:t]; }
+- (NSString *)title { return [_button title]; } - (NSAttributedString *)attributedTitle { return [_button attributedTitle]; } - (void)setAttributedTitle:(NSAttributedString *)t { [_button setAttributedTitle:t]; }
+- (NSImage *)image { return [_button image]; } - (NSImage *)alternateImage { return [_button alternateImage]; } - (void)setAlternateImage:(NSImage *)i { [_button setAlternateImage:i]; }
+- (BOOL)isEnabled { return [_button isEnabled]; } - (void)setEnabled:(BOOL)f { [_button setEnabled:f]; } - (BOOL)highlightMode { return YES; }
+- (NSString *)toolTip { return [_button toolTip]; } - (void)setToolTip:(NSString *)t { [_button setToolTip:t]; } - (void)sendActionOn:(NSInteger)m {}
+- (void)drawStatusBarBackgroundInRect:(NSRect)r withHighlight:(BOOL)h {} - (void)popUpStatusItemMenu:(NSMenu *)m {}
 @end

@@ -176,3 +176,16 @@
 }
 - (NSInteger)numberOfRows; - (void)reloadCriteria;
 @end
+
+/* NSRulerView / NSRulerMarker: the model (thickness, units, markers) with a simple hash-mark drawing */
+@class NSRulerMarker;
+@interface NSRulerView : NSView {
+@public
+  NSScrollView *_sv; NSView *_client, *_accessory; NSInteger _orient; CGFloat _rule, _markersT, _accT, _origin; NSString *_units; NSMutableArray *_markers;
+}
+- (id)initWithScrollView:(NSScrollView *)s orientation:(NSInteger)o; - (CGFloat)requiredThickness; - (NSArray *)markers; - (CGFloat)ruleThickness; - (NSInteger)orientation;
+@end
+@interface NSRulerMarker : NSObject <NSCopying> { @public NSRulerView *_ruler; CGFloat _loc; NSImage *_image; NSPoint _origin; BOOL _movable, _removable, _dragging; id _rep; }
+- (id)initWithRulerView:(NSRulerView *)r markerLocation:(CGFloat)l image:(NSImage *)i imageOrigin:(NSPoint)o;
+- (NSRulerView *)ruler; - (CGFloat)markerLocation; - (void)setMarkerLocation:(CGFloat)l;
+@end

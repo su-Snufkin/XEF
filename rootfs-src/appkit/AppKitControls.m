@@ -1150,3 +1150,27 @@ static NSButton *find_button(NSView *v, NSString *key) {
   if (!u) { u = [[[NSUndoManager alloc] init] autorelease]; objc_setAssociatedObject(self, "xef.undo", u, OBJC_ASSOCIATION_RETAIN); }
   return u; }
 @end
+
+/* ---- NSCell: take*ValueFrom, cell attributes, identifier, focus-ring and editing hooks, deprecated entry API ---- */
+@implementation NSCell (XEFMore)
+- (void)takeFloatValueFrom:(id)s { [self setFloatValue:[s floatValue]]; } - (void)takeIntegerValueFrom:(id)s { [self setIntegerValue:[s integerValue]]; }
+- (NSInteger)cellAttribute:(NSInteger)a {
+  switch (a) { case 0: return ![self isEnabled]; case 1: return [self state]; case 3: return [self isEditable]; case 5: return [self isHighlighted]; case 10: return [self isBordered]; case 16: return [self allowsMixedState]; default: return 0; } }
+- (void)setCellAttribute:(NSInteger)a to:(NSInteger)v {
+  switch (a) { case 0: [self setEnabled:!v]; break; case 1: [self setState:v]; break; case 3: [self setEditable:v != 0]; break; case 5: [self setHighlighted:v != 0]; break; case 10: [self setBordered:v != 0]; break; case 16: [self setAllowsMixedState:v != 0]; break; default: break; } }
+- (void)getPeriodicDelay:(float *)d interval:(float *)i { if (d) *d = 0.2f; if (i) *i = 0.025f; }
+- (NSString *)identifier { return objc_getAssociatedObject(self, "xef.identifier"); } - (void)setIdentifier:(NSString *)i { objc_setAssociatedObject(self, "xef.identifier", [[i copy] autorelease], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)sendsActionOnEndEditing { return [objc_getAssociatedObject(self, "xef.sendsEnd") boolValue]; } - (void)setSendsActionOnEndEditing:(BOOL)f { objc_setAssociatedObject(self, "xef.sendsEnd", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
++ (NSInteger)defaultFocusRingType { return 2; }
+- (BOOL)wantsNotificationForMarkedText { return NO; } - (NSInteger)mouseDownFlags { return 0; }
+- (NSMenu *)menuForEvent:(NSEvent *)e inRect:(NSRect)r ofView:(NSView *)v { return nil; }
+- (NSRect)focusRingMaskBoundsForFrame:(NSRect)f inView:(NSView *)v { return NSZeroRect; } - (void)drawFocusRingMaskWithFrame:(NSRect)f inView:(NSView *)v {}
+- (NSColor *)highlightColorWithFrame:(NSRect)f inView:(NSView *)v { return [NSColor selectedControlColor]; }
+- (void)setUpFieldEditorAttributes:(id)t { } - (NSText *)fieldEditorForView:(NSView *)v { return nil; }
+- (void)drawWithExpansionFrame:(NSRect)f inView:(NSView *)v { [self drawWithFrame:f inView:v]; }
+- (NSArray *)draggingImageComponentsWithFrame:(NSRect)f inView:(NSView *)v { return @[]; }
++ (NSString *)_bulletStringForString:(NSString *)s bulletCharacter:(unichar)c { return [@"" stringByPaddingToLength:[s length] withString:[NSString stringWithFormat:@"%C", c] startingAtIndex:0]; }
+- (NSInteger)controlTint { return 0; } - (void)setControlTint:(NSInteger)t {} - (NSInteger)entryType { return 0; } - (void)setEntryType:(NSInteger)t {} - (BOOL)isEntryAcceptable:(NSString *)s { return YES; }
+- (void)setFloatingPointFormat:(BOOL)a left:(NSUInteger)l right:(NSUInteger)r {}
+- (NSInteger)mnemonicLocation { return NSNotFound; } - (void)setMnemonicLocation:(NSUInteger)l {} - (NSString *)mnemonic { return @""; } - (void)setTitleWithMnemonic:(NSString *)t { [self setTitle:[t stringByReplacingOccurrencesOfString:@"&" withString:@""]]; }
+@end

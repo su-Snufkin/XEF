@@ -997,3 +997,13 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `textTypes`, zakresy bloków/list (puste).
 - Stan: **5376 z 8257** metod prawdziwych; `macref.sh` 33/33; pełny `run_tests.sh` przechodzi.
 
+### 28. NSCell, NSCollectionViewLayout, NSStatusItem, NSRulerView (2026-11-12)
+- **NSCell** (`AppKitControls.m`, kategoria `XEFMore`, `appkit_cell2.m` zgodny z Makiem): `takeFloatValueFrom:`/`takeIntegerValueFrom:`, `cellAttribute:`/`setCellAttribute:to:`
+  (wyłączona/stan/edytowalna/podświetlona/ramka/stan mieszany), `getPeriodicDelay:interval:` (0.2 / 0.025), `identifier`, `sendsActionOnEndEditing`, `defaultFocusRingType` (2), przestarzałe API wpisu/mnemoników.
+- **NSCollectionViewLayout** (`AppKitModel.m`): domyślne haki klasy bazowej (atrybuty dodatkowe, przejścia, aktualizacje) — nic nie zmieniają, bez własnych układów podklasy dostają sensowne wartości domyślne.
+- **NSStatusItem / NSStatusBar** (`AppKit.m`, `appkit_statusitem.m`): element ma teraz prawdziwy `button` (`NSStatusBarButton`), `length` (-1 = zmienna), `isVisible`, `behavior`, `autosaveName` ("Item-N"),
+  `statusBar`, przestarzałe `title/image/action/target` przekazywane do przycisku, `thickness` 22. **Nic nie pojawia się na pasku zadań hosta** — to model.
+- **NSRulerView / NSRulerMarker** (`AppKitModel.m`, `appkit_ruler.m`): grubości (reguła 17, markery 15 → `requiredThickness` 32), jednostki (domyślnie "Centimeters" jak na testowanym Macu; lokalizacja zależna),
+  `registerUnitWithName:…`, znaczniki (`addMarker:`, położenie, ruchomość), rysowanie kresek co jednostkę. Nie podpięte do `NSScrollView` (`hasHorizontalRuler`) ani do przewijania.
+- Stan: **5526 z 8257** metod prawdziwych; `macref.sh` 36/36; pełny `run_tests.sh` przechodzi.
+
