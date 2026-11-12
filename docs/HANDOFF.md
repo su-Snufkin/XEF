@@ -740,3 +740,35 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   3912 z 8332 metod (47%). Zrobione z listy §5: NSSplitViewItem/Controller, NSTabViewController, gesty, NSViewController,
   NSEvent, NSResponder. Zostają: NSToolbar, NSPopover (kontroler pokazuje okno), NSImageRep, NSSound, NSGridView,
   NSCollectionView, kontrolery bindings.
+
+### 7. Dodatek (2026-11-12, cel „dokończ implementację AppKit”): atrapy z poprawnym ABI i klasy modelu
+- **Generator atrap:** `tools/appkit_headers.py` (typowany czytnik nagłówków SDK) i `tools/gen_appkit_stubs.py` tworzą
+  `rootfs-src/appkit/AppKitGenerated.m`: dla każdej publicznej metody i klasy, której AppKit-lite nie ma, wpis z poprawną
+  konwencją wywołania. Pary property (getter/setter, także struktury NSRect/NSSize/…) **naprawdę przechowują wartość**
+  (obiekt stowarzyszony), `-init…` zwraca `[self init]`, `+shared…` daje jedną instancję, wyniki NSArray/NSDictionary to
+  puste kolekcje, reszta zwraca 0/nil/NO. **Celowo pomijane:** callbacki w stylu delegata (`tabView:shouldSelect…`,
+  `…DidResize:`) i `validate…` — atrapa zwracająca NO unieważniłaby wołanie frameworka (tak padł `appkit_controllers`).
+  Klasy bez ręcznej implementacji kompilowane są statycznie (tbd-stuby ich nie dublują), metody dopinane w konstruktorze
+  AppKit tylko tam, gdzie nic ich nie implementuje (`XEFClassImplements`). `XEF_APPKIT_NO_GENERATED=1` wyłącza atrapy.
+- **Uczciwy pomiar:** `tools/appkit_gap.sh` liczy z wyłączonymi atrapami → „implemented” to tylko prawdziwy kod
+  (**4203 z 8257**), a „generated placeholders” to osobna liczba (4313). Atrapy nie są implementacją: aplikacja się nie
+  wywróci, ale funkcjonalność nie działa.
+- **Pisanie klasy ręcznie:** dodaj jej `@interface` do nagłówka `AppKit*.h` (generator uważa wtedy klasę za ręczną i
+  przestaje ją emitować — `rootfs-src/appkit/generated_classes.txt` odświeża się sam), napisz `.m`, wpisz plik do
+  `tools/build_appkit*.sh`, `tools/gen_appkit_stubs.py`, `tools/appkit_gap.sh`, `tools/build_appkit_only.sh`. Brakujące metody
+  napisanej klasy dostaną atrapy automatycznie.
+- **`AppKitModel.m/.h` (zgodne z Makiem, `appkit_misc.m`):** NSToolbar/NSToolbarItem/NSToolbarItemGroup (model z protokołem
+  delegata: domyślne identyfikatory ładowane przy `window.toolbar=`, `willAddItem`/`didRemoveItem`, wybór tylko spośród
+  `selectableItemIdentifiers`; **pasek nie jest rysowany**), NSAnimation (krzywe, znaczniki postępu, tryb blokujący i
+  timer), NSPopover (okno bez ramki + powiadomienia; bez wzorca z Maca), NSController/NSObjectController/NSArrayController
+  (zawartość, sortowanie, filtr, selekcja podążająca za obiektami, reguły pustej selekcji; bez bindings).
+  Zmierzone nietypowości: `addObject:` na kontrolerze tablicowym nie sortuje do czasu `rearrangeObjects`; `setSizeMode:` na
+  toolbarze jest ignorowane; `tag` pozycji toolbara = −1 i nie jest kopiowany; filtr usuwający zaznaczony obiekt zostawia
+  pustą selekcję mimo `avoidsEmptySelection`.
+- **NSPredicate bez NSInvocation:** w tym rootfs `NSInvocation` na arm64 abortuje, więc `filteredArrayUsingPredicate:`
+  nie działa. NSArrayController używa własnego ewaluatora (`xef_eval`: porównania, AND/OR/NOT, BEGINSWITH/ENDSWITH/
+  CONTAINS/IN). Reszta Foundation, która polega na NSInvocation (KVO z selektorami, undo, timery z invocation), nadal wymaga
+  implementacji forwardingu na arm64 w `rootfs-src/corefoundation/arm64_forwarding.m`.
+- **Co jeszcze jest tylko atrapą (największe):** NSCollectionView, NSMatrix, NSBrowser, NSGridView, NSImageRep i podklasy,
+  NSSound, NSTreeController, NSPathControl, NSSpellChecker, NSTypesetter, NSTextLayoutManager (TextKit 2), NSDrawer,
+  NSRuleEditor, NSScrubber / Touch Bar, NSPrintOperation (pełne), NSWorkspace (większość), NSDocument (72 metody).

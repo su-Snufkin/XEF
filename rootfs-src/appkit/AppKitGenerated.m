@@ -7,6 +7,7 @@
 #import "AppKitLayout.h"
 #import "AppKitControllers.h"
 #import "AppKitDocument.h"
+#import "AppKitModel.h"
 #import "AppKitText.h"
 #include <objc/runtime.h>
 #include <string.h>
@@ -110,14 +111,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSAdaptiveImageGlyph @end
 @interface NSAlignmentFeedbackFilter : NSObject @end
 @implementation NSAlignmentFeedbackFilter @end
-@interface NSAnimation : NSObject @end
-@implementation NSAnimation @end
-@interface NSController : NSObject @end
-@implementation NSController @end
-@interface NSObjectController : NSController @end
-@implementation NSObjectController @end
-@interface NSArrayController : NSObjectController @end
-@implementation NSArrayController @end
 @interface NSBackgroundExtensionView : NSView @end
 @implementation NSBackgroundExtensionView @end
 @interface NSBindingSelectionMarker : NSObject @end
@@ -272,8 +265,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSMenuItemBadge @end
 @interface NSMenuItemCell : NSButtonCell @end
 @implementation NSMenuItemCell @end
-@interface NSToolbarItem : NSObject @end
-@implementation NSToolbarItem @end
 @interface NSMenuToolbarItem : NSToolbarItem @end
 @implementation NSMenuToolbarItem @end
 @interface NSMovie : NSObject @end
@@ -316,8 +307,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPersistentDocument @end
 @interface NSPickerTouchBarItem : NSTouchBarItem @end
 @implementation NSPickerTouchBarItem @end
-@interface NSPopover : NSResponder @end
-@implementation NSPopover @end
 @interface NSPopoverTouchBarItem : NSTouchBarItem @end
 @implementation NSPopoverTouchBarItem @end
 @interface NSRuleEditor : NSControl @end
@@ -446,10 +435,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSTintConfiguration @end
 @interface NSTitlebarAccessoryViewController : NSViewController @end
 @implementation NSTitlebarAccessoryViewController @end
-@interface NSToolbar : NSObject @end
-@implementation NSToolbar @end
-@interface NSToolbarItemGroup : NSToolbarItem @end
-@implementation NSToolbarItemGroup @end
 @interface NSTouch : NSObject @end
 @implementation NSTouch @end
 @interface NSTouchBar : NSObject @end
@@ -1557,7 +1542,6 @@ static const GenEntry kTable[] = {
 {"NSController", '-', "commitEditingAndReturnError:", 'D', 'B', "@"},
 {"NSController", '-', "commitEditingWithDelegate:didCommitSelector:contextInfo:", 'D', 'v', "@:^"},
 {"NSController", '-', "discardEditing", 'D', 'v', ""},
-{"NSController", '-', "init", 'I', '@', ""},
 {"NSController", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSController", '-', "isEditing", 'D', 'B', ""},
 {"NSController", '-', "objectDidBeginEditing:", 'D', 'v', "@"},
@@ -2890,8 +2874,6 @@ static const GenEntry kTable[] = {
 {"NSPopover", '-', "delegate", 'G', '@', ""},
 {"NSPopover", '-', "effectiveAppearance", 'D', '@', ""},
 {"NSPopover", '-', "hasFullSizeContent", 'G', 'B', ""},
-{"NSPopover", '-', "init", 'I', '@', ""},
-{"NSPopover", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSPopover", '-', "isDetached", 'D', 'B', ""},
 {"NSPopover", '-', "isShown", 'D', 'B', ""},
 {"NSPopover", '-', "performClose:", 'D', 'q', "@"},
@@ -4318,7 +4300,6 @@ static const GenEntry kTable[] = {
 {"NSToolbar", '-', "fullScreenAccessoryViewMaxHeight", 'G', 'd', ""},
 {"NSToolbar", '-', "fullScreenAccessoryViewMinHeight", 'G', 'd', ""},
 {"NSToolbar", '-', "identifier", 'D', 'q', ""},
-{"NSToolbar", '-', "init", 'I', '@', ""},
 {"NSToolbar", '-', "initWithIdentifier:", 'I', '@', "q"},
 {"NSToolbar", '-', "insertItemWithItemIdentifier:atIndex:", 'D', 'v', "qq"},
 {"NSToolbar", '-', "isVisible", 'G', 'B', ""},

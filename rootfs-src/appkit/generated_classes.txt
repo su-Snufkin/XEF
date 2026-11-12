@@ -9,10 +9,6 @@ NSAccessibilityCustomRotorSearchParameters
 NSAccessibilityElement
 NSAdaptiveImageGlyph
 NSAlignmentFeedbackFilter
-NSAnimation
-NSController
-NSObjectController
-NSArrayController
 NSBackgroundExtensionView
 NSBindingSelectionMarker
 NSBrowser
@@ -90,7 +86,6 @@ NSItemBadge
 NSMediaLibraryBrowserController
 NSMenuItemBadge
 NSMenuItemCell
-NSToolbarItem
 NSMenuToolbarItem
 NSMovie
 NSMutableFontCollection
@@ -112,7 +107,6 @@ NSPathControl
 NSPathControlItem
 NSPersistentDocument
 NSPickerTouchBarItem
-NSPopover
 NSPopoverTouchBarItem
 NSRuleEditor
 NSPredicateEditor
@@ -177,8 +171,6 @@ NSTextTableBlock
 NSTextViewportLayoutController
 NSTintConfiguration
 NSTitlebarAccessoryViewController
-NSToolbar
-NSToolbarItemGroup
 NSTouch
 NSTouchBar
 NSTrackingSeparatorToolbarItem
