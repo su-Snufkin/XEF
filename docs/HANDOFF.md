@@ -1026,3 +1026,12 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   **NSWorkspace**: przestarzałe API uruchamiania (`launchApplication:`, `openTempFile:`, `getInfoForFile:…` — zgodnie z Makiem zwracają NO dla nieistniejących).
 - Stan: **5715 z 8257** metod prawdziwych; `macref.sh` 40/40; pełny `run_tests.sh` przechodzi.
 
+### 31. NSText jako front klastra; model Touch Bara (2026-11-12)
+- **`[[NSText alloc] initWithFrame:]` zwraca `NSTextView`** (jak AppKit; `appkit_nstext.m` zgodny z Makiem). Przy okazji ujednolicono domyślne ustawienia `NSTextView initWithFrame:` z Makiem: `usesFontPanel` YES,
+  `maxSize` = (szerokość ramki, 1e7), `baseWritingDirection` domyślnie -1 (natural; teraz zapamiętywane). Metody abstrakcyjnej `NSText` nadal nie są zdefiniowane na samej klasie `NSText`
+  (instancje zawsze są `NSTextView`), więc `appkit_gap.sh` liczy je jako brakujące — to świadoma różnica w liczeniu.
+- **Touch Bar** (`AppKitModel.m`, `appkit_touchbar.m` zgodny z Makiem): `NSTouchBar` (identyfikatory domyślne/dozwolone/wymagane/główny/Esc, `templateItems`, delegat `touchBar:makeItemForIdentifier:`,
+  pamięć podręczna elementów, wbudowane elementy `NSTouchBarItemIdentifier…`), `NSTouchBarItem`, `NSCustomTouchBarItem`, `NSGroupTouchBarItem` (`groupTouchBar`, szerokości). **Nic nie jest wyświetlane** (`isVisible` zawsze NO);
+  pozostałe elementy (`NSPickerTouchBarItem`, `NSSliderTouchBarItem`, `NSScrubber`…) nadal atrapy.
+- Stan: **5775 z 8257** metod prawdziwych; `macref.sh` 42/42.
+

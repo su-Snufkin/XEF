@@ -9,7 +9,6 @@ NSAdaptiveImageGlyph
 NSAlignmentFeedbackFilter
 NSBackgroundExtensionView
 NSBindingSelectionMarker
-NSTouchBarItem
 NSButtonTouchBarItem
 NSCIImageRep
 NSCachedImageRep
@@ -39,7 +38,6 @@ NSColorPicker
 NSColorPickerTouchBarItem
 NSColorSampler
 NSComboButton
-NSCustomTouchBarItem
 NSDataAsset
 NSDictionaryController
 NSDictionaryControllerKeyValuePair
@@ -60,7 +58,6 @@ NSGlassEffectContainerView
 NSGlassEffectView
 NSGlyphGenerator
 NSGlyphInfo
-NSGroupTouchBarItem
 NSHapticFeedbackManager
 NSHelpManager
 NSImageSymbolConfiguration
@@ -147,7 +144,6 @@ NSTextViewportLayoutController
 NSTintConfiguration
 NSTitlebarAccessoryViewController
 NSTouch
-NSTouchBar
 NSTrackingSeparatorToolbarItem
 NSUserDefaultsController
 NSUserInterfaceCompressionOptions

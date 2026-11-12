@@ -1565,3 +1565,55 @@ static NSDictionary *XEFRulerUnits(void) {
 - (void)drawMarkersInRect:(NSRect)r { for (NSRulerMarker *m in _markers) [m drawRect:r]; }
 - (void)drawRect:(NSRect)r { [[NSColor colorWithCalibratedWhite:.93 alpha:1] set]; NSRectFill(r); [self drawHashMarksAndLabelsInRect:r]; [self drawMarkersInRect:r]; }
 @end
+
+/* ================================================================== Touch Bar model */
+@interface NSObject (XEFTouchBarDelegate) - (id)touchBar:(id)tb makeItemForIdentifier:(NSString *)i; @end
+@implementation NSTouchBarItem
+- (id)initWithIdentifier:(NSString *)i { if ((self = [super init])) _ident = [i copy]; return self; }
+- (id)initWithCoder:(NSCoder *)c { return [self initWithIdentifier:[c decodeObjectForKey:@"identifier"]]; } - (void)encodeWithCoder:(NSCoder *)c {}
+- (void)dealloc { [_ident release]; [_view release]; [_vc release]; [_label release]; [super dealloc]; }
+- (NSString *)identifier { return _ident; } - (float)visibilityPriority { return _prio; } - (void)setVisibilityPriority:(float)p { _prio = p; }
+- (id)view { return _view; } - (id)viewController { return _vc; } - (NSString *)customizationLabel { return _label; } - (BOOL)isVisible { return NO; }
+@end
+@implementation NSCustomTouchBarItem
+- (void)setView:(id)v { [v retain]; [_view release]; _view = v; } - (void)setViewController:(id)v { [v retain]; [_vc release]; _vc = v; }
+- (void)setCustomizationLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (id)view { return _view ?: [_vc view]; }
+@end
+@implementation NSGroupTouchBarItem
++ (id)groupItemWithIdentifier:(NSString *)i items:(NSArray *)items {
+  NSGroupTouchBarItem *g = [[[self alloc] initWithIdentifier:i] autorelease]; g->_bar = [[NSTouchBar alloc] init]; g->_width = -1;
+  NSMutableArray *ids = [NSMutableArray array]; for (NSTouchBarItem *it in items) [ids addObject:[it identifier]];
+  [g->_bar setTemplateItems:[NSSet setWithArray:items]]; [g->_bar setDefaultItemIdentifiers:ids]; return g; }
++ (id)alertStyleGroupItemWithIdentifier:(NSString *)i { return [self groupItemWithIdentifier:i items:@[]]; }
++ (id)groupItemWithIdentifier:(NSString *)i items:(NSArray *)items allowedCompressionOptions:(id)o { return [self groupItemWithIdentifier:i items:items]; }
+- (void)dealloc { [_bar release]; [super dealloc]; }
+- (NSTouchBar *)groupTouchBar { return _bar; } - (void)setGroupTouchBar:(NSTouchBar *)b { [b retain]; [_bar release]; _bar = b; }
+- (void)setCustomizationLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+- (BOOL)prefersEqualWidths { return _equal; } - (void)setPrefersEqualWidths:(BOOL)f { _equal = f; } - (CGFloat)preferredItemWidth { return _width ?: -1; } - (void)setPreferredItemWidth:(CGFloat)w { _width = w; }
+- (NSInteger)groupUserInterfaceLayoutDirection { return 0; } - (void)setGroupUserInterfaceLayoutDirection:(NSInteger)d {}
+- (id)effectiveCompressionOptions { return nil; } - (NSArray *)prioritizedCompressionOptions { return @[]; } - (void)setPrioritizedCompressionOptions:(NSArray *)o {}
+@end
+static BOOL g_auto_customize;
+@implementation NSTouchBar
+- (id)init { if ((self = [super init])) { _default = [@[] retain]; _allowed = [@[] retain]; _required = [@[] retain]; _templates = [[NSSet set] retain]; _cache = [[NSMutableDictionary alloc] init]; } return self; }
+- (id)initWithCoder:(NSCoder *)c { return [self init]; } - (void)encodeWithCoder:(NSCoder *)c {}
+- (void)dealloc { [_default release]; [_allowed release]; [_required release]; [_templates release]; [_principal release]; [_escape release]; [_custom release]; [_cache release]; [super dealloc]; }
+- (NSArray *)defaultItemIdentifiers { return _default; } - (void)setDefaultItemIdentifiers:(NSArray *)a { [a retain]; [_default release]; _default = a ?: [@[] retain]; }
+- (NSArray *)itemIdentifiers { return _default; }
+- (NSArray *)customizationAllowedItemIdentifiers { return _allowed; } - (void)setCustomizationAllowedItemIdentifiers:(NSArray *)a { [a retain]; [_allowed release]; _allowed = a ?: [@[] retain]; }
+- (NSArray *)customizationRequiredItemIdentifiers { return _required; } - (void)setCustomizationRequiredItemIdentifiers:(NSArray *)a { [a retain]; [_required release]; _required = a ?: [@[] retain]; }
+- (NSString *)principalItemIdentifier { return _principal; } - (void)setPrincipalItemIdentifier:(NSString *)s { [s retain]; [_principal release]; _principal = s; }
+- (NSString *)escapeKeyReplacementItemIdentifier { return _escape; } - (void)setEscapeKeyReplacementItemIdentifier:(NSString *)s { [s retain]; [_escape release]; _escape = s; }
+- (NSString *)customizationIdentifier { return _custom; } - (void)setCustomizationIdentifier:(NSString *)s { [s retain]; [_custom release]; _custom = s; }
+- (NSSet *)templateItems { return _templates; } - (void)setTemplateItems:(NSSet *)s { [s retain]; [_templates release]; _templates = s ?: [[NSSet set] retain]; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (BOOL)isVisible { return NO; }
+- (id)itemForIdentifier:(NSString *)i {
+  id c = _cache[i]; if (c) return c;
+  for (NSTouchBarItem *t in _templates) if ([[t identifier] isEqualToString:i]) return t;
+  id it = [_delegate respondsToSelector:@selector(touchBar:makeItemForIdentifier:)] ? [_delegate touchBar:self makeItemForIdentifier:i] : nil;
+  if (!it && ([i hasPrefix:@"NSTouchBarItemIdentifier"])) it = [[[NSTouchBarItem alloc] initWithIdentifier:i] autorelease];
+  if (it) _cache[i] = it; return it; }
++ (BOOL)isAutomaticCustomizeTouchBarMenuItemEnabled { return g_auto_customize; } + (void)setAutomaticCustomizeTouchBarMenuItemEnabled:(BOOL)f { g_auto_customize = f; }
+@end

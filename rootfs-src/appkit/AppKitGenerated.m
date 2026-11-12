@@ -111,8 +111,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSBackgroundExtensionView @end
 @interface NSBindingSelectionMarker : NSObject @end
 @implementation NSBindingSelectionMarker @end
-@interface NSTouchBarItem : NSObject @end
-@implementation NSTouchBarItem @end
 @interface NSButtonTouchBarItem : NSTouchBarItem @end
 @implementation NSButtonTouchBarItem @end
 @interface NSCIImageRep : NSImageRep @end
@@ -171,8 +169,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSColorSampler @end
 @interface NSComboButton : NSControl @end
 @implementation NSComboButton @end
-@interface NSCustomTouchBarItem : NSTouchBarItem @end
-@implementation NSCustomTouchBarItem @end
 @interface NSDataAsset : NSObject @end
 @implementation NSDataAsset @end
 @interface NSDictionaryController : NSArrayController @end
@@ -213,8 +209,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSGlyphGenerator @end
 @interface NSGlyphInfo : NSObject @end
 @implementation NSGlyphInfo @end
-@interface NSGroupTouchBarItem : NSTouchBarItem @end
-@implementation NSGroupTouchBarItem @end
 @interface NSHapticFeedbackManager : NSObject @end
 @implementation NSHapticFeedbackManager @end
 @interface NSHelpManager : NSObject @end
@@ -387,8 +381,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSTitlebarAccessoryViewController @end
 @interface NSTouch : NSObject @end
 @implementation NSTouch @end
-@interface NSTouchBar : NSObject @end
-@implementation NSTouchBar @end
 @interface NSTrackingSeparatorToolbarItem : NSToolbarItem @end
 @implementation NSTrackingSeparatorToolbarItem @end
 @interface NSUserDefaultsController : NSController @end
@@ -977,12 +969,6 @@ static const GenEntry kTable[] = {
 {"NSCursor", '-', "mouseExited:", 'D', 'v', "@"},
 {"NSCursor", '-', "setOnMouseEntered:", 'S', 'v', "B"},
 {"NSCursor", '-', "setOnMouseExited:", 'S', 'v', "B"},
-{"NSCustomTouchBarItem", '-', "customizationLabel", 'G', '@', ""},
-{"NSCustomTouchBarItem", '-', "setCustomizationLabel:", 'S', 'v', "@"},
-{"NSCustomTouchBarItem", '-', "setView:", 'S', 'v', "@"},
-{"NSCustomTouchBarItem", '-', "setViewController:", 'S', 'v', "@"},
-{"NSCustomTouchBarItem", '-', "view", 'G', '@', ""},
-{"NSCustomTouchBarItem", '-', "viewController", 'G', '@', ""},
 {"NSDataAsset", '-', "data", 'D', '@', ""},
 {"NSDataAsset", '-', "init", 'I', '@', ""},
 {"NSDataAsset", '-', "initWithName:", 'I', '@', "q"},
@@ -1288,22 +1274,6 @@ static const GenEntry kTable[] = {
 {"NSGlyphInfo", '-', "glyphName", 'D', '@', ""},
 {"NSGraphicsContext", '+', "setGraphicsState:", 'S', 'v', "q"},
 {"NSGraphicsContext", '-', "CIContext", 'D', '@', ""},
-{"NSGroupTouchBarItem", '+', "alertStyleGroupItemWithIdentifier:", 'F', '@', "q"},
-{"NSGroupTouchBarItem", '+', "groupItemWithIdentifier:items:", 'F', '@', "q@"},
-{"NSGroupTouchBarItem", '+', "groupItemWithIdentifier:items:allowedCompressionOptions:", 'F', '@', "q@@"},
-{"NSGroupTouchBarItem", '-', "customizationLabel", 'G', '@', ""},
-{"NSGroupTouchBarItem", '-', "effectiveCompressionOptions", 'D', '@', ""},
-{"NSGroupTouchBarItem", '-', "groupTouchBar", 'G', '@', ""},
-{"NSGroupTouchBarItem", '-', "groupUserInterfaceLayoutDirection", 'G', 'q', ""},
-{"NSGroupTouchBarItem", '-', "preferredItemWidth", 'G', 'd', ""},
-{"NSGroupTouchBarItem", '-', "prefersEqualWidths", 'G', 'B', ""},
-{"NSGroupTouchBarItem", '-', "prioritizedCompressionOptions", 'G', 'A', ""},
-{"NSGroupTouchBarItem", '-', "setCustomizationLabel:", 'S', 'v', "@"},
-{"NSGroupTouchBarItem", '-', "setGroupTouchBar:", 'S', 'v', "@"},
-{"NSGroupTouchBarItem", '-', "setGroupUserInterfaceLayoutDirection:", 'S', 'v', "q"},
-{"NSGroupTouchBarItem", '-', "setPreferredItemWidth:", 'S', 'v', "d"},
-{"NSGroupTouchBarItem", '-', "setPrefersEqualWidths:", 'S', 'v', "B"},
-{"NSGroupTouchBarItem", '-', "setPrioritizedCompressionOptions:", 'S', 'v', "@"},
 {"NSHapticFeedbackManager", '+', "defaultPerformer", 'D', '@', ""},
 {"NSHelpManager", '+', "isContextHelpModeActive", 'G', 'B', ""},
 {"NSHelpManager", '+', "setContextHelpModeActive:", 'S', 'v', "B"},
@@ -2854,39 +2824,6 @@ static const GenEntry kTable[] = {
 {"NSTouch", '-', "phase", 'D', 'q', ""},
 {"NSTouch", '-', "previousLocationInView:", 'D', 'P', "@"},
 {"NSTouch", '-', "type", 'D', 'q', ""},
-{"NSTouchBar", '+', "isAutomaticCustomizeTouchBarMenuItemEnabled", 'G', 'B', ""},
-{"NSTouchBar", '+', "setAutomaticCustomizeTouchBarMenuItemEnabled:", 'S', 'v', "B"},
-{"NSTouchBar", '-', "customizationAllowedItemIdentifiers", 'G', 'A', ""},
-{"NSTouchBar", '-', "customizationIdentifier", 'G', 'q', ""},
-{"NSTouchBar", '-', "customizationRequiredItemIdentifiers", 'G', 'A', ""},
-{"NSTouchBar", '-', "defaultItemIdentifiers", 'G', 'A', ""},
-{"NSTouchBar", '-', "delegate", 'G', '@', ""},
-{"NSTouchBar", '-', "escapeKeyReplacementItemIdentifier", 'G', 'q', ""},
-{"NSTouchBar", '-', "init", 'I', '@', ""},
-{"NSTouchBar", '-', "initWithCoder:", 'I', '@', "@"},
-{"NSTouchBar", '-', "isVisible", 'D', 'B', ""},
-{"NSTouchBar", '-', "itemForIdentifier:", 'D', '@', "q"},
-{"NSTouchBar", '-', "itemIdentifiers", 'D', 'A', ""},
-{"NSTouchBar", '-', "principalItemIdentifier", 'G', 'q', ""},
-{"NSTouchBar", '-', "setCustomizationAllowedItemIdentifiers:", 'S', 'v', "@"},
-{"NSTouchBar", '-', "setCustomizationIdentifier:", 'S', 'v', "q"},
-{"NSTouchBar", '-', "setCustomizationRequiredItemIdentifiers:", 'S', 'v', "@"},
-{"NSTouchBar", '-', "setDefaultItemIdentifiers:", 'S', 'v', "@"},
-{"NSTouchBar", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSTouchBar", '-', "setEscapeKeyReplacementItemIdentifier:", 'S', 'v', "q"},
-{"NSTouchBar", '-', "setPrincipalItemIdentifier:", 'S', 'v', "q"},
-{"NSTouchBar", '-', "setTemplateItems:", 'S', 'v', "@"},
-{"NSTouchBar", '-', "templateItems", 'G', 'A', ""},
-{"NSTouchBarItem", '-', "customizationLabel", 'D', '@', ""},
-{"NSTouchBarItem", '-', "identifier", 'D', 'q', ""},
-{"NSTouchBarItem", '-', "init", 'I', '@', ""},
-{"NSTouchBarItem", '-', "initWithCoder:", 'I', '@', "@"},
-{"NSTouchBarItem", '-', "initWithIdentifier:", 'I', '@', "q"},
-{"NSTouchBarItem", '-', "isVisible", 'D', 'B', ""},
-{"NSTouchBarItem", '-', "setVisibilityPriority:", 'S', 'v', "q"},
-{"NSTouchBarItem", '-', "view", 'D', '@', ""},
-{"NSTouchBarItem", '-', "viewController", 'D', '@', ""},
-{"NSTouchBarItem", '-', "visibilityPriority", 'G', 'q', ""},
 {"NSTrackingSeparatorToolbarItem", '+', "trackingSeparatorToolbarItemWithIdentifier:splitView:dividerIndex:", 'F', '@', "q@q"},
 {"NSTrackingSeparatorToolbarItem", '-', "dividerIndex", 'G', 'q', ""},
 {"NSTrackingSeparatorToolbarItem", '-', "setDividerIndex:", 'S', 'v', "q"},

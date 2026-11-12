@@ -189,3 +189,19 @@
 - (id)initWithRulerView:(NSRulerView *)r markerLocation:(CGFloat)l image:(NSImage *)i imageOrigin:(NSPoint)o;
 - (NSRulerView *)ruler; - (CGFloat)markerLocation; - (void)setMarkerLocation:(CGFloat)l;
 @end
+
+/* Touch Bar model: identifiers, items made by the delegate or taken from template items (nothing is shown) */
+@interface NSTouchBarItem : NSObject { @public NSString *_ident; float _prio; id _view, _vc; NSString *_label; }
+- (id)initWithIdentifier:(NSString *)i; - (NSString *)identifier;
+@end
+@interface NSCustomTouchBarItem : NSTouchBarItem @end
+@class NSTouchBar;
+@interface NSGroupTouchBarItem : NSTouchBarItem { @public NSTouchBar *_bar; BOOL _equal; CGFloat _width; }
++ (id)groupItemWithIdentifier:(NSString *)i items:(NSArray *)items;
+@end
+@interface NSTouchBar : NSObject <NSCoding> {
+@public
+  NSArray *_default, *_allowed, *_required; NSSet *_templates; NSString *_principal, *_escape, *_custom; id _delegate; NSMutableDictionary *_cache;
+}
+- (NSArray *)defaultItemIdentifiers; - (void)setDefaultItemIdentifiers:(NSArray *)a; - (id)itemForIdentifier:(NSString *)i; - (void)setTemplateItems:(NSSet *)s;
+@end

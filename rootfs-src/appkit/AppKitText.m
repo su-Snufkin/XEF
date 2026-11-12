@@ -359,6 +359,8 @@ enum { kEditedAttributes = 1, kEditedCharacters = 2 };
 
 @implementation NSText
 - (BOOL)isFlipped { return YES; }
+/* a plain NSText is a class cluster front: like AppKit, instances are NSTextViews */
+- (id)initWithFrame:(NSRect)f { if ([self class] == [NSText class]) { [self release]; return [[NSTextView alloc] initWithFrame:f]; } return [super initWithFrame:f]; }
 @end
 
 static BOOL is_word_char(unichar c) { return [[NSCharacterSet alphanumericCharacterSet] characterIsMember:c] || c == '_'; }
@@ -384,7 +386,7 @@ static BOOL is_word_char(unichar c) { return [[NSCharacterSet alphanumericCharac
   NSTextContainer *tc = [[[NSTextContainer alloc] initWithContainerSize:NSMakeSize(f.size.width, 1e7)] autorelease];
   [tc setWidthTracksTextView:YES];
   [lm addTextContainer:tc]; [ts addLayoutManager:lm];
-  if ((self = [self initWithFrame:f textContainer:tc])) { _storage = [ts retain]; _ownsStorage = YES; }
+  if ((self = [self initWithFrame:f textContainer:tc])) { _storage = [ts retain]; _ownsStorage = YES; _maxSize = NSMakeSize(f.size.width, 1e7); _usesFontPanel = YES; }
   return self; }
 - (id)initWithCoder:(NSCoder *)c {
   if (!(self = [super initWithCoder:c])) return nil;
@@ -509,7 +511,7 @@ static BOOL is_word_char(unichar c) { return [[NSCharacterSet alphanumericCharac
   [p setAlignment:a];
   if (r.length) [[self textStorage] addAttribute:NSParagraphStyleAttributeName value:p range:r];
   [self _xefSetTyping:NSParagraphStyleAttributeName value:p]; }
-- (NSInteger)baseWritingDirection { return 0; } - (void)setBaseWritingDirection:(NSInteger)d {}
+- (NSInteger)baseWritingDirection { NSNumber *n = objc_getAssociatedObject(self, "xef.bwd"); return n ? [n integerValue] : -1; } - (void)setBaseWritingDirection:(NSInteger)d { objc_setAssociatedObject(self, "xef.bwd", [NSNumber numberWithInteger:d], OBJC_ASSOCIATION_RETAIN); }
 - (id)_xefAttr:(NSString *)n { NSTextStorage *s = [self textStorage]; return [s length] ? [s attribute:n atIndex:MIN(_sel.location, [s length] - 1) effectiveRange:NULL] : [_typing objectForKey:n]; }
 - (void)_xefSetTyping:(NSString *)n value:(id)v { NSMutableDictionary *t = [[_typing mutableCopy] autorelease]; if (v) [t setObject:v forKey:n]; else [t removeObjectForKey:n]; [self setTypingAttributes:t]; }
 /* no-op feature switches */
