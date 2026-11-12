@@ -167,3 +167,12 @@
 @interface NSBrowserCell : NSCell { @public BOOL _leaf, _loaded; id _alt; }
 - (BOOL)isLeaf; - (void)setLeaf:(BOOL)f; - (BOOL)isLoaded; - (void)setLoaded:(BOOL)f;
 @end
+
+/* NSRuleEditor: rows (simple / compound, nested) whose criteria and display values come from the delegate */
+@interface NSRuleEditor : NSControl {
+@public
+  id _delegate; NSInteger _nesting; CGFloat _rowH; BOOL _editable, _canRemoveAll; NSMutableArray *_rows; NSMutableIndexSet *_selRows; Class _rowClass;
+  NSString *_kpType, *_kpSub, *_kpCrit, *_kpDisp, *_fmtFile; NSDictionary *_fmtDict;
+}
+- (NSInteger)numberOfRows; - (void)reloadCriteria;
+@end

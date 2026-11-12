@@ -970,3 +970,12 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `NSLayoutManager` — metody układu (`layoutParagraphAtPoint:`, `layoutGlyphsInLayoutManager:…`) są puste, więc własne podklasy typesettera nie wpływają na wygląd tekstu.
 - Stan: **5249+ z 8257** metod prawdziwych; `macref.sh` 28/28; pełny `run_tests.sh` przechodzi (uruchomiony w tej rundzie).
 
+### 25. NSRuleEditor (2026-11-12)
+- `AppKitModel.m`, `appkit_ruleeditor.m` zgodny z Makiem: model wierszy (prosty/złożony, zagnieżdżone) sterowany delegatem (`numberOfChildrenForCriterion:`, `child:forCriterion:`, `displayValueForCriterion:`,
+  `predicatePartsForCriterion:`): `addRow:` w trybie złożonym na pustym edytorze tworzy wiersz złożony i prosty podwiersz, kryteria nowego wiersza to pierwsze dziecko na każdym poziomie,
+  `insertRowAtIndex:withType:asSubrowOfRow:animate:` (wiersze najwyższego poziomu trafiają za poddrzewo poprzednika), `removeRowAtIndex:`/`removeRowsAtIndexes:includeSubrows:`,
+  `setCriteria:andDisplayValues:forRowAtIndex:`, `parentRowForRow:`, `subrowIndexesForRow:`, selekcja, domyślne wartości (nesting 2, wysokość 32, klucze `rowType/subrows/criteria/displayValues`),
+  `predicate`/`predicateForRow:` budowane z części dostarczanych przez delegata (literały kluczy `NSRuleEditorPredicate…`). Rysowanie to lista tekstów z wcięciem; brak prawdziwych kontrolek wiersza
+  (popupy, przyciski +/−) i animacji.
+- Stan: **5294 z 8257** metod prawdziwych; `macref.sh` 29/29.
+

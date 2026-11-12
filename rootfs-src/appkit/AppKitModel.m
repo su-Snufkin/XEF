@@ -1405,3 +1405,92 @@ static BOOL XEFAssocBool(id o, const char *k, BOOL def) { NSNumber *n = objc_get
 - (void)reset { _loaded = NO; } - (void)set {}
 + (id)branchImage { return nil; } + (id)highlightedBranchImage { return nil; }
 @end
+
+/* ================================================================== NSRuleEditor */
+@interface NSObject (XEFRuleDelegate)
+- (NSInteger)ruleEditor:(id)e numberOfChildrenForCriterion:(id)c withRowType:(NSInteger)t; - (id)ruleEditor:(id)e child:(NSInteger)i forCriterion:(id)c withRowType:(NSInteger)t;
+- (id)ruleEditor:(id)e displayValueForCriterion:(id)c inRow:(NSInteger)r; - (NSDictionary *)ruleEditor:(id)e predicatePartsForCriterion:(id)c withDisplayValue:(id)v inRow:(NSInteger)r;
+- (void)ruleEditorRowsDidChange:(NSNotification *)n;
+@end
+@implementation NSRuleEditor
+- (id)initWithFrame:(NSRect)f {
+  if ((self = [super initWithFrame:f])) { _nesting = 2; _rowH = 32; _editable = YES; _canRemoveAll = YES; _rows = [[NSMutableArray alloc] init]; _selRows = [[NSMutableIndexSet alloc] init]; _rowClass = [NSMutableDictionary class];
+    _kpType = @"rowType"; _kpSub = @"subrows"; _kpCrit = @"criteria"; _kpDisp = @"displayValues"; }
+  return self; }
+- (void)dealloc { [_rows release]; [_selRows release]; [_fmtFile release]; [_fmtDict release]; [super dealloc]; }
+- (BOOL)isFlipped { return YES; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; [self reloadCriteria]; }
+- (NSInteger)nestingMode { return _nesting; } - (void)setNestingMode:(NSInteger)m { _nesting = m; }
+- (CGFloat)rowHeight { return _rowH; } - (void)setRowHeight:(CGFloat)h { _rowH = h; [self setNeedsDisplay:YES]; }
+- (BOOL)isEditable { return _editable; } - (void)setEditable:(BOOL)f { _editable = f; }
+- (BOOL)canRemoveAllRows { return _canRemoveAll; } - (void)setCanRemoveAllRows:(BOOL)f { _canRemoveAll = f; }
+- (Class)rowClass { return _rowClass; } - (void)setRowClass:(Class)c { _rowClass = c; }
+- (NSString *)rowTypeKeyPath { return _kpType; } - (void)setRowTypeKeyPath:(NSString *)k { [k retain]; [_kpType release]; _kpType = k; }
+- (NSString *)subrowsKeyPath { return _kpSub; } - (void)setSubrowsKeyPath:(NSString *)k { [k retain]; [_kpSub release]; _kpSub = k; }
+- (NSString *)criteriaKeyPath { return _kpCrit; } - (void)setCriteriaKeyPath:(NSString *)k { [k retain]; [_kpCrit release]; _kpCrit = k; }
+- (NSString *)displayValuesKeyPath { return _kpDisp; } - (void)setDisplayValuesKeyPath:(NSString *)k { [k retain]; [_kpDisp release]; _kpDisp = k; }
+- (NSString *)formattingStringsFilename { return _fmtFile; } - (void)setFormattingStringsFilename:(NSString *)f { [f retain]; [_fmtFile release]; _fmtFile = f; }
+- (NSDictionary *)formattingDictionary { return _fmtDict; } - (void)setFormattingDictionary:(NSDictionary *)d { [d retain]; [_fmtDict release]; _fmtDict = d; }
+- (void)reloadCriteria { [self setNeedsDisplay:YES]; } - (void)reloadPredicate {}
+/* row records: a mutable dictionary {type, parent (NSNumber row object id as pointer), criteria, display} kept in display order */
+- (NSInteger)numberOfRows { return [_rows count]; }
+- (NSMutableDictionary *)_xefRow:(NSInteger)i { return i >= 0 && i < (NSInteger)[_rows count] ? _rows[i] : nil; }
+- (NSInteger)_xefParentOf:(NSInteger)i { NSMutableDictionary *r = [self _xefRow:i]; if (!r) return -1; id p = r[@"parent"]; if (!p) return -1; NSUInteger k = [_rows indexOfObjectIdenticalTo:p]; return k == NSNotFound ? -1 : (NSInteger)k; }
+- (NSInteger)rowTypeForRow:(NSInteger)i { return [[[self _xefRow:i] objectForKey:@"type"] integerValue]; }
+- (NSInteger)parentRowForRow:(NSInteger)i { return [self _xefParentOf:i]; }
+- (NSArray *)criteriaForRow:(NSInteger)i { return [[self _xefRow:i] objectForKey:@"criteria"]; }
+- (NSArray *)displayValuesForRow:(NSInteger)i { return [[self _xefRow:i] objectForKey:@"display"]; }
+- (NSInteger)rowForDisplayValue:(id)v { for (NSUInteger i = 0; i < [_rows count]; i++) if ([[_rows[i] objectForKey:@"display"] containsObject:v]) return i; return -1; }
+- (NSIndexSet *)subrowIndexesForRow:(NSInteger)i {
+  NSMutableIndexSet *s = [NSMutableIndexSet indexSet]; for (NSInteger k = 0; k < (NSInteger)[_rows count]; k++) if ([self _xefParentOf:k] == i) [s addIndex:k]; return s; }
+- (NSInteger)_xefSubtreeEnd:(NSInteger)i {   /* index after row i and all its descendants */
+  NSInteger e = i + 1; while (e < (NSInteger)[_rows count]) { NSInteger p = [self _xefParentOf:e]; BOOL inside = NO; while (p >= 0) { if (p == i) { inside = YES; break; } p = [self _xefParentOf:p]; } if (!inside) break; e++; } return e; }
+- (void)_xefFillRow:(NSMutableDictionary *)row index:(NSInteger)idx {
+  NSMutableArray *crit = [NSMutableArray array], *disp = [NSMutableArray array]; NSInteger type = [row[@"type"] integerValue]; id c = nil;
+  while ([_delegate respondsToSelector:@selector(ruleEditor:numberOfChildrenForCriterion:withRowType:)] && [_delegate ruleEditor:self numberOfChildrenForCriterion:c withRowType:type] > 0) {
+    c = [_delegate ruleEditor:self child:0 forCriterion:c withRowType:type]; if (!c) break; [crit addObject:c];
+    id v = [_delegate respondsToSelector:@selector(ruleEditor:displayValueForCriterion:inRow:)] ? [_delegate ruleEditor:self displayValueForCriterion:c inRow:idx] : c; [disp addObject:v ?: c]; }
+  row[@"criteria"] = crit; row[@"display"] = disp; }
+- (void)_xefChanged { [self setNeedsDisplay:YES]; [[NSNotificationCenter defaultCenter] postNotificationName:@"NSRuleEditorRowsDidChangeNotification" object:self];
+  if ([_delegate respondsToSelector:@selector(ruleEditorRowsDidChange:)]) [_delegate ruleEditorRowsDidChange:[NSNotification notificationWithName:@"NSRuleEditorRowsDidChangeNotification" object:self]]; }
+- (void)insertRowAtIndex:(NSInteger)idx withType:(NSInteger)type asSubrowOfRow:(NSInteger)parent animate:(BOOL)anim {
+  NSMutableDictionary *row = [NSMutableDictionary dictionary]; row[@"type"] = @(type); if (parent >= 0 && parent < (NSInteger)[_rows count]) row[@"parent"] = _rows[parent];
+  if (idx < 0) idx = 0; if (idx > (NSInteger)[_rows count]) idx = [_rows count];
+  if (parent < 0 && idx < (NSInteger)[_rows count]) { while (idx > 0 && idx < (NSInteger)[_rows count] && [self _xefParentOf:idx] >= 0) idx++; }   /* top-level rows sit after their predecessor's subrows */
+  [_rows insertObject:row atIndex:idx]; [self _xefFillRow:row index:idx]; [self _xefChanged]; }
+- (void)addRow:(id)sender {
+  if (![_rows count] && _nesting >= 2) { [self insertRowAtIndex:0 withType:1 asSubrowOfRow:-1 animate:NO]; [self insertRowAtIndex:1 withType:0 asSubrowOfRow:0 animate:NO]; return; }
+  [self insertRowAtIndex:[_rows count] withType:0 asSubrowOfRow:-1 animate:NO]; }
+- (void)setCriteria:(NSArray *)c andDisplayValues:(NSArray *)d forRowAtIndex:(NSInteger)i { NSMutableDictionary *r = [self _xefRow:i]; if (!r) return; r[@"criteria"] = [[c copy] autorelease]; r[@"display"] = [[d copy] autorelease]; [self _xefChanged]; }
+- (void)removeRowAtIndex:(NSInteger)i { NSMutableDictionary *r = [self _xefRow:i]; if (!r) return; [_selRows removeAllIndexes]; [_rows removeObjectAtIndex:i]; for (NSMutableDictionary *o in _rows) if (o[@"parent"] == r) [o removeObjectForKey:@"parent"]; [self _xefChanged]; }
+- (void)removeRowsAtIndexes:(NSIndexSet *)ix includeSubrows:(BOOL)sub {
+  NSMutableArray *kill = [NSMutableArray array]; [ix enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *stop) { if (i < [_rows count]) { [kill addObject:_rows[i]]; if (sub) for (NSInteger k = i + 1; k < [self _xefSubtreeEnd:i]; k++) [kill addObject:_rows[k]]; } }];
+  [_rows removeObjectsInArray:kill]; for (NSMutableDictionary *o in _rows) if ([kill containsObject:o[@"parent"]]) [o removeObjectForKey:@"parent"];
+  [_selRows removeAllIndexes]; [self _xefChanged]; }
+- (NSIndexSet *)selectedRowIndexes { return _selRows; }
+- (void)selectRowIndexes:(NSIndexSet *)ix byExtendingSelection:(BOOL)ext { if (!ext) [_selRows removeAllIndexes]; [_selRows addIndexes:ix]; [self setNeedsDisplay:YES]; }
+- (NSPredicate *)predicateForRow:(NSInteger)i {
+  NSMutableDictionary *r = [self _xefRow:i]; if (!r) return nil;
+  if ([r[@"type"] integerValue] == 1) {
+    NSMutableArray *subs = [NSMutableArray array]; [[self subrowIndexesForRow:i] enumerateIndexesUsingBlock:^(NSUInteger k, BOOL *stop) { NSPredicate *p = [self predicateForRow:k]; if (p) [subs addObject:p]; }];
+    return [subs count] ? [NSCompoundPredicate andPredicateWithSubpredicates:subs] : nil; }
+  NSExpression *l = nil, *rt = nil; NSNumber *op = nil; NSArray *crit = r[@"criteria"], *disp = r[@"display"];
+  for (NSUInteger k = 0; k < [crit count]; k++) {
+    NSDictionary *parts = [_delegate respondsToSelector:@selector(ruleEditor:predicatePartsForCriterion:withDisplayValue:inRow:)] ? [_delegate ruleEditor:self predicatePartsForCriterion:crit[k] withDisplayValue:disp[k] inRow:i] : nil;
+    if (parts[@"NSRuleEditorPredicateLeftExpression"]) l = parts[@"NSRuleEditorPredicateLeftExpression"];
+    if (parts[@"NSRuleEditorPredicateRightExpression"]) rt = parts[@"NSRuleEditorPredicateRightExpression"];
+    if (parts[@"NSRuleEditorPredicateOperatorType"]) op = parts[@"NSRuleEditorPredicateOperatorType"]; }
+  if (!l || !rt || !op) return nil;
+  return [NSComparisonPredicate predicateWithLeftExpression:l rightExpression:rt modifier:NSDirectPredicateModifier type:(NSPredicateOperatorType)[op integerValue] options:0]; }
+- (NSPredicate *)predicate {
+  NSMutableArray *tops = [NSMutableArray array]; for (NSInteger i = 0; i < (NSInteger)[_rows count]; i++) if ([self _xefParentOf:i] < 0) { NSPredicate *p = [self predicateForRow:i]; if (p) [tops addObject:p]; }
+  if (![tops count]) return nil; return [tops count] == 1 ? tops[0] : [NSCompoundPredicate andPredicateWithSubpredicates:tops]; }
+- (void)drawRect:(NSRect)r {
+  [[NSColor whiteColor] set]; NSRectFill([self bounds]);
+  NSDictionary *at = @{ NSFontAttributeName: [NSFont systemFontOfSize:12] };
+  for (NSInteger i = 0; i < (NSInteger)[_rows count]; i++) {
+    NSInteger depth = 0; for (NSInteger p = [self _xefParentOf:i]; p >= 0; p = [self _xefParentOf:p]) depth++;
+    NSRect f = NSMakeRect(8 + depth * 20, i * _rowH, [self bounds].size.width - 16 - depth * 20, _rowH);
+    if ([_selRows containsIndex:i]) { [[NSColor selectedControlColor] set]; NSRectFill(NSMakeRect(0, i * _rowH, [self bounds].size.width, _rowH)); }
+    [[[self displayValuesForRow:i] componentsJoinedByString:@"  "] drawInRect:NSInsetRect(f, 0, 6) withAttributes:at]; } }
+@end

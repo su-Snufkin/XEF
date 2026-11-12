@@ -88,7 +88,6 @@ NSPageLayout
 NSPersistentDocument
 NSPickerTouchBarItem
 NSPopoverTouchBarItem
-NSRuleEditor
 NSPredicateEditor
 NSPredicateEditorRowTemplate
 NSPressureConfiguration
