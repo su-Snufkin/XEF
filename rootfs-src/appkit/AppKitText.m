@@ -1427,3 +1427,29 @@ static NSAttributedString *XEFParseRTF(NSString *r) {
 + (NSArray *)textFileTypes { return @[@"rtf", @"html", @"htm", @"txt", @"rtfd"]; } + (NSArray *)textUnfilteredFileTypes { return [self textFileTypes]; }
 + (NSArray *)textPasteboardTypes { return @[]; } + (NSArray *)textUnfilteredPasteboardTypes { return @[]; }
 @end
+
+/* ================================================================== NSTextAttachment */
+@implementation NSTextAttachment
++ (BOOL)supportsSecureCoding { return YES; }
+- (id)init { if ((self = [super init])) _allowsView = YES; return self; }
+- (id)initWithData:(NSData *)d ofType:(NSString *)t {
+  if ((self = [self init])) { _contents = [d copy]; _fileType = [t copy]; if (d) _wrapper = [[NSFileWrapper alloc] initRegularFileWithContents:d]; } return self; }
+- (id)initWithFileWrapper:(NSFileWrapper *)w { if ((self = [self init])) _wrapper = [w retain]; return self; }
+- (id)initWithCoder:(NSCoder *)c { return [self init]; } - (void)encodeWithCoder:(NSCoder *)c {}
+- (void)dealloc { [_contents release]; [_fileType release]; [_image release]; [_wrapper release]; [_cell release]; [super dealloc]; }
+- (NSData *)contents { return _contents; } - (void)setContents:(NSData *)d { [d retain]; [_contents release]; _contents = d; }
+- (NSString *)fileType { return _fileType; } - (void)setFileType:(NSString *)t { [t retain]; [_fileType release]; _fileType = t; }
+- (NSImage *)image { return _image; } - (void)setImage:(NSImage *)i { [i retain]; [_image release]; _image = i; }
+- (NSRect)bounds { return _bounds; } - (void)setBounds:(NSRect)b { _bounds = b; }
+- (NSFileWrapper *)fileWrapper { return _wrapper; } - (void)setFileWrapper:(NSFileWrapper *)w { [w retain]; [_wrapper release]; _wrapper = w; }
+- (CGFloat)lineLayoutPadding { return _padding; } - (void)setLineLayoutPadding:(CGFloat)p { _padding = p; }
+- (id)attachmentCell { return _cell; } - (void)setAttachmentCell:(id)c { [c retain]; [_cell release]; _cell = c; }
+- (BOOL)allowsTextAttachmentView { return _allowsView; } - (void)setAllowsTextAttachmentView:(BOOL)f { _allowsView = f; } - (BOOL)usesTextAttachmentView { return NO; }
++ (Class)textAttachmentViewProviderClassForFileType:(NSString *)t { return nil; } + (void)registerTextAttachmentViewProviderClass:(Class)c forFileType:(NSString *)t {}
+- (id)viewProviderForParentView:(NSView *)v location:(id)l textContainer:(NSTextContainer *)c { return nil; }
+- (NSImage *)imageForBounds:(NSRect)b textContainer:(NSTextContainer *)c characterIndex:(NSUInteger)i { return _image; }
+- (NSImage *)imageForBounds:(NSRect)b attributes:(NSDictionary *)a location:(id)l textContainer:(NSTextContainer *)c { return _image; }
+- (NSRect)attachmentBoundsForAttributes:(NSDictionary *)a location:(id)l textContainer:(NSTextContainer *)c proposedLineFragment:(NSRect)f position:(NSPoint)p {
+  if (!NSEqualRects(_bounds, NSZeroRect)) return _bounds; NSSize s = _image ? [_image size] : NSZeroSize; return NSMakeRect(0, 0, s.width, s.height); }
+- (NSRect)attachmentBoundsForTextContainer:(NSTextContainer *)c proposedLineFragment:(NSRect)f glyphPosition:(NSPoint)p characterIndex:(NSUInteger)i { return [self attachmentBoundsForAttributes:@{} location:nil textContainer:c proposedLineFragment:f position:p]; }
+@end

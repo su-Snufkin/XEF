@@ -86,3 +86,8 @@ typedef unsigned int NSGlyph;
 @end
 @interface NSATSTypesetter : NSTypesetter
 @end
+
+/* NSTextAttachment: contents, image and layout bounds */
+@interface NSTextAttachment : NSObject <NSCoding, NSSecureCoding> { @public NSData *_contents; NSString *_fileType; NSImage *_image; NSRect _bounds; NSFileWrapper *_wrapper; CGFloat _padding; id _cell; BOOL _allowsView; }
+- (id)initWithData:(NSData *)d ofType:(NSString *)t; - (id)initWithFileWrapper:(NSFileWrapper *)w; - (NSRect)bounds; - (NSImage *)image;
+@end

@@ -332,8 +332,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSTableViewRowAction @end
 @interface NSTextAlternatives : NSObject @end
 @implementation NSTextAlternatives @end
-@interface NSTextAttachment : NSObject @end
-@implementation NSTextAttachment @end
 @interface NSTextAttachmentViewProvider : NSObject @end
 @implementation NSTextAttachmentViewProvider @end
 @interface NSTextBlock : NSObject @end
@@ -2250,30 +2248,6 @@ static const GenEntry kTable[] = {
 {"NSTextAlternatives", '-', "initWithPrimaryString:alternativeStrings:", 'I', '@', "@@"},
 {"NSTextAlternatives", '-', "noteSelectedAlternativeString:", 'D', 'v', "@"},
 {"NSTextAlternatives", '-', "primaryString", 'D', '@', ""},
-{"NSTextAttachment", '+', "registerTextAttachmentViewProviderClass:forFileType:", 'D', 'v', "#@"},
-{"NSTextAttachment", '+', "textAttachmentViewProviderClassForFileType:", 'D', '#', "@"},
-{"NSTextAttachment", '-', "allowsTextAttachmentView", 'G', 'B', ""},
-{"NSTextAttachment", '-', "attachmentBoundsForAttributes:location:textContainer:proposedLineFragment:position:", 'D', 'R', "@@@RP"},
-{"NSTextAttachment", '-', "attachmentCell", 'G', '@', ""},
-{"NSTextAttachment", '-', "bounds", 'G', 'R', ""},
-{"NSTextAttachment", '-', "contents", 'G', '@', ""},
-{"NSTextAttachment", '-', "fileType", 'G', '@', ""},
-{"NSTextAttachment", '-', "fileWrapper", 'G', '@', ""},
-{"NSTextAttachment", '-', "image", 'G', '@', ""},
-{"NSTextAttachment", '-', "imageForBounds:attributes:location:textContainer:", 'D', '@', "R@@@"},
-{"NSTextAttachment", '-', "initWithData:ofType:", 'I', '@', "@@"},
-{"NSTextAttachment", '-', "initWithFileWrapper:", 'I', '@', "@"},
-{"NSTextAttachment", '-', "lineLayoutPadding", 'G', 'd', ""},
-{"NSTextAttachment", '-', "setAllowsTextAttachmentView:", 'S', 'v', "B"},
-{"NSTextAttachment", '-', "setAttachmentCell:", 'S', 'v', "@"},
-{"NSTextAttachment", '-', "setBounds:", 'S', 'v', "R"},
-{"NSTextAttachment", '-', "setContents:", 'S', 'v', "@"},
-{"NSTextAttachment", '-', "setFileType:", 'S', 'v', "@"},
-{"NSTextAttachment", '-', "setFileWrapper:", 'S', 'v', "@"},
-{"NSTextAttachment", '-', "setImage:", 'S', 'v', "@"},
-{"NSTextAttachment", '-', "setLineLayoutPadding:", 'S', 'v', "d"},
-{"NSTextAttachment", '-', "usesTextAttachmentView", 'D', 'B', ""},
-{"NSTextAttachment", '-', "viewProviderForParentView:location:textContainer:", 'D', '@', "@@@"},
 {"NSTextAttachmentViewProvider", '+', "new", 'F', '@', ""},
 {"NSTextAttachmentViewProvider", '-', "attachmentBoundsForAttributes:location:textContainer:proposedLineFragment:position:", 'D', 'R', "@@@RP"},
 {"NSTextAttachmentViewProvider", '-', "init", 'I', '@', ""},
@@ -2818,25 +2792,57 @@ static const GenEntry kTable[] = {
 };
 const struct XEFDefault kDefaultsTable[] = {
 {"NSAccessibilityCustomRotor", "label", '@', "Custom"},
+{"NSBackgroundExtensionView", "automaticallyPlacesContentView", 'B', "1"},
+{"NSButtonTouchBarItem", "isEnabled", 'B', "1"},
+{"NSCandidateListTouchBarItem", "allowsTextInputContextCandidates", 'B', "1"},
 {"NSCollectionLayoutAnchor", "isAbsoluteOffset", 'B', "1"},
 {"NSCollectionLayoutDimension", "isAbsolute", 'B', "1"},
 {"NSCollectionLayoutSpacing", "isFixedSpacing", 'B', "1"},
+{"NSColorList", "isEditable", 'B', "1"},
 {"NSColorPicker", "buttonToolTip", '@', "NSColorPicker"},
+{"NSColorPickerTouchBarItem", "customizationLabel", '@', "Color Picker"},
+{"NSColorPickerTouchBarItem", "isEnabled", 'B', "1"},
 {"NSDraggingSession", "draggingFormation", 'q', "-1"},
 {"NSDraggingSession", "draggingLeaderIndex", 'q', "-1"},
+{"NSForm", "indexOfSelectedItem", 'q', "-1"},
+{"NSFormCell", "titleWidth", 'd', "36.75390625"},
+{"NSFormCell", "title", '@', "Field:"},
+{"NSFormCell", "titleAlignment", 'q', "2"},
+{"NSFormCell", "titleBaseWritingDirection", 'q', "-1"},
+{"NSFormCell", "preferredTextFieldWidth", 'd', "-1"},
+{"NSGlassEffectView", "cornerRadius", 'd', "8"},
+{"NSMenuItemCell", "needsSizing", 'B', "1"},
+{"NSPDFInfo", "isFileExtensionHidden", 'B', "1"},
+{"NSPDFInfo", "paperSize", 'S', "612,792"},
 {"NSPDFPanel", "defaultFileName", '@', "Untitled"},
+{"NSPickerTouchBarItem", "isEnabled", 'B', "1"},
 {"NSPrintPanel", "options", 'q', "3"},
+{"NSScrubber", "highlightedIndex", 'q', "-1"},
+{"NSScrubberFlowLayout", "itemSize", 'S', "50,30"},
 {"NSScrubberLayout", "automaticallyMirrorsInRightToLeftLayout", 'B', "1"},
 {"NSScrubberLayoutAttributes", "itemIndex", 'q', "-1"},
 {"NSScrubberLayoutAttributes", "alpha", 'd', "1"},
 {"NSScrubberProportionalLayout", "numberOfVisibleItems", 'q', "5"},
+{"NSSearchToolbarItem", "preferredWidthForSearchField", 'd', "240"},
+{"NSSharingServicePickerTouchBarItem", "isEnabled", 'B', "1"},
+{"NSSliderTouchBarItem", "minimumSliderWidth", 'd', "64"},
+{"NSSliderTouchBarItem", "maximumSliderWidth", 'd', "3.4028234663852886e+38"},
+{"NSSliderTouchBarItem", "valueAccessoryWidth", 'q', "506450589952"},
+{"NSSpeechRecognizer", "listensInForegroundOnly", 'B', "1"},
+{"NSSplitViewItemAccessoryViewController", "automaticallyAppliesContentInsets", 'B', "1"},
+{"NSStepperTouchBarItem", "maxValue", 'd', "59"},
+{"NSStepperTouchBarItem", "increment", 'd', "1"},
 {"NSTextContentManager", "automaticallySynchronizesTextLayoutManagers", 'B', "1"},
+{"NSTextInsertionIndicator", "automaticModeOptions", 'q', "1"},
 {"NSTextLayoutManager", "usesFontLeading", 'B', "1"},
+{"NSTextList", "markerFormat", 'q', "8494874104"},
+{"NSTitlebarAccessoryViewController", "automaticallyAdjustsSize", 'B', "1"},
+{"NSUserDefaultsController", "appliesImmediately", 'B', "1"},
 {"NSUserInterfaceCompressionOptions", "isEmpty", 'B', "1"},
 {"NSWritingToolsCoordinator", "behavior", 'q', "1"},
 {"NSWritingToolsCoordinator", "resultOptions", 'q', "15"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 18;
+const unsigned long kDefaultsCount = 50;
 
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }

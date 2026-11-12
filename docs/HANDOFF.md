@@ -1063,3 +1063,11 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `stopSpeaking` ustawia `isSpeaking` na NO od razu, a `didFinishSpeaking:NO` przychodzi w następnym obiegu run loopa; `defaultVoice` to na stałe `com.apple.speech.synthesis.voice.Alex`.
 - Stan: **5914 z 8257** metod prawdziwych; `macref.sh` 47/47; pełny `run_tests.sh` przechodzi.
 
+### 35. NSTextAttachment; przechwytywanie domyślnych wartości — proces na klasę (2026-11-12)
+- **NSTextAttachment** (`AppKitText.m`, `appkit_attachment.m` zgodny z Makiem): `contents`, `fileType`, `image`, `bounds` (domyślnie zero), `fileWrapper` (tworzony automatycznie przez `initWithData:ofType:`, ale **nie**
+  rozpakowywany przy `initWithFileWrapper:` — `contents` zostaje nil), `lineLayoutPadding` (0), `attachmentBoundsForAttributes:…` (jawne `bounds`, a gdy zero — rozmiar obrazu), `imageForBounds:…`.
+  **Układ tekstu nadal nie rysuje załączników** (`NSLayoutManager` ich nie obsługuje) — to tylko model.
+- `tools/capture_defaults.py` uruchamia teraz **osobny proces dla każdej klasy** (wcześniejsze `fork()` po starcie wątków AppKit wywalało się w `+initialize`, co gubiło wiele klas) i dla podklas `NSTouchBarItem`
+  używa `initWithIdentifier:`. Przechwycono 208 wartości (50 różnych od zera). Skrypt nie nadpisuje tabeli, gdy nic nie przechwycił.
+- Stan: **5938 z 8257** metod prawdziwych; `macref.sh` 48/48.
+

@@ -39,8 +39,8 @@ def main():
            '   case \'P\': { NSPoint r = ((NSPoint (*)(id, SEL))objc_msgSend)(obj, s); printf("%s\\t%s\\tP\\t%.9g,%.9g\\n", c, sel, r.x, r.y); break; }',
            '   case \'@\': { id v = ((id (*)(id, SEL))objc_msgSend)(obj, s); if ([v isKindOfClass:[NSString class]]) printf("%s\\t%s\\t@\\t%s\\n", c, sel, [[(NSString *)v stringByReplacingOccurrencesOfString:@"\\n" withString:@"\\\\n"] UTF8String]); else if ([v isKindOfClass:[NSNumber class]]) printf("%s\\t%s\\tq\\t%lld\\n", c, sel, [(NSNumber *)v longLongValue]); break; }',
            '  } fflush(stdout); }',
-           'int main(void) { @autoreleasepool { [NSApplication sharedApplication]; setvbuf(stdout, NULL, _IOLBF, 0);']
-    n = 0
+           'int main(int argc, char **argv) { @autoreleasepool { if (argc < 2) return 1; [NSApplication sharedApplication]; setvbuf(stdout, NULL, _IOLBF, 0);']
+    n = 0; probed = []
     for cname in gen:
         c = classes.get(cname)
         if not c:
@@ -54,18 +54,21 @@ def main():
                 gets.append((sel, sh))
         if not gets:
             continue
-        n += 1
-        out.append('  { Class C = objc_getClass("%s"); if (C) { pid_t p = fork(); if (p == 0) { alarm(4); signal(SIGABRT, SIG_DFL);' % cname)
-        out.append('    @try { id o = nil; if ([C instancesRespondToSelector:@selector(initWithFrame:)] && [C isSubclassOfClass:[NSView class]]) o = [[C alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)]; else o = [[C alloc] init];')
+        n += 1; probed.append(cname)
+        out.append('  if (!strcmp(argv[1], "%s")) { Class C = objc_getClass("%s"); if (C) { { alarm(6);' % (cname, cname))
+        out.append('    @try { id o = nil; if ([C instancesRespondToSelector:@selector(initWithFrame:)] && [C isSubclassOfClass:[NSView class]]) o = [[C alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)]; else if ([C isSubclassOfClass:[NSTouchBarItem class]]) o = [[C alloc] initWithIdentifier:@"xef.id"]; else o = [[C alloc] init];')
         out.append('      if (o) {')
         for sel, sh in gets:
             out.append('        @try { if ([o respondsToSelector:@selector(%s)]) emit("%s", "%s", \'%s\', o, @selector(%s)); } @catch (id e) {}' % (sel, cname, sel, sh, sel))
-        out.append('      } } @catch (id e) {} _exit(0); } else if (p > 0) { int st; waitpid(p, &st, 0); } } }')
+        out.append('      } } @catch (id e) {} _exit(0); } } }')
     out.append('} return 0; }')
     open('/tmp/capture_defaults.m', 'w').write('\n'.join(out) + '\n')
     subprocess.check_call('scp -q /tmp/capture_defaults.m mac:xef-remote/capture_defaults.m', shell=True)
-    r = subprocess.run("ssh mac 'cd xef-remote && clang -fobjc-arc -w -framework Cocoa capture_defaults.m -o capture_defaults 2>&1 | grep -m5 error; DISPLAY= ./capture_defaults 2>/dev/null'", shell=True, capture_output=True, text=True, timeout=900)
+    names = ' '.join(sorted(probed))
+    r = subprocess.run("ssh mac 'cd xef-remote && clang -fobjc-arc -w -framework Cocoa capture_defaults.m -o capture_defaults 2>&1 | grep -m5 error; for c in %s; do DISPLAY= ./capture_defaults $c 2>/dev/null; done'" % names, shell=True, capture_output=True, text=True, timeout=3000)
     rows = [l for l in r.stdout.split('\n') if l.count('\t') == 3]
+    if not rows:
+        sys.exit('nothing captured; keeping the old table\n' + r.stdout[:500] + r.stderr[:500])
     open(os.path.join(REPO, 'rootfs-src', 'appkit', 'generated_defaults.txt'), 'w').write('\n'.join(rows) + '\n')
     print('classes probed: %d, defaults captured: %d' % (n, len(rows)))
     if r.stdout and not rows:

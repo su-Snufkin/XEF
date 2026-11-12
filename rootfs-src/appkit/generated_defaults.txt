@@ -2,11 +2,15 @@ NSAccessibilityCustomRotor	type	q	0
 NSAccessibilityCustomRotor	label	@	Custom
 NSAccessibilityCustomRotorItemResult	itemLoadingToken	q	0
 NSAccessibilityCustomRotorSearchParameters	searchDirection	q	0
+NSBackgroundExtensionView	automaticallyPlacesContentView	B	1
+NSButtonTouchBarItem	title	@	
+NSButtonTouchBarItem	isEnabled	B	1
+NSButtonTouchBarItem	customizationLabel	@	
+NSCandidateListTouchBarItem	allowsTextInputContextCandidates	B	1
 NSCollectionLayoutAnchor	edges	q	0
 NSCollectionLayoutAnchor	offset	P	0,0
 NSCollectionLayoutAnchor	isAbsoluteOffset	B	1
 NSCollectionLayoutAnchor	isFractionalOffset	B	0
-NSCollectionLayoutSupplementaryItem	zIndex	q	0
 NSCollectionLayoutBoundarySupplementaryItem	extendsBoundary	B	0
 NSCollectionLayoutBoundarySupplementaryItem	pinToVisibleBounds	B	0
 NSCollectionLayoutBoundarySupplementaryItem	alignment	q	0
@@ -26,13 +30,25 @@ NSCollectionLayoutSection	visibleItemsInvalidationHandler	q	0
 NSCollectionLayoutSpacing	spacing	d	0
 NSCollectionLayoutSpacing	isFlexibleSpacing	B	0
 NSCollectionLayoutSpacing	isFixedSpacing	B	1
+NSCollectionLayoutSupplementaryItem	zIndex	q	0
 NSCollectionViewCompositionalLayoutConfiguration	interSectionSpacing	d	0
 NSCollectionViewDiffableDataSource	supplementaryViewProvider	q	0
+NSCollectionViewGridLayout	minimumInteritemSpacing	d	0
+NSCollectionViewGridLayout	minimumLineSpacing	d	0
+NSCollectionViewGridLayout	maximumNumberOfRows	q	0
+NSCollectionViewGridLayout	maximumNumberOfColumns	q	0
+NSCollectionViewGridLayout	minimumItemSize	S	0,0
+NSCollectionViewGridLayout	maximumItemSize	S	0,0
 NSCollectionViewLayoutInvalidationContext	contentOffsetAdjustment	P	0,0
 NSCollectionViewLayoutInvalidationContext	contentSizeAdjustment	S	0,0
+NSColorList	name	q	0
+NSColorList	isEditable	B	1
 NSColorPicker	buttonToolTip	@	NSColorPicker
-NSDiffableDataSourceSnapshot	numberOfItems	q	0
-NSDiffableDataSourceSnapshot	numberOfSections	q	0
+NSColorPickerTouchBarItem	customizationLabel	@	Color Picker
+NSColorPickerTouchBarItem	isEnabled	B	1
+NSComboButton	title	@	
+NSComboButton	imageScaling	q	0
+NSComboButton	style	q	0
 NSDraggingImageComponent	key	q	0
 NSDraggingImageComponent	frame	R	0,0,0,0
 NSDraggingItem	draggingFrame	R	0,0,0,0
@@ -41,14 +57,46 @@ NSDraggingSession	animatesToStartingPositionsOnCancelOrFail	B	0
 NSDraggingSession	draggingLeaderIndex	q	-1
 NSDraggingSession	draggingSequenceNumber	q	0
 NSDraggingSession	draggingLocation	P	0,0
+NSForm	indexOfSelectedItem	q	-1
+NSForm	preferredTextFieldWidth	d	0
+NSFormCell	titleWidth	d	36.75390625
+NSFormCell	title	@	Field:
+NSFormCell	isOpaque	B	0
+NSFormCell	titleAlignment	q	2
+NSFormCell	titleBaseWritingDirection	q	-1
+NSFormCell	preferredTextFieldWidth	d	-1
+NSGlassEffectContainerView	spacing	d	0
+NSGlassEffectView	cornerRadius	d	8
+NSGlassEffectView	style	q	0
+NSGlyphInfo	glyphID	q	0
+NSGlyphInfo	characterIdentifier	q	0
+NSGlyphInfo	characterCollection	q	0
 NSItemBadge	text	@	
 NSMediaLibraryBrowserController	isVisible	B	0
 NSMediaLibraryBrowserController	frame	R	0,0,0,0
 NSMediaLibraryBrowserController	mediaLibraries	q	0
 NSMenuItemBadge	itemCount	q	0
 NSMenuItemBadge	type	q	0
+NSMenuItemCell	needsSizing	B	1
+NSMenuItemCell	needsDisplay	B	0
+NSMenuItemCell	stateImageWidth	d	0
+NSMenuItemCell	imageWidth	d	0
+NSMenuItemCell	titleWidth	d	0
+NSMenuItemCell	keyEquivalentWidth	d	0
+NSMenuItemCell	tag	q	0
+NSNibConnector	label	@	
+NSPDFInfo	isFileExtensionHidden	B	1
+NSPDFInfo	orientation	q	0
+NSPDFInfo	paperSize	S	612,792
 NSPDFPanel	options	q	0
 NSPDFPanel	defaultFileName	@	Untitled
+NSPageController	transitionStyle	q	0
+NSPickerTouchBarItem	controlRepresentation	q	0
+NSPickerTouchBarItem	collapsedRepresentationLabel	@	
+NSPickerTouchBarItem	numberOfOptions	q	0
+NSPickerTouchBarItem	isEnabled	B	1
+NSPickerTouchBarItem	customizationLabel	@	
+NSPopoverTouchBarItem	customizationLabel	@	
 NSPredicateEditorRowTemplate	rightExpressionAttributeType	q	0
 NSPredicateEditorRowTemplate	modifier	q	0
 NSPredicateEditorRowTemplate	options	q	0
@@ -56,6 +104,17 @@ NSPressureConfiguration	pressureBehavior	q	0
 NSPrintPanel	options	q	3
 NSPrintPanel	helpAnchor	q	0
 NSPrintPanel	jobStyleHint	q	0
+NSScrubber	numberOfItems	q	0
+NSScrubber	highlightedIndex	q	-1
+NSScrubber	mode	q	0
+NSScrubber	itemAlignment	q	0
+NSScrubber	isContinuous	B	0
+NSScrubber	floatsSelectionViews	B	0
+NSScrubberArrangedView	isSelected	B	0
+NSScrubberArrangedView	isHighlighted	B	0
+NSScrubberFlowLayout	itemSpacing	d	0
+NSScrubberFlowLayout	itemSize	S	50,30
+NSScrubberImageItemView	imageAlignment	q	0
 NSScrubberLayout	visibleRect	R	0,0,0,0
 NSScrubberLayout	scrubberContentSize	S	0,0
 NSScrubberLayout	shouldInvalidateLayoutForSelectionChange	B	0
@@ -65,7 +124,26 @@ NSScrubberLayoutAttributes	itemIndex	q	-1
 NSScrubberLayoutAttributes	frame	R	0,0,0,0
 NSScrubberLayoutAttributes	alpha	d	1
 NSScrubberProportionalLayout	numberOfVisibleItems	q	5
+NSScrubberTextItemView	title	@	
+NSSearchToolbarItem	preferredWidthForSearchField	d	240
 NSSharingCollaborationModeRestriction	disabledMode	q	0
+NSSharingServicePickerTouchBarItem	isEnabled	B	1
+NSSharingServicePickerTouchBarItem	buttonTitle	@	
+NSSliderTouchBarItem	doubleValue	d	0
+NSSliderTouchBarItem	minimumSliderWidth	d	64
+NSSliderTouchBarItem	maximumSliderWidth	d	3.4028234663852886e+38
+NSSliderTouchBarItem	valueAccessoryWidth	q	506450589952
+NSSliderTouchBarItem	customizationLabel	@	
+NSSpeechRecognizer	listensInForegroundOnly	B	1
+NSSpeechRecognizer	blocksOtherRecognizers	B	0
+NSSplitViewItemAccessoryViewController	isHidden	B	0
+NSSplitViewItemAccessoryViewController	automaticallyAppliesContentInsets	B	1
+NSStatusBarButton	appearsDisabled	B	0
+NSStepperTouchBarItem	maxValue	d	59
+NSStepperTouchBarItem	minValue	d	0
+NSStepperTouchBarItem	increment	d	1
+NSStepperTouchBarItem	value	d	0
+NSStepperTouchBarItem	customizationLabel	@	
 NSStoryboardSegue	identifier	q	0
 NSStringDrawingContext	minimumScaleFactor	d	0
 NSStringDrawingContext	actualScaleFactor	d	0
@@ -75,16 +153,27 @@ NSTableViewDiffableDataSource	sectionHeaderViewProvider	q	0
 NSTableViewDiffableDataSource	defaultRowAnimation	q	0
 NSTableViewRowAction	style	q	0
 NSTextAttachmentViewProvider	tracksTextAttachmentViewBounds	B	0
+NSTextBlock	contentWidth	d	0
+NSTextBlock	contentWidthValueType	q	0
+NSTextBlock	verticalAlignment	q	0
 NSTextCheckingController	spellCheckerDocumentTag	q	0
 NSTextContentManager	hasEditingTransaction	B	0
 NSTextContentManager	automaticallySynchronizesTextLayoutManagers	B	1
 NSTextContentManager	automaticallySynchronizesToBackingStore	B	0
+NSTextFinder	findIndicatorNeedsUpdate	B	0
+NSTextFinder	isIncrementalSearchingEnabled	B	0
+NSTextFinder	incrementalSearchingShouldDimContentView	B	0
+NSTextInputContext	acceptsGlyphInfo	B	0
+NSTextInsertionIndicator	automaticModeOptions	q	1
 NSTextLayoutManager	usesFontLeading	B	1
 NSTextLayoutManager	limitsLayoutForSuspiciousContents	B	0
 NSTextLayoutManager	usesHyphenation	B	0
 NSTextLayoutManager	usageBoundsForTextContainer	R	0,0,0,0
 NSTextLineFragment	typographicBounds	R	0,0,0,0
 NSTextLineFragment	glyphOrigin	P	0,0
+NSTextList	markerFormat	q	8494874104
+NSTextList	listOptions	q	0
+NSTextList	isOrdered	B	0
 NSTextPreview	presentationFrame	R	0,0,0,0
 NSTextRange	isEmpty	B	0
 NSTextSelection	granularity	q	0
@@ -92,19 +181,23 @@ NSTextSelection	affinity	q	0
 NSTextSelection	isTransient	B	0
 NSTextSelection	anchorPositionOffset	d	0
 NSTextSelection	isLogical	B	0
+NSTextSelectionNavigation	allowsNonContiguousRanges	B	0
+NSTextSelectionNavigation	rotatesCoordinateSystemForLayoutOrientation	B	0
+NSTextTable	numberOfColumns	q	0
+NSTextTable	collapsesBorders	B	0
 NSTextViewportLayoutController	viewportBounds	R	0,0,0,0
 NSTintConfiguration	adaptsToUserAccentColor	B	0
+NSTitlebarAccessoryViewController	fullScreenMinHeight	d	0
+NSTitlebarAccessoryViewController	isHidden	B	0
+NSTitlebarAccessoryViewController	automaticallyAdjustsSize	B	1
 NSTouch	phase	q	0
 NSTouch	normalizedPosition	P	0,0
 NSTouch	isResting	B	0
 NSTouch	deviceSize	S	0,0
 NSTouch	type	q	0
+NSUserDefaultsController	appliesImmediately	B	1
+NSUserDefaultsController	hasUnappliedChanges	B	0
 NSUserInterfaceCompressionOptions	isEmpty	B	1
-NSWorkspaceOpenConfiguration	promptsUserIfNeeded	B	1
-NSWorkspaceOpenConfiguration	isForPrinting	B	0
-NSWorkspaceOpenConfiguration	allowsRunningApplicationSubstitution	B	1
-NSWorkspaceOpenConfiguration	architecture	q	4294967295
-NSWorkspaceOpenConfiguration	requiresUniversalLinks	B	0
 NSWritingToolsCoordinator	state	q	0
 NSWritingToolsCoordinator	preferredBehavior	q	0
 NSWritingToolsCoordinator	behavior	q	1

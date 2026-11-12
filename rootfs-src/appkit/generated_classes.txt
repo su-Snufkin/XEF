@@ -113,7 +113,6 @@ NSStringDrawingContext
 NSTableViewDiffableDataSource
 NSTableViewRowAction
 NSTextAlternatives
-NSTextAttachment
 NSTextAttachmentViewProvider
 NSTextBlock
 NSTextCheckingController
