@@ -955,8 +955,9 @@ static char kXEFHeaderClip;
   if ([doc respondsToSelector:@selector(tile)] && doc != (NSView *)self && header) [(id)doc tile];
   if (_vs) { [_vs setFrame:NSMakeRect(NSMaxX(inner) - 11, inner.origin.y, 11, inner.size.height - (_hasH ? 11 : 0))]; [_vs setHidden:!_hasV]; }
   if (_hs) { [_hs setFrame:NSMakeRect(inner.origin.x, NSMaxY(inner) - 11, inner.size.width - (_hasV ? 11 : 0), 11)]; [_hs setHidden:!_hasH]; }
-  if (_vs) { [_subviews removeObjectIdenticalTo:_vs]; [_subviews addObject:_vs]; }   /* scrollers draw last */
-  if (_hs) { [_subviews removeObjectIdenticalTo:_hs]; [_subviews addObject:_hs]; }
+  /* scrollers draw last (the subview array holds the only reference: keep them alive while they move) */
+  if (_vs) { [_vs retain]; [_subviews removeObjectIdenticalTo:_vs]; [_subviews addObject:_vs]; [_vs release]; }
+  if (_hs) { [_hs retain]; [_subviews removeObjectIdenticalTo:_hs]; [_subviews addObject:_hs]; [_hs release]; }
   [self reflectScrolledClipView:_clip]; }
 - (void)setFrame:(NSRect)f { [super setFrame:f]; [self tile]; }
 - (void)setFrameSize:(NSSize)s { NSRect f = _frame; f.size = s; [self setFrame:f]; }
