@@ -1033,3 +1033,95 @@ static NSString *font_with_style(NSFont *f, BOOL bold, BOOL italic) {
 - (void)toggleAutomaticTextCompletion:(id)s {} - (void)toggleQuickLookPreviewPanel:(id)s {} - (void)updateQuickLookPreviewPanel {}
 - (void)outline:(id)s {} - (void)changeLayoutOrientation:(id)s {}
 @end
+
+/* ================================================================== NSSpellChecker */
+static NSSet *g_words; static BOOL g_words_tried;
+static NSSet *XEFDictionary(void) {
+  if (!g_words_tried) {
+    g_words_tried = YES;
+    NSString *t = [NSString stringWithContentsOfFile:@"/usr/share/dict/words" encoding:NSUTF8StringEncoding error:NULL];
+    if (t) { NSMutableSet *s = [NSMutableSet set]; for (NSString *w in [t componentsSeparatedByString:@"\n"]) if ([w length]) [s addObject:[w lowercaseString]]; g_words = [s retain]; } }
+  return g_words; }
+/* the next word of s at or after `from`: letters with inner apostrophes */
+static BOOL XEFNextWord(NSString *s, NSUInteger from, NSUInteger limit, NSRange *out) {
+  NSCharacterSet *letters = [NSCharacterSet letterCharacterSet]; NSUInteger i = from, n = MIN(limit, [s length]);
+  while (i < n) {
+    while (i < n && ![letters characterIsMember:[s characterAtIndex:i]]) i++;
+    if (i >= n) return NO;
+    NSUInteger b = i;
+    while (i < n && ([letters characterIsMember:[s characterAtIndex:i]] || ([s characterAtIndex:i] == '\'' && i + 1 < [s length] && [letters characterIsMember:[s characterAtIndex:i + 1]]))) i++;
+    *out = NSMakeRange(b, i - b); return YES; }
+  return NO; }
+@implementation NSSpellChecker
++ (NSSpellChecker *)sharedSpellChecker { static NSSpellChecker *s; if (!s) s = [[NSSpellChecker alloc] init]; return s; }
++ (BOOL)sharedSpellCheckerExists { return YES; }
++ (NSInteger)uniqueSpellDocumentTag { static NSInteger n = 0; return ++n; }
+- (id)init { if ((self = [super init])) { _ignored = [[NSMutableDictionary alloc] init]; _learned = [[NSMutableSet alloc] init]; _language = @"en"; } return self; }
+- (BOOL)_xefIsCorrect:(NSString *)w tag:(NSInteger)tag {
+  NSSet *d = XEFDictionary(); if (!d) return YES;
+  NSString *lw = [w lowercaseString];
+  if ([d containsObject:lw] || [_learned containsObject:lw] || [[_ignored objectForKey:@(tag)] containsObject:lw]) return YES;
+  if ([lw hasSuffix:@"'s"] && [d containsObject:[lw substringToIndex:[lw length] - 2]]) return YES;
+  /* inflections the plain word list lacks: plurals, -ed, -ing, -ly, -er, -est (with restored e or undoubled consonant) */
+  static NSArray *suffixes; if (!suffixes) suffixes = [@[@"s", @"es", @"ies", @"ed", @"d", @"ing", @"ly", @"er", @"ers", @"est", @"ness"] retain];
+  for (NSString *suf in suffixes) {
+    if (![lw hasSuffix:suf] || [lw length] <= [suf length] + 1) continue;
+    NSString *stem = [lw substringToIndex:[lw length] - [suf length]];
+    if ([suf isEqualToString:@"ies"]) stem = [stem stringByAppendingString:@"y"];
+    if ([d containsObject:stem] || [d containsObject:[stem stringByAppendingString:@"e"]]) return YES;
+    NSUInteger n = [stem length]; if (n > 2 && [stem characterAtIndex:n - 1] == [stem characterAtIndex:n - 2] && [d containsObject:[stem substringToIndex:n - 1]]) return YES; }
+  return NO; }
+- (NSRange)checkSpellingOfString:(NSString *)s startingAt:(NSInteger)off language:(NSString *)lang wrap:(BOOL)wrap inSpellDocumentWithTag:(NSInteger)tag wordCount:(NSInteger *)wc {
+  NSInteger count = 0; NSRange w; NSUInteger len = [s length]; if (off < 0) off = 0; if ((NSUInteger)off > len) off = len;
+  for (int pass = 0; pass < (wrap ? 2 : 1); pass++) {
+    NSUInteger from = pass == 0 ? off : 0, limit = pass == 0 ? len : MIN(len, (NSUInteger)off + 0);
+    NSUInteger at = from;
+    NSCharacterSet *ls = [NSCharacterSet letterCharacterSet];
+    if (pass == 0 && at > 0 && at < len && [ls characterIsMember:[s characterAtIndex:at - 1]] && [ls characterIsMember:[s characterAtIndex:at]]) { while (at < len && [ls characterIsMember:[s characterAtIndex:at]]) at++; }   /* a word already begun is skipped */
+    while (XEFNextWord(s, at, len, &w)) {
+      if (pass == 1 && w.location >= (NSUInteger)off) break;
+      at = NSMaxRange(w); count++;
+      if (![self _xefIsCorrect:[s substringWithRange:w] tag:tag]) { if (wc) *wc = count; return w; } }
+    (void)limit; }
+  if (wc) *wc = count; return NSMakeRange(NSNotFound, 0); }
+- (NSRange)checkSpellingOfString:(NSString *)s startingAt:(NSInteger)off { return [self checkSpellingOfString:s startingAt:off language:nil wrap:YES inSpellDocumentWithTag:0 wordCount:NULL]; }
+- (NSInteger)countWordsInString:(NSString *)s language:(NSString *)l { NSInteger n = 0; NSRange w; NSUInteger at = 0; while (XEFNextWord(s, at, [s length], &w)) { n++; at = NSMaxRange(w); } return n; }
+- (void)ignoreWord:(NSString *)w inSpellDocumentWithTag:(NSInteger)tag { NSMutableSet *set = [_ignored objectForKey:@(tag)]; if (!set) { set = [NSMutableSet set]; _ignored[@(tag)] = set; } [set addObject:[w lowercaseString]]; }
+- (NSArray *)ignoredWordsInSpellDocumentWithTag:(NSInteger)tag { return [[[_ignored objectForKey:@(tag)] allObjects] ?: @[] sortedArrayUsingSelector:@selector(compare:)]; }
+- (void)setIgnoredWords:(NSArray *)w inSpellDocumentWithTag:(NSInteger)tag { NSMutableSet *s = [NSMutableSet set]; for (NSString *x in w) [s addObject:[x lowercaseString]]; _ignored[@(tag)] = s; }
+- (void)closeSpellDocumentWithTag:(NSInteger)tag { [_ignored removeObjectForKey:@(tag)]; }
+- (void)learnWord:(NSString *)w { [_learned addObject:[w lowercaseString]]; } - (void)unlearnWord:(NSString *)w { [_learned removeObject:[w lowercaseString]]; } - (BOOL)hasLearnedWord:(NSString *)w { return [_learned containsObject:[w lowercaseString]]; }
+- (NSArray *)guessesForWordRange:(NSRange)r inString:(NSString *)s language:(NSString *)l inSpellDocumentWithTag:(NSInteger)tag {
+  NSSet *d = XEFDictionary(); if (!d || NSMaxRange(r) > [s length]) return @[];
+  NSString *w = [[s substringWithRange:r] lowercaseString]; NSMutableSet *out = [NSMutableSet set]; NSUInteger n = [w length];
+  NSString *alpha = @"abcdefghijklmnopqrstuvwxyz";
+  for (NSUInteger i = 0; i <= n; i++) {
+    if (i < n) { [out addObject:[w stringByReplacingCharactersInRange:NSMakeRange(i, 1) withString:@""]];
+      if (i + 1 < n) { unichar a = [w characterAtIndex:i], b = [w characterAtIndex:i + 1]; NSMutableString *t = [NSMutableString stringWithString:w]; [t replaceCharactersInRange:NSMakeRange(i, 2) withString:[NSString stringWithFormat:@"%C%C", b, a]]; [out addObject:t]; } }
+    for (NSUInteger k = 0; k < 26; k++) { NSString *c = [alpha substringWithRange:NSMakeRange(k, 1)];
+      if (i < n) [out addObject:[w stringByReplacingCharactersInRange:NSMakeRange(i, 1) withString:c]];
+      [out addObject:[w stringByReplacingCharactersInRange:NSMakeRange(i, 0) withString:c]]; } }
+  NSMutableArray *r2 = [NSMutableArray array]; for (NSString *c in out) if ([c length] && ![c isEqualToString:w] && [d containsObject:c]) [r2 addObject:c];
+  return [r2 sortedArrayUsingSelector:@selector(compare:)]; }
+- (NSString *)correctionForWordRange:(NSRange)r inString:(NSString *)s language:(NSString *)l inSpellDocumentWithTag:(NSInteger)tag { return nil; }
+- (NSArray *)completionsForPartialWordRange:(NSRange)r inString:(NSString *)s language:(NSString *)l inSpellDocumentWithTag:(NSInteger)tag {
+  NSSet *d = XEFDictionary(); if (!d || NSMaxRange(r) > [s length]) return @[];
+  NSString *p = [[s substringWithRange:r] lowercaseString]; NSMutableArray *a = [NSMutableArray array];
+  for (NSString *w in d) if ([w hasPrefix:p] && ![w isEqualToString:p]) [a addObject:w];
+  [a sortUsingSelector:@selector(compare:)]; return [a count] > 20 ? [a subarrayWithRange:NSMakeRange(0, 20)] : a; }
+- (NSArray *)availableLanguages { return @[@"en"]; } - (NSArray *)userPreferredLanguages { return @[@"en"]; }
+- (NSString *)language { return _language; } - (BOOL)setLanguage:(NSString *)l { if (![l isEqualToString:@"en"]) return NO; return YES; }
+- (BOOL)automaticallyIdentifiesLanguages { return _autoLang; } - (void)setAutomaticallyIdentifiesLanguages:(BOOL)f { _autoLang = f; }
+- (NSString *)languageForWordRange:(NSRange)r inString:(NSString *)s orthography:(id)o { return @"en"; }
+- (NSArray *)checkString:(NSString *)s range:(NSRange)r types:(unsigned long long)t options:(NSDictionary *)o inSpellDocumentWithTag:(NSInteger)tag orthography:(id *)orth wordCount:(NSInteger *)wc { if (wc) *wc = [self countWordsInString:[s substringWithRange:r] language:nil]; return @[]; }
+- (NSInteger)requestCheckingOfString:(NSString *)s range:(NSRange)r types:(unsigned long long)t options:(NSDictionary *)o inSpellDocumentWithTag:(NSInteger)tag completionHandler:(void (^)(NSInteger, NSArray *, NSArray *, NSInteger))h {
+  NSInteger seq = [NSSpellChecker uniqueSpellDocumentTag]; if (h) h(seq, @[], @[], 0); return seq; }
+- (void)requestCandidatesForSelectedRange:(NSRange)r inString:(NSString *)s types:(unsigned long long)t options:(NSDictionary *)o inSpellDocumentWithTag:(NSInteger)tag completionHandler:(void (^)(NSInteger, NSArray *))h { if (h) h(0, @[]); }
+- (NSRange)checkGrammarOfString:(NSString *)s startingAt:(NSInteger)off language:(NSString *)l wrap:(BOOL)w inSpellDocumentWithTag:(NSInteger)tag details:(NSArray **)d { if (d) *d = @[]; return NSMakeRange(NSNotFound, 0); }
+- (NSArray *)userQuotesArrayForLanguage:(NSString *)l { return @[@"“", @"”", @"‘", @"’"]; } - (NSDictionary *)userReplacementsDictionary { return @{}; }
+- (void)updateSpellingPanelWithMisspelledWord:(NSString *)w {} - (void)updateSpellingPanelWithGrammarString:(NSString *)s detail:(NSDictionary *)d {} - (void)updatePanels {}
+- (id)accessoryView { return _accessory; } - (void)setAccessoryView:(id)v { _accessory = v; }
+- (BOOL)preventsAutocorrectionBeforeString:(NSString *)s language:(NSString *)l { return NO; } - (BOOL)deletesAutospaceBetweenString:(NSString *)a andString:(NSString *)b language:(NSString *)l { return NO; }
+- (void)recordResponse:(NSInteger)r toCorrection:(NSString *)c forWord:(NSString *)w language:(NSString *)l inSpellDocumentWithTag:(NSInteger)t {}
+- (void)dismissCorrectionIndicatorForView:(NSView *)v {}
+@end

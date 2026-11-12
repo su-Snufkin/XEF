@@ -29,3 +29,5 @@ codesign -f -s - $F/AppKit.framework/Versions/C/AppKit 2>/dev/null
 REMOTE
 rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/AppKit.framework darwin-rootfs/System/Library/Frameworks/
 echo "AppKit.framework rebuilt"
+# NSSpellChecker reads /usr/share/dict/words: taken from the Mac the first time (the rootfs is built from the user's own Mac)
+[ -f darwin-rootfs/usr/share/dict/words ] || { mkdir -p darwin-rootfs/usr/share/dict; scp -q mac:/usr/share/dict/words darwin-rootfs/usr/share/dict/words; }

@@ -921,3 +921,12 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   akcesory gestów/tabletu (zera). Na Macu te akcesory rzucają wyjątek dla zwykłych zdarzeń myszy — tu zwracają 0.
 - Stan: **4973 z 8257** metod prawdziwych; `macref.sh` 22/22.
 
+### 19. NSSpellChecker (2026-11-12)
+- `AppKitText.m` / `AppKitText.h`, `appkit_spell.m` zgodny z Makiem: sprawdzanie pisowni na liście słów **`/usr/share/dict/words` z Maca** (`tools/build_appkit_only.sh` kopiuje ją do
+  `darwin-rootfs/usr/share/dict/` przy pierwszym uruchomieniu; bez niej wszystko jest uznawane za poprawne). `checkSpellingOfString:startingAt:` (z zawijaniem; słowo już
+  rozpoczęte przed offsetem jest pomijane), wariant z `wrap:`/tagiem/`wordCount:` (liczba słów łącznie ze znalezionym błędnym), `countWordsInString:`, ignorowanie
+  słów per tag dokumentu, `learnWord:`/`unlearnWord:`/`hasLearnedWord:`, `guessesForWordRange:` (odległość edycyjna 1 względem słownika), `completionsForPartialWordRange:`
+  (prefiksy, max 20), `availableLanguages` (tylko `en`), `uniqueSpellDocumentTag`. Odmiany (-s, -ed, -ing, -ly, -er, -est, -'s) są rozpoznawane prostymi regułami — to nie
+  prawdziwy słownik Apple, więc rzadkie słowa mogą być oceniane inaczej niż na Macu. Brak: gramatyki, panelu pisowni, `checkString:range:types:` zwraca pustą listę.
+- Stan: **5011 z 8257** metod prawdziwych; `macref.sh` 23/23.
+

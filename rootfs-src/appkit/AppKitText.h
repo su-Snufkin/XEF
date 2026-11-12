@@ -71,3 +71,8 @@ typedef unsigned int NSGlyph;
 @end
 @interface NSColorPanel : NSObject
 @end
+
+/* NSSpellChecker: checks words against /usr/share/dict/words (a missing dictionary accepts everything) */
+@interface NSSpellChecker : NSObject { @public NSMutableDictionary *_ignored; NSMutableSet *_learned; NSString *_language; BOOL _autoLang; id _accessory; }
++ (NSSpellChecker *)sharedSpellChecker; + (BOOL)sharedSpellCheckerExists; + (NSInteger)uniqueSpellDocumentTag;
+@end
