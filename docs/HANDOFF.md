@@ -912,3 +912,12 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - Test `appkit_*` w `macref.sh` zdarzył się raz niestabilny (jedno FAIL przy 20 testach, brak powtórzenia przy dwóch kolejnych biegach) — podejrzewany ssh/Xvfb.
 - Stan: **4886 z 8257** metod prawdziwych.
 
+### 18. NSMatrix i NSEvent — uzupełnienia (2026-11-12)
+- **NSMatrix** (`AppKitModel.m`, kategoria `XEFMore`, `appkit_matrix2.m` zgodny z Makiem): `addRowWithCells:`/`insertRow:withCells:`/`addColumnWithCells:`/`insertColumn:withCells:`
+  (kolejność komórek jak u Maca), `makeCellAtRow:column:`, `getNumberOfRows:columns:`, `setState:atRow:column:`, `sendAction:to:forAllCells:` (NO = tylko zaznaczone), sortowanie
+  (`NSCell -compare:` porównuje `stringValue`), `setSelectionFrom:to:anchor:highlight:`, tło i tło komórek (rysowane), `keyCell`, tooltipy komórek, delegat, `tabKeyTraversesCells` (domyślnie YES), hooki edycji tekstu.
+- **NSEvent** (`AppKit.m`, kategoria `XEFClass`, `appkit_event2.m`): `doubleClickInterval` 0.5, `keyRepeatDelay/Interval`, `mouseCoalescingEnabled`, **zdarzenia okresowe**
+  (`startPeriodicEventsAfterDelay:withPeriod:` wrzuca `NSEventTypePeriodic` do kolejki), `charactersByApplyingModifiers:`, `addGlobalMonitor…` (zwraca token, nigdy nie wywołuje bloku),
+  akcesory gestów/tabletu (zera). Na Macu te akcesory rzucają wyjątek dla zwykłych zdarzeń myszy — tu zwracają 0.
+- Stan: **4973 z 8257** metod prawdziwych; `macref.sh` 22/22.
+

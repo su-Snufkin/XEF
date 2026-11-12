@@ -4,6 +4,7 @@
 #import "AppKitLite.h"
 #import "AppKitGraphics.h"
 #import "AppKitModel.h"
+#include <objc/runtime.h>
 #include <math.h>
 
 NSString *const NSToolbarWillAddItemNotification = @"NSToolbarWillAddItemNotification";
@@ -656,7 +657,9 @@ static NSSize content_size(NSGridCell *c) {
 - (void)sendDoubleAction { if (_doubleAction) [self sendAction:_doubleAction to:_target]; }
 - (BOOL)acceptsFirstMouse:(NSEvent *)e { return YES; }
 - (void)drawRect:(NSRect)r {
-  for (NSInteger i = 0; i < _rows; i++) for (NSInteger j = 0; j < _cols; j++) { NSCell *c = [self cellAtRow:i column:j]; if (c) [c drawWithFrame:[self cellFrameAtRow:i column:j] inView:self]; } }
+  if ([objc_getAssociatedObject(self, "xef.drawsBg") boolValue]) { [(NSColor *)objc_getAssociatedObject(self, "xef.bg") set]; NSRectFill([self bounds]); }
+  BOOL cb = [objc_getAssociatedObject(self, "xef.drawsCellBg") boolValue];
+  for (NSInteger i = 0; i < _rows; i++) for (NSInteger j = 0; j < _cols; j++) { NSCell *c = [self cellAtRow:i column:j]; if (!c) continue; if (cb) { [(NSColor *)objc_getAssociatedObject(self, "xef.cellBg") set]; NSRectFill([self cellFrameAtRow:i column:j]); } [c drawWithFrame:[self cellFrameAtRow:i column:j] inView:self]; } }
 - (void)mouseDown:(NSEvent *)e {
   if (!_enabled) return;
   NSInteger r, c; NSPoint p = [self convertPoint:[e locationInWindow] fromView:nil];
@@ -1290,3 +1293,56 @@ static NSTimeInterval XEFWavDuration(NSData *d) {
   return YES; }
 @end
 @interface NSObject (XEFSoundDelegate) - (void)sound:(id)s didFinishPlaying:(BOOL)f; @end
+
+/* ---- NSMatrix: edits with cells, sorting, backgrounds, tool tips, key cell, text-editing hooks ---- */
+static BOOL XEFAssocBool(id o, const char *k, BOOL def) { NSNumber *n = objc_getAssociatedObject(o, k); return n ? [n boolValue] : def; }
+@implementation NSMatrix (XEFMore)
+- (NSCell *)makeCellAtRow:(NSInteger)r column:(NSInteger)c { NSCell *cell = [self _xefMakeCell]; return cell; }
+- (void)getNumberOfRows:(NSInteger *)r columns:(NSInteger *)c { if (r) *r = _rows; if (c) *c = _cols; }
+- (NSArray *)_xefFillCells:(NSArray *)cells count:(NSInteger)n { NSMutableArray *a = [NSMutableArray array]; for (NSInteger i = 0; i < n; i++) a[i] = i < (NSInteger)[cells count] ? cells[i] : [self _xefMakeCell]; return a; }
+- (void)insertRow:(NSInteger)i withCells:(NSArray *)cells {
+  NSMutableArray *g = [self _xefGrid]; NSInteger cols = _cols ?: (NSInteger)[cells count]; NSArray *row = [self _xefFillCells:cells count:cols];
+  for (NSCell *c in row) [c setControlView:self];
+  [g insertObject:[NSMutableArray arrayWithArray:row] atIndex:i < 0 ? 0 : i > (NSInteger)[g count] ? [g count] : i]; [self _xefStore:g cols:cols]; }
+- (void)addRowWithCells:(NSArray *)cells { [self insertRow:_rows withCells:cells]; }
+- (void)insertColumn:(NSInteger)i withCells:(NSArray *)cells {
+  NSMutableArray *g = [self _xefGrid]; NSInteger rows = _rows ?: (NSInteger)[cells count]; NSArray *col = [self _xefFillCells:cells count:rows];
+  if (![g count]) for (NSInteger r = 0; r < rows; r++) [g addObject:[NSMutableArray array]];
+  for (NSInteger r = 0; r < rows; r++) { NSMutableArray *row = g[r]; [col[r] setControlView:self]; [row insertObject:col[r] atIndex:i < 0 ? 0 : i > (NSInteger)[row count] ? [row count] : i]; }
+  [self _xefStore:g cols:_cols + 1]; }
+- (void)addColumnWithCells:(NSArray *)cells { [self insertColumn:_cols withCells:cells]; }
+- (void)setState:(NSInteger)s atRow:(NSInteger)r column:(NSInteger)c { [[self cellAtRow:r column:c] setState:s]; [self setNeedsDisplay:YES]; }
+- (void)sendAction:(SEL)a to:(id)t forAllCells:(BOOL)all {
+  for (NSCell *c in [[(all ? _cells : _selected) copy] autorelease]) [NSApp sendAction:a to:t from:c]; }
+- (void)sortUsingSelector:(SEL)sel { [_cells sortUsingSelector:sel]; [self setNeedsDisplay:YES]; }
+- (void)sortUsingFunction:(NSInteger (*)(id, id, void *))f context:(void *)ctx { [_cells sortUsingFunction:f context:ctx]; [self setNeedsDisplay:YES]; }
+- (void)setSelectionFrom:(NSInteger)from to:(NSInteger)to anchor:(NSInteger)anchor highlight:(BOOL)h {
+  NSInteger lo = MIN(from, to), hi = MAX(from, to);
+  for (NSCell *c in _selected) [c setState:0]; [_selected removeAllObjects];
+  for (NSInteger i = lo; i <= hi && i < (NSInteger)[_cells count]; i++) { if (i < 0) continue; NSCell *c = _cells[i]; if (h) [c setState:1]; [_selected addObject:c]; }
+  if ([_selected count]) { NSInteger r, cc; [self getRow:&r column:&cc ofCell:[_selected lastObject]]; _selRow = r; _selCol = cc; } [self setNeedsDisplay:YES]; }
+- (BOOL)drawsBackground { return XEFAssocBool(self, "xef.drawsBg", NO); } - (void)setDrawsBackground:(BOOL)f { objc_setAssociatedObject(self, "xef.drawsBg", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); [self setNeedsDisplay:YES]; }
+- (NSColor *)backgroundColor { return objc_getAssociatedObject(self, "xef.bg"); } - (void)setBackgroundColor:(NSColor *)c { objc_setAssociatedObject(self, "xef.bg", c, OBJC_ASSOCIATION_RETAIN); [self setNeedsDisplay:YES]; }
+- (BOOL)drawsCellBackground { return XEFAssocBool(self, "xef.drawsCellBg", NO); } - (void)setDrawsCellBackground:(BOOL)f { objc_setAssociatedObject(self, "xef.drawsCellBg", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); [self setNeedsDisplay:YES]; }
+- (NSColor *)cellBackgroundColor { return objc_getAssociatedObject(self, "xef.cellBg"); } - (void)setCellBackgroundColor:(NSColor *)c { objc_setAssociatedObject(self, "xef.cellBg", c, OBJC_ASSOCIATION_RETAIN); [self setNeedsDisplay:YES]; }
+- (BOOL)isAutoscroll { return XEFAssocBool(self, "xef.autoscroll", NO); } - (void)setAutoscroll:(BOOL)f { objc_setAssociatedObject(self, "xef.autoscroll", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (void)setScrollable:(BOOL)f { objc_setAssociatedObject(self, "xef.scrollable", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)autorecalculatesCellSize { return XEFAssocBool(self, "xef.autorecalc", NO); } - (void)setAutorecalculatesCellSize:(BOOL)f { objc_setAssociatedObject(self, "xef.autorecalc", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)tabKeyTraversesCells { return XEFAssocBool(self, "xef.tabTraverses", YES); } - (void)setTabKeyTraversesCells:(BOOL)f { objc_setAssociatedObject(self, "xef.tabTraverses", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (id)keyCell { return objc_getAssociatedObject(self, "xef.keyCell"); } - (void)setKeyCell:(id)c { objc_setAssociatedObject(self, "xef.keyCell", c, OBJC_ASSOCIATION_ASSIGN); }
+- (id)delegate { return objc_getAssociatedObject(self, "xef.delegate"); } - (void)setDelegate:(id)d { objc_setAssociatedObject(self, "xef.delegate", d, OBJC_ASSOCIATION_ASSIGN); }
+- (void)setToolTip:(NSString *)t forCell:(NSCell *)c { NSMutableDictionary *d = objc_getAssociatedObject(self, "xef.tips"); if (!d) { d = [NSMutableDictionary dictionary]; objc_setAssociatedObject(self, "xef.tips", d, OBJC_ASSOCIATION_RETAIN); } NSValue *k = [NSValue valueWithNonretainedObject:c]; if (t) d[k] = t; else [d removeObjectForKey:k]; }
+- (NSString *)toolTipForCell:(NSCell *)c { return [objc_getAssociatedObject(self, "xef.tips") objectForKey:[NSValue valueWithNonretainedObject:c]]; }
+- (NSString *)view:(NSView *)v stringForToolTip:(NSInteger)tag point:(NSPoint)p userData:(void *)u { NSInteger r, c; return [self getRow:&r column:&c forPoint:p] ? [self toolTipForCell:[self cellAtRow:r column:c]] : nil; }
+- (void)drawCellAtRow:(NSInteger)r column:(NSInteger)c { NSCell *cell = [self cellAtRow:r column:c]; if (cell) [cell drawWithFrame:[self cellFrameAtRow:r column:c] inView:self]; }
+- (void)highlightCell:(BOOL)f atRow:(NSInteger)r column:(NSInteger)c { [[self cellAtRow:r column:c] setHighlighted:f]; [self setNeedsDisplay:YES]; }
+- (void)scrollCellToVisibleAtRow:(NSInteger)r column:(NSInteger)c { [self scrollRectToVisible:[self cellFrameAtRow:r column:c]]; }
+- (void)setValidateSize:(BOOL)f {} - (NSInteger)mouseDownFlags { return 0; }
+- (void)selectText:(id)s {} - (id)selectTextAtRow:(NSInteger)r column:(NSInteger)c { return [self cellAtRow:r column:c]; }
+- (BOOL)textShouldBeginEditing:(NSText *)t { return YES; } - (BOOL)textShouldEndEditing:(NSText *)t { return YES; }
+- (void)textDidBeginEditing:(NSNotification *)n {} - (void)textDidEndEditing:(NSNotification *)n {} - (void)textDidChange:(NSNotification *)n {}
+- (BOOL)validateUserInterfaceItem:(id)i { return YES; }
+@end
+@implementation NSCell (XEFCompare)
+- (NSComparisonResult)compare:(id)o { if (![o isKindOfClass:[NSCell class]]) return NSOrderedSame; return [[self stringValue] compare:[o stringValue]]; }
+@end

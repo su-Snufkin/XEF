@@ -1704,3 +1704,40 @@ static NSMutableArray *g_modals;
 - (void)extendStateRestoration {} - (void)completeStateRestoration {}
 + (void)detachDrawingThread:(SEL)s toTarget:(id)t withObject:(id)o { [NSThread detachNewThreadSelector:s toTarget:t withObject:o]; }
 @end
+
+/* ---- NSEvent: class settings, periodic events, gesture / tablet accessors that apply to other event types ---- */
+static NSTimer *g_periodic_timer; static BOOL g_coalesce = YES;
+@interface XEFPeriodicPoster : NSObject @end
+@implementation XEFPeriodicPoster
++ (void)start:(NSTimer *)t {
+  g_periodic_timer = nil; [self tick:nil];
+  NSTimeInterval p = [[t userInfo] doubleValue];
+  g_periodic_timer = [NSTimer scheduledTimerWithTimeInterval:p > 0 ? p : 0.1 target:self selector:@selector(tick:) userInfo:nil repeats:YES]; }
++ (void)tick:(NSTimer *)t {
+  NSEvent *e = [NSEvent otherEventWithType:NSEventTypePeriodic location:NSZeroPoint modifierFlags:0 timestamp:[NSDate timeIntervalSinceReferenceDate] windowNumber:0 context:nil subtype:0 data1:0 data2:0];
+  [NSApp postEvent:e atStart:NO]; }
+@end
+@implementation NSEvent (XEFClass)
++ (NSTimeInterval)doubleClickInterval { return 0.5; } + (NSTimeInterval)keyRepeatDelay { return 0.5; } + (NSTimeInterval)keyRepeatInterval { return 0.083; }
++ (BOOL)isMouseCoalescingEnabled { return g_coalesce; } + (void)setMouseCoalescingEnabled:(BOOL)f { g_coalesce = f; }
++ (BOOL)isSwipeTrackingFromScrollEventsEnabled { return YES; }
++ (void)startPeriodicEventsAfterDelay:(NSTimeInterval)d withPeriod:(NSTimeInterval)p {
+  [self stopPeriodicEvents];
+  g_periodic_timer = [NSTimer scheduledTimerWithTimeInterval:d target:[XEFPeriodicPoster class] selector:@selector(start:) userInfo:[NSNumber numberWithDouble:p] repeats:NO]; }
++ (void)stopPeriodicEvents { [g_periodic_timer invalidate]; g_periodic_timer = nil; }
++ (id)addGlobalMonitorForEventsMatchingMask:(unsigned long long)m handler:(void (^)(NSEvent *))h { return [NSObject new]; }   /* events of other applications are never seen here */
+- (NSString *)charactersByApplyingModifiers:(NSUInteger)mods {
+  NSString *base = [self charactersIgnoringModifiers]; if (!base) return nil;
+  return (mods & NSEventModifierFlagShift) ? [base uppercaseString] : base; }
+- (CGFloat)magnification { return 0; } - (CGFloat)rotation { return 0; }
+- (NSInteger)absoluteX { return 0; } - (NSInteger)absoluteY { return 0; } - (NSInteger)absoluteZ { return 0; }
+- (NSUInteger)buttonMask { return 0; } - (NSPoint)tilt { return NSZeroPoint; } - (float)tangentialPressure { return 0; }
+- (NSUInteger)vendorDefined { return 0; } - (NSUInteger)vendorID { return 0; } - (NSUInteger)tabletID { return 0; } - (NSUInteger)pointingDeviceID { return 0; } - (NSUInteger)systemTabletID { return 0; }
+- (NSUInteger)vendorPointingDeviceType { return 0; } - (NSUInteger)pointingDeviceSerialNumber { return 0; } - (unsigned long long)uniqueID { return 0; } - (NSUInteger)capabilityMask { return 0; }
+- (NSUInteger)pointingDeviceType { return 0; } - (BOOL)isEnteringProximity { return NO; }
+- (NSSet *)allTouches { return [NSSet set]; } - (NSSet *)touchesForView:(NSView *)v { return [NSSet set]; } - (NSArray *)coalescedTouchesForTouch:(id)t { return @[]; }
+- (NSInteger)stage { return 0; } - (CGFloat)stageTransition { return 0; } - (NSUInteger)associatedEventsMask { return 0; } - (NSInteger)pressureBehavior { return 0; }
+- (id)trackingArea { return nil; } - (void *)eventRef { return NULL; }
+- (void)trackSwipeEventWithOptions:(NSUInteger)o dampenAmountThresholdMin:(CGFloat)mn max:(CGFloat)mx usingHandler:(void (^)(CGFloat, NSInteger, BOOL, BOOL *))h {}
++ (id)eventWithEventRef:(const void *)r { return nil; } + (id)eventWithCGEvent:(void *)c { return nil; }
+@end
