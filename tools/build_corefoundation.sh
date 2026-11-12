@@ -66,7 +66,7 @@ import re, os
 t = open(os.environ['HOME'] + '/xef-remote/src/darling/corefoundation/CMakeLists.txt').read()
 c = re.search(r'set\(cf_c_sources(.*?)\n\)', t, re.S).group(1).split()
 m = re.search(r'set\(cf_sources(.*?)\n\)', t, re.S).group(1)
-m = [x for x in re.sub(r'#.*', '', m).split() if x.endswith(('.m', '.S')) and not x.startswith('$') and 'x86' not in x and 'ForwardingPrep' not in x]
+m = [x for x in re.sub(r'#.*', '', m).split() if x.endswith(('.m', '.S')) and not x.startswith('$') and 'x86' not in x and 'ForwardingPrep' not in x and x not in ('NSInvocation.m', 'NSBlockInvocation.m')]   # NSInvocation: arm64_forwarding.m
 print(' '.join(("CFRuntime_xef.c" if x == "CFRuntime.c" else "NSBlock_xef.m" if x == "NSBlock.m" else "CFTimeZone_xef.c" if x == "CFTimeZone.c" else "CFLocale_xef.c" if x == "CFLocale.c" else "NSTimeZone_xef.m" if x == "NSTimeZone.m" else x) for x in c + m) + ' ' + os.environ['B'] + '/patched/arm64_forwarding.m')
 PY
 )

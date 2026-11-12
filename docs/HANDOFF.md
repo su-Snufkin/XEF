@@ -782,3 +782,23 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   NSCollectionView (+Layout), NSImageRep (+PDF/Cached/Custom), NSTreeController, NSSound, NSPathControl, NSTextLayoutManager,
   NSSpellChecker. **Warunek wstępny dla wielu rzeczy:** `NSInvocation` na arm64 (patrz wyżej) — bez niego KVO z selektorami,
   undo i `NSPredicate` w Foundation Darlinga nie działają.
+
+### 8. NSInvocation i forwarding na arm64 (2026-11-12)
+- **Zrobione:** `rootfs-src/corefoundation/arm64_forwarding.m` zawiera teraz **własny `NSInvocation`** (Darlingowy `NSInvocation.m`
+  i `NSBlockInvocation.m` są wyłączone z builda CF w `tools/build_corefoundation.sh`; ich `__invoke__` był tylko w asm x86) oraz
+  prawdziwy **`-forwardInvocation:`**. ABI Apple AAPCS64: x0–x7, d0–d7, HFA do 4 elementów w d-rejestrach, struktury ≤16 B w
+  x-rejestrach, większe przez wskaźnik, stos z naturalnym wyrównaniem (struktury w slotach 8 B), wynik w x0/x1, d0–d3 albo przez
+  x8. Stan trzymany w ivarach z nagłówka Darlinga (`_frame` wskazuje na `State`). `xef_invoke_asm` (wywołanie z buforem
+  rejestrów i kopią stosu) i `_CF_forwarding_prep_0` (handler forwardingu: najpierw `forwardingTargetForSelector:`, potem
+  `NSInvocation` z zapisanych rejestrów i stosu wołającego, wynik wraca w rejestrach) mają dyrektywy CFI, więc wyjątki ObjC
+  przechodzą przez te ramki. `+load` rejestruje handler (`objc_setForwardHandler`).
+- **Test `tests/darwin/mac/invocation.m`** zgodny z Makiem: int/long long/float/double/BOOL/char, NSRect/NSSize/NSRange, struktury
+  małe, HFA (Pair, float[3]), duże (32 B), mieszane, 10 intów i 10 doublów (stos), SEL, id; API (`retainArguments`, indeksy
+  poza zakresem, `invokeWithTarget:`), proxy NSProxy i wrapper z `forwardInvocation:` (wyniki struktur i argumenty na stosie
+  przez forwarding), `performSelector:`, `NSPredicate`, `NSUndoManager`.
+- **Skutki:** `NSPredicate` i `filteredArrayUsingPredicate:` działają (NSArrayController używa już natywnych); starsze stuby
+  „Generated from Darling specs” z `forwardInvocation:` przestały abortować; undo działa. **Zostaje:** KVO (`addObserver:` +
+  zmiana wartości) wywraca się w `_NSKeyValueDidChangeBySetting` w Foundation Darlinga (nie w wywołaniach: kopiowanie
+  struktury `NSKeyValueChangeDetails` przez wskaźnik; fault z adresem o wyzerowanej dolnej połowie — podejrzenie o skracanie
+  wskaźnika do 32 bitów w kodzie Darlinga). `NSUndoManager.prepareWithInvocationTarget:` Darlinga zwraca samego siebie, więc
+  metody NSObject (np. `setValue:forKey:`) nie są rejestrowane — prawdziwy AppKit zwraca proxy.

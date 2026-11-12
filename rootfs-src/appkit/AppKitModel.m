@@ -229,38 +229,6 @@ NSString *const NSPopoverDidCloseNotification = @"NSPopoverDidCloseNotification"
 - (id)forwardingTargetForSelector:(SEL)s { return [self _object]; }
 @end
 
-/* NSPredicate evaluation without NSInvocation (which this runtime lacks on arm64): comparison and compound predicates
- * over key paths and constants, the operators applications use. Anything else falls back to the framework. */
-static id xef_expr_value(NSExpression *e, id obj) {
-  switch ([e expressionType]) {
-    case 0: return [e constantValue];
-    case 1: return obj;
-    case 3: return [obj valueForKeyPath:[e keyPath]];
-    default: return [e expressionValueWithObject:obj context:nil]; } }
-static BOOL xef_eval(NSPredicate *p, id obj) {
-  if ([p isKindOfClass:[NSCompoundPredicate class]]) {
-    NSCompoundPredicate *c = (NSCompoundPredicate *)p; NSArray *subs = [c subpredicates]; NSUInteger t = [c compoundPredicateType];
-    if (t == 0) return !subs.count ? YES : !xef_eval(subs[0], obj);                       /* NOT */
-    if (t == 1) { for (NSPredicate *q in subs) if (!xef_eval(q, obj)) return NO; return YES; }
-    for (NSPredicate *q in subs) if (xef_eval(q, obj)) return YES; return NO; }
-  if ([p isKindOfClass:[NSComparisonPredicate class]]) {
-    NSComparisonPredicate *c = (NSComparisonPredicate *)p; id l = xef_expr_value([c leftExpression], obj), r = xef_expr_value([c rightExpression], obj);
-    BOOL ci = ([c options] & 1) != 0;
-    NSInteger cmp = NSOrderedSame;
-    BOOL ordered = [l respondsToSelector:@selector(compare:)] && r != nil && l != nil;
-    if (ordered) { cmp = ci && [l isKindOfClass:[NSString class]] ? [l caseInsensitiveCompare:r] : [l compare:r]; }
-    switch ([c predicateOperatorType]) {
-      case 0: return ordered && cmp == NSOrderedAscending; case 1: return ordered && cmp != NSOrderedDescending;
-      case 2: return ordered && cmp == NSOrderedDescending; case 3: return ordered && cmp != NSOrderedAscending;
-      case 4: return l == r || (ordered ? cmp == NSOrderedSame : [l isEqual:r]); case 5: return !(l == r || (ordered ? cmp == NSOrderedSame : [l isEqual:r]));
-      case 8: return [l isKindOfClass:[NSString class]] && [l rangeOfString:r options:ci ? NSCaseInsensitiveSearch : 0].location == 0 && [r length] > 0 ? YES : ([l hasPrefix:r]);
-      case 9: return [l hasSuffix:r];
-      case 99: if ([l isKindOfClass:[NSString class]]) return [l rangeOfString:r options:ci ? NSCaseInsensitiveSearch : 0].location != NSNotFound; return [l containsObject:r];
-      case 10: return [r containsObject:l];
-      case 100: return [l containsObject:r];
-      default: break; } }
-  return [p evaluateWithObject:obj]; }
-
 @implementation NSController
 - (id)initWithCoder:(NSCoder *)c { return [self init]; } - (void)encodeWithCoder:(NSCoder *)c {}
 - (BOOL)commitEditing { _editing = NO; return YES; } - (void)discardEditing { _editing = NO; } - (BOOL)isEditing { return _editing; }
@@ -300,7 +268,7 @@ static BOOL xef_eval(NSPredicate *p, id obj) {
 /* filter, then sort; the selection follows its objects, then the rules for an empty selection apply */
 - (NSArray *)arrangeObjects:(NSArray *)objs {
   NSArray *r = objs;
-  if (_filter) { NSMutableArray *kept = [NSMutableArray array]; for (id o in r) if (xef_eval(_filter, o)) [kept addObject:o]; r = kept; }
+  if (_filter) r = [r filteredArrayUsingPredicate:_filter];
   if ([_sorts count]) r = [r sortedArrayUsingDescriptors:_sorts];
   return r; }
 - (void)rearrangeObjects {
