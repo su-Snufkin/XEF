@@ -60,7 +60,7 @@ NSString *const NSWorkspaceApplicationKey = @"NSWorkspaceApplicationKey";
 - (NSDate *)fileModificationDate { return _date; } - (void)setFileModificationDate:(NSDate *)d { [d retain]; [_date release]; _date = d; }
 - (NSString *)fileNameExtensionForType:(NSString *)t saveOperation:(NSInteger)op { return nil; }
 - (BOOL)isDraft { return NO; } - (void)setDraft:(BOOL)f {}
-- (BOOL)isLocked { return NO; } - (BOOL)isInViewingMode { return NO; } - (BOOL)isBrowsingVersions { return NO; }
+- (BOOL)isLocked { return [objc_getAssociatedObject(self, "xef.locked") boolValue]; } - (BOOL)isInViewingMode { return NO; } - (BOOL)isBrowsingVersions { return NO; }
 - (NSURL *)autosavedContentsFileURL { return nil; } - (void)setAutosavedContentsFileURL:(NSURL *)u {}
 - (NSString *)displayName {
   if (_displayName) return _displayName;
@@ -555,4 +555,75 @@ static const XEFType *XEFTypeForExt(NSString *e) {
 - (NSImage *)iconForFiles:(NSArray *)fs { return [self iconForFile:[fs firstObject]]; }
 - (NSImage *)iconForFileType:(NSString *)t { return [self _xefIconForKind:[t isEqualToString:@"public.folder"] ? 1 : 0 label:t]; }
 - (NSImage *)iconForContentType:(id)t { return [self iconForFileType:[t respondsToSelector:@selector(identifier)] ? [t identifier] : nil]; }
+@end
+
+/* ---- NSDocument: duplication, moving, locking, and the deprecated file-name based API ---- */
+@interface NSDocument (XEFLegacyDecls)
+- (BOOL)readFromURL:(NSURL *)u ofType:(NSString *)t error:(NSError **)e; - (BOOL)writeToURL:(NSURL *)u ofType:(NSString *)t error:(NSError **)e;
+- (NSData *)dataOfType:(NSString *)t error:(NSError **)e; - (BOOL)readFromData:(NSData *)d ofType:(NSString *)t error:(NSError **)e;
+- (BOOL)revertToContentsOfURL:(NSURL *)u ofType:(NSString *)t error:(NSError **)e; - (NSString *)fileType;
+@end
+@implementation NSDocument (XEFExtras)
+- (BOOL)isEntireFileLoaded { return YES; } - (void)unblockUserInteraction {}
+- (NSURL *)backupFileURL { return nil; }
+- (BOOL)savePanelShowsFileFormatsControl { return YES; } - (BOOL)fileNameExtensionWasHiddenInLastRunSavePanel { return NO; } - (NSString *)fileTypeFromLastRunSavePanel { return nil; }
+- (BOOL)canAsynchronouslyWriteToURL:(NSURL *)u ofType:(NSString *)t forSaveOperation:(NSInteger)op { return NO; }
+- (NSArray *)writableTypesForSaveOperation:(NSInteger)op { return [[self class] writableTypes]; }
+- (BOOL)allowsDocumentSharing { return NO; }
+- (void)willNotPresentError:(NSError *)e {}
+/* duplicate: a new document of the same class with a copy of the contents, untitled */
+- (NSDocument *)duplicateAndReturnError:(NSError **)e {
+  if (![self fileURL] || ![[NSFileManager defaultManager] fileExistsAtPath:[[self fileURL] path]]) { if (e) *e = [NSError errorWithDomain:NSCocoaErrorDomain code:260 userInfo:nil]; return nil; }   /* AppKit copies the file on disk */
+  NSData *d = [self dataOfType:[self fileType] error:e]; if (!d) return nil;
+  NSDocument *n = [[[[self class] alloc] initWithType:[self fileType] error:e] autorelease]; if (!n) return nil;
+  if (![n readFromData:d ofType:[self fileType] error:e]) return nil;
+  [n setFileURL:nil]; [[NSDocumentController sharedDocumentController] addDocument:n]; [n makeWindowControllers]; [n showWindows]; return n; }
+- (void)duplicateDocumentWithDelegate:(id)dl didDuplicateSelector:(SEL)sel contextInfo:(void *)ci {
+  NSDocument *n = [self duplicateAndReturnError:NULL];
+  if (dl && sel) ((void (*)(id, SEL, id, id, BOOL, void *))objc_msgSend)(dl, sel, self, n, n != nil, ci); }
+- (void)moveToURL:(NSURL *)u completionHandler:(void (^)(NSError *))h {
+  NSError *err = nil; NSURL *old = [self fileURL];
+  if (old && [[NSFileManager defaultManager] moveItemAtURL:old toURL:u error:&err]) [self setFileURL:u];
+  else if (!old) [self setFileURL:u];
+  if (h) h(err); }
+- (void)moveDocumentWithCompletionHandler:(void (^)(BOOL))h { if (h) h(NO); }
+- (void)moveDocumentToUbiquityContainer:(id)s {}
+- (void)_xefSetLocked:(NSNumber *)f { objc_setAssociatedObject(self, "xef.locked", f, OBJC_ASSOCIATION_RETAIN); }
+/* AppKit changes the lock state on a later run loop turn */
+- (void)lockWithCompletionHandler:(void (^)(NSError *))h { [self performSelector:@selector(_xefSetLocked:) withObject:@YES afterDelay:0]; if (h) h(nil); }
+- (void)unlockWithCompletionHandler:(void (^)(NSError *))h { [self performSelector:@selector(_xefSetLocked:) withObject:@NO afterDelay:0]; if (h) h(nil); }
+- (void)lockDocumentWithCompletionHandler:(void (^)(BOOL))h { [self lockWithCompletionHandler:nil]; if (h) h(YES); }
+- (void)unlockDocumentWithCompletionHandler:(void (^)(BOOL))h { [self unlockWithCompletionHandler:nil]; if (h) h(YES); }
+/* file presenter notifications: nothing external changes files here */
+- (void)relinquishPresentedItemToReader:(void (^)(void (^)(void)))r { if (r) r(^{}); } - (void)relinquishPresentedItemToWriter:(void (^)(void (^)(void)))w { if (w) w(^{}); }
+- (void)savePresentedItemChangesWithCompletionHandler:(void (^)(NSError *))h { if (h) h(nil); }
+- (void)accommodatePresentedItemDeletionWithCompletionHandler:(void (^)(NSError *))h { [self close]; if (h) h(nil); }
+- (void)presentedItemDidMoveToURL:(NSURL *)u { [self setFileURL:u]; } - (void)presentedItemDidChange {}
+- (void)presentedItemDidChangeUbiquityAttributes:(NSSet *)a {} - (void)presentedItemDidGainVersion:(id)v {} - (void)presentedItemDidLoseVersion:(id)v {} - (void)presentedItemDidResolveConflictVersion:(id)v {}
+- (NSSet *)observedPresentedItemUbiquityAttributes { return [NSSet set]; }
+/* deprecated path-based API maps onto the URL-based one */
+- (NSString *)fileName { return [[self fileURL] path]; }
+- (void)setFileName:(NSString *)n { [self setFileURL:n ? [NSURL fileURLWithPath:n] : nil]; }
+- (NSString *)lastComponentOfFileName { return [[self fileName] lastPathComponent]; }
+- (void)setLastComponentOfFileName:(NSString *)n { NSString *f = [self fileName]; [self setFileName:f ? [[f stringByDeletingLastPathComponent] stringByAppendingPathComponent:n] : n]; }
+- (id)initWithContentsOfFile:(NSString *)p ofType:(NSString *)t { return [self initWithContentsOfURL:[NSURL fileURLWithPath:p] ofType:t error:NULL]; }
+- (id)initWithContentsOfURL:(NSURL *)u ofType:(NSString *)t { return [self initWithContentsOfURL:u ofType:t error:NULL]; }
+- (BOOL)readFromFile:(NSString *)p ofType:(NSString *)t { return [self readFromURL:[NSURL fileURLWithPath:p] ofType:t error:NULL]; }
+- (BOOL)readFromURL:(NSURL *)u ofType:(NSString *)t { return [self readFromURL:u ofType:t error:NULL]; }
+- (BOOL)writeToFile:(NSString *)p ofType:(NSString *)t { return [self writeToURL:[NSURL fileURLWithPath:p] ofType:t error:NULL]; }
+- (BOOL)writeToURL:(NSURL *)u ofType:(NSString *)t { return [self writeToURL:u ofType:t error:NULL]; }
+- (BOOL)writeToFile:(NSString *)p ofType:(NSString *)t originalFile:(NSString *)o saveOperation:(NSInteger)op { return [self writeToFile:p ofType:t]; }
+- (BOOL)writeWithBackupToFile:(NSString *)p ofType:(NSString *)t saveOperation:(NSInteger)op { return [self writeToFile:p ofType:t]; }
+- (NSData *)dataRepresentationOfType:(NSString *)t { return [self dataOfType:t error:NULL]; }
+- (BOOL)loadDataRepresentation:(NSData *)d ofType:(NSString *)t { return [self readFromData:d ofType:t error:NULL]; }
+- (NSFileWrapper *)fileWrapperRepresentationOfType:(NSString *)t { NSData *d = [self dataRepresentationOfType:t]; return d ? [[[NSFileWrapper alloc] initRegularFileWithContents:d] autorelease] : nil; }
+- (BOOL)loadFileWrapperRepresentation:(NSFileWrapper *)w ofType:(NSString *)t { return [self loadDataRepresentation:[w regularFileContents] ofType:t]; }
+- (BOOL)revertToSavedFromFile:(NSString *)p ofType:(NSString *)t { return [self revertToContentsOfURL:[NSURL fileURLWithPath:p] ofType:t error:NULL]; }
+- (BOOL)revertToSavedFromURL:(NSURL *)u ofType:(NSString *)t { return [self revertToContentsOfURL:u ofType:t error:NULL]; }
+- (NSDictionary *)fileAttributesToWriteToFile:(NSString *)p ofType:(NSString *)t saveOperation:(NSInteger)op { return @{}; }
+- (id)userActivity { return objc_getAssociatedObject(self, "xef.activity"); } - (void)setUserActivity:(id)a { objc_setAssociatedObject(self, "xef.activity", a, OBJC_ASSOCIATION_RETAIN); }
+- (void)updateUserActivityState:(id)a {} - (void)restoreUserActivityState:(id)a {}
+- (void)restoreDocumentWindowWithIdentifier:(NSString *)i state:(NSCoder *)s completionHandler:(void (^)(NSWindow *, NSError *))h { if (h) h(nil, nil); }
+- (void)encodeRestorableStateWithCoder:(NSCoder *)c backgroundQueue:(id)q {}
++ (NSArray *)allowedClassesForRestorableStateKeyPath:(NSString *)k { return @[]; }
 @end

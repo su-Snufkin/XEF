@@ -501,7 +501,7 @@ static BOOL is_word_char(unichar c) { return [[NSCharacterSet alphanumericCharac
 - (BOOL)isAutomaticDataDetectionEnabled { return NO; } - (void)setAutomaticDataDetectionEnabled:(BOOL)f {}
 - (BOOL)isAutomaticTextReplacementEnabled { return NO; } - (void)setAutomaticTextReplacementEnabled:(BOOL)f {}
 - (BOOL)isAutomaticTextCompletionEnabled { return NO; } - (void)setAutomaticTextCompletionEnabled:(BOOL)f {}
-- (BOOL)smartInsertDeleteEnabled { return NO; } - (void)setSmartInsertDeleteEnabled:(BOOL)f {}
+- (BOOL)smartInsertDeleteEnabled { NSNumber *n = objc_getAssociatedObject(self, "xef.smart"); return n ? [n boolValue] : YES; } - (void)setSmartInsertDeleteEnabled:(BOOL)f { objc_setAssociatedObject(self, "xef.smart", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
 - (NSUInteger)enabledTextCheckingTypes { return 0; } - (void)setEnabledTextCheckingTypes:(NSUInteger)t {}
 - (BOOL)allowsImageEditing { return NO; } - (void)setAllowsImageEditing:(BOOL)f {}
 - (BOOL)allowsDocumentBackgroundColorChange { return NO; } - (void)setAllowsDocumentBackgroundColorChange:(BOOL)f {}
@@ -636,8 +636,17 @@ static BOOL is_word_char(unichar c) { return [[NSCharacterSet alphanumericCharac
 - (void)insertText:(id)s replacementRange:(NSRange)rr {
   if (rr.location != NSNotFound) _sel = rr;
   [self _xefInsertString:[s isKindOfClass:[NSAttributedString class]] ? [s string] : s]; }
-- (BOOL)hasMarkedText { return NO; } - (NSRange)markedRange { return NSMakeRange(NSNotFound, 0); } - (void)unmarkText {}
-- (void)setMarkedText:(id)s selectedRange:(NSRange)sr replacementRange:(NSRange)rr { [self insertText:s replacementRange:rr]; }
+- (NSRange)markedRange { NSValue *v = objc_getAssociatedObject(self, "xef.marked"); return v ? [v rangeValue] : NSMakeRange(NSNotFound, 0); }
+- (BOOL)hasMarkedText { return [self markedRange].location != NSNotFound; }
+- (void)unmarkText { objc_setAssociatedObject(self, "xef.marked", nil, OBJC_ASSOCIATION_RETAIN); }
+- (void)setMarkedText:(id)s selectedRange:(NSRange)sr replacementRange:(NSRange)rr {
+  /* the text being composed replaces the previous composition (or the selection) and stays marked until committed */
+  NSString *str = [s isKindOfClass:[NSAttributedString class]] ? [s string] : s;
+  NSRange target = rr.location != NSNotFound ? rr : ([self hasMarkedText] ? [self markedRange] : _sel);
+  [self insertText:str replacementRange:target];
+  NSRange m = NSMakeRange(target.location, [str length]);
+  objc_setAssociatedObject(self, "xef.marked", [str length] ? [NSValue valueWithRange:m] : nil, OBJC_ASSOCIATION_RETAIN);
+  [self setSelectedRange:NSMakeRange(m.location + sr.location, sr.length)]; }
 - (NSArray *)validAttributesForMarkedText { return @[]; }
 - (NSAttributedString *)attributedSubstringForProposedRange:(NSRange)r actualRange:(NSRangePointer)a {
   NSUInteger len = [[self textStorage] length]; if (r.location > len) return nil; if (NSMaxRange(r) > len) r.length = len - r.location;
@@ -962,4 +971,65 @@ static NSString *font_with_style(NSFont *f, BOOL bold, BOOL italic) {
 + (NSColorPanel *)sharedColorPanel { return nil; }
 + (BOOL)sharedColorPanelExists { return NO; }
 + (void)setPickerMask:(NSUInteger)m {} + (void)setPickerMode:(NSInteger)m {}
+@end
+
+/* ---- NSTextView: factories, completion, smart insert/delete, pasteboard type negotiation ---- */
+@implementation NSTextView (XEFExtras)
++ (NSScrollView *)_xefScrollableWithRich:(BOOL)rich usesFontPanel:(BOOL)fp {
+  NSScrollView *sv = [[[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)] autorelease];
+  [sv setHasVerticalScroller:YES]; [sv setHasHorizontalScroller:NO];
+  NSTextView *tv = [[[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)] autorelease];
+  [tv setMinSize:NSMakeSize(0, 100)]; [tv setMaxSize:NSMakeSize(1e7, 1e7)];
+  [tv setVerticallyResizable:YES]; [tv setHorizontallyResizable:NO]; [tv setAutoresizingMask:2];
+  [[tv textContainer] setContainerSize:NSMakeSize(100, 1e7)]; [[tv textContainer] setWidthTracksTextView:YES];
+  [tv setRichText:rich]; [tv setUsesFontPanel:fp]; [tv setImportsGraphics:NO];
+  [sv setDocumentView:tv]; return sv; }
++ (NSScrollView *)scrollableTextView { NSScrollView *sv = [self _xefScrollableWithRich:NO usesFontPanel:YES]; [[sv documentView] setAutoresizingMask:18]; return sv; }
++ (NSScrollView *)scrollableDocumentContentTextView { return [self _xefScrollableWithRich:YES usesFontPanel:YES]; }
++ (NSScrollView *)scrollablePlainDocumentContentTextView { return [self _xefScrollableWithRich:NO usesFontPanel:YES]; }
++ (NSTextView *)fieldEditor { NSTextView *t = [[[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 100, 20)] autorelease]; [t setFieldEditor:YES]; return t; }
+- (void)setConstrainedFrameSize:(NSSize)s { [self setFrameSize:s]; }
+- (void)setBaseWritingDirection:(NSInteger)d range:(NSRange)r {
+  NSMutableParagraphStyle *p = [[NSMutableParagraphStyle alloc] init]; [p setBaseWritingDirection:d];
+  [_storage addAttribute:NSParagraphStyleAttributeName value:p range:[[_storage string] paragraphRangeForRange:r]]; [p release]; }
+- (void)toggleBaseWritingDirection:(id)s { [self setBaseWritingDirection:[self baseWritingDirection] == 1 ? 0 : 1]; }
+- (NSAttributedString *)attributedSubstringFromRange:(NSRange)r { return [_storage attributedSubstringFromRange:r]; }
+- (NSRect)firstRectForCharacterRange:(NSRange)r { NSRect b = [self convertRect:[(NSLayoutManager *)_lm boundingRectForGlyphRange:r inTextContainer:_tc] toView:nil]; return b; }
+- (void)setMarkedText:(id)t selectedRange:(NSRange)sel { [self setMarkedText:t selectedRange:sel replacementRange:NSMakeRange(NSNotFound, 0)]; }
+- (NSArray *)rangesForUserCharacterAttributeChange { return nil; } - (NSArray *)rangesForUserParagraphAttributeChange { return nil; }
+- (NSRange)rangeForUserCompletion {
+  NSString *s = [_storage string]; NSUInteger e = _sel.location, b = e;
+  while (b > 0 && [[NSCharacterSet alphanumericCharacterSet] characterIsMember:[s characterAtIndex:b - 1]]) b--;
+  return NSMakeRange(b, e - b); }
+- (NSArray *)completionsForPartialWordRange:(NSRange)r indexOfSelectedItem:(NSInteger *)i { if (i) *i = -1; return @[]; }
+- (void)insertCompletion:(NSString *)w forPartialWordRange:(NSRange)r movement:(NSInteger)m isFinal:(BOOL)f { if (f) [self insertText:w replacementRange:r]; }
+- (void)complete:(id)s {}
+- (BOOL)performValidatedReplacementInRange:(NSRange)r withAttributedString:(NSAttributedString *)a { if (![self shouldChangeTextInRange:r replacementString:[a string]]) return NO; [_storage replaceCharactersInRange:r withAttributedString:a]; [self didChangeText]; return YES; }
+- (NSRange)smartDeleteRangeForProposedRange:(NSRange)r {
+  if (![self smartInsertDeleteEnabled]) return r;
+  NSString *s = [_storage string]; NSUInteger e = NSMaxRange(r);
+  if (r.location > 0 && [s characterAtIndex:r.location - 1] == ' ' && (e >= [s length] || ![[NSCharacterSet alphanumericCharacterSet] characterIsMember:[s characterAtIndex:e]])) { r.location--; r.length++; }
+  return r; }
+- (void)smartInsertForString:(NSString *)str replacingRange:(NSRange)r beforeString:(NSString **)b afterString:(NSString **)a {
+  if (b) *b = nil; if (a) *a = nil; if (![self smartInsertDeleteEnabled] || ![str length]) return;
+  NSString *s = [_storage string]; NSCharacterSet *w = [NSCharacterSet alphanumericCharacterSet];
+  BOOL firstW = [w characterIsMember:[str characterAtIndex:0]], lastW = [w characterIsMember:[str characterAtIndex:[str length] - 1]];
+  if (b && r.location > 0 && firstW && [w characterIsMember:[s characterAtIndex:r.location - 1]]) *b = @" ";
+  if (a && NSMaxRange(r) < [s length] && lastW && [w characterIsMember:[s characterAtIndex:NSMaxRange(r)]]) *a = @" "; }
+- (NSString *)smartInsertBeforeStringForString:(NSString *)str replacingRange:(NSRange)r { NSString *b = nil; [self smartInsertForString:str replacingRange:r beforeString:&b afterString:NULL]; return b; }
+- (NSString *)smartInsertAfterStringForString:(NSString *)str replacingRange:(NSRange)r { NSString *a = nil; [self smartInsertForString:str replacingRange:r beforeString:NULL afterString:&a]; return a; }
+- (NSString *)contentType { return objc_getAssociatedObject(self, "xef.contentType"); } - (void)setContentType:(NSString *)t { objc_setAssociatedObject(self, "xef.contentType", t, OBJC_ASSOCIATION_COPY); }
+- (NSArray *)acceptableDragTypes { return @[@"NeXT Rich Text Format v1.0 pasteboard type", @"NSStringPboardType", @"NSFilenamesPboardType"]; }
+- (NSString *)preferredPasteboardTypeFromArray:(NSArray *)a restrictedToTypesFromArray:(NSArray *)r {
+  NSArray *ok = [self acceptableDragTypes]; for (NSString *t in a) if ([ok containsObject:t] && (!r || [r containsObject:t])) return t; return nil; }
+- (BOOL)writeSelectionToPasteboard:(NSPasteboard *)pb types:(NSArray *)types { BOOL any = NO; for (NSString *t in types) any |= [self writeSelectionToPasteboard:pb type:t]; return any; }
+- (BOOL)readSelectionFromPasteboard:(NSPasteboard *)pb type:(NSString *)t { NSString *s = [pb stringForType:t]; if (!s) return NO; [self insertText:s replacementRange:_sel]; return YES; }
+- (NSDictionary *)textHighlightAttributes { return objc_getAssociatedObject(self, "xef.highlight") ?: @{ NSBackgroundColorAttributeName: [NSColor selectedTextBackgroundColor] }; }
+- (void)setTextHighlightAttributes:(NSDictionary *)d { objc_setAssociatedObject(self, "xef.highlight", d, OBJC_ASSOCIATION_COPY); }
+- (void)highlight:(id)s {} - (void)showFindIndicatorForRange:(NSRange)r {} - (void)updateCandidates {} - (void)updateTouchBarItemIdentifiers {} - (void)updateTextTouchBarItems {}
+- (NSInteger)spellCheckerDocumentTag { return 1; } - (BOOL)usesRolloverButtonForSelection { return NO; } - (void)setUsesRolloverButtonForSelection:(BOOL)f {}
+- (void)checkTextInRange:(NSRange)r types:(NSUInteger)t options:(NSDictionary *)o {} - (BOOL)isWritingToolsActive { return NO; }
+- (void)cleanUpAfterDragOperation {} - (NSArray *)allowedInputSourceLocales { return nil; } - (void)setAllowedInputSourceLocales:(NSArray *)a {}
+- (void)toggleAutomaticTextCompletion:(id)s {} - (void)toggleQuickLookPreviewPanel:(id)s {} - (void)updateQuickLookPreviewPanel {}
+- (void)outline:(id)s {} - (void)changeLayoutOrientation:(id)s {}
 @end

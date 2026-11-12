@@ -890,3 +890,15 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `NSTerminateLater` w `terminate:`, `dockTile`, `miniaturizeAll:`, `orderedDocuments`, drobiazgi. `validateMenuItem:` zwraca YES (Mac też).
 - Stan: **4736 z 8257** metod prawdziwych; `macref.sh` 17/17.
 
+### 16. NSDocument i NSTextView — uzupełnienia (2026-11-12)
+- **NSDocument** (`AppKitDocument.m`, kategoria `XEFExtras`, `appkit_document2.m`): przestarzałe API oparte na nazwach plików (`fileName`, `readFromFile:ofType:`,
+  `writeToFile:…`, `dataRepresentationOfType:`, `lastComponentOfFileName`…) mapowane na API URL, `duplicateAndReturnError:` (wymaga pliku na dysku), `moveToURL:`, lock/unlock
+  (stan zmienia się w następnym obiegu run loopa jak w AppKit), `writableTypesForSaveOperation:`, powiadomienia prezentera pliku (puste). **Różnica nieodtworzona:**
+  na Macu `duplicateAndReturnError:` i `moveToURL:completionHandler:` dla dokumentu spoza `NSDocumentController` zwracają błąd — test tego nie porównuje.
+- **NSTextView** (`AppKitText.m`, kategoria `XEFExtras`, `appkit_textview2.m`): `+scrollableTextView`, `+scrollableDocumentContentTextView`, `+scrollablePlainDocumentContentTextView`,
+  `+fieldEditor` (parametry zmierzone na Macu: autoresizing 18, vertical resizable, widthTracksTextView), **prawdziwy tekst oznaczony** (`setMarkedText:…`, `markedRange`,
+  `hasMarkedText`, `unmarkText` — wcześniej `hasMarkedText` zawsze NO), `smartInsertForString:…`, `smartDeleteRangeForProposedRange:`, `rangeForUserCompletion`,
+  `attributedSubstringFromRange:`, `acceptableDragTypes`, `textHighlightAttributes`, `performValidatedReplacementInRange:` i drobiazgi. `smartInsertDeleteEnabled` jest teraz prawdziwą
+  właściwością. Uzupełnianie słów (`completionsForPartialWordRange:`) zwraca pustą listę (Mac: podpowiedzi słownika).
+- Stan: **4838 z 8257** metod prawdziwych; `macref.sh` 19/19.
+
