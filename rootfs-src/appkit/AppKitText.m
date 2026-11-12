@@ -987,13 +987,43 @@ static NSString *font_with_style(NSFont *f, BOOL bold, BOOL italic) {
 @end
 
 @implementation NSFontPanel
-+ (NSFontPanel *)sharedFontPanel { return nil; }
-+ (BOOL)sharedFontPanelExists { return NO; }
+static NSFontPanel *g_font_panel;
++ (NSFontPanel *)sharedFontPanel { if (!g_font_panel) { g_font_panel = [[NSFontPanel alloc] init]; g_font_panel->_modal = YES; } return g_font_panel; }
++ (BOOL)sharedFontPanelExists { return g_font_panel != nil; }
+- (void)setPanelFont:(NSFont *)f isMultiple:(BOOL)m { [f retain]; [_font release]; _font = f; }
+- (NSFont *)panelConvertFont:(NSFont *)f { return _font ? [[NSFontManager sharedFontManager] convertFont:f toSize:[_font pointSize]] : f; }
+- (id)accessoryView { return _accessory; } - (void)setAccessoryView:(id)v { [v retain]; [_accessory release]; _accessory = v; }
+- (BOOL)worksWhenModal { return _modal; } - (void)setWorksWhenModal:(BOOL)f { _modal = f; }
+- (BOOL)isEnabled { return YES; } - (void)setEnabled:(BOOL)f {} - (void)reloadDefaultFontFamilies {}
+- (BOOL)isVisible { return _visible; } - (void)orderFront:(id)s { _visible = YES; } - (void)makeKeyAndOrderFront:(id)s { _visible = YES; } - (void)close { _visible = NO; } - (void)orderOut:(id)s { _visible = NO; }
 @end
 @implementation NSColorPanel
-+ (NSColorPanel *)sharedColorPanel { return nil; }
-+ (BOOL)sharedColorPanelExists { return NO; }
-+ (void)setPickerMask:(NSUInteger)m {} + (void)setPickerMode:(NSInteger)m {}
+static NSColorPanel *g_color_panel;
++ (NSColorPanel *)sharedColorPanel { if (!g_color_panel) { g_color_panel = [[NSColorPanel alloc] init]; g_color_panel->_continuous = YES; g_color_panel->_alpha = YES; g_color_panel->_mode = 6; g_color_panel->_color = [[NSColor whiteColor] retain]; } return g_color_panel; }
++ (BOOL)sharedColorPanelExists { return g_color_panel != nil; }
++ (void)setPickerMask:(NSUInteger)m {} + (void)setPickerMode:(NSInteger)m {} + (BOOL)dragColor:(NSColor *)c withEvent:(NSEvent *)e fromView:(NSView *)v { return NO; }
+- (NSColor *)color { return _color; }
+- (void)setColor:(NSColor *)c { [c retain]; [_color release]; _color = c; if (_action) [NSApp sendAction:_action to:_target from:self]; }
+- (CGFloat)alpha { return [_color alphaComponent]; }
+- (BOOL)isContinuous { return _continuous; } - (void)setContinuous:(BOOL)f { _continuous = f; } - (BOOL)showsAlpha { return _alpha; } - (void)setShowsAlpha:(BOOL)f { _alpha = f; }
+- (NSInteger)mode { return _mode; } - (void)setMode:(NSInteger)m {}   /* the real panel keeps its mode while it is not on screen */
+- (id)accessoryView { return _accessory; } - (void)setAccessoryView:(id)v { [v retain]; [_accessory release]; _accessory = v; }
+- (void)setTarget:(id)t { _target = t; } - (void)setAction:(SEL)a { _action = a; }
+- (BOOL)isVisible { return _visible; } - (void)orderFront:(id)s { _visible = YES; } - (void)orderFrontRegardless { _visible = YES; } - (void)makeKeyAndOrderFront:(id)s { _visible = YES; } - (void)close { _visible = NO; } - (void)orderOut:(id)s { _visible = NO; }
+- (void)attachColorList:(NSColorList *)l {} - (void)detachColorList:(NSColorList *)l {} - (CGFloat)maximumLinearExposure { return 1; } - (void)setMaximumLinearExposure:(CGFloat)e {}
+@end
+static NSMutableDictionary *g_color_lists;
+@implementation NSColorList
++ (NSArray *)availableColorLists { NSMutableArray *a = [NSMutableArray array]; for (NSString *k in g_color_lists) [a addObject:g_color_lists[k]]; return a; }
++ (NSColorList *)colorListNamed:(NSString *)n { return g_color_lists[n]; }
+- (id)initWithName:(NSString *)n { if ((self = [super init])) { _name = [n copy]; _keys = [[NSMutableArray alloc] init]; _colors = [[NSMutableDictionary alloc] init]; if (n) { if (!g_color_lists) g_color_lists = [[NSMutableDictionary alloc] init]; g_color_lists[n] = self; } } return self; }
+- (id)initWithName:(NSString *)n fromFile:(NSString *)p { return [self initWithName:n]; }
+- (void)dealloc { if (_name && g_color_lists[_name] == self) [g_color_lists removeObjectForKey:_name]; [_name release]; [_keys release]; [_colors release]; [super dealloc]; }
+- (NSString *)name { return _name; } - (BOOL)isEditable { return YES; } - (NSArray *)allKeys { return [NSArray arrayWithArray:_keys]; }
+- (void)setColor:(NSColor *)c forKey:(NSString *)k { if (![_keys containsObject:k]) [_keys addObject:k]; _colors[k] = c; }
+- (void)insertColor:(NSColor *)c key:(NSString *)k atIndex:(NSUInteger)i { [_keys removeObject:k]; [_keys insertObject:k atIndex:MIN(i, [_keys count])]; _colors[k] = c; }
+- (void)removeColorWithKey:(NSString *)k { [_keys removeObject:k]; [_colors removeObjectForKey:k]; } - (NSColor *)colorWithKey:(NSString *)k { return _colors[k]; }
+- (BOOL)writeToURL:(NSURL *)u error:(NSError **)e { return NO; } - (BOOL)writeToFile:(NSString *)p { return NO; } - (void)removeFile {}
 @end
 
 /* ---- NSTextView: factories, completion, smart insert/delete, pasteboard type negotiation ---- */

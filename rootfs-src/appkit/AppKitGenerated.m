@@ -172,8 +172,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSCollectionViewTransitionLayout @end
 @interface NSCollectionViewUpdateItem : NSObject @end
 @implementation NSCollectionViewUpdateItem @end
-@interface NSColorList : NSObject @end
-@implementation NSColorList @end
 @interface NSColorPicker : NSObject @end
 @implementation NSColorPicker @end
 @interface NSColorPickerTouchBarItem : NSTouchBarItem @end
@@ -803,38 +801,6 @@ static const GenEntry kTable[] = {
 {"NSColor", '-', "catalogNameComponent", 'D', 'q', ""},
 {"NSColor", '-', "colorNameComponent", 'D', 'q', ""},
 {"NSColor", '-', "writableTypesForPasteboard:", 'D', 'A', "@"},
-{"NSColorList", '+', "availableColorLists", 'D', 'A', ""},
-{"NSColorList", '+', "colorListNamed:", 'D', '@', "q"},
-{"NSColorList", '-', "allKeys", 'D', 'A', ""},
-{"NSColorList", '-', "colorWithKey:", 'D', '@', "q"},
-{"NSColorList", '-', "initWithName:", 'I', '@', "q"},
-{"NSColorList", '-', "initWithName:fromFile:", 'I', '@', "q@"},
-{"NSColorList", '-', "insertColor:key:atIndex:", 'D', 'v', "@qq"},
-{"NSColorList", '-', "isEditable", 'D', 'B', ""},
-{"NSColorList", '-', "name", 'D', 'q', ""},
-{"NSColorList", '-', "removeColorWithKey:", 'D', 'v', "q"},
-{"NSColorList", '-', "removeFile", 'D', 'v', ""},
-{"NSColorList", '-', "setColor:forKey:", 'D', 'v', "@q"},
-{"NSColorList", '-', "writeToFile:", 'D', 'B', "@"},
-{"NSColorList", '-', "writeToURL:error:", 'D', 'B', "@@"},
-{"NSColorPanel", '+', "dragColor:withEvent:fromView:", 'D', 'B', "@@@"},
-{"NSColorPanel", '-', "accessoryView", 'G', '@', ""},
-{"NSColorPanel", '-', "alpha", 'D', 'd', ""},
-{"NSColorPanel", '-', "attachColorList:", 'D', 'v', "@"},
-{"NSColorPanel", '-', "color", 'G', '@', ""},
-{"NSColorPanel", '-', "detachColorList:", 'D', 'v', "@"},
-{"NSColorPanel", '-', "isContinuous", 'G', 'B', ""},
-{"NSColorPanel", '-', "maximumLinearExposure", 'G', 'd', ""},
-{"NSColorPanel", '-', "mode", 'G', 'q', ""},
-{"NSColorPanel", '-', "setAccessoryView:", 'S', 'v', "@"},
-{"NSColorPanel", '-', "setAction:", 'S', 'v', ":"},
-{"NSColorPanel", '-', "setColor:", 'S', 'v', "@"},
-{"NSColorPanel", '-', "setContinuous:", 'S', 'v', "B"},
-{"NSColorPanel", '-', "setMaximumLinearExposure:", 'S', 'v', "d"},
-{"NSColorPanel", '-', "setMode:", 'S', 'v', "q"},
-{"NSColorPanel", '-', "setShowsAlpha:", 'S', 'v', "B"},
-{"NSColorPanel", '-', "setTarget:", 'S', 'v', "@"},
-{"NSColorPanel", '-', "showsAlpha", 'G', 'B', ""},
 {"NSColorPicker", '-', "alphaControlAddedOrRemoved:", 'D', 'v', "@"},
 {"NSColorPicker", '-', "attachColorList:", 'D', 'v', "@"},
 {"NSColorPicker", '-', "buttonToolTip", 'D', '@', ""},
@@ -1078,15 +1044,6 @@ static const GenEntry kTable[] = {
 {"NSFontManager", '-', "fontDescriptorsInCollection:", 'D', 'A', "@"},
 {"NSFontManager", '-', "removeCollection:", 'D', 'B', "@"},
 {"NSFontManager", '-', "removeFontDescriptor:fromCollection:", 'D', 'v', "@@"},
-{"NSFontPanel", '-', "accessoryView", 'G', '@', ""},
-{"NSFontPanel", '-', "isEnabled", 'G', 'B', ""},
-{"NSFontPanel", '-', "panelConvertFont:", 'D', '@', "@"},
-{"NSFontPanel", '-', "reloadDefaultFontFamilies", 'D', 'v', ""},
-{"NSFontPanel", '-', "setAccessoryView:", 'S', 'v', "@"},
-{"NSFontPanel", '-', "setEnabled:", 'S', 'v', "B"},
-{"NSFontPanel", '-', "setPanelFont:isMultiple:", 'D', 'v', "@B"},
-{"NSFontPanel", '-', "setWorksWhenModal:", 'S', 'v', "B"},
-{"NSFontPanel", '-', "worksWhenModal", 'G', 'B', ""},
 {"NSForm", '-', "addEntry:", 'D', '@', "@"},
 {"NSForm", '-', "cellAtIndex:", 'D', '@', "q"},
 {"NSForm", '-', "drawCellAtIndex:", 'D', 'v', "q"},
@@ -2644,7 +2601,6 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSCollectionLayoutAnchor", "isAbsoluteOffset", 'B', "1"},
 {"NSCollectionLayoutDimension", "isAbsolute", 'B', "1"},
 {"NSCollectionLayoutSpacing", "isFixedSpacing", 'B', "1"},
-{"NSColorList", "isEditable", 'B', "1"},
 {"NSColorPicker", "buttonToolTip", '@', "NSColorPicker"},
 {"NSColorPickerTouchBarItem", "customizationLabel", '@', "Color Picker"},
 {"NSColorPickerTouchBarItem", "isEnabled", 'B', "1"},
@@ -2687,7 +2643,7 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSWritingToolsCoordinator", "behavior", 'q', "1"},
 {"NSWritingToolsCoordinator", "resultOptions", 'q', "15"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 49;
+const unsigned long kDefaultsCount = 48;
 
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }

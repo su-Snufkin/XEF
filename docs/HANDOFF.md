@@ -1085,3 +1085,10 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   prostokąty przycisków. **NSBezierPath**: domyślne parametry (`defaultMiterLimit` 10, flatness 0.6), `relativeCurveToPoint:…`. **NSScroller**: `+isCompatibleWithOverlayScrollers` YES, stałe odpowiedzi dla reszty.
 - Stan: **6087 z 8257** metod prawdziwych; `macref.sh` 50/50; pełny `run_tests.sh` przechodzi.
 
+### 38. NSColorPanel, NSColorList, NSFontPanel (2026-11-12)
+- `AppKitText.m` / `AppKitText.h`; testy `appkit_colorpanel.m`, `appkit_fontpanel.m` zgodne z Makiem. **Wcześniej `+sharedColorPanel` i `+sharedFontPanel` zwracały nil** (aplikacja wywołująca je dostawała nil).
+  Teraz: współdzielone obiekty (nie `NSPanel`, **nie pokazują okna**) — `color` (wysyła akcję przy `setColor:`), `alpha` z koloru, `continuous`/`showsAlpha` (YES), `mode` (6; `setMode:` jest ignorowane jak u Maca dla niewidocznego panelu),
+  `accessoryView`, `setTarget:/setAction:`; `NSFontPanel`: `setPanelFont:isMultiple:`, `panelConvertFont:`, `worksWhenModal` (YES), `setEnabled:` ignorowane. **`NSColorList`**: nazwane listy z kolejnością kluczy
+  (`setColor:forKey:` nie zmienia pozycji istniejącego klucza, `insertColor:key:atIndex:`), `+availableColorLists` zawiera tylko listy utworzone w programie (bez wbudowanych list Apple), brak zapisu do pliku.
+- Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 52/52.
+

@@ -33,7 +33,6 @@ NSCollectionViewFlowLayoutInvalidationContext
 NSCollectionViewGridLayout
 NSCollectionViewTransitionLayout
 NSCollectionViewUpdateItem
-NSColorList
 NSColorPicker
 NSColorPickerTouchBarItem
 NSColorSampler

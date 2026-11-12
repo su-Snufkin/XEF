@@ -67,9 +67,14 @@ typedef unsigned int NSGlyph;
 - (NSUInteger)traitsOfFont:(NSFont *)f; - (void)setSelectedFont:(NSFont *)f isMultiple:(BOOL)m;
 @end
 
-@interface NSFontPanel : NSObject
+@interface NSFontPanel : NSObject { @public NSFont *_font; id _accessory; BOOL _visible, _modal; }
++ (NSFontPanel *)sharedFontPanel; + (BOOL)sharedFontPanelExists;
 @end
-@interface NSColorPanel : NSObject
+@interface NSColorPanel : NSObject { @public NSColor *_color; id _target, _accessory; SEL _action; BOOL _continuous, _alpha, _visible; NSInteger _mode; }
++ (NSColorPanel *)sharedColorPanel; + (BOOL)sharedColorPanelExists;
+@end
+@interface NSColorList : NSObject { @public NSString *_name; NSMutableArray *_keys; NSMutableDictionary *_colors; }
+- (id)initWithName:(NSString *)n;
 @end
 
 /* NSSpellChecker: checks words against /usr/share/dict/words (a missing dictionary accepts everything) */
