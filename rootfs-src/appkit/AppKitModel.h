@@ -1,6 +1,7 @@
 /* AppKit-lite model classes: NSToolbar, NSAnimation, NSPopover and the object / array controllers (AppKitModel.m). */
 #import "AppKitLite.h"
 #import "AppKitControls.h"
+#import "AppKitControllers.h"
 
 @interface NSToolbarItem : NSObject <NSCopying> {
 @public
@@ -81,4 +82,37 @@
   BOOL _allowsEmpty, _autosizes, _sizeSet; Class _cellClass; NSCell *_proto; id _target; SEL _action, _doubleAction; BOOL _enabled;
 }
 - (NSInteger)numberOfRows; - (NSInteger)numberOfColumns; - (NSCell *)cellAtRow:(NSInteger)r column:(NSInteger)c;
+@end
+
+/* NSCollectionView with the flow layout */
+@class NSCollectionView, NSCollectionViewLayout;
+@interface NSCollectionViewLayoutAttributes : NSObject <NSCopying> {
+@public
+  NSRect _frame; NSIndexPath *_path; NSInteger _zIndex, _category; BOOL _hidden; CGFloat _alpha; NSString *_kind;
+}
+@end
+@interface NSCollectionViewLayout : NSObject {
+@public
+  NSCollectionView *_cv; BOOL _valid;
+}
+- (NSSize)collectionViewContentSize; - (void)invalidateLayout; - (NSCollectionView *)collectionView;
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForItemAtIndexPath:(NSIndexPath *)p; - (NSArray *)layoutAttributesForElementsInRect:(NSRect)r;
+@end
+@interface NSCollectionViewFlowLayout : NSCollectionViewLayout {
+@public
+  NSSize _item, _header, _footer, _estimated; CGFloat _line, _inter; NSEdgeInsets _inset; NSInteger _dir; BOOL _pin; NSMutableArray *_attrs; NSSize _content;
+}
+@end
+@interface NSCollectionViewItem : NSViewController { @public BOOL _selected; NSInteger _highlight; NSCollectionView *_cv; id _imageView, _textField; }
+- (BOOL)isSelected; - (void)setSelected:(BOOL)f; - (NSCollectionView *)collectionView;
+@end
+@interface NSCollectionView : NSView {
+@public
+  id _dataSource, _delegate; NSCollectionViewLayout *_layout; NSMutableDictionary *_classes, *_nibs, *_visible; NSMutableDictionary *_reuse; NSMutableArray *_counts;
+  NSMutableSet *_selection; BOOL _selectable, _multiple, _empty; NSArray *_bg; NSInteger _sections;
+}
+- (NSInteger)numberOfSections; - (NSInteger)numberOfItemsInSection:(NSInteger)s; - (void)reloadData;
+@end
+@interface NSIndexPath (XEFCollection)
++ (NSIndexPath *)indexPathForItem:(NSInteger)i inSection:(NSInteger)s; - (NSInteger)item; - (NSInteger)section;
 @end

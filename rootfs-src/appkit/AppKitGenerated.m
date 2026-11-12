@@ -155,28 +155,18 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSCollectionLayoutSize @end
 @interface NSCollectionLayoutSpacing : NSObject @end
 @implementation NSCollectionLayoutSpacing @end
-@interface NSCollectionView : NSView @end
-@implementation NSCollectionView @end
-@interface NSCollectionViewLayout : NSObject @end
-@implementation NSCollectionViewLayout @end
 @interface NSCollectionViewCompositionalLayout : NSCollectionViewLayout @end
 @implementation NSCollectionViewCompositionalLayout @end
 @interface NSCollectionViewCompositionalLayoutConfiguration : NSObject @end
 @implementation NSCollectionViewCompositionalLayoutConfiguration @end
 @interface NSCollectionViewDiffableDataSource : NSObject @end
 @implementation NSCollectionViewDiffableDataSource @end
-@interface NSCollectionViewFlowLayout : NSCollectionViewLayout @end
-@implementation NSCollectionViewFlowLayout @end
 @interface NSCollectionViewLayoutInvalidationContext : NSObject @end
 @implementation NSCollectionViewLayoutInvalidationContext @end
 @interface NSCollectionViewFlowLayoutInvalidationContext : NSCollectionViewLayoutInvalidationContext @end
 @implementation NSCollectionViewFlowLayoutInvalidationContext @end
 @interface NSCollectionViewGridLayout : NSCollectionViewLayout @end
 @implementation NSCollectionViewGridLayout @end
-@interface NSCollectionViewItem : NSViewController @end
-@implementation NSCollectionViewItem @end
-@interface NSCollectionViewLayoutAttributes : NSObject @end
-@implementation NSCollectionViewLayoutAttributes @end
 @interface NSCollectionViewTransitionLayout : NSCollectionViewLayout @end
 @implementation NSCollectionViewTransitionLayout @end
 @interface NSCollectionViewUpdateItem : NSObject @end
@@ -2175,87 +2165,40 @@ static const GenEntry kTable[] = {
 {"NSLayoutManager", '-', "truncatedGlyphRangeInLineFragmentForGlyphAtIndex:", 'D', 'N', "q"},
 {"NSLayoutManager", '-', "underlineGlyphRange:underlineType:lineFragmentRect:lineFragmentGlyphRange:containerOrigin:", 'D', 'v', "NqRNP"},
 {"NSLayoutManager", '-', "usesDefaultHyphenation", 'G', 'B', ""},
-{"NSMatrix", '-', "addColumn", 'D', 'v', ""},
 {"NSMatrix", '-', "addColumnWithCells:", 'D', 'v', "@"},
-{"NSMatrix", '-', "addRow", 'D', 'v', ""},
 {"NSMatrix", '-', "addRowWithCells:", 'D', 'v', "@"},
-{"NSMatrix", '-', "allowsEmptySelection", 'G', 'B', ""},
 {"NSMatrix", '-', "autorecalculatesCellSize", 'G', 'B', ""},
-{"NSMatrix", '-', "autosizesCells", 'G', 'B', ""},
-{"NSMatrix", '-', "cellAtRow:column:", 'D', '@', "qq"},
 {"NSMatrix", '-', "cellBackgroundColor", 'G', '@', ""},
-{"NSMatrix", '-', "cellClass", 'G', '#', ""},
-{"NSMatrix", '-', "cellFrameAtRow:column:", 'D', 'R', "qq"},
-{"NSMatrix", '-', "cellSize", 'G', 'S', ""},
-{"NSMatrix", '-', "cellWithTag:", 'D', '@', "q"},
-{"NSMatrix", '-', "cells", 'D', 'A', ""},
 {"NSMatrix", '-', "delegate", 'G', '@', ""},
-{"NSMatrix", '-', "deselectAllCells", 'D', 'v', ""},
-{"NSMatrix", '-', "deselectSelectedCell", 'D', 'v', ""},
-{"NSMatrix", '-', "doubleAction", 'G', ':', ""},
 {"NSMatrix", '-', "drawCellAtRow:column:", 'D', 'v', "qq"},
 {"NSMatrix", '-', "drawsBackground", 'G', 'B', ""},
 {"NSMatrix", '-', "drawsCellBackground", 'G', 'B', ""},
 {"NSMatrix", '-', "getNumberOfRows:columns:", 'D', 'v', "^^"},
-{"NSMatrix", '-', "getRow:column:forPoint:", 'D', 'B', "^^P"},
-{"NSMatrix", '-', "getRow:column:ofCell:", 'D', 'B', "^^@"},
 {"NSMatrix", '-', "highlightCell:atRow:column:", 'D', 'v', "Bqq"},
-{"NSMatrix", '-', "initWithFrame:mode:cellClass:numberOfRows:numberOfColumns:", 'I', '@', "Rq#qq"},
-{"NSMatrix", '-', "initWithFrame:mode:prototype:numberOfRows:numberOfColumns:", 'I', '@', "Rq@qq"},
-{"NSMatrix", '-', "insertColumn:", 'D', 'v', "q"},
 {"NSMatrix", '-', "insertColumn:withCells:", 'D', 'v', "q@"},
-{"NSMatrix", '-', "insertRow:", 'D', 'v', "q"},
 {"NSMatrix", '-', "insertRow:withCells:", 'D', 'v', "q@"},
-{"NSMatrix", '-', "intercellSpacing", 'G', 'S', ""},
 {"NSMatrix", '-', "isAutoscroll", 'G', 'B', ""},
-{"NSMatrix", '-', "isSelectionByRect", 'G', 'B', ""},
 {"NSMatrix", '-', "keyCell", 'G', '@', ""},
 {"NSMatrix", '-', "makeCellAtRow:column:", 'D', '@', "qq"},
-{"NSMatrix", '-', "mode", 'G', 'q', ""},
 {"NSMatrix", '-', "mouseDownFlags", 'D', 'q', ""},
-{"NSMatrix", '-', "numberOfColumns", 'D', 'q', ""},
-{"NSMatrix", '-', "numberOfRows", 'D', 'q', ""},
-{"NSMatrix", '-', "prototype", 'G', '@', ""},
-{"NSMatrix", '-', "putCell:atRow:column:", 'D', 'v', "@qq"},
-{"NSMatrix", '-', "removeColumn:", 'D', 'v', "q"},
-{"NSMatrix", '-', "removeRow:", 'D', 'v', "q"},
-{"NSMatrix", '-', "renewRows:columns:", 'D', 'v', "qq"},
 {"NSMatrix", '-', "scrollCellToVisibleAtRow:column:", 'D', 'v', "qq"},
-{"NSMatrix", '-', "selectAll:", 'D', 'v', "@"},
-{"NSMatrix", '-', "selectCellAtRow:column:", 'D', 'v', "qq"},
-{"NSMatrix", '-', "selectCellWithTag:", 'D', 'B', "q"},
 {"NSMatrix", '-', "selectText:", 'D', 'v', "@"},
 {"NSMatrix", '-', "selectTextAtRow:column:", 'D', '@', "qq"},
-{"NSMatrix", '-', "selectedCells", 'D', 'A', ""},
-{"NSMatrix", '-', "selectedColumn", 'D', 'q', ""},
-{"NSMatrix", '-', "selectedRow", 'D', 'q', ""},
-{"NSMatrix", '-', "sendAction", 'D', 'B', ""},
 {"NSMatrix", '-', "sendAction:to:forAllCells:", 'D', 'v', ":@B"},
-{"NSMatrix", '-', "sendDoubleAction", 'D', 'v', ""},
-{"NSMatrix", '-', "setAllowsEmptySelection:", 'S', 'v', "B"},
 {"NSMatrix", '-', "setAutorecalculatesCellSize:", 'S', 'v', "B"},
 {"NSMatrix", '-', "setAutoscroll:", 'S', 'v', "B"},
-{"NSMatrix", '-', "setAutosizesCells:", 'S', 'v', "B"},
 {"NSMatrix", '-', "setBackgroundColor:", 'S', 'v', "@"},
 {"NSMatrix", '-', "setCellBackgroundColor:", 'S', 'v', "@"},
-{"NSMatrix", '-', "setCellClass:", 'S', 'v', "#"},
-{"NSMatrix", '-', "setCellSize:", 'S', 'v', "S"},
 {"NSMatrix", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSMatrix", '-', "setDoubleAction:", 'S', 'v', ":"},
 {"NSMatrix", '-', "setDrawsBackground:", 'S', 'v', "B"},
 {"NSMatrix", '-', "setDrawsCellBackground:", 'S', 'v', "B"},
-{"NSMatrix", '-', "setIntercellSpacing:", 'S', 'v', "S"},
 {"NSMatrix", '-', "setKeyCell:", 'S', 'v', "@"},
-{"NSMatrix", '-', "setMode:", 'S', 'v', "q"},
-{"NSMatrix", '-', "setPrototype:", 'S', 'v', "@"},
 {"NSMatrix", '-', "setScrollable:", 'S', 'v', "B"},
-{"NSMatrix", '-', "setSelectionByRect:", 'S', 'v', "B"},
 {"NSMatrix", '-', "setSelectionFrom:to:anchor:highlight:", 'D', 'v', "qqqB"},
 {"NSMatrix", '-', "setState:atRow:column:", 'D', 'v', "qqq"},
 {"NSMatrix", '-', "setTabKeyTraversesCells:", 'S', 'v', "B"},
 {"NSMatrix", '-', "setToolTip:forCell:", 'D', 'v', "@@"},
 {"NSMatrix", '-', "setValidateSize:", 'S', 'v', "B"},
-{"NSMatrix", '-', "sizeToCells", 'D', 'v', ""},
 {"NSMatrix", '-', "sortUsingFunction:context:", 'D', 'v', "q^"},
 {"NSMatrix", '-', "sortUsingSelector:", 'D', 'v', ":"},
 {"NSMatrix", '-', "tabKeyTraversesCells", 'G', 'B', ""},

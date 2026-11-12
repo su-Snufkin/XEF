@@ -672,3 +672,220 @@ static NSSize content_size(NSGridCell *c) {
   else if ([e clickCount] >= 2 && _doubleAction) [self sendDoubleAction];
   else [self sendAction]; }
 @end
+
+
+/* ================================================================== NSCollectionView */
+@interface NSObject (XEFCollectionInformal)
+- (NSInteger)numberOfSectionsInCollectionView:(id)cv; - (NSInteger)collectionView:(id)cv numberOfItemsInSection:(NSInteger)s;
+- (NSCollectionViewItem *)collectionView:(id)cv itemForRepresentedObjectAtIndexPath:(NSIndexPath *)p;
+- (BOOL)collectionView:(id)cv shouldSelectItemsAtIndexPaths:(NSSet *)p; - (void)collectionView:(id)cv didSelectItemsAtIndexPaths:(NSSet *)p;
+- (BOOL)collectionView:(id)cv shouldDeselectItemsAtIndexPaths:(NSSet *)p; - (void)collectionView:(id)cv didDeselectItemsAtIndexPaths:(NSSet *)p;
+- (NSSize)collectionView:(id)cv layout:(id)l sizeForItemAtIndexPath:(NSIndexPath *)p;
+@end
+
+@implementation NSIndexPath (XEFCollection)
++ (NSIndexPath *)indexPathForItem:(NSInteger)i inSection:(NSInteger)s { NSUInteger idx[2] = { (NSUInteger)s, (NSUInteger)i }; return [NSIndexPath indexPathWithIndexes:idx length:2]; }
+- (NSInteger)section { return [self length] > 0 ? (NSInteger)[self indexAtPosition:0] : 0; }
+- (NSInteger)item { return [self length] > 1 ? (NSInteger)[self indexAtPosition:1] : 0; }
+@end
+
+@implementation NSCollectionViewLayoutAttributes
++ (id)layoutAttributesForItemWithIndexPath:(NSIndexPath *)p { NSCollectionViewLayoutAttributes *a = [[[self alloc] init] autorelease]; a->_path = [p retain]; return a; }
+- (id)init { if ((self = [super init])) { _alpha = 1; } return self; }
+- (id)copyWithZone:(NSZone *)z { NSCollectionViewLayoutAttributes *a = [[[self class] allocWithZone:z] init]; a->_frame = _frame; a->_path = [_path retain]; a->_zIndex = _zIndex; a->_hidden = _hidden; a->_alpha = _alpha; return a; }
+- (void)dealloc { [_path release]; [_kind release]; [super dealloc]; }
+- (NSRect)frame { return _frame; } - (void)setFrame:(NSRect)f { _frame = f; }
+- (NSSize)size { return _frame.size; } - (void)setSize:(NSSize)s { _frame.size = s; }
+- (NSPoint)center { return NSMakePoint(NSMidX(_frame), NSMidY(_frame)); } - (void)setCenter:(NSPoint)c { _frame.origin = NSMakePoint(c.x - _frame.size.width / 2, c.y - _frame.size.height / 2); }
+- (NSIndexPath *)indexPath { return _path; } - (void)setIndexPath:(NSIndexPath *)p { [p retain]; [_path release]; _path = p; }
+- (NSInteger)zIndex { return _zIndex; } - (void)setZIndex:(NSInteger)z { _zIndex = z; }
+- (BOOL)isHidden { return _hidden; } - (void)setHidden:(BOOL)f { _hidden = f; }
+- (CGFloat)alpha { return _alpha; } - (void)setAlpha:(CGFloat)a { _alpha = a; }
+- (NSInteger)representedElementCategory { return _category; } - (NSString *)representedElementKind { return _kind; }
+@end
+
+@implementation NSCollectionViewLayout
+- (NSCollectionView *)collectionView { return _cv; }
+- (NSSize)collectionViewContentSize { return NSZeroSize; }
+- (void)invalidateLayout { _valid = NO; [_cv setNeedsLayout:YES]; }
+- (void)prepareLayout {}
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForItemAtIndexPath:(NSIndexPath *)p { return nil; }
+- (NSArray *)layoutAttributesForElementsInRect:(NSRect)r { return @[]; }
+- (BOOL)shouldInvalidateLayoutForBoundsChange:(NSRect)b { return YES; }
+@end
+
+@implementation NSCollectionViewFlowLayout
+- (id)init { if ((self = [super init])) { _item = NSMakeSize(50, 50); _line = _inter = 10; } return self; }
+- (void)dealloc { [_attrs release]; [super dealloc]; }
+- (NSSize)itemSize { return _item; } - (void)setItemSize:(NSSize)s { _item = s; [self invalidateLayout]; }
+- (CGFloat)minimumLineSpacing { return _line; } - (void)setMinimumLineSpacing:(CGFloat)v { _line = v; [self invalidateLayout]; }
+- (CGFloat)minimumInteritemSpacing { return _inter; } - (void)setMinimumInteritemSpacing:(CGFloat)v { _inter = v; [self invalidateLayout]; }
+- (NSEdgeInsets)sectionInset { return _inset; } - (void)setSectionInset:(NSEdgeInsets)i { _inset = i; [self invalidateLayout]; }
+- (NSInteger)scrollDirection { return _dir; } - (void)setScrollDirection:(NSInteger)d { _dir = d; [self invalidateLayout]; }
+- (NSSize)headerReferenceSize { return _header; } - (void)setHeaderReferenceSize:(NSSize)s { _header = s; [self invalidateLayout]; }
+- (NSSize)footerReferenceSize { return _footer; } - (void)setFooterReferenceSize:(NSSize)s { _footer = s; [self invalidateLayout]; }
+- (NSSize)estimatedItemSize { return _estimated; } - (void)setEstimatedItemSize:(NSSize)s { _estimated = s; }
+- (BOOL)sectionHeadersPinToVisibleBounds { return _pin; } - (void)setSectionHeadersPinToVisibleBounds:(BOOL)f { _pin = f; }
+- (BOOL)sectionFootersPinToVisibleBounds { return NO; } - (void)setSectionFootersPinToVisibleBounds:(BOOL)f {}
+- (NSSize)_xefSizeFor:(NSIndexPath *)p { id d = [_cv delegate]; return [d respondsToSelector:@selector(collectionView:layout:sizeForItemAtIndexPath:)] ? [d collectionView:_cv layout:self sizeForItemAtIndexPath:p] : _item; }
+/* items flow along the scroll direction's cross axis, as many per line as fit; the leftover space is shared between them */
+- (void)_xefPrepare {
+  if (_valid || !_cv) return;
+  [_attrs release]; _attrs = [[NSMutableArray alloc] init];
+  NSSize bounds = [_cv bounds].size; BOOL vert = _dir == 0;
+  CGFloat cross = vert ? bounds.width : bounds.height, along = 0;
+  NSInteger sections = [_cv numberOfSections];
+  for (NSInteger s = 0; s < sections; s++) {
+    NSInteger count = [_cv numberOfItemsInSection:s];
+    CGFloat leadIn = vert ? _inset.top : _inset.left, leadOut = vert ? _inset.bottom : _inset.right, crossIn = vert ? _inset.left : _inset.top, crossOut = vert ? _inset.right : _inset.bottom;
+    CGFloat usable = cross - crossIn - crossOut;
+    along += leadIn + (vert ? _header.height : _header.width);
+    NSSize first = count ? [self _xefSizeFor:[NSIndexPath indexPathForItem:0 inSection:s]] : _item;
+    CGFloat ic = vert ? first.width : first.height, il = vert ? first.height : first.width;
+    NSInteger n = ic > 0 ? (NSInteger)floor((usable + _inter) / (ic + _inter)) : 1; if (n < 1) n = 1;
+    CGFloat gap = n > 1 ? (usable - n * ic) / (n - 1) : 0; if (gap < _inter) gap = _inter;
+    NSInteger lines = count ? (count + n - 1) / n : 0;
+    for (NSInteger i = 0; i < count; i++) {
+      NSIndexPath *p = [NSIndexPath indexPathForItem:i inSection:s]; NSSize sz = [self _xefSizeFor:p];
+      NSInteger line = i / n, pos = i % n;
+      CGFloat a = along + line * (il + _line), c = crossIn + pos * (ic + gap);
+      NSCollectionViewLayoutAttributes *at = [NSCollectionViewLayoutAttributes layoutAttributesForItemWithIndexPath:p];
+      at->_frame = vert ? NSMakeRect(c, a, sz.width, sz.height) : NSMakeRect(a, c, sz.width, sz.height);
+      [_attrs addObject:at]; }
+    along += lines * il + (lines > 1 ? (lines - 1) * _line : 0) + leadOut + (vert ? _footer.height : _footer.width); }
+  _content = vert ? NSMakeSize(cross, along) : NSMakeSize(along, cross);
+  _valid = YES; }
+- (NSSize)collectionViewContentSize { [self _xefPrepare]; return _content; }
+- (void)prepareLayout { _valid = NO; [self _xefPrepare]; }
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForItemAtIndexPath:(NSIndexPath *)p {
+  [self _xefPrepare];
+  for (NSCollectionViewLayoutAttributes *a in _attrs) if ([a->_path isEqual:p]) return a;
+  NSCollectionViewLayoutAttributes *a = [NSCollectionViewLayoutAttributes layoutAttributesForItemWithIndexPath:p]; a->_frame = NSMakeRect(0, 0, _item.width, _item.height); return a; }
+- (NSArray *)layoutAttributesForElementsInRect:(NSRect)r {
+  [self _xefPrepare]; NSMutableArray *out = [NSMutableArray array];
+  for (NSCollectionViewLayoutAttributes *a in _attrs) if (NSIntersectsRect(a->_frame, r)) [out addObject:a];
+  return out; }
+- (void)invalidateLayout { [super invalidateLayout]; }
+@end
+
+@implementation NSCollectionViewItem
+- (BOOL)isSelected { return _selected; }
+- (void)setSelected:(BOOL)f { _selected = f; }
+- (NSInteger)highlightState { return _highlight; } - (void)setHighlightState:(NSInteger)s { _highlight = s; }
+- (NSCollectionView *)collectionView { return _cv; }
+- (id)imageView { return _imageView; } - (void)setImageView:(id)v { _imageView = v; }
+- (id)textField { return _textField; } - (void)setTextField:(id)v { _textField = v; }
+- (NSArray *)draggingImageComponents { return @[]; }
+@end
+
+@implementation NSCollectionView
+- (void)_xefInit { _classes = [[NSMutableDictionary alloc] init]; _nibs = [[NSMutableDictionary alloc] init]; _visible = [[NSMutableDictionary alloc] init]; _reuse = [[NSMutableDictionary alloc] init];
+  _selection = [[NSMutableSet alloc] init]; _empty = YES; _sections = -1; _bg = [@[[NSColor controlBackgroundColor]] retain]; }
+- (id)initWithFrame:(NSRect)f { if ((self = [super initWithFrame:f])) [self _xefInit]; return self; }
+- (id)initWithCoder:(NSCoder *)c { if ((self = [super initWithCoder:c])) { [self _xefInit]; _selectable = [c decodeBoolForKey:@"NSSelectable"]; _multiple = [c decodeBoolForKey:@"NSAllowsMultipleSelection"]; } return self; }
+- (void)dealloc { [_classes release]; [_nibs release]; [_visible release]; [_reuse release]; [_counts release]; [_selection release]; [_bg release]; [super dealloc]; }
+- (BOOL)isFlipped { return YES; }
+- (BOOL)acceptsFirstResponder { return NO; }
+- (id)dataSource { return _dataSource; } - (void)setDataSource:(id)d { _dataSource = d; [self reloadData]; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (NSCollectionViewLayout *)collectionViewLayout { return _layout; }
+- (void)setCollectionViewLayout:(NSCollectionViewLayout *)l { if (_layout) _layout->_cv = nil; [l retain]; [_layout release]; _layout = l; l->_cv = self; [l invalidateLayout]; }
+- (BOOL)isSelectable { return _selectable; } - (void)setSelectable:(BOOL)f { _selectable = f; }
+- (BOOL)allowsMultipleSelection { return _multiple; } - (void)setAllowsMultipleSelection:(BOOL)f { _multiple = f; }
+- (BOOL)allowsEmptySelection { return _empty; } - (void)setAllowsEmptySelection:(BOOL)f { _empty = f; }
+- (NSArray *)backgroundColors { return _bg; } - (void)setBackgroundColors:(NSArray *)a { [a retain]; [_bg release]; _bg = a; [self setNeedsDisplay:YES]; }
+- (void)registerClass:(Class)c forItemWithIdentifier:(NSString *)i { if (c) _classes[i] = c; else [_classes removeObjectForKey:i]; }
+- (void)registerNib:(id)n forItemWithIdentifier:(NSString *)i { if (n) _nibs[i] = n; else [_nibs removeObjectForKey:i]; }
+- (void)registerClass:(Class)c forSupplementaryViewOfKind:(NSString *)k withIdentifier:(NSString *)i {}
+- (void)registerNib:(id)n forSupplementaryViewOfKind:(NSString *)k withIdentifier:(NSString *)i {}
+- (NSCollectionViewItem *)makeItemWithIdentifier:(NSString *)i forIndexPath:(NSIndexPath *)p {
+  NSMutableArray *q = _reuse[i]; NSCollectionViewItem *it = [q lastObject];
+  if (it) { [[it retain] autorelease]; [q removeLastObject]; return it; }
+  Class c = _classes[i];
+  if (!c) [NSException raise:NSInvalidArgumentException format:@"could not dequeue an item of identifier %@ - must register a nib or a class for the identifier or connect a prototype cell in a storyboard", i];
+  it = [[[c alloc] initWithNibName:nil bundle:nil] autorelease]; it->_cv = self; return it; }
+- (void)_xefReloadCounts {
+  [_counts release]; _counts = nil; _sections = -1; }
+- (NSInteger)numberOfSections {
+  if (_sections >= 0) return _sections;
+  _sections = [_dataSource respondsToSelector:@selector(numberOfSectionsInCollectionView:)] ? [_dataSource numberOfSectionsInCollectionView:self] : (_dataSource ? 1 : 1);
+  _counts = [[NSMutableArray alloc] init]; for (NSInteger s = 0; s < _sections; s++) [_counts addObject:[NSNull null]];
+  return _sections; }
+- (NSInteger)numberOfItemsInSection:(NSInteger)s {
+  [self numberOfSections];
+  if (s < 0 || s >= (NSInteger)[_counts count]) return 0;
+  if (_counts[s] == (id)[NSNull null]) _counts[s] = @([_dataSource respondsToSelector:@selector(collectionView:numberOfItemsInSection:)] ? [_dataSource collectionView:self numberOfItemsInSection:s] : 0);
+  return [_counts[s] integerValue]; }
+- (void)reloadData {
+  for (NSCollectionViewItem *it in [_visible allValues]) [[it view] removeFromSuperview];
+  [_visible removeAllObjects]; [_reuse removeAllObjects]; [self _xefReloadCounts]; [_layout invalidateLayout]; [self setNeedsLayout:YES]; [self setNeedsDisplay:YES]; }
+- (void)reloadItemsAtIndexPaths:(NSSet *)p { [self reloadData]; }
+- (void)insertItemsAtIndexPaths:(NSSet *)p { [self reloadData]; } - (void)deleteItemsAtIndexPaths:(NSSet *)p { [self reloadData]; }
+- (void)reloadSections:(NSIndexSet *)s { [self reloadData]; } - (void)insertSections:(NSIndexSet *)s { [self reloadData]; } - (void)deleteSections:(NSIndexSet *)s { [self reloadData]; }
+- (void)performBatchUpdates:(void (^)(void))u completionHandler:(void (^)(BOOL))c { if (u) u(); [self reloadData]; if (c) c(YES); }
+- (NSArray *)visibleItems { NSArray *k = [[_visible allKeys] sortedArrayUsingSelector:@selector(compare:)]; NSMutableArray *a = [NSMutableArray array]; for (NSIndexPath *p in k) [a addObject:_visible[p]]; return a; }
+- (NSSet *)indexPathsForVisibleItems { return [NSSet setWithArray:[_visible allKeys]]; }
+- (NSCollectionViewItem *)itemAtIndexPath:(NSIndexPath *)p { return _visible[p]; }
+- (NSCollectionViewItem *)itemAtIndex:(NSUInteger)i { return _visible[[NSIndexPath indexPathForItem:i inSection:0]]; }
+- (NSIndexPath *)indexPathForItem:(NSCollectionViewItem *)it { for (NSIndexPath *p in _visible) if (_visible[p] == it) return p; return nil; }
+- (NSCollectionViewLayoutAttributes *)layoutAttributesForItemAtIndexPath:(NSIndexPath *)p { return [_layout layoutAttributesForItemAtIndexPath:p]; }
+- (NSRect)frameForItemAtIndex:(NSUInteger)i { return [[_layout layoutAttributesForItemAtIndexPath:[NSIndexPath indexPathForItem:i inSection:0]] frame]; }
+- (NSIndexPath *)indexPathForItemAtPoint:(NSPoint)pt { for (NSCollectionViewLayoutAttributes *a in [_layout layoutAttributesForElementsInRect:_bounds]) if (NSPointInRect(pt, a->_frame)) return a->_path; return nil; }
+- (void)scrollToItemsAtIndexPaths:(NSSet *)p scrollPosition:(NSUInteger)pos { NSIndexPath *first = [[p allObjects] firstObject]; if (first) [self scrollRectToVisible:[[_layout layoutAttributesForItemAtIndexPath:first] frame]]; }
+/* ---- selection */
+- (void)_xefSync { for (NSIndexPath *p in _visible) [_visible[p] setSelected:[_selection containsObject:p]]; }
+- (NSSet *)selectionIndexPaths { return [NSSet setWithSet:_selection]; }
+- (void)setSelectionIndexPaths:(NSSet *)s {
+  NSSet *use = (!_multiple && [s count] > 1) ? [NSSet setWithObject:[[s allObjects] firstObject]] : s;
+  [_selection setSet:use]; [self _xefSync]; [self setNeedsDisplay:YES]; }
+- (NSIndexSet *)selectionIndexes { NSMutableIndexSet *r = [NSMutableIndexSet indexSet]; for (NSIndexPath *p in _selection) if ([p section] == 0) [r addIndex:[p item]]; return r; }
+- (void)selectItemsAtIndexPaths:(NSSet *)p scrollPosition:(NSUInteger)pos {
+  NSMutableSet *n = _multiple ? [NSMutableSet setWithSet:_selection] : [NSMutableSet set]; [n unionSet:p]; [self setSelectionIndexPaths:n]; }
+- (void)deselectItemsAtIndexPaths:(NSSet *)p { NSMutableSet *n = [NSMutableSet setWithSet:_selection]; [n minusSet:p]; [self setSelectionIndexPaths:n]; }
+- (void)selectAll:(id)s {
+  if (!_selectable || !_multiple) return;
+  NSMutableSet *all = [NSMutableSet set]; for (NSInteger sec = 0; sec < [self numberOfSections]; sec++) for (NSInteger i = 0; i < [self numberOfItemsInSection:sec]; i++) [all addObject:[NSIndexPath indexPathForItem:i inSection:sec]];
+  [self setSelectionIndexPaths:all];
+  if ([_delegate respondsToSelector:@selector(collectionView:didSelectItemsAtIndexPaths:)]) [_delegate collectionView:self didSelectItemsAtIndexPaths:all]; }
+- (void)deselectAll:(id)s {
+  NSSet *old = [NSSet setWithSet:_selection]; if (![old count]) return;
+  [self setSelectionIndexPaths:[NSSet set]];
+  if ([_delegate respondsToSelector:@selector(collectionView:didDeselectItemsAtIndexPaths:)]) [_delegate collectionView:self didDeselectItemsAtIndexPaths:old]; }
+/* ---- layout: the items that intersect the visible rectangle are created, the others are queued for reuse */
+- (void)layout {
+  if (!_layout || !_dataSource) return;
+  [_layout invalidateLayout]; _layout->_valid = NO;
+  NSSize content = [_layout collectionViewContentSize];
+  if ([_superview isKindOfClass:[NSClipView class]]) {
+    /* inside a scroll view the view is at least as large as the clip view along the cross axis and as the content along the scroll axis */
+    NSSize clip = [_superview bounds].size; BOOL vert = !([_layout isKindOfClass:[NSCollectionViewFlowLayout class]] && ((NSCollectionViewFlowLayout *)_layout)->_dir == 1);
+    NSSize want = vert ? NSMakeSize(clip.width, fmax(content.height, clip.height)) : NSMakeSize(fmax(content.width, clip.width), clip.height);
+    if (!NSEqualSizes(_frame.size, want)) { [self setFrameSize:want]; _layout->_valid = NO; content = [_layout collectionViewContentSize]; } }
+  for (NSInteger s = 0; s < [self numberOfSections]; s++) [self numberOfItemsInSection:s];
+  NSRect vis = _window ? [self visibleRect] : _bounds; if (NSIsEmptyRect(vis)) vis = _bounds;
+  NSArray *want = [_layout layoutAttributesForElementsInRect:vis]; NSMutableSet *keep = [NSMutableSet set];
+  for (NSCollectionViewLayoutAttributes *a in want) {
+    [keep addObject:a->_path]; NSCollectionViewItem *it = _visible[a->_path];
+    if (!it) {
+      it = [_dataSource respondsToSelector:@selector(collectionView:itemForRepresentedObjectAtIndexPath:)] ? [_dataSource collectionView:self itemForRepresentedObjectAtIndexPath:a->_path] : nil;
+      if (!it) continue;
+      it->_cv = self; _visible[a->_path] = it; [self addSubview:[it view]]; [it setSelected:[_selection containsObject:a->_path]]; }
+    if (!NSEqualRects([[it view] frame], a->_frame)) [[it view] setFrame:a->_frame]; }
+  for (NSIndexPath *p in [_visible allKeys]) if (![keep containsObject:p]) {
+    NSCollectionViewItem *it = _visible[p]; [[it view] removeFromSuperview]; [_visible removeObjectForKey:p];
+    NSString *key = @"cell"; for (NSString *k in _classes) if ([it isKindOfClass:_classes[k]]) key = k;
+    NSMutableArray *q = _reuse[key]; if (!q) { q = [NSMutableArray array]; _reuse[key] = q; } [q addObject:it]; } }
+- (void)setFrame:(NSRect)f { [super setFrame:f]; [_layout invalidateLayout]; [self setNeedsLayout:YES]; }
+- (void)viewDidMoveToWindow { [super viewDidMoveToWindow]; [self setNeedsLayout:YES]; }
+- (void)drawRect:(NSRect)r { NSColor *c = [_bg firstObject]; if (c) { [c setFill]; NSRectFill(_bounds); } }
+- (void)mouseDown:(NSEvent *)e {
+  if (!_selectable) return;
+  NSIndexPath *p = [self indexPathForItemAtPoint:[self convertPoint:[e locationInWindow] fromView:nil]];
+  NSSet *old = [NSSet setWithSet:_selection];
+  if (!p) { if (_empty && [old count]) { [self setSelectionIndexPaths:[NSSet set]]; if ([_delegate respondsToSelector:@selector(collectionView:didDeselectItemsAtIndexPaths:)]) [_delegate collectionView:self didDeselectItemsAtIndexPaths:old]; } return; }
+  NSSet *one = [NSSet setWithObject:p];
+  if ([_delegate respondsToSelector:@selector(collectionView:shouldSelectItemsAtIndexPaths:)] && ![_delegate collectionView:self shouldSelectItemsAtIndexPaths:one]) return;
+  BOOL ext = _multiple && ([e modifierFlags] & (NSEventModifierFlagCommand | NSEventModifierFlagShift));
+  if (ext && [_selection containsObject:p]) { [self deselectItemsAtIndexPaths:one]; if ([_delegate respondsToSelector:@selector(collectionView:didDeselectItemsAtIndexPaths:)]) [_delegate collectionView:self didDeselectItemsAtIndexPaths:one]; }
+  else { [self selectItemsAtIndexPaths:ext ? one : one scrollPosition:0]; if ([_delegate respondsToSelector:@selector(collectionView:didSelectItemsAtIndexPaths:)]) [_delegate collectionView:self didSelectItemsAtIndexPaths:one]; } }
+@end

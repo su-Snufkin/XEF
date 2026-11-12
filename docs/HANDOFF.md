@@ -802,3 +802,18 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `_NSKeyValueWillChangeBySetting` w Foundation Darlinga (argument `self` dostaje śmieci: `x1 = 0xe00001683`; typedefy wskaźników
   funkcji zgadzają się z definicjami, więc to nie zła sygnatura — zacznij od `NSKeyValueIvarSetter makeNSKVONotifying`). `NSUndoManager.prepareWithInvocationTarget:` Darlinga zwraca samego siebie, więc
   metody NSObject (np. `setValue:forKey:`) nie są rejestrowane — prawdziwy AppKit zwraca proxy.
+
+### 9. NSMatrix i NSCollectionView (2026-11-12)
+- **NSMatrix** (`AppKitModel.m`, zgodny z Makiem, `appkit_matrix.m`): tryby radio/highlight/list/track, budowa z prototypu lub klasy
+  komórki, reguły zaznaczania zmierzone na Macu (radio zaznacza pierwszą komórkę i nie dopuszcza pustego zaznaczenia, `deselectAllCells`
+  jest wtedy ignorowane, tryb list zastępuje zaznaczenie, `renewRows:columns:` nie zmniejsza tablicy komórek), geometria, edycje
+  wierszy/kolumn, target/action/doubleAction macierzy. Metryki tekstu różnią się między platformami, więc test ustawia `cellSize`.
+- **NSCollectionView + NSCollectionViewFlowLayout + NSCollectionViewItem + NSCollectionViewLayoutAttributes** (`appkit_collection.m`):
+  elementy tworzone leniwie przy layoucie (kolejność wywołań źródła danych: `sections count0 count1 item0.0 …`), przepływ pionowy i
+  poziomy ze **wspólnym rozkładem wolnego miejsca między elementy** (np. 3 elementy 80 pt w 296 pt: x = 12/120/228), wstawki sekcji
+  powtarzane dla każdej sekcji, ponowne pobranie wszystkich elementów po `reloadData`, selekcja z flagą `selected` elementów, delegat
+  wołany tylko przy akcjach użytkownika (`deselectAll:` woła `didDeselect…`). W NSScrollView widok ma rozmiar co najmniej klipa wzdłuż
+  osi poprzecznej i treści wzdłuż osi przewijania. Bez okna prawdziwy AppKit w ogóle nie robi layoutu — test używa okna.
+- **Testy z oknem wymagają `DISPLAY`** (np. `DISPLAY=:7 tests/darwin/macref.sh appkit_collection`; `Xvfb :7 -screen 0 1280x800x24`).
+  Mac przez ssh pozwala na okna (`defer:NO`, `orderFront:`), ale nie ma `timeout` — kończ test `_exit(0)`.
+- Stan: **4422 z 8257** metod prawdziwych (54%), atrap 3997 (179 klas); `macref.sh` 80/81.
