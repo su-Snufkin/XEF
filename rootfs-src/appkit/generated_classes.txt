@@ -41,7 +41,6 @@ NSComboButton
 NSDataAsset
 NSDictionaryController
 NSDictionaryControllerKeyValuePair
-NSDiffableDataSourceSnapshot
 NSDockTile
 NSDraggingImageComponent
 NSDraggingItem
@@ -106,7 +105,6 @@ NSSharingServicePickerTouchBarItem
 NSSliderAccessory
 NSSliderTouchBarItem
 NSSpeechRecognizer
-NSSpeechSynthesizer
 NSSplitViewItemAccessoryViewController
 NSStatusBarButton
 NSStepperTouchBarItem
@@ -149,7 +147,6 @@ NSViewLayoutRegion
 NSWindowTab
 NSWindowTabGroup
 NSWorkspaceAuthorization
-NSWorkspaceOpenConfiguration
 NSWritingToolsCoordinator
 NSWritingToolsCoordinatorAnimationParameters
 NSWritingToolsCoordinatorContext

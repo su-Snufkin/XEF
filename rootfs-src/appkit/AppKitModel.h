@@ -215,3 +215,19 @@
 @end
 @interface NSPrinter : NSObject { @public NSString *_name, *_type; }
 @end
+
+/* NSDiffableDataSourceSnapshot: ordered sections of unique item identifiers; NSWorkspaceOpenConfiguration: a settings bag */
+@interface NSDiffableDataSourceSnapshot : NSObject <NSCopying> { @public NSMutableArray *_secs; NSMutableDictionary *_items; }
+- (NSInteger)numberOfItems; - (NSInteger)numberOfSections;
+@end
+@interface NSWorkspaceOpenConfiguration : NSObject <NSCopying> {
+@public
+  BOOL _prompts, _recents, _activates, _hides, _hidesOthers, _printing, _newInstance, _substitution, _universal; NSArray *_args; NSDictionary *_env; id _event; NSInteger _arch;
+}
++ (id)configuration;
+@end
+
+/* NSSpeechSynthesizer: speaking is timed (words / rate); no audio is produced */
+@interface NSSpeechSynthesizer : NSObject { @public id _delegate; NSString *_voice; float _rate, _volume; BOOL _speaking, _feedback; NSTimer *_timer; NSMutableDictionary *_props; }
+- (BOOL)startSpeakingString:(NSString *)s; - (void)stopSpeaking; - (BOOL)isSpeaking;
+@end

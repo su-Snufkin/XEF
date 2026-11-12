@@ -188,8 +188,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSDictionaryController @end
 @interface NSDictionaryControllerKeyValuePair : NSObject @end
 @implementation NSDictionaryControllerKeyValuePair @end
-@interface NSDiffableDataSourceSnapshot : NSObject @end
-@implementation NSDiffableDataSourceSnapshot @end
 @interface NSDockTile : NSObject @end
 @implementation NSDockTile @end
 @interface NSDraggingImageComponent : NSObject @end
@@ -318,8 +316,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSSliderTouchBarItem @end
 @interface NSSpeechRecognizer : NSObject @end
 @implementation NSSpeechRecognizer @end
-@interface NSSpeechSynthesizer : NSObject @end
-@implementation NSSpeechSynthesizer @end
 @interface NSSplitViewItemAccessoryViewController : NSViewController @end
 @implementation NSSplitViewItemAccessoryViewController @end
 @interface NSStatusBarButton : NSButton @end
@@ -404,8 +400,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSWindowTabGroup @end
 @interface NSWorkspaceAuthorization : NSObject @end
 @implementation NSWorkspaceAuthorization @end
-@interface NSWorkspaceOpenConfiguration : NSObject @end
-@implementation NSWorkspaceOpenConfiguration @end
 @interface NSWritingToolsCoordinator : NSObject @end
 @implementation NSWritingToolsCoordinator @end
 @interface NSWritingToolsCoordinatorAnimationParameters : NSObject @end
@@ -1003,31 +997,6 @@ static const GenEntry kTable[] = {
 {"NSDictionaryControllerKeyValuePair", '-', "setLocalizedKey:", 'S', 'v', "@"},
 {"NSDictionaryControllerKeyValuePair", '-', "setValue:", 'S', 'v', "@"},
 {"NSDictionaryControllerKeyValuePair", '-', "value", 'G', '@', ""},
-{"NSDiffableDataSourceSnapshot", '-', "appendItemsWithIdentifiers:", 'D', 'v', "@"},
-{"NSDiffableDataSourceSnapshot", '-', "appendItemsWithIdentifiers:intoSectionWithIdentifier:", 'D', 'v', "@q"},
-{"NSDiffableDataSourceSnapshot", '-', "appendSectionsWithIdentifiers:", 'D', 'v', "@"},
-{"NSDiffableDataSourceSnapshot", '-', "deleteAllItems", 'D', 'v', ""},
-{"NSDiffableDataSourceSnapshot", '-', "deleteItemsWithIdentifiers:", 'D', 'v', "@"},
-{"NSDiffableDataSourceSnapshot", '-', "deleteSectionsWithIdentifiers:", 'D', 'v', "@"},
-{"NSDiffableDataSourceSnapshot", '-', "indexOfItemIdentifier:", 'D', 'q', "q"},
-{"NSDiffableDataSourceSnapshot", '-', "indexOfSectionIdentifier:", 'D', 'q', "q"},
-{"NSDiffableDataSourceSnapshot", '-', "insertItemsWithIdentifiers:afterItemWithIdentifier:", 'D', 'v', "@q"},
-{"NSDiffableDataSourceSnapshot", '-', "insertItemsWithIdentifiers:beforeItemWithIdentifier:", 'D', 'v', "@q"},
-{"NSDiffableDataSourceSnapshot", '-', "insertSectionsWithIdentifiers:afterSectionWithIdentifier:", 'D', 'v', "@q"},
-{"NSDiffableDataSourceSnapshot", '-', "insertSectionsWithIdentifiers:beforeSectionWithIdentifier:", 'D', 'v', "@q"},
-{"NSDiffableDataSourceSnapshot", '-', "itemIdentifiers", 'D', 'A', ""},
-{"NSDiffableDataSourceSnapshot", '-', "itemIdentifiersInSectionWithIdentifier:", 'D', 'A', "q"},
-{"NSDiffableDataSourceSnapshot", '-', "moveItemWithIdentifier:afterItemWithIdentifier:", 'D', 'v', "qq"},
-{"NSDiffableDataSourceSnapshot", '-', "moveItemWithIdentifier:beforeItemWithIdentifier:", 'D', 'v', "qq"},
-{"NSDiffableDataSourceSnapshot", '-', "moveSectionWithIdentifier:afterSectionWithIdentifier:", 'D', 'v', "qq"},
-{"NSDiffableDataSourceSnapshot", '-', "moveSectionWithIdentifier:beforeSectionWithIdentifier:", 'D', 'v', "qq"},
-{"NSDiffableDataSourceSnapshot", '-', "numberOfItems", 'D', 'q', ""},
-{"NSDiffableDataSourceSnapshot", '-', "numberOfItemsInSection:", 'D', 'q', "q"},
-{"NSDiffableDataSourceSnapshot", '-', "numberOfSections", 'D', 'q', ""},
-{"NSDiffableDataSourceSnapshot", '-', "reloadItemsWithIdentifiers:", 'D', 'v', "@"},
-{"NSDiffableDataSourceSnapshot", '-', "reloadSectionsWithIdentifiers:", 'D', 'v', "@"},
-{"NSDiffableDataSourceSnapshot", '-', "sectionIdentifierForSectionContainingItemIdentifier:", 'D', 'q', "q"},
-{"NSDiffableDataSourceSnapshot", '-', "sectionIdentifiers", 'D', 'A', ""},
 {"NSDockTile", '-', "badgeLabel", 'G', '@', ""},
 {"NSDockTile", '-', "contentView", 'G', '@', ""},
 {"NSDockTile", '-', "display", 'D', 'v', ""},
@@ -2088,32 +2057,6 @@ static const GenEntry kTable[] = {
 {"NSSpeechRecognizer", '-', "setListensInForegroundOnly:", 'S', 'v', "B"},
 {"NSSpeechRecognizer", '-', "startListening", 'D', 'v', ""},
 {"NSSpeechRecognizer", '-', "stopListening", 'D', 'v', ""},
-{"NSSpeechSynthesizer", '+', "attributesForVoice:", 'D', 'M', "q"},
-{"NSSpeechSynthesizer", '+', "availableVoices", 'D', 'A', ""},
-{"NSSpeechSynthesizer", '+', "defaultVoice", 'D', 'q', ""},
-{"NSSpeechSynthesizer", '+', "isAnyApplicationSpeaking", 'D', 'B', ""},
-{"NSSpeechSynthesizer", '-', "addSpeechDictionary:", 'D', 'v', "@"},
-{"NSSpeechSynthesizer", '-', "continueSpeaking", 'D', 'v', ""},
-{"NSSpeechSynthesizer", '-', "delegate", 'G', '@', ""},
-{"NSSpeechSynthesizer", '-', "initWithVoice:", 'I', '@', "q"},
-{"NSSpeechSynthesizer", '-', "isSpeaking", 'D', 'B', ""},
-{"NSSpeechSynthesizer", '-', "objectForProperty:error:", 'D', '@', "q@"},
-{"NSSpeechSynthesizer", '-', "pauseSpeakingAtBoundary:", 'D', 'v', "q"},
-{"NSSpeechSynthesizer", '-', "phonemesFromText:", 'D', '@', "@"},
-{"NSSpeechSynthesizer", '-', "rate", 'G', 'f', ""},
-{"NSSpeechSynthesizer", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSSpeechSynthesizer", '-', "setObject:forProperty:error:", 'D', 'B', "@q@"},
-{"NSSpeechSynthesizer", '-', "setRate:", 'S', 'v', "f"},
-{"NSSpeechSynthesizer", '-', "setUsesFeedbackWindow:", 'S', 'v', "B"},
-{"NSSpeechSynthesizer", '-', "setVoice:", 'D', 'B', "q"},
-{"NSSpeechSynthesizer", '-', "setVolume:", 'S', 'v', "f"},
-{"NSSpeechSynthesizer", '-', "startSpeakingString:", 'D', 'B', "@"},
-{"NSSpeechSynthesizer", '-', "startSpeakingString:toURL:", 'D', 'B', "@@"},
-{"NSSpeechSynthesizer", '-', "stopSpeaking", 'D', 'v', ""},
-{"NSSpeechSynthesizer", '-', "stopSpeakingAtBoundary:", 'D', 'v', "q"},
-{"NSSpeechSynthesizer", '-', "usesFeedbackWindow", 'G', 'B', ""},
-{"NSSpeechSynthesizer", '-', "voice", 'G', 'q', ""},
-{"NSSpeechSynthesizer", '-', "volume", 'G', 'f', ""},
 {"NSSpellChecker", '+', "isAutomaticCapitalizationEnabled", 'D', 'B', ""},
 {"NSSpellChecker", '+', "isAutomaticDashSubstitutionEnabled", 'D', 'B', ""},
 {"NSSpellChecker", '+', "isAutomaticInlinePredictionEnabled", 'D', 'B', ""},
@@ -2839,33 +2782,6 @@ static const GenEntry kTable[] = {
 {"NSWindowTabGroup", '-', "setSelectedWindow:", 'S', 'v', "@"},
 {"NSWindowTabGroup", '-', "windows", 'D', 'A', ""},
 {"NSWorkspaceAuthorization", '-', "requestAuthorizationOfType:completionHandler:", 'D', 'v', "q@"},
-{"NSWorkspaceOpenConfiguration", '+', "configuration", 'F', '@', ""},
-{"NSWorkspaceOpenConfiguration", '-', "activates", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "addsToRecentItems", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "allowsRunningApplicationSubstitution", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "appleEvent", 'G', '@', ""},
-{"NSWorkspaceOpenConfiguration", '-', "architecture", 'G', 'q', ""},
-{"NSWorkspaceOpenConfiguration", '-', "arguments", 'G', 'A', ""},
-{"NSWorkspaceOpenConfiguration", '-', "createsNewApplicationInstance", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "environment", 'G', 'M', ""},
-{"NSWorkspaceOpenConfiguration", '-', "hides", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "hidesOthers", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "isForPrinting", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "promptsUserIfNeeded", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "requiresUniversalLinks", 'G', 'B', ""},
-{"NSWorkspaceOpenConfiguration", '-', "setActivates:", 'S', 'v', "B"},
-{"NSWorkspaceOpenConfiguration", '-', "setAddsToRecentItems:", 'S', 'v', "B"},
-{"NSWorkspaceOpenConfiguration", '-', "setAllowsRunningApplicationSubstitution:", 'S', 'v', "B"},
-{"NSWorkspaceOpenConfiguration", '-', "setAppleEvent:", 'S', 'v', "@"},
-{"NSWorkspaceOpenConfiguration", '-', "setArchitecture:", 'S', 'v', "q"},
-{"NSWorkspaceOpenConfiguration", '-', "setArguments:", 'S', 'v', "@"},
-{"NSWorkspaceOpenConfiguration", '-', "setCreatesNewApplicationInstance:", 'S', 'v', "B"},
-{"NSWorkspaceOpenConfiguration", '-', "setEnvironment:", 'S', 'v', "@"},
-{"NSWorkspaceOpenConfiguration", '-', "setForPrinting:", 'S', 'v', "B"},
-{"NSWorkspaceOpenConfiguration", '-', "setHides:", 'S', 'v', "B"},
-{"NSWorkspaceOpenConfiguration", '-', "setHidesOthers:", 'S', 'v', "B"},
-{"NSWorkspaceOpenConfiguration", '-', "setPromptsUserIfNeeded:", 'S', 'v', "B"},
-{"NSWorkspaceOpenConfiguration", '-', "setRequiresUniversalLinks:", 'S', 'v', "B"},
 {"NSWritingToolsCoordinator", '+', "isWritingToolsAvailable", 'D', 'B', ""},
 {"NSWritingToolsCoordinator", '-', "behavior", 'D', 'q', ""},
 {"NSWritingToolsCoordinator", '-', "decorationContainerView", 'G', '@', ""},
@@ -2917,13 +2833,10 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSTextContentManager", "automaticallySynchronizesTextLayoutManagers", 'B', "1"},
 {"NSTextLayoutManager", "usesFontLeading", 'B', "1"},
 {"NSUserInterfaceCompressionOptions", "isEmpty", 'B', "1"},
-{"NSWorkspaceOpenConfiguration", "promptsUserIfNeeded", 'B', "1"},
-{"NSWorkspaceOpenConfiguration", "allowsRunningApplicationSubstitution", 'B', "1"},
-{"NSWorkspaceOpenConfiguration", "architecture", 'q', "4294967295"},
 {"NSWritingToolsCoordinator", "behavior", 'q', "1"},
 {"NSWritingToolsCoordinator", "resultOptions", 'q', "15"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 21;
+const unsigned long kDefaultsCount = 18;
 
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }

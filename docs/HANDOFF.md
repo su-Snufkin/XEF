@@ -1054,3 +1054,12 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   Klasy, których nie da się utworzyć przez `init` (wymagają specjalnych inicjalizatorów), nie mają przechwyconych wartości.
 - Stan: **5836 z 8257** metod prawdziwych (bez zmian; atrapy wiernie odpowiadają); `macref.sh` 45/45.
 
+### 34. NSDiffableDataSourceSnapshot, NSWorkspaceOpenConfiguration, NSSpeechSynthesizer (2026-11-12)
+- **NSDiffableDataSourceSnapshot** (`AppKitModel.m`, `appkit_snapshot.m` zgodny z Makiem): uporządkowane sekcje z unikalnymi identyfikatorami elementów — dołączanie/wstawianie/przenoszenie/usuwanie elementów i sekcji
+  (elementy przenoszone między sekcjami zmieniają sekcję, `appendItems…` bez sekcji trafia do ostatniej, usuwanie sekcji kasuje jej elementy, `deleteAllItems` kasuje też sekcje, nieistniejące identyfikatory są pomijane;
+  na Macu `reloadItems…` z nieznanym identyfikatorem rzuca wyjątek — tu jest pusta). Nie jest podpięty do `NSTableView`/`NSCollectionView` (brak `NSCollectionViewDiffableDataSource`).
+- **NSWorkspaceOpenConfiguration**: prawdziwy pojemnik ustawień z domyślnymi wartościami Maca (prompts/recents/activates/substitution = YES, architektura 0xFFFFFFFF). **Nie wpływa** na `NSWorkspace` (`openURL:configuration:…` ignoruje go).
+- **NSSpeechSynthesizer** (`appkit_speech.m` zgodny z Makiem): mówienie jest tylko mierzone w czasie (słowa / tempo), **bez dźwięku** (brak syntezatora mowy na hoście); `startSpeakingString:` zwraca NO dla pustego tekstu,
+  `stopSpeaking` ustawia `isSpeaking` na NO od razu, a `didFinishSpeaking:NO` przychodzi w następnym obiegu run loopa; `defaultVoice` to na stałe `com.apple.speech.synthesis.voice.Alex`.
+- Stan: **5914 z 8257** metod prawdziwych; `macref.sh` 47/47; pełny `run_tests.sh` przechodzi.
+

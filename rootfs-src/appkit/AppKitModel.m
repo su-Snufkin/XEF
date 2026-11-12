@@ -1656,3 +1656,75 @@ static BOOL g_auto_customize;
 - (NSRect)rectForKey:(NSString *)k inTable:(NSString *)t { return NSZeroRect; } - (NSSize)sizeForKey:(NSString *)k inTable:(NSString *)t { return NSZeroSize; } - (NSString *)stringForKey:(NSString *)k inTable:(NSString *)t { return nil; } - (NSArray *)stringListForKey:(NSString *)k inTable:(NSString *)t { return nil; }
 - (NSRect)imageRectForPaper:(NSString *)p { return NSMakeRect(0, 0, 612, 792); }
 @end
+
+/* ================================================================== NSDiffableDataSourceSnapshot / NSWorkspaceOpenConfiguration */
+@implementation NSDiffableDataSourceSnapshot
+- (id)init { if ((self = [super init])) { _secs = [[NSMutableArray alloc] init]; _items = [[NSMutableDictionary alloc] init]; } return self; }
+- (void)dealloc { [_secs release]; [_items release]; [super dealloc]; }
+- (id)copyWithZone:(NSZone *)z { NSDiffableDataSourceSnapshot *c = [[NSDiffableDataSourceSnapshot alloc] init]; [c->_secs setArray:_secs]; for (id k in _items) c->_items[k] = [NSMutableArray arrayWithArray:_items[k]]; return c; }
+- (NSInteger)numberOfSections { return [_secs count]; } - (NSArray *)sectionIdentifiers { return [NSArray arrayWithArray:_secs]; }
+- (NSArray *)itemIdentifiers { NSMutableArray *a = [NSMutableArray array]; for (id s in _secs) [a addObjectsFromArray:_items[s]]; return a; }
+- (NSInteger)numberOfItems { return [[self itemIdentifiers] count]; }
+- (NSInteger)numberOfItemsInSection:(id)s { return [_items[s] count]; }
+- (NSArray *)itemIdentifiersInSectionWithIdentifier:(id)s { return [NSArray arrayWithArray:_items[s] ?: @[]]; }
+- (id)sectionIdentifierForSectionContainingItemIdentifier:(id)i { for (id s in _secs) if ([_items[s] containsObject:i]) return s; return nil; }
+- (NSInteger)indexOfItemIdentifier:(id)i { NSUInteger k = [[self itemIdentifiers] indexOfObject:i]; return k == NSNotFound ? NSNotFound : (NSInteger)k; }
+- (NSInteger)indexOfSectionIdentifier:(id)s { NSUInteger k = [_secs indexOfObject:s]; return k == NSNotFound ? NSNotFound : (NSInteger)k; }
+- (void)appendItemsWithIdentifiers:(NSArray *)ids { id s = [_secs lastObject]; if (s) [self appendItemsWithIdentifiers:ids intoSectionWithIdentifier:s]; }
+- (void)appendItemsWithIdentifiers:(NSArray *)ids intoSectionWithIdentifier:(id)s { NSMutableArray *a = _items[s]; if (!a) return; for (id i in ids) if ([self indexOfItemIdentifier:i] == NSNotFound) [a addObject:i]; }
+- (void)_xefInsert:(NSArray *)ids at:(id)ref after:(BOOL)after {
+  id s = [self sectionIdentifierForSectionContainingItemIdentifier:ref]; if (!s) return; NSMutableArray *a = _items[s]; NSUInteger k = [a indexOfObject:ref] + (after ? 1 : 0);
+  for (id i in ids) if ([self indexOfItemIdentifier:i] == NSNotFound) [a insertObject:i atIndex:k++]; }
+- (void)insertItemsWithIdentifiers:(NSArray *)ids beforeItemWithIdentifier:(id)r { [self _xefInsert:ids at:r after:NO]; } - (void)insertItemsWithIdentifiers:(NSArray *)ids afterItemWithIdentifier:(id)r { [self _xefInsert:ids at:r after:YES]; }
+- (void)deleteItemsWithIdentifiers:(NSArray *)ids { for (id s in _secs) [_items[s] removeObjectsInArray:ids]; }
+- (void)deleteAllItems { [_secs removeAllObjects]; [_items removeAllObjects]; }
+- (void)_xefMoveItem:(id)i ref:(id)r after:(BOOL)after { if ([i isEqual:r] || [self indexOfItemIdentifier:i] == NSNotFound || [self indexOfItemIdentifier:r] == NSNotFound) return; [self deleteItemsWithIdentifiers:@[i]]; [self _xefInsert:@[i] at:r after:after]; }
+- (void)moveItemWithIdentifier:(id)i beforeItemWithIdentifier:(id)r { [self _xefMoveItem:i ref:r after:NO]; } - (void)moveItemWithIdentifier:(id)i afterItemWithIdentifier:(id)r { [self _xefMoveItem:i ref:r after:YES]; }
+- (void)reloadItemsWithIdentifiers:(NSArray *)ids {} - (void)reloadSectionsWithIdentifiers:(NSArray *)ids {}
+- (void)appendSectionsWithIdentifiers:(NSArray *)ids { for (id s in ids) if (![_secs containsObject:s]) { [_secs addObject:s]; _items[s] = [NSMutableArray array]; } }
+- (void)_xefInsertSections:(NSArray *)ids at:(id)ref after:(BOOL)after { NSUInteger k = [_secs indexOfObject:ref]; if (k == NSNotFound) return; if (after) k++; for (id s in ids) if (![_secs containsObject:s]) { [_secs insertObject:s atIndex:k++]; _items[s] = [NSMutableArray array]; } }
+- (void)insertSectionsWithIdentifiers:(NSArray *)ids beforeSectionWithIdentifier:(id)r { [self _xefInsertSections:ids at:r after:NO]; } - (void)insertSectionsWithIdentifiers:(NSArray *)ids afterSectionWithIdentifier:(id)r { [self _xefInsertSections:ids at:r after:YES]; }
+- (void)deleteSectionsWithIdentifiers:(NSArray *)ids { for (id s in ids) { [_secs removeObject:s]; [_items removeObjectForKey:s]; } }
+- (void)_xefMoveSection:(id)s ref:(id)r after:(BOOL)after { if ([s isEqual:r] || ![_secs containsObject:s] || ![_secs containsObject:r]) return; [_secs removeObject:s]; NSUInteger k = [_secs indexOfObject:r] + (after ? 1 : 0); [_secs insertObject:s atIndex:k]; }
+- (void)moveSectionWithIdentifier:(id)s beforeSectionWithIdentifier:(id)r { [self _xefMoveSection:s ref:r after:NO]; } - (void)moveSectionWithIdentifier:(id)s afterSectionWithIdentifier:(id)r { [self _xefMoveSection:s ref:r after:YES]; }
+@end
+@implementation NSWorkspaceOpenConfiguration
++ (id)configuration { return [[[self alloc] init] autorelease]; }
+- (id)init { if ((self = [super init])) { _prompts = _recents = _activates = _substitution = YES; _arch = 4294967295; _args = [@[] retain]; _env = [@{} retain]; } return self; }
+- (void)dealloc { [_args release]; [_env release]; [_event release]; [super dealloc]; }
+- (id)copyWithZone:(NSZone *)z { NSWorkspaceOpenConfiguration *c = [[NSWorkspaceOpenConfiguration alloc] init]; c->_prompts = _prompts; c->_recents = _recents; c->_activates = _activates; c->_hides = _hides; c->_hidesOthers = _hidesOthers; c->_printing = _printing; c->_newInstance = _newInstance; c->_substitution = _substitution; c->_universal = _universal; c->_arch = _arch; [c setArguments:_args]; [c setEnvironment:_env]; return c; }
+- (BOOL)promptsUserIfNeeded { return _prompts; } - (void)setPromptsUserIfNeeded:(BOOL)f { _prompts = f; } - (BOOL)addsToRecentItems { return _recents; } - (void)setAddsToRecentItems:(BOOL)f { _recents = f; }
+- (BOOL)activates { return _activates; } - (void)setActivates:(BOOL)f { _activates = f; } - (BOOL)hides { return _hides; } - (void)setHides:(BOOL)f { _hides = f; } - (BOOL)hidesOthers { return _hidesOthers; } - (void)setHidesOthers:(BOOL)f { _hidesOthers = f; }
+- (BOOL)isForPrinting { return _printing; } - (void)setForPrinting:(BOOL)f { _printing = f; } - (BOOL)createsNewApplicationInstance { return _newInstance; } - (void)setCreatesNewApplicationInstance:(BOOL)f { _newInstance = f; }
+- (BOOL)allowsRunningApplicationSubstitution { return _substitution; } - (void)setAllowsRunningApplicationSubstitution:(BOOL)f { _substitution = f; } - (BOOL)requiresUniversalLinks { return _universal; } - (void)setRequiresUniversalLinks:(BOOL)f { _universal = f; }
+- (NSArray *)arguments { return _args; } - (void)setArguments:(NSArray *)a { [a retain]; [_args release]; _args = a ?: [@[] retain]; } - (NSDictionary *)environment { return _env; } - (void)setEnvironment:(NSDictionary *)e { [e retain]; [_env release]; _env = e ?: [@{} retain]; }
+- (id)appleEvent { return _event; } - (void)setAppleEvent:(id)e { [e retain]; [_event release]; _event = e; } - (NSInteger)architecture { return _arch; } - (void)setArchitecture:(NSInteger)a { _arch = a; }
+@end
+
+/* ================================================================== NSSpeechSynthesizer */
+static NSInteger g_speaking_count;
+@interface NSObject (XEFSpeechDelegate) - (void)speechSynthesizer:(id)s didFinishSpeaking:(BOOL)ok; @end
+@implementation NSSpeechSynthesizer
++ (NSString *)defaultVoice { return @"com.apple.speech.synthesis.voice.Alex"; } + (NSArray *)availableVoices { return @[[self defaultVoice]]; }
++ (NSDictionary *)attributesForVoice:(NSString *)v { return @{ @"VoiceName": [[v componentsSeparatedByString:@"."] lastObject] ?: @"", @"VoiceIdentifier": v ?: @"", @"VoiceLocaleIdentifier": @"en_US", @"VoiceGender": @"VoiceGenderMale" }; }
++ (BOOL)isAnyApplicationSpeaking { return g_speaking_count > 0; }
+- (id)init { return [self initWithVoice:nil]; }
+- (id)initWithVoice:(NSString *)v { if ((self = [super init])) { _voice = [v ?: [NSSpeechSynthesizer defaultVoice] copy]; _rate = 175; _volume = 1; _props = [[NSMutableDictionary alloc] init]; } return self; }
+- (void)dealloc { [_timer invalidate]; [_voice release]; [_props release]; [super dealloc]; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (NSString *)voice { return _voice; } - (BOOL)setVoice:(NSString *)v { [_voice release]; _voice = [v ?: [NSSpeechSynthesizer defaultVoice] copy]; return YES; }
+- (float)rate { return _rate; } - (void)setRate:(float)r { _rate = r; } - (float)volume { return _volume; } - (void)setVolume:(float)v { _volume = v; }
+- (BOOL)usesFeedbackWindow { return _feedback; } - (void)setUsesFeedbackWindow:(BOOL)f { _feedback = f; }
+- (BOOL)isSpeaking { return _speaking; }
+- (void)_xefDone:(NSNumber *)ok { if ([_delegate respondsToSelector:@selector(speechSynthesizer:didFinishSpeaking:)]) [_delegate speechSynthesizer:self didFinishSpeaking:[ok boolValue]]; }
+- (void)_xefFinish { _timer = nil; if (_speaking) { _speaking = NO; g_speaking_count--; [self _xefDone:@YES]; } }
+- (BOOL)startSpeakingString:(NSString *)s {
+  if (![s length]) return NO; if (_speaking) [self stopSpeaking];
+  NSUInteger words = [[s componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] count]; NSTimeInterval d = MAX(0.2, words * 60.0 / MAX(_rate, 20.0));
+  _speaking = YES; g_speaking_count++; _timer = [NSTimer scheduledTimerWithTimeInterval:d target:self selector:@selector(_xefFinish) userInfo:nil repeats:NO]; return YES; }
+- (BOOL)startSpeakingString:(NSString *)s toURL:(NSURL *)u { return [self startSpeakingString:s]; }
+- (void)stopSpeaking { if (!_speaking) return; [_timer invalidate]; _timer = nil; _speaking = NO; g_speaking_count--; [self performSelector:@selector(_xefDone:) withObject:@NO afterDelay:0]; }
+- (void)stopSpeakingAtBoundary:(NSInteger)b { [self stopSpeaking]; } - (void)pauseSpeakingAtBoundary:(NSInteger)b {} - (void)continueSpeaking {}
+- (void)addSpeechDictionary:(NSDictionary *)d {} - (NSString *)phonemesFromText:(NSString *)t { return t; }
+- (id)objectForProperty:(NSString *)p error:(NSError **)e { return _props[p]; } - (BOOL)setObject:(id)o forProperty:(NSString *)p error:(NSError **)e { if (o) _props[p] = o; else [_props removeObjectForKey:p]; return YES; }
+@end
