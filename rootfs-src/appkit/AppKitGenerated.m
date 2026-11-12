@@ -124,12 +124,8 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSBackgroundExtensionView @end
 @interface NSBindingSelectionMarker : NSObject @end
 @implementation NSBindingSelectionMarker @end
-@interface NSButtonTouchBarItem : NSTouchBarItem @end
-@implementation NSButtonTouchBarItem @end
 @interface NSCIImageRep : NSImageRep @end
 @implementation NSCIImageRep @end
-@interface NSCachedImageRep : NSImageRep @end
-@implementation NSCachedImageRep @end
 @interface NSCandidateListTouchBarItem : NSObject @end
 @implementation NSCandidateListTouchBarItem @end
 @interface NSCollectionLayoutAnchor : NSObject @end
@@ -194,8 +190,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSDraggingItem @end
 @interface NSDraggingSession : NSObject @end
 @implementation NSDraggingSession @end
-@interface NSEPSImageRep : NSImageRep @end
-@implementation NSEPSImageRep @end
 @interface NSFilePromiseProvider : NSObject @end
 @implementation NSFilePromiseProvider @end
 @interface NSFilePromiseReceiver : NSObject @end
@@ -262,8 +256,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPageLayout @end
 @interface NSPersistentDocument : NSDocument @end
 @implementation NSPersistentDocument @end
-@interface NSPickerTouchBarItem : NSTouchBarItem @end
-@implementation NSPickerTouchBarItem @end
 @interface NSPopoverTouchBarItem : NSTouchBarItem @end
 @implementation NSPopoverTouchBarItem @end
 @interface NSPredicateEditor : NSRuleEditor @end
@@ -306,8 +298,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSSharingServicePickerTouchBarItem @end
 @interface NSSliderAccessory : NSObject @end
 @implementation NSSliderAccessory @end
-@interface NSSliderTouchBarItem : NSTouchBarItem @end
-@implementation NSSliderTouchBarItem @end
 @interface NSSpeechRecognizer : NSObject @end
 @implementation NSSpeechRecognizer @end
 @interface NSSplitViewItemAccessoryViewController : NSViewController @end
@@ -557,30 +547,9 @@ static const GenEntry kTable[] = {
 {"NSButtonCell", '-', "setKeyEquivalentFont:size:", 'D', 'v', "@d"},
 {"NSButtonCell", '-', "setSound:", 'S', 'v', "@"},
 {"NSButtonCell", '-', "sound", 'G', '@', ""},
-{"NSButtonTouchBarItem", '+', "buttonTouchBarItemWithIdentifier:image:target:action:", 'F', '@', "q@@:"},
-{"NSButtonTouchBarItem", '+', "buttonTouchBarItemWithIdentifier:title:image:target:action:", 'F', '@', "q@@@:"},
-{"NSButtonTouchBarItem", '+', "buttonTouchBarItemWithIdentifier:title:target:action:", 'F', '@', "q@@:"},
-{"NSButtonTouchBarItem", '-', "action", 'G', ':', ""},
-{"NSButtonTouchBarItem", '-', "bezelColor", 'G', '@', ""},
-{"NSButtonTouchBarItem", '-', "customizationLabel", 'G', '@', ""},
-{"NSButtonTouchBarItem", '-', "image", 'G', '@', ""},
-{"NSButtonTouchBarItem", '-', "isEnabled", 'G', 'B', ""},
-{"NSButtonTouchBarItem", '-', "setAction:", 'S', 'v', ":"},
-{"NSButtonTouchBarItem", '-', "setBezelColor:", 'S', 'v', "@"},
-{"NSButtonTouchBarItem", '-', "setCustomizationLabel:", 'S', 'v', "@"},
-{"NSButtonTouchBarItem", '-', "setEnabled:", 'S', 'v', "B"},
-{"NSButtonTouchBarItem", '-', "setImage:", 'S', 'v', "@"},
-{"NSButtonTouchBarItem", '-', "setTarget:", 'S', 'v', "@"},
-{"NSButtonTouchBarItem", '-', "setTitle:", 'S', 'v', "@"},
-{"NSButtonTouchBarItem", '-', "target", 'G', '@', ""},
-{"NSButtonTouchBarItem", '-', "title", 'G', '@', ""},
 {"NSCIImageRep", '+', "imageRepWithCIImage:", 'F', '@', "@"},
 {"NSCIImageRep", '-', "CIImage", 'D', '@', ""},
 {"NSCIImageRep", '-', "initWithCIImage:", 'I', '@', "@"},
-{"NSCachedImageRep", '-', "initWithSize:depth:separate:alpha:", 'I', '@', "SqBB"},
-{"NSCachedImageRep", '-', "initWithWindow:rect:", 'I', '@', "@R"},
-{"NSCachedImageRep", '-', "rect", 'D', 'R', ""},
-{"NSCachedImageRep", '-', "window", 'D', '@', ""},
 {"NSCandidateListTouchBarItem", '-', "allowsCollapsing", 'G', 'B', ""},
 {"NSCandidateListTouchBarItem", '-', "allowsTextInputContextCandidates", 'G', 'B', ""},
 {"NSCandidateListTouchBarItem", '-', "attributedStringForCandidate", 'G', '@', ""},
@@ -972,11 +941,6 @@ static const GenEntry kTable[] = {
 {"NSDraggingSession", '-', "setAnimatesToStartingPositionsOnCancelOrFail:", 'S', 'v', "B"},
 {"NSDraggingSession", '-', "setDraggingFormation:", 'S', 'v', "q"},
 {"NSDraggingSession", '-', "setDraggingLeaderIndex:", 'S', 'v', "q"},
-{"NSEPSImageRep", '+', "imageRepWithData:", 'F', '@', "@"},
-{"NSEPSImageRep", '-', "EPSRepresentation", 'D', '@', ""},
-{"NSEPSImageRep", '-', "boundingBox", 'D', 'R', ""},
-{"NSEPSImageRep", '-', "initWithData:", 'I', '@', "@"},
-{"NSEPSImageRep", '-', "prepareGState", 'D', 'v', ""},
 {"NSEvent", '-', "context", 'D', '@', ""},
 {"NSFileManager", '+', "fileManagerWithAuthorization:", 'F', '@', "@"},
 {"NSFilePromiseProvider", '-', "delegate", 'G', '@', ""},
@@ -1506,36 +1470,6 @@ static const GenEntry kTable[] = {
 {"NSPersistentDocument", '-', "revertToContentsOfURL:ofType:error:", 'D', 'B', "@@@"},
 {"NSPersistentDocument", '-', "setManagedObjectContext:", 'S', 'v', "@"},
 {"NSPersistentDocument", '-', "writeToURL:ofType:forSaveOperation:originalContentsURL:error:", 'D', 'B', "@@q@@"},
-{"NSPickerTouchBarItem", '+', "pickerTouchBarItemWithIdentifier:images:selectionMode:target:action:", 'F', '@', "q@q@:"},
-{"NSPickerTouchBarItem", '+', "pickerTouchBarItemWithIdentifier:labels:selectionMode:target:action:", 'F', '@', "q@q@:"},
-{"NSPickerTouchBarItem", '-', "action", 'G', ':', ""},
-{"NSPickerTouchBarItem", '-', "collapsedRepresentationImage", 'G', '@', ""},
-{"NSPickerTouchBarItem", '-', "collapsedRepresentationLabel", 'G', '@', ""},
-{"NSPickerTouchBarItem", '-', "controlRepresentation", 'G', 'q', ""},
-{"NSPickerTouchBarItem", '-', "customizationLabel", 'G', '@', ""},
-{"NSPickerTouchBarItem", '-', "imageAtIndex:", 'D', '@', "q"},
-{"NSPickerTouchBarItem", '-', "isEnabled", 'G', 'B', ""},
-{"NSPickerTouchBarItem", '-', "isEnabledAtIndex:", 'D', 'B', "q"},
-{"NSPickerTouchBarItem", '-', "labelAtIndex:", 'D', '@', "q"},
-{"NSPickerTouchBarItem", '-', "numberOfOptions", 'G', 'q', ""},
-{"NSPickerTouchBarItem", '-', "selectedIndex", 'G', 'q', ""},
-{"NSPickerTouchBarItem", '-', "selectionColor", 'G', '@', ""},
-{"NSPickerTouchBarItem", '-', "selectionMode", 'G', 'q', ""},
-{"NSPickerTouchBarItem", '-', "setAction:", 'S', 'v', ":"},
-{"NSPickerTouchBarItem", '-', "setCollapsedRepresentationImage:", 'S', 'v', "@"},
-{"NSPickerTouchBarItem", '-', "setCollapsedRepresentationLabel:", 'S', 'v', "@"},
-{"NSPickerTouchBarItem", '-', "setControlRepresentation:", 'S', 'v', "q"},
-{"NSPickerTouchBarItem", '-', "setCustomizationLabel:", 'S', 'v', "@"},
-{"NSPickerTouchBarItem", '-', "setEnabled:", 'S', 'v', "B"},
-{"NSPickerTouchBarItem", '-', "setEnabled:atIndex:", 'D', 'v', "Bq"},
-{"NSPickerTouchBarItem", '-', "setImage:atIndex:", 'D', 'v', "@q"},
-{"NSPickerTouchBarItem", '-', "setLabel:atIndex:", 'D', 'v', "@q"},
-{"NSPickerTouchBarItem", '-', "setNumberOfOptions:", 'S', 'v', "q"},
-{"NSPickerTouchBarItem", '-', "setSelectedIndex:", 'S', 'v', "q"},
-{"NSPickerTouchBarItem", '-', "setSelectionColor:", 'S', 'v', "@"},
-{"NSPickerTouchBarItem", '-', "setSelectionMode:", 'S', 'v', "q"},
-{"NSPickerTouchBarItem", '-', "setTarget:", 'S', 'v', "@"},
-{"NSPickerTouchBarItem", '-', "target", 'G', '@', ""},
 {"NSPopUpButton", '+', "popUpButtonWithMenu:target:action:", 'F', '@', "@@:"},
 {"NSPopUpButton", '+', "pullDownButtonWithImage:menu:", 'F', '@', "@@"},
 {"NSPopUpButton", '+', "pullDownButtonWithTitle:image:menu:", 'F', '@', "@@@"},
@@ -1809,29 +1743,6 @@ static const GenEntry kTable[] = {
 {"NSSliderCell", '-', "titleCell", 'G', '@', ""},
 {"NSSliderCell", '-', "titleColor", 'G', '@', ""},
 {"NSSliderCell", '-', "titleFont", 'G', '@', ""},
-{"NSSliderTouchBarItem", '-', "action", 'G', ':', ""},
-{"NSSliderTouchBarItem", '-', "customizationLabel", 'G', '@', ""},
-{"NSSliderTouchBarItem", '-', "doubleValue", 'G', 'd', ""},
-{"NSSliderTouchBarItem", '-', "label", 'G', '@', ""},
-{"NSSliderTouchBarItem", '-', "maximumSliderWidth", 'G', 'd', ""},
-{"NSSliderTouchBarItem", '-', "maximumValueAccessory", 'G', '@', ""},
-{"NSSliderTouchBarItem", '-', "minimumSliderWidth", 'G', 'd', ""},
-{"NSSliderTouchBarItem", '-', "minimumValueAccessory", 'G', '@', ""},
-{"NSSliderTouchBarItem", '-', "setAction:", 'S', 'v', ":"},
-{"NSSliderTouchBarItem", '-', "setCustomizationLabel:", 'S', 'v', "@"},
-{"NSSliderTouchBarItem", '-', "setDoubleValue:", 'S', 'v', "d"},
-{"NSSliderTouchBarItem", '-', "setLabel:", 'S', 'v', "@"},
-{"NSSliderTouchBarItem", '-', "setMaximumSliderWidth:", 'S', 'v', "d"},
-{"NSSliderTouchBarItem", '-', "setMaximumValueAccessory:", 'S', 'v', "@"},
-{"NSSliderTouchBarItem", '-', "setMinimumSliderWidth:", 'S', 'v', "d"},
-{"NSSliderTouchBarItem", '-', "setMinimumValueAccessory:", 'S', 'v', "@"},
-{"NSSliderTouchBarItem", '-', "setSlider:", 'S', 'v', "@"},
-{"NSSliderTouchBarItem", '-', "setTarget:", 'S', 'v', "@"},
-{"NSSliderTouchBarItem", '-', "setValueAccessoryWidth:", 'S', 'v', "q"},
-{"NSSliderTouchBarItem", '-', "slider", 'G', '@', ""},
-{"NSSliderTouchBarItem", '-', "target", 'G', '@', ""},
-{"NSSliderTouchBarItem", '-', "valueAccessoryWidth", 'G', 'q', ""},
-{"NSSliderTouchBarItem", '-', "view", 'D', '@', ""},
 {"NSSound", '+', "canInitWithPasteboard:", 'D', 'B', "@"},
 {"NSSound", '+', "readableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSSound", '-', "channelMapping", 'G', 'A', ""},
@@ -2590,7 +2501,6 @@ static const GenEntry kTable[] = {
 const struct XEFDefault kDefaultsTable[] = {
 {"NSAccessibilityCustomRotor", "label", '@', "Custom"},
 {"NSBackgroundExtensionView", "automaticallyPlacesContentView", 'B', "1"},
-{"NSButtonTouchBarItem", "isEnabled", 'B', "1"},
 {"NSCandidateListTouchBarItem", "allowsTextInputContextCandidates", 'B', "1"},
 {"NSCollectionLayoutAnchor", "isAbsoluteOffset", 'B', "1"},
 {"NSCollectionLayoutDimension", "isAbsolute", 'B', "1"},
@@ -2611,7 +2521,6 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSPDFInfo", "isFileExtensionHidden", 'B', "1"},
 {"NSPDFInfo", "paperSize", 'S', "612,792"},
 {"NSPDFPanel", "defaultFileName", '@', "Untitled"},
-{"NSPickerTouchBarItem", "isEnabled", 'B', "1"},
 {"NSPrintPanel", "options", 'q', "3"},
 {"NSScrubberFlowLayout", "itemSize", 'S', "50,30"},
 {"NSScrubberLayout", "automaticallyMirrorsInRightToLeftLayout", 'B', "1"},
@@ -2620,9 +2529,6 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSScrubberProportionalLayout", "numberOfVisibleItems", 'q', "5"},
 {"NSSearchToolbarItem", "preferredWidthForSearchField", 'd', "240"},
 {"NSSharingServicePickerTouchBarItem", "isEnabled", 'B', "1"},
-{"NSSliderTouchBarItem", "minimumSliderWidth", 'd', "64"},
-{"NSSliderTouchBarItem", "maximumSliderWidth", 'd', "3.4028234663852886e+38"},
-{"NSSliderTouchBarItem", "valueAccessoryWidth", 'q', "506450589952"},
 {"NSSpeechRecognizer", "listensInForegroundOnly", 'B', "1"},
 {"NSSplitViewItemAccessoryViewController", "automaticallyAppliesContentInsets", 'B', "1"},
 {"NSStepperTouchBarItem", "maxValue", 'd', "59"},
@@ -2637,7 +2543,7 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSWritingToolsCoordinator", "behavior", 'q', "1"},
 {"NSWritingToolsCoordinator", "resultOptions", 'q', "15"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 48;
+const unsigned long kDefaultsCount = 43;
 
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }

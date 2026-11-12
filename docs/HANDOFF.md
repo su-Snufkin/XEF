@@ -1099,3 +1099,11 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - Podobna próba **tworzenia każdej klasy przez `init`/`initWithFrame:`** (322 klasy): XEF tworzy wszystko, co Mac; różnice to klasy, które u Maca rzucają wyjątek (XEF jest łagodniejszy) oraz `[[NSURL alloc] init]` (u nas nil — Foundation Darlinga).
 - Stan: patrz `tools/appkit_gap.sh`.
 
+### 40. Elementy Touch Bara (przycisk, suwak, wybór), NSCachedImageRep, NSEPSImageRep (2026-11-12)
+- `AppKitModel.m`, `appkit_touchitems.m` zgodny z Makiem: **NSButtonTouchBarItem** (trzy fabryki, `customizationLabel` domyślnie = tytuł), **NSSliderTouchBarItem** (prawdziwy `NSSlider` w środku, `doubleValue` przekazywane,
+  min. szerokość 64, szerokość akcesorium 36), **NSPickerTouchBarItem** (etykiety/obrazy per indeks, `selectedIndex` -1, `setNumberOfOptions:` zeruje etykiety i daje puste obrazy, `setEnabled:atIndex:`).
+  Nic nie jest wyświetlane. Pozostałe elementy (`NSStepperTouchBarItem`, `NSPopoverTouchBarItem`, `NSColorPickerTouchBarItem`, `NSCandidateListTouchBarItem`…) nadal atrapy.
+- **NSCachedImageRep** (rect/rozmiar/alfa, `window` tworzony leniwie jak u Maca) i **NSEPSImageRep**: `appkit_epscache.m` — **dzisiejszy macOS nie czyta danych EPS** (`canInitWithData:` = NO, `imageRepWithData:` = nil), więc XEF też nie;
+  klasa istnieje tylko dla zgodności API.
+- Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 54/54; pełny `run_tests.sh` przechodzi.
+

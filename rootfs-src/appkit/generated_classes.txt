@@ -9,9 +9,7 @@ NSAdaptiveImageGlyph
 NSAlignmentFeedbackFilter
 NSBackgroundExtensionView
 NSBindingSelectionMarker
-NSButtonTouchBarItem
 NSCIImageRep
-NSCachedImageRep
 NSCandidateListTouchBarItem
 NSCollectionLayoutAnchor
 NSCollectionLayoutItem
@@ -44,7 +42,6 @@ NSDockTile
 NSDraggingImageComponent
 NSDraggingItem
 NSDraggingSession
-NSEPSImageRep
 NSFilePromiseProvider
 NSFilePromiseReceiver
 NSFontAssetRequest
@@ -78,7 +75,6 @@ NSPICTImageRep
 NSPageController
 NSPageLayout
 NSPersistentDocument
-NSPickerTouchBarItem
 NSPopoverTouchBarItem
 NSPredicateEditor
 NSPredicateEditorRowTemplate
@@ -100,7 +96,6 @@ NSSharingServicePicker
 NSSharingServicePickerToolbarItem
 NSSharingServicePickerTouchBarItem
 NSSliderAccessory
-NSSliderTouchBarItem
 NSSpeechRecognizer
 NSSplitViewItemAccessoryViewController
 NSStatusBarButton

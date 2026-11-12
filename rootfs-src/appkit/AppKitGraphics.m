@@ -1344,7 +1344,7 @@ typedef BOOL (^XEFImageDrawingHandler)(NSRect);
 
 /* ---- NSImageRep: the base class, the registry, and NSCustomImageRep ---- */
 static NSMutableArray *g_rep_classes;
-static NSMutableArray *XEFRepClasses(void) { if (!g_rep_classes) g_rep_classes = [[NSMutableArray alloc] initWithObjects:[NSBitmapImageRep class], [NSPDFImageRep class], nil]; return g_rep_classes; }
+static NSMutableArray *XEFRepClasses(void) { if (!g_rep_classes) g_rep_classes = [[NSMutableArray alloc] initWithObjects:[NSBitmapImageRep class], [NSPDFImageRep class], [NSEPSImageRep class], nil]; return g_rep_classes; }
 @implementation NSImageRep
 - (void)dealloc { [_rcs release]; [super dealloc]; }
 - (id)copyWithZone:(NSZone *)z { return [self retain]; }
@@ -1494,4 +1494,24 @@ static void XEFImgSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k
 - (void)relativeCurveToPoint:(NSPoint)e controlPoint:(NSPoint)c { [self relativeCurveToPoint:e controlPoint1:c controlPoint2:c]; }
 - (BOOL)cachesBezierPath { return YES; } - (void)setCachesBezierPath:(BOOL)f {}
 + (void)drawPackedGlyphs:(const char *)g atPoint:(NSPoint)p {}
+@end
+
+/* ---- NSCachedImageRep (a window-less offscreen cache: only its geometry) and NSEPSImageRep (the header comments are read; nothing is rendered — no PostScript interpreter) ---- */
+@implementation NSCachedImageRep
+- (id)initWithSize:(NSSize)s depth:(NSInteger)d separate:(BOOL)sep alpha:(BOOL)a { if ((self = [super init])) { _rect = NSMakeRect(0, 0, s.width, s.height); [self setSize:s]; _ralpha = a; } return self; }
+- (id)initWithWindow:(id)w rect:(NSRect)r { if ((self = [super init])) { _win = w; _rect = r; [self setSize:r.size]; } return self; }
+- (NSRect)rect { return _rect; } - (id)window { if (!_win) _win = [[NSWindow alloc] initWithContentRect:_rect styleMask:0 backing:NSBackingStoreBuffered defer:YES]; return _win; } - (BOOL)drawInRect:(NSRect)r { return NO; }
+@end
+@implementation NSEPSImageRep
++ (BOOL)canInitWithData:(NSData *)d { return NO; }   /* current macOS no longer reads EPS data */
++ (NSArray *)imageUnfilteredTypes { return @[@"com.adobe.encapsulated-postscript"]; } + (NSArray *)imageUnfilteredFileTypes { return @[@"eps"]; }
++ (NSArray *)imageRepsWithData:(NSData *)d { id r = [[[self alloc] initWithData:d] autorelease]; return r ? @[r] : @[]; }
++ (id)imageRepWithData:(NSData *)d { return [[[self alloc] initWithData:d] autorelease]; }
+- (id)initWithData:(NSData *)d {
+  if (!([d length] > 11 && !memcmp([d bytes], "%!PS-Adobe-", 11))) { [self release]; return nil; }
+  if (YES) { [self release]; return nil; }   /* see canInitWithData: */
+  NSString *s = [[[NSString alloc] initWithData:[d subdataWithRange:NSMakeRange(0, MIN((NSUInteger)4096, [d length]))] encoding:NSISOLatin1StringEncoding] autorelease]; double a, b, c, e = 0; NSRange r = [s rangeOfString:@"%%BoundingBox:"];
+  if (r.location == NSNotFound || sscanf([[s substringFromIndex:NSMaxRange(r)] UTF8String], "%lf %lf %lf %lf", &a, &b, &c, &e) != 4) { [self release]; return nil; }
+  if ((self = [super init])) { _eps = [d copy]; _bbox = NSMakeRect(a, b, c - a, e - b); [self setSize:_bbox.size]; } return self; }
+- (void)dealloc { [_eps release]; [super dealloc]; } - (NSRect)boundingBox { return _bbox; } - (NSData *)EPSRepresentation { return _eps; } - (void)prepareGState {} - (BOOL)drawInRect:(NSRect)r { return NO; }
 @end

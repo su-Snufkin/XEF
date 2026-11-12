@@ -1753,3 +1753,52 @@ static NSInteger g_speaking_count;
 - (void)registerClass:(Class)c forItemIdentifier:(NSString *)i { if (c) _classes[i] = c; else [_classes removeObjectForKey:i]; } - (void)registerNib:(id)n forItemIdentifier:(NSString *)i {}
 - (id)makeItemWithIdentifier:(NSString *)i owner:(id)o { Class c = _classes[i]; return c ? [[[c alloc] initWithFrame:NSZeroRect] autorelease] : nil; }
 @end
+
+/* ================================================================== Touch Bar items: button, slider, picker */
+@implementation NSButtonTouchBarItem
++ (id)buttonTouchBarItemWithIdentifier:(NSString *)i title:(NSString *)t image:(NSImage *)im target:(id)tg action:(SEL)a { NSButtonTouchBarItem *b = [[[self alloc] initWithIdentifier:i] autorelease]; b->_title = [t copy]; b->_image = [im retain]; b->_target = tg; b->_action = a; return b; }
++ (id)buttonTouchBarItemWithIdentifier:(NSString *)i title:(NSString *)t target:(id)tg action:(SEL)a { return [self buttonTouchBarItemWithIdentifier:i title:t image:nil target:tg action:a]; }
++ (id)buttonTouchBarItemWithIdentifier:(NSString *)i image:(NSImage *)im target:(id)tg action:(SEL)a { return [self buttonTouchBarItemWithIdentifier:i title:@"" image:im target:tg action:a]; }
+- (id)initWithIdentifier:(NSString *)i { if ((self = [super initWithIdentifier:i])) { _enabled = YES; _title = [@"" retain]; } return self; }
+- (void)dealloc { [_title release]; [_image release]; [_bezel release]; [super dealloc]; }
+- (NSString *)title { return _title; } - (void)setTitle:(NSString *)t { [t retain]; [_title release]; _title = t; } - (NSImage *)image { return _image; } - (void)setImage:(NSImage *)i { [i retain]; [_image release]; _image = i; }
+- (NSColor *)bezelColor { return _bezel; } - (void)setBezelColor:(NSColor *)c { [c retain]; [_bezel release]; _bezel = c; }
+- (id)target { return _target; } - (void)setTarget:(id)t { _target = t; } - (SEL)action { return _action; } - (void)setAction:(SEL)a { _action = a; }
+- (BOOL)isEnabled { return _enabled; } - (void)setEnabled:(BOOL)f { _enabled = f; }
+- (NSString *)customizationLabel { return _label ?: _title; } - (void)setCustomizationLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+@end
+@implementation NSSliderTouchBarItem
+- (id)initWithIdentifier:(NSString *)i { if ((self = [super initWithIdentifier:i])) { _slider = [[NSSlider alloc] initWithFrame:NSMakeRect(0, 0, 100, 20)]; _minW = 64; _maxW = 3.40282e+38; _accW = 36; } return self; }
+- (void)dealloc { [_slider release]; [_minAcc release]; [_maxAcc release]; [super dealloc]; }
+- (id)slider { return _slider; } - (void)setSlider:(id)s { [s retain]; [_slider release]; _slider = s; }
+- (double)doubleValue { return [_slider doubleValue]; } - (void)setDoubleValue:(double)v { [_slider setDoubleValue:v]; }
+- (CGFloat)minimumSliderWidth { return _minW; } - (void)setMinimumSliderWidth:(CGFloat)w { _minW = w; } - (CGFloat)maximumSliderWidth { return _maxW; } - (void)setMaximumSliderWidth:(CGFloat)w { _maxW = w; }
+- (NSString *)label { return _label; } - (void)setLabel:(NSString *)l { [l retain]; [_label release]; _label = l; } - (void)setCustomizationLabel:(NSString *)l { [self setLabel:l]; }
+- (id)minimumValueAccessory { return _minAcc; } - (void)setMinimumValueAccessory:(id)a { [a retain]; [_minAcc release]; _minAcc = a; } - (id)maximumValueAccessory { return _maxAcc; } - (void)setMaximumValueAccessory:(id)a { [a retain]; [_maxAcc release]; _maxAcc = a; }
+- (CGFloat)valueAccessoryWidth { return _accW; } - (void)setValueAccessoryWidth:(CGFloat)w { _accW = w; }
+- (id)target { return _target; } - (void)setTarget:(id)t { _target = t; } - (SEL)action { return _action; } - (void)setAction:(SEL)a { _action = a; }
+- (id)view { return _slider; }
+@end
+@implementation NSPickerTouchBarItem
++ (id)pickerTouchBarItemWithIdentifier:(NSString *)i labels:(NSArray *)l selectionMode:(NSInteger)m target:(id)t action:(SEL)a {
+  NSPickerTouchBarItem *p = [[[self alloc] initWithIdentifier:i] autorelease]; [p->_labels setArray:l]; while ([p->_images count] < [l count]) [p->_images addObject:[NSNull null]]; while ([p->_enabledAt count] < [l count]) [p->_enabledAt addObject:@YES];
+  p->_mode = m; p->_target = t; p->_action = a; return p; }
++ (id)pickerTouchBarItemWithIdentifier:(NSString *)i images:(NSArray *)im selectionMode:(NSInteger)m target:(id)t action:(SEL)a {
+  NSPickerTouchBarItem *p = [[[self alloc] initWithIdentifier:i] autorelease]; [p->_images setArray:im]; while ([p->_labels count] < [im count]) [p->_labels addObject:@""]; while ([p->_enabledAt count] < [im count]) [p->_enabledAt addObject:@YES];
+  p->_mode = m; p->_target = t; p->_action = a; return p; }
+- (id)initWithIdentifier:(NSString *)i { if ((self = [super initWithIdentifier:i])) { _labels = [[NSMutableArray alloc] init]; _images = [[NSMutableArray alloc] init]; _enabledAt = [[NSMutableArray alloc] init]; _sel = -1; _enabled = YES; } return self; }
+- (void)dealloc { [_labels release]; [_images release]; [_enabledAt release]; [super dealloc]; }
+- (NSInteger)numberOfOptions { return [_labels count]; }
+- (void)setNumberOfOptions:(NSInteger)n { [_labels removeAllObjects]; [_images removeAllObjects]; [_enabledAt removeAllObjects]; for (NSInteger k = 0; k < n; k++) { [_labels addObject:@""]; [_images addObject:[[[NSImage alloc] initWithSize:NSZeroSize] autorelease]]; [_enabledAt addObject:@YES]; } if (_sel >= n) _sel = -1; }
+- (NSInteger)selectedIndex { return _sel; } - (void)setSelectedIndex:(NSInteger)i { _sel = i; } - (NSInteger)selectionMode { return _mode; } - (void)setSelectionMode:(NSInteger)m { _mode = m; }
+- (NSInteger)controlRepresentation { return _repr; } - (void)setControlRepresentation:(NSInteger)r { _repr = r; }
+- (id)selectionColor { return _selColor; } - (void)setSelectionColor:(id)c { [c retain]; [_selColor release]; _selColor = c; }
+- (NSString *)collapsedRepresentationLabel { return _collapsedLabel; } - (void)setCollapsedRepresentationLabel:(NSString *)l { [l retain]; [_collapsedLabel release]; _collapsedLabel = l; }
+- (id)collapsedRepresentationImage { return _collapsedImage; } - (void)setCollapsedRepresentationImage:(id)i { [i retain]; [_collapsedImage release]; _collapsedImage = i; }
+- (void)setImage:(NSImage *)i atIndex:(NSInteger)k { if (k >= 0 && k < (NSInteger)[_images count]) _images[k] = i ?: (id)[NSNull null]; }
+- (NSImage *)imageAtIndex:(NSInteger)k { if (k < 0 || k >= (NSInteger)[_images count]) return nil; id x = _images[k]; return x == [NSNull null] ? nil : x; }
+- (void)setLabel:(NSString *)l atIndex:(NSInteger)k { if (k >= 0 && k < (NSInteger)[_labels count]) _labels[k] = l ?: @""; } - (NSString *)labelAtIndex:(NSInteger)k { return k >= 0 && k < (NSInteger)[_labels count] ? _labels[k] : nil; }
+- (void)setEnabled:(BOOL)f atIndex:(NSInteger)k { if (k >= 0 && k < (NSInteger)[_enabledAt count]) _enabledAt[k] = [NSNumber numberWithBool:f]; } - (BOOL)isEnabledAtIndex:(NSInteger)k { return k >= 0 && k < (NSInteger)[_enabledAt count] ? [_enabledAt[k] boolValue] : NO; }
+- (id)target { return _target; } - (void)setTarget:(id)t { _target = t; } - (SEL)action { return _action; } - (void)setAction:(SEL)a { _action = a; }
+- (BOOL)isEnabled { return _enabled; } - (void)setEnabled:(BOOL)f { _enabled = f; } - (void)setCustomizationLabel:(NSString *)l { [l retain]; [_label release]; _label = l; }
+@end

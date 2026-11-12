@@ -150,7 +150,7 @@ XEF, and the two outputs must match line for line (`tests/darwin/macref.sh appki
 | Drawing and text | NSBezierPath, NSColor, NSGradient, NSImage, NSFont, attributed strings, NSTextView |
 
 `tools/appkit_gap.sh` lists what of AppKit's public API (read from the SDK headers) is still missing, per class:
-6132 of 8257 public methods are implemented for real; the 3997 others are placeholders with the right calling convention (`tools/gen_appkit_stubs.py`: property pairs store their value, the rest returns zero), counted apart.
+6207 of 8257 public methods are implemented for real; the 3997 others are placeholders with the right calling convention (`tools/gen_appkit_stubs.py`: property pairs store their value, the rest returns zero), counted apart.
 
 ### Every other system framework: generated stubs
 

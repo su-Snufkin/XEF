@@ -243,3 +243,13 @@
 @interface NSHapticFeedbackManager : NSObject
 + (id)defaultPerformer;
 @end
+
+/* Touch Bar items with their own state (nothing is shown) */
+@interface NSButtonTouchBarItem : NSTouchBarItem { @public NSString *_title; NSImage *_image; NSColor *_bezel; id _target; SEL _action; BOOL _enabled; }
++ (id)buttonTouchBarItemWithIdentifier:(NSString *)i title:(NSString *)t target:(id)tg action:(SEL)a;
+@end
+@interface NSSliderTouchBarItem : NSTouchBarItem { @public id _slider, _minAcc, _maxAcc; CGFloat _minW, _maxW, _accW; id _target; SEL _action; }
+@end
+@interface NSPickerTouchBarItem : NSTouchBarItem { @public NSMutableArray *_labels, *_images, *_enabledAt; NSInteger _sel, _mode, _repr; id _target, _selColor, _collapsedLabel, _collapsedImage; SEL _action; BOOL _enabled; }
++ (id)pickerTouchBarItemWithIdentifier:(NSString *)i labels:(NSArray *)l selectionMode:(NSInteger)m target:(id)t action:(SEL)a;
+@end

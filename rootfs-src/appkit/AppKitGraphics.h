@@ -170,3 +170,10 @@ typedef struct { NSUInteger start; CGFloat top, height, baseline; } XEFLineInfo;
 @interface NSPDFImageRep : NSImageRep { @public NSData *_pdf; NSInteger _pages, _page; NSRect _bounds; }
 + (id)imageRepWithData:(NSData *)d; - (id)initWithData:(NSData *)d; - (NSInteger)pageCount; - (NSRect)bounds;
 @end
+
+@interface NSCachedImageRep : NSImageRep { @public NSRect _rect; id _win; }
+- (id)initWithSize:(NSSize)s depth:(NSInteger)d separate:(BOOL)sep alpha:(BOOL)a; - (id)initWithWindow:(id)w rect:(NSRect)r; - (NSRect)rect; - (id)window;
+@end
+@interface NSEPSImageRep : NSImageRep { @public NSData *_eps; NSRect _bbox; }
++ (id)imageRepWithData:(NSData *)d; - (id)initWithData:(NSData *)d; - (NSRect)boundingBox; - (NSData *)EPSRepresentation;
+@end
