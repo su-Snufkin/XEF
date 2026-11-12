@@ -129,3 +129,13 @@
 }
 - (NSTreeNode *)arrangedObjects; - (NSArray *)selectionIndexPaths; - (void)rearrangeObjects;
 @end
+
+/* NSBrowser with the item-based delegate API: columns of children, one selection path */
+@interface NSBrowser : NSControl {
+@public
+  id _delegate, _root; BOOL _loaded, _titled, _multi, _branch, _empty, _reuses, _separates, _typeSelect, _hscroll, _arrows, _sendsArrows, _autohides, _takesTitle;
+  NSMutableArray *_parents, *_items, *_sel; NSMutableDictionary *_titles, *_widths; NSString *_sep; CGFloat _minW, _defW, _rowH; NSInteger _maxVis, _resizing;
+  SEL _dbl; Class _cellClass, _matrixClass; id _bg, _proto; NSInteger _clickedRow, _clickedCol;
+}
+- (BOOL)isLoaded; - (void)loadColumnZero; - (NSInteger)lastColumn; - (void)selectRow:(NSInteger)r inColumn:(NSInteger)c;
+@end

@@ -1009,3 +1009,151 @@ static NSSize content_size(NSGridCell *c) {
 - (void)addChild:(id)s { [self insertChild:s]; }
 - (void)remove:(id)s { [self removeObjectsAtArrangedObjectIndexPaths:[self selectionIndexPaths]]; [_selPaths removeAllObjects]; }
 @end
+
+/* ================================================================== NSBrowser */
+@interface NSObject (XEFBrowserDelegate)
+- (id)rootItemForBrowser:(id)b; - (NSInteger)browser:(id)b numberOfChildrenOfItem:(id)i; - (id)browser:(id)b child:(NSInteger)n ofItem:(id)i;
+- (BOOL)browser:(id)b isLeafItem:(id)i; - (id)browser:(id)b objectValueForItem:(id)i; - (void)browserSelectionDidChange:(id)b;
+@end
+@implementation NSBrowser
+- (id)initWithFrame:(NSRect)f {
+  if ((self = [super initWithFrame:f])) {
+    _titled = YES; _empty = YES; _separates = YES; _typeSelect = YES; _minW = 100; _defW = 100; _rowH = 17; _resizing = 1; _sep = @"/"; _clickedRow = _clickedCol = -1;
+    _parents = [[NSMutableArray alloc] init]; _items = [[NSMutableArray alloc] init]; _sel = [[NSMutableArray alloc] init]; _titles = [[NSMutableDictionary alloc] init]; _widths = [[NSMutableDictionary alloc] init]; }
+  return self; }
+- (void)dealloc { [_root release]; [_parents release]; [_items release]; [_sel release]; [_titles release]; [_widths release]; [_sep release]; [_bg release]; [_proto release]; [super dealloc]; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (BOOL)isLoaded { return _loaded; }
+- (id)_xefChild:(NSInteger)i of:(id)p { return [_delegate browser:self child:i ofItem:p]; }
+- (NSArray *)_xefChildrenOf:(id)p {
+  NSInteger n = [_delegate respondsToSelector:@selector(browser:numberOfChildrenOfItem:)] ? [_delegate browser:self numberOfChildrenOfItem:p] : 0;
+  NSMutableArray *a = [NSMutableArray array]; for (NSInteger i = 0; i < n; i++) { id c = [self _xefChild:i of:p]; [a addObject:c ?: [NSNull null]]; } return a; }
+- (void)_xefTruncate:(NSInteger)keep { while ((NSInteger)[_items count] > keep) { [_items removeLastObject]; [_parents removeLastObject]; [_sel removeLastObject]; } }
+- (void)_xefAddColumnFor:(id)parent { [_parents addObject:parent]; [_items addObject:[self _xefChildrenOf:parent]]; [_sel addObject:[NSIndexSet indexSet]]; }
+- (void)loadColumnZero {
+  [_root release]; _root = nil;
+  if ([_delegate respondsToSelector:@selector(rootItemForBrowser:)]) _root = [[_delegate rootItemForBrowser:self] retain];
+  [self _xefTruncate:0]; [self _xefAddColumnFor:_root]; _loaded = YES; [self setNeedsDisplay:YES]; }
+- (NSInteger)lastColumn { return [_items count] ? (NSInteger)[_items count] - 1 : 0; }
+- (void)setLastColumn:(NSInteger)c { if (c >= 0) [self _xefTruncate:c + 1]; }
+- (id)itemAtRow:(NSInteger)r inColumn:(NSInteger)c {
+  if (c < 0 || c >= (NSInteger)[_items count] || r < 0 || r >= (NSInteger)[_items[c] count]) return nil;
+  id x = _items[c][r]; return x == [NSNull null] ? nil : x; }
+- (id)parentForItemsInColumn:(NSInteger)c { if (c < 0 || c >= (NSInteger)[_parents count]) return nil; id x = _parents[c]; return x == [NSNull null] ? nil : x; }
+- (BOOL)isLeafItem:(id)i { return [_delegate respondsToSelector:@selector(browser:isLeafItem:)] ? [_delegate browser:self isLeafItem:i] : [self _xefChildrenOf:i].count == 0; }
+- (void)selectRowIndexes:(NSIndexSet *)ix inColumn:(NSInteger)c {
+  if (!_loaded || c < 0 || c >= (NSInteger)[_items count]) return;
+  NSUInteger n = [_items[c] count];
+  NSMutableIndexSet *ok = [NSMutableIndexSet indexSet]; [ix enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *stop) { if (i < n) [ok addIndex:i]; }];
+  [self _xefTruncate:c + 1]; _sel[c] = [[ok copy] autorelease];
+  if ([ok count] == 1) { id it = [self itemAtRow:[ok firstIndex] inColumn:c]; if (it && ![self isLeafItem:it]) [self _xefAddColumnFor:it]; }
+  [self setNeedsDisplay:YES]; }
+- (void)selectRow:(NSInteger)r inColumn:(NSInteger)c { if (r < 0) [self selectRowIndexes:[NSIndexSet indexSet] inColumn:c]; else [self selectRowIndexes:[NSIndexSet indexSetWithIndex:r] inColumn:c]; }
+- (NSInteger)selectedColumn { for (NSInteger c = (NSInteger)[_sel count] - 1; c >= 0; c--) if ([_sel[c] count]) return c; return -1; }
+- (NSInteger)selectedRowInColumn:(NSInteger)c { if (c < 0 || c >= (NSInteger)[_sel count] || ![_sel[c] count]) return -1; return [_sel[c] lastIndex]; }
+- (NSIndexSet *)selectedRowIndexesInColumn:(NSInteger)c { return c >= 0 && c < (NSInteger)[_sel count] ? _sel[c] : [NSIndexSet indexSet]; }
+- (NSString *)_xefNameOf:(id)it { id v = [_delegate respondsToSelector:@selector(browser:objectValueForItem:)] ? [_delegate browser:self objectValueForItem:it] : nil; return [v isKindOfClass:[NSString class]] ? v : [v description] ?: @""; }
+- (NSString *)pathToColumn:(NSInteger)c {
+  NSMutableString *s = [NSMutableString string];
+  for (NSInteger i = 0; i < c && i < (NSInteger)[_sel count]; i++) { NSInteger r = [self selectedRowInColumn:i]; if (r < 0) break; [s appendString:_sep]; [s appendString:[self _xefNameOf:[self itemAtRow:r inColumn:i]]]; }
+  return s.length || c <= 0 ? s : _sep; }
+- (NSString *)path { NSInteger sc = [self selectedColumn]; return sc < 0 ? @"" : [self pathToColumn:sc + 1]; }
+- (NSIndexPath *)indexPathForColumn:(NSInteger)c {
+  NSUInteger idx[64]; NSUInteger n = 0;
+  for (NSInteger i = 0; i < c && i < (NSInteger)[_sel count] && n < 64; i++) { NSInteger r = [self selectedRowInColumn:i]; if (r < 0) break; idx[n++] = r; }
+  return [NSIndexPath indexPathWithIndexes:idx length:n]; }
+- (NSArray *)selectionIndexPaths {
+  NSInteger sc = [self selectedColumn]; if (sc < 0) return @[];
+  NSIndexPath *base = [self indexPathForColumn:sc]; NSMutableArray *r = [NSMutableArray array];
+  [_sel[sc] enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *stop) { [r addObject:[base indexPathByAddingIndex:i]]; }]; return r; }
+- (NSIndexPath *)selectionIndexPath { return [[self selectionIndexPaths] firstObject]; }
+- (void)setSelectionIndexPaths:(NSArray *)ps {
+  if (!_loaded) [self loadColumnZero]; else { [self _xefTruncate:1]; _sel[0] = [NSIndexSet indexSet]; }
+  NSIndexPath *first = [ps firstObject]; if (!first) return;
+  NSUInteger len = [first length]; NSIndexPath *base = [first indexPathByRemovingLastIndex];
+  for (NSUInteger i = 0; i < [base length]; i++) [self selectRow:[base indexAtPosition:i] inColumn:i];
+  NSMutableIndexSet *last = [NSMutableIndexSet indexSet]; for (NSIndexPath *p in ps) if ([p length] == len) [last addIndex:[p indexAtPosition:len - 1]];
+  [self selectRowIndexes:last inColumn:len - 1]; }
+- (void)setSelectionIndexPath:(NSIndexPath *)p { [self setSelectionIndexPaths:p ? @[p] : @[]]; }
+- (BOOL)setPath:(NSString *)path {
+  if (!_loaded) [self loadColumnZero]; else { [self _xefTruncate:1]; _sel[0] = [NSIndexSet indexSet]; }
+  NSArray *parts = [path componentsSeparatedByString:_sep]; NSInteger col = 0;
+  for (NSString *name in parts) {
+    if (![name length]) continue;
+    NSInteger found = -1, n = [_items[col] count];
+    for (NSInteger r = 0; r < n; r++) if ([[self _xefNameOf:[self itemAtRow:r inColumn:col]] isEqualToString:name]) { found = r; break; }
+    if (found < 0) { [self _xefTruncate:1]; _sel[0] = [NSIndexSet indexSet]; return NO; }
+    [self selectRow:found inColumn:col]; col++;
+    if (col >= (NSInteger)[_items count]) break; }
+  return YES; }
+- (void)reloadColumn:(NSInteger)c {
+  if (c < 0 || c >= (NSInteger)[_items count]) return;
+  _items[c] = [self _xefChildrenOf:_parents[c]]; [self setNeedsDisplay:YES]; }
+- (void)reloadDataForRowIndexes:(NSIndexSet *)r inColumn:(NSInteger)c { [self reloadColumn:c]; }
+- (void)addColumn { [self _xefAddColumnFor:[NSNull null]]; }
+- (void)displayColumn:(NSInteger)c { [self setNeedsDisplay:YES]; } - (void)displayAllColumns { [self setNeedsDisplay:YES]; }
+- (void)scrollColumnToVisible:(NSInteger)c {} - (void)scrollRowToVisible:(NSInteger)r inColumn:(NSInteger)c {} - (void)tile {} - (void)updateScroller {}
+- (void)selectAll:(id)s { if (_multi && [self selectedColumn] >= 0) { NSInteger c = [self selectedColumn]; [self selectRowIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, [_items[c] count])] inColumn:c]; } }
+/* titles and geometry */
+- (void)setTitle:(NSString *)t ofColumn:(NSInteger)c { if (t) _titles[@(c)] = t; else [_titles removeObjectForKey:@(c)]; }
+- (NSString *)titleOfColumn:(NSInteger)c { return _titles[@(c)]; }
+- (CGFloat)titleHeight { return 17; }
+- (CGFloat)widthOfColumn:(NSInteger)c { NSNumber *w = _widths[@(c)]; return w ? [w doubleValue] : _defW; }
+- (void)setWidth:(CGFloat)w ofColumn:(NSInteger)c { if (w < _minW) w = _minW; _widths[@(c)] = @(w); }
+- (NSRect)frameOfColumn:(NSInteger)c { CGFloat x = 0; for (NSInteger i = 0; i < c; i++) x += [self widthOfColumn:i] + (_separates ? 1 : 0); NSRect b = [self bounds]; return NSMakeRect(x, 0, [self widthOfColumn:c], b.size.height); }
+- (NSRect)frameOfInsideOfColumn:(NSInteger)c { NSRect r = [self frameOfColumn:c]; if (_titled) { r.origin.y += [self titleHeight]; r.size.height -= [self titleHeight]; } return r; }
+- (NSRect)titleFrameOfColumn:(NSInteger)c { NSRect r = [self frameOfColumn:c]; r.size.height = [self titleHeight]; return r; }
+- (NSRect)frameOfRow:(NSInteger)r inColumn:(NSInteger)c { NSRect f = [self frameOfInsideOfColumn:c]; return NSMakeRect(f.origin.x, f.origin.y + r * _rowH, f.size.width, _rowH); }
+- (CGFloat)columnWidthForColumnContentWidth:(CGFloat)w { return w + 6; } - (CGFloat)columnContentWidthForColumnWidth:(CGFloat)w { return w - 6; }
+- (NSInteger)firstVisibleColumn { return 0; } - (NSInteger)lastVisibleColumn { return [self lastColumn]; } - (NSInteger)numberOfVisibleColumns { return [_items count]; }
+- (BOOL)getRow:(NSInteger *)row column:(NSInteger *)col forPoint:(NSPoint)p {
+  for (NSInteger c = 0; c < (NSInteger)[_items count]; c++) { NSRect f = [self frameOfInsideOfColumn:c]; if (NSPointInRect(p, f)) { NSInteger r = (NSInteger)((p.y - f.origin.y) / _rowH); if (r >= (NSInteger)[_items[c] count]) return NO; if (row) *row = r; if (col) *col = c; return YES; } }
+  return NO; }
+- (NSInteger)clickedRow { return _clickedRow; } - (NSInteger)clickedColumn { return _clickedCol; }
+/* settings */
+- (BOOL)isTitled { return _titled; } - (void)setTitled:(BOOL)f { _titled = f; }
+- (BOOL)allowsMultipleSelection { return _multi; } - (void)setAllowsMultipleSelection:(BOOL)f { _multi = f; }
+- (BOOL)allowsBranchSelection { return _branch; } - (void)setAllowsBranchSelection:(BOOL)f { _branch = f; }
+- (BOOL)allowsEmptySelection { return _empty; } - (void)setAllowsEmptySelection:(BOOL)f { _empty = f; }
+- (BOOL)reusesColumns { return _reuses; } - (void)setReusesColumns:(BOOL)f { _reuses = f; }
+- (BOOL)separatesColumns { return _separates; } - (void)setSeparatesColumns:(BOOL)f { _separates = f; }
+- (BOOL)allowsTypeSelect { return _typeSelect; } - (void)setAllowsTypeSelect:(BOOL)f { _typeSelect = f; }
+- (BOOL)hasHorizontalScroller { return _hscroll; } - (void)setHasHorizontalScroller:(BOOL)f { _hscroll = f; }
+- (BOOL)autohidesScroller { return _autohides; } - (void)setAutohidesScroller:(BOOL)f { _autohides = f; }
+- (BOOL)acceptsArrowKeys { return _arrows; } - (void)setAcceptsArrowKeys:(BOOL)f { _arrows = f; }
+- (BOOL)sendsActionOnArrowKeys { return _sendsArrows; } - (void)setSendsActionOnArrowKeys:(BOOL)f { _sendsArrows = f; }
+- (BOOL)takesTitleFromPreviousColumn { return _takesTitle; } - (void)setTakesTitleFromPreviousColumn:(BOOL)f { _takesTitle = f; }
+- (CGFloat)minColumnWidth { return _minW; } - (void)setMinColumnWidth:(CGFloat)w { _minW = w; }
+- (CGFloat)defaultColumnWidth { return _defW; } - (void)setDefaultColumnWidth:(CGFloat)w { _defW = w; }
+- (CGFloat)rowHeight { return _rowH; } - (void)setRowHeight:(CGFloat)h { _rowH = h; }
+- (NSInteger)maxVisibleColumns { return _maxVis; } - (void)setMaxVisibleColumns:(NSInteger)n { _maxVis = n; }
+- (NSInteger)columnResizingType { return _resizing; } - (void)setColumnResizingType:(NSInteger)t { _resizing = t; }
+- (NSString *)pathSeparator { return _sep; } - (void)setPathSeparator:(NSString *)s { [s retain]; [_sep release]; _sep = s; }
+- (SEL)doubleAction { return _dbl; } - (void)setDoubleAction:(SEL)a { _dbl = a; }
+- (id)backgroundColor { return _bg; } - (void)setBackgroundColor:(id)c { [c retain]; [_bg release]; _bg = c; }
+- (Class)cellClass { return _cellClass; } - (void)setCellClass:(Class)c { _cellClass = c; }
+- (Class)matrixClass { return _matrixClass; } - (void)setMatrixClass:(Class)c { _matrixClass = c; }
+- (id)cellPrototype { return _proto; } - (void)setCellPrototype:(id)c { [c retain]; [_proto release]; _proto = c; }
+- (BOOL)sendAction { return [self sendAction:[self action] to:[self target]]; }
+- (void)doClick:(id)s {} - (void)doDoubleClick:(id)s {}
+/* drawing and mouse: plain lists */
+- (BOOL)isFlipped { return YES; }
+- (void)drawRect:(NSRect)dirty {
+  [[NSColor whiteColor] set]; NSRectFill([self bounds]);
+  NSDictionary *at = @{ NSFontAttributeName: [NSFont systemFontOfSize:12] };
+  for (NSInteger c = 0; c < (NSInteger)[_items count]; c++) {
+    NSRect in = [self frameOfInsideOfColumn:c];
+    if (_titled && _titles[@(c)]) [_titles[@(c)] drawInRect:[self titleFrameOfColumn:c] withAttributes:at];
+    for (NSInteger r = 0; r < (NSInteger)[_items[c] count]; r++) {
+      NSRect f = [self frameOfRow:r inColumn:c]; BOOL on = [_sel[c] containsIndex:r];
+      if (on) { [[NSColor selectedControlColor] set]; NSRectFill(f); }
+      id it = [self itemAtRow:r inColumn:c]; [[self _xefNameOf:it] drawInRect:NSInsetRect(f, 4, 0) withAttributes:at]; }
+    if (_separates) { [[NSColor gridColor] set]; NSRectFill(NSMakeRect(NSMaxX(in), in.origin.y, 1, in.size.height)); } } }
+- (void)mouseDown:(NSEvent *)e {
+  NSPoint p = [self convertPoint:[e locationInWindow] fromView:nil]; NSInteger r, c;
+  if (![self getRow:&r column:&c forPoint:p]) return;
+  _clickedRow = r; _clickedCol = c; [self selectRow:r inColumn:c];
+  if ([_delegate respondsToSelector:@selector(browserSelectionDidChange:)]) [_delegate browserSelectionDidChange:self];
+  [self sendAction:[self action] to:[self target]];
+  if ([e clickCount] == 2 && _dbl) [self sendAction:_dbl to:[self target]]; }
+@end

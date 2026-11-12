@@ -841,3 +841,14 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   (np. `@0, @0`) traciły separator (`"00"`). Łatka w `tools/build_corefoundation.sh` (na Macu w źródle `darling/corefoundation/NSArray.m`).
 - Stan: **4477 z 8257** metod prawdziwych; `macref.sh` 13/13 dla testów AppKit.
 
+### 12. NSBrowser (2026-11-12)
+- `AppKitModel.m`, zgodny z Makiem w API opartym na elementach (`appkit_browser.m`: `rootItemForBrowser:`, `browser:numberOfChildrenOfItem:`,
+  `child:ofItem:`, `isLeafItem:`, `objectValueForItem:`): kolumny dzieci, `loadColumnZero` (root pobierany raz), `selectRow(Indexes):inColumn:`
+  (zaznaczenie gałęzi otwiera kolejną kolumnę, liść ją ucina), `lastColumn`, `selectedColumn`, `path`/`setPath:` (zła ścieżka czyści zaznaczenie
+  i zwraca NO), `pathToColumn:`, `indexPathForColumn:`, `selectionIndexPath(s)`, `itemAtRow:inColumn:`, `parentForItemsInColumn:`, `reloadColumn:`,
+  tytuły, szerokości (przycinane do `minColumnWidth`), domyślne ustawienia zmierzone na Macu. Programowe zaznaczenie nie woła delegata.
+- Rysowanie to proste listy (biały panel, zaznaczenie `selectedControlColor`, separator); `mouseDown:` zaznacza wiersz i woła akcję/delegata.
+- **Nie ma:** klasycznego API z macierzami (`browser:numberOfRowsInColumn:`, `willDisplayCell:`), przewijania kolumn, przeciągania, klawiszy strzałek.
+  `rowHeight` na Macu rzuca wyjątek dla delegatów macierzowych — tu zwraca 17.
+- Stan: **4573 z 8257** metod prawdziwych.
+
