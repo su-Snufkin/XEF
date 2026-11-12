@@ -537,3 +537,138 @@ static NSSize content_size(NSGridCell *c) {
 - (void)setFrame:(NSRect)f { [super setFrame:f]; [self setNeedsLayout:YES]; }
 - (void)viewDidMoveToWindow { [super viewDidMoveToWindow]; [self setNeedsLayout:YES]; }
 @end
+
+
+/* ================================================================== NSMatrix */
+@implementation NSMatrix
++ (Class)cellClass { return nil; }
+- (void)_xefInit { _cells = [[NSMutableArray alloc] init]; _selected = [[NSMutableArray alloc] init]; _selRow = _selCol = -1; _spacing = NSMakeSize(1, 1); _enabled = YES; _cellClass = [NSActionCell class]; }
+- (id)initWithFrame:(NSRect)f { if ((self = [super initWithFrame:f])) [self _xefInit]; return self; }
+- (NSCell *)_xefNewCell { return _proto ? [[_proto copy] autorelease] : [[[_cellClass alloc] initTextCell:@""] autorelease]; }
+- (void)_xefResizeCells {
+  if (!_sizeSet) {
+    NSSize c = _proto ? [_proto cellSize] : NSZeroSize;
+    _cellSize = _proto && c.width > 0 ? c : NSMakeSize(_cols ? (_frame.size.width - (_cols - 1) * _spacing.width) / _cols : 0, _rows ? (_frame.size.height - (_rows - 1) * _spacing.height) / _rows : 0); } }
+- (id)initWithFrame:(NSRect)f mode:(NSInteger)mode prototype:(NSCell *)proto numberOfRows:(NSInteger)r numberOfColumns:(NSInteger)c {
+  if ((self = [self initWithFrame:f])) {
+    _mode = mode; _proto = [proto copy]; _cellClass = nil; _allowsEmpty = mode != 0;
+    [self renewRows:r columns:c]; [self _xefResizeCells];
+    if (mode == 0 && [_cells count]) [self selectCellAtRow:0 column:0]; }
+  return self; }
+- (id)initWithFrame:(NSRect)f mode:(NSInteger)mode cellClass:(Class)cls numberOfRows:(NSInteger)r numberOfColumns:(NSInteger)c {
+  if ((self = [self initWithFrame:f])) {
+    _mode = mode; _cellClass = cls ?: [NSActionCell class]; _allowsEmpty = mode != 0;
+    [self renewRows:r columns:c]; [self _xefResizeCells];
+    if (mode == 0 && [_cells count]) [self selectCellAtRow:0 column:0]; }
+  return self; }
+- (id)initWithCoder:(NSCoder *)c {
+  if ((self = [super initWithCoder:c])) {
+    [self _xefInit];
+    _rows = [c decodeIntegerForKey:@"NSNumRows"]; _cols = [c decodeIntegerForKey:@"NSNumCols"];
+    for (id cell in [c decodeObjectForKey:@"NSCells"] ?: @[]) if ([cell isKindOfClass:[NSCell class]]) [_cells addObject:cell];
+    id proto = [c decodeObjectForKey:@"NSProtoCell"]; if ([proto isKindOfClass:[NSCell class]]) _proto = [proto retain];
+    if ([c containsValueForKey:@"NSCellSize"]) { _cellSize = [c decodeSizeForKey:@"NSCellSize"]; _sizeSet = YES; }
+    if ([c containsValueForKey:@"NSIntercellSpacing"]) _spacing = [c decodeSizeForKey:@"NSIntercellSpacing"];
+    uint32_t fl = (uint32_t)[c decodeIntForKey:@"NSMatrixFlags"]; _mode = (fl & 0x40000000u) ? 0 : (fl & 0x20000000u) ? 1 : (fl & 0x10000000u) ? 2 : 3; _allowsEmpty = (fl & 0x80000000u) != 0;
+    id sel = [c decodeObjectForKey:@"NSSelectedCell"]; if (sel && [_cells containsObject:sel]) { NSInteger i = [_cells indexOfObjectIdenticalTo:sel]; if (_cols) [self selectCellAtRow:i / _cols column:i % _cols]; }
+    [self _xefResizeCells]; }
+  return self; }
+- (void)dealloc { [_cells release]; [_selected release]; [_proto release]; [super dealloc]; }
+- (BOOL)isFlipped { return YES; }
+- (NSInteger)numberOfRows { return _rows; } - (NSInteger)numberOfColumns { return _cols; }
+- (NSArray *)cells { return [NSArray arrayWithArray:_cells]; }
+- (NSInteger)mode { return _mode; } - (void)setMode:(NSInteger)m { _mode = m; }
+- (Class)cellClass { return _cellClass; } - (void)setCellClass:(Class)c { _cellClass = c; }
+- (id)prototype { return _proto; } - (void)setPrototype:(NSCell *)p { [p retain]; [_proto release]; _proto = p; }
+- (BOOL)allowsEmptySelection { return _allowsEmpty; } - (void)setAllowsEmptySelection:(BOOL)f { _allowsEmpty = f; }
+- (BOOL)autosizesCells { return _autosizes; } - (void)setAutosizesCells:(BOOL)f { _autosizes = f; }
+- (BOOL)isSelectionByRect { return YES; } - (void)setSelectionByRect:(BOOL)f {}
+- (NSSize)cellSize { return _cellSize; } - (void)setCellSize:(NSSize)s { _cellSize = s; _sizeSet = YES; [self setNeedsDisplay:YES]; }
+- (NSSize)intercellSpacing { return _spacing; } - (void)setIntercellSpacing:(NSSize)s { _spacing = s; [self setNeedsDisplay:YES]; }
+- (void)sizeToCells { [self setFrameSize:NSMakeSize(_cols * _cellSize.width + (_cols > 1 ? (_cols - 1) * _spacing.width : 0), _rows * _cellSize.height + (_rows > 1 ? (_rows - 1) * _spacing.height : 0)) ]; }
+- (void)setFrameSize:(NSSize)s {
+  [super setFrameSize:s];
+  if (_autosizes && _rows && _cols) { _cellSize = NSMakeSize((s.width - (_cols - 1) * _spacing.width) / _cols, (s.height - (_rows - 1) * _spacing.height) / _rows); _sizeSet = YES; } }
+- (NSCell *)cellAtRow:(NSInteger)r column:(NSInteger)c {
+  if (r < 0 || c < 0 || r >= _rows || c >= _cols) return nil;
+  NSInteger i = r * _cols + c; return i < (NSInteger)[_cells count] ? _cells[i] : nil; }
+- (NSRect)cellFrameAtRow:(NSInteger)r column:(NSInteger)c { return NSMakeRect(c * (_cellSize.width + _spacing.width), r * (_cellSize.height + _spacing.height), _cellSize.width, _cellSize.height); }
+- (BOOL)getRow:(NSInteger *)row column:(NSInteger *)col forPoint:(NSPoint)p {
+  for (NSInteger r = 0; r < _rows; r++) for (NSInteger c = 0; c < _cols; c++) if (NSPointInRect(p, [self cellFrameAtRow:r column:c])) { if (row) *row = r; if (col) *col = c; return YES; }
+  if (row) *row = -1; if (col) *col = -1; return NO; }
+- (BOOL)getRow:(NSInteger *)row column:(NSInteger *)col ofCell:(NSCell *)cell {
+  NSUInteger i = [_cells indexOfObjectIdenticalTo:cell]; if (i == NSNotFound || !_cols || (NSInteger)i >= _rows * _cols) { if (row) *row = -1; if (col) *col = -1; return NO; }
+  if (row) *row = i / _cols; if (col) *col = i % _cols; return YES; }
+- (NSCell *)cellWithTag:(NSInteger)t { for (NSCell *c in _cells) if ([c tag] == t) return c; return nil; }
+- (void)putCell:(NSCell *)cell atRow:(NSInteger)r column:(NSInteger)c {
+  if (r < 0 || c < 0 || r >= _rows || c >= _cols) return;
+  NSInteger i = r * _cols + c; if (i >= (NSInteger)[_cells count]) return;
+  NSCell *old = _cells[i]; [_selected removeObjectIdenticalTo:old]; [cell setControlView:self]; [_cells replaceObjectAtIndex:i withObject:cell]; [self setNeedsDisplay:YES]; }
+/* edits: the cells are rebuilt from the first rows * cols entries (a renew to fewer rows or columns keeps the old storage) */
+- (NSMutableArray *)_xefGrid { NSMutableArray *g = [NSMutableArray array]; for (NSInteger r = 0; r < _rows; r++) { NSMutableArray *row = [NSMutableArray array]; for (NSInteger c = 0; c < _cols; c++) { NSInteger i = r * _cols + c; [row addObject:i < (NSInteger)[_cells count] ? _cells[i] : [self _xefNewCell]]; } [g addObject:row]; } return g; }
+- (void)_xefStore:(NSArray *)grid cols:(NSInteger)cols {
+  NSMutableArray *flat = [NSMutableArray array]; for (NSArray *row in grid) [flat addObjectsFromArray:row];
+  NSUInteger keep = [flat count]; for (NSUInteger i = keep; i < [_cells count] && ![flat count]; i++) {}
+  [_cells setArray:flat]; _rows = [grid count]; _cols = cols; for (NSCell *c in _cells) [c setControlView:self];
+  [_selected filterUsingPredicate:[NSPredicate predicateWithFormat:@"SELF IN %@", _cells]]; [self setNeedsDisplay:YES]; }
+- (void)renewRows:(NSInteger)r columns:(NSInteger)c {
+  NSInteger need = r * c; NSInteger oldRows = _rows, oldCols = _cols;
+  if (oldCols == c && oldRows <= r) { while ((NSInteger)[_cells count] < need) { NSCell *cell = [self _xefNewCell]; [cell setControlView:self]; [_cells addObject:cell]; } _rows = r; return; }
+  NSMutableArray *old = [NSMutableArray arrayWithArray:_cells];
+  while ((NSInteger)[_cells count] < need) { NSCell *cell = [self _xefNewCell]; [cell setControlView:self]; [_cells addObject:cell]; }
+  _rows = r; _cols = c; (void)old; for (NSCell *cell in _cells) [cell setControlView:self]; }
+- (NSCell *)_xefMakeCell { NSCell *c = [self _xefNewCell]; [c setControlView:self]; return c; }
+- (void)insertRow:(NSInteger)i {
+  NSMutableArray *g = [self _xefGrid]; NSMutableArray *row = [NSMutableArray array]; for (NSInteger c = 0; c < _cols; c++) [row addObject:[self _xefMakeCell]];
+  [g insertObject:row atIndex:i < 0 ? 0 : i > (NSInteger)[g count] ? [g count] : i]; [self _xefStore:g cols:_cols]; }
+- (void)addRow { [self insertRow:_rows]; }
+- (void)removeRow:(NSInteger)i { NSMutableArray *g = [self _xefGrid]; if (i < 0 || i >= (NSInteger)[g count]) return; [g removeObjectAtIndex:i]; [self _xefStore:g cols:_cols]; }
+- (void)insertColumn:(NSInteger)i {
+  NSMutableArray *g = [self _xefGrid]; for (NSMutableArray *row in g) [row insertObject:[self _xefMakeCell] atIndex:i < 0 ? 0 : i > (NSInteger)[row count] ? [row count] : i];
+  [self _xefStore:g cols:_cols + 1]; }
+- (void)addColumn { [self insertColumn:_cols]; }
+- (void)removeColumn:(NSInteger)i { NSMutableArray *g = [self _xefGrid]; if (i < 0 || i >= _cols) return; for (NSMutableArray *row in g) [row removeObjectAtIndex:i]; [self _xefStore:g cols:_cols - 1]; }
+/* ---- selection */
+- (void)_xefSelect:(NSCell *)cell row:(NSInteger)r column:(NSInteger)c extend:(BOOL)extend {
+  if (!extend) { for (NSCell *o in _selected) [o setState:0]; [_selected removeAllObjects]; }
+  if (cell) { [cell setState:1]; if (![_selected containsObject:cell]) [_selected addObject:cell]; }
+  _selRow = r; _selCol = c; [self setNeedsDisplay:YES]; }
+- (void)selectCellAtRow:(NSInteger)r column:(NSInteger)c {
+  NSCell *cell = [self cellAtRow:r column:c];
+  if (!cell) { if (_allowsEmpty || _mode != 0) [self _xefSelect:nil row:-1 column:-1 extend:NO]; return; }
+  [self _xefSelect:cell row:r column:c extend:NO]; }
+- (BOOL)selectCellWithTag:(NSInteger)t {
+  NSCell *cell = [self cellWithTag:t]; if (!cell) return NO;
+  NSInteger r, c; [self getRow:&r column:&c ofCell:cell]; [self _xefSelect:cell row:r column:c extend:NO]; return YES; }
+- (void)deselectAllCells { if (_mode == 0 && !_allowsEmpty) return; [self _xefSelect:nil row:-1 column:-1 extend:NO]; }
+- (void)deselectSelectedCell { [self deselectAllCells]; }
+- (void)selectAll:(id)s { for (NSCell *c in _cells) { [c setState:1]; if (![_selected containsObject:c]) [_selected addObject:c]; } [self setNeedsDisplay:YES]; }
+- (NSCell *)selectedCell { return [_selected lastObject]; }
+- (NSArray *)selectedCells { return [NSArray arrayWithArray:_selected]; }
+- (NSInteger)selectedRow { return _selRow; } - (NSInteger)selectedColumn { return _selCol; }
+/* ---- target and action belong to the matrix (the cells keep their own) */
+- (id)target { return _target; } - (void)setTarget:(id)t { _target = t; }
+- (SEL)action { return _action; } - (void)setAction:(SEL)a { _action = a; }
+- (SEL)doubleAction { return _doubleAction; } - (void)setDoubleAction:(SEL)a { _doubleAction = a; }
+- (BOOL)isEnabled { return _enabled; } - (void)setEnabled:(BOOL)f { _enabled = f; [self setNeedsDisplay:YES]; }
+- (BOOL)sendAction:(SEL)a to:(id)t { return a ? [NSApp sendAction:a to:t from:self] : NO; }
+- (void)sendAction { if (_action) [self sendAction:_action to:_target]; }
+- (void)sendDoubleAction { if (_doubleAction) [self sendAction:_doubleAction to:_target]; }
+- (BOOL)acceptsFirstMouse:(NSEvent *)e { return YES; }
+- (void)drawRect:(NSRect)r {
+  for (NSInteger i = 0; i < _rows; i++) for (NSInteger j = 0; j < _cols; j++) { NSCell *c = [self cellAtRow:i column:j]; if (c) [c drawWithFrame:[self cellFrameAtRow:i column:j] inView:self]; } }
+- (void)mouseDown:(NSEvent *)e {
+  if (!_enabled) return;
+  NSInteger r, c; NSPoint p = [self convertPoint:[e locationInWindow] fromView:nil];
+  if (![self getRow:&r column:&c forPoint:p]) return;
+  NSCell *cell = [self cellAtRow:r column:c]; if (![cell isEnabled]) return;
+  if (_mode == 0) { [self _xefSelect:cell row:r column:c extend:NO]; }
+  else if (_mode == 2) { BOOL ext = ([e modifierFlags] & (NSEventModifierFlagShift | NSEventModifierFlagCommand)) != 0; [self _xefSelect:cell row:r column:c extend:ext]; }
+  else { [cell setHighlighted:YES]; _selRow = r; _selCol = c; [self setNeedsDisplay:YES]; }
+  XEFRedrawWindowNow(_window);
+  for (;;) { NSEvent *n = XEFNextTrackingEvent(); if (n && [n type] == NSEventTypeLeftMouseUp) break; }
+  if (_mode == 1 || _mode == 3) { [cell setHighlighted:NO]; if (_mode == 1 && [cell state] == 0) {} }
+  if ([cell action] && [cell target]) [self sendAction:[cell action] to:[cell target]];
+  else if ([e clickCount] >= 2 && _doubleAction) [self sendDoubleAction];
+  else [self sendAction]; }
+@end

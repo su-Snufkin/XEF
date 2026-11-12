@@ -223,8 +223,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSFontAssetRequest @end
 @interface NSFontCollection : NSObject @end
 @implementation NSFontCollection @end
-@interface NSMatrix : NSControl @end
-@implementation NSMatrix @end
 @interface NSForm : NSMatrix @end
 @implementation NSForm @end
 @interface NSFormCell : NSActionCell @end
@@ -2177,7 +2175,6 @@ static const GenEntry kTable[] = {
 {"NSLayoutManager", '-', "truncatedGlyphRangeInLineFragmentForGlyphAtIndex:", 'D', 'N', "q"},
 {"NSLayoutManager", '-', "underlineGlyphRange:underlineType:lineFragmentRect:lineFragmentGlyphRange:containerOrigin:", 'D', 'v', "NqRNP"},
 {"NSLayoutManager", '-', "usesDefaultHyphenation", 'G', 'B', ""},
-{"NSMatrix", '-', "acceptsFirstMouse:", 'D', 'B', "@"},
 {"NSMatrix", '-', "addColumn", 'D', 'v', ""},
 {"NSMatrix", '-', "addColumnWithCells:", 'D', 'v', "@"},
 {"NSMatrix", '-', "addRow", 'D', 'v', ""},
@@ -2185,7 +2182,6 @@ static const GenEntry kTable[] = {
 {"NSMatrix", '-', "allowsEmptySelection", 'G', 'B', ""},
 {"NSMatrix", '-', "autorecalculatesCellSize", 'G', 'B', ""},
 {"NSMatrix", '-', "autosizesCells", 'G', 'B', ""},
-{"NSMatrix", '-', "backgroundColor", 'G', '@', ""},
 {"NSMatrix", '-', "cellAtRow:column:", 'D', '@', "qq"},
 {"NSMatrix", '-', "cellBackgroundColor", 'G', '@', ""},
 {"NSMatrix", '-', "cellClass", 'G', '#', ""},
@@ -2204,7 +2200,6 @@ static const GenEntry kTable[] = {
 {"NSMatrix", '-', "getRow:column:forPoint:", 'D', 'B', "^^P"},
 {"NSMatrix", '-', "getRow:column:ofCell:", 'D', 'B', "^^@"},
 {"NSMatrix", '-', "highlightCell:atRow:column:", 'D', 'v', "Bqq"},
-{"NSMatrix", '-', "initWithFrame:", 'I', '@', "R"},
 {"NSMatrix", '-', "initWithFrame:mode:cellClass:numberOfRows:numberOfColumns:", 'I', '@', "Rq#qq"},
 {"NSMatrix", '-', "initWithFrame:mode:prototype:numberOfRows:numberOfColumns:", 'I', '@', "Rq@qq"},
 {"NSMatrix", '-', "insertColumn:", 'D', 'v', "q"},
@@ -2217,24 +2212,20 @@ static const GenEntry kTable[] = {
 {"NSMatrix", '-', "keyCell", 'G', '@', ""},
 {"NSMatrix", '-', "makeCellAtRow:column:", 'D', '@', "qq"},
 {"NSMatrix", '-', "mode", 'G', 'q', ""},
-{"NSMatrix", '-', "mouseDown:", 'D', 'v', "@"},
 {"NSMatrix", '-', "mouseDownFlags", 'D', 'q', ""},
 {"NSMatrix", '-', "numberOfColumns", 'D', 'q', ""},
 {"NSMatrix", '-', "numberOfRows", 'D', 'q', ""},
-{"NSMatrix", '-', "performKeyEquivalent:", 'D', 'B', "@"},
 {"NSMatrix", '-', "prototype", 'G', '@', ""},
 {"NSMatrix", '-', "putCell:atRow:column:", 'D', 'v', "@qq"},
 {"NSMatrix", '-', "removeColumn:", 'D', 'v', "q"},
 {"NSMatrix", '-', "removeRow:", 'D', 'v', "q"},
 {"NSMatrix", '-', "renewRows:columns:", 'D', 'v', "qq"},
-{"NSMatrix", '-', "resetCursorRects", 'D', 'v', ""},
 {"NSMatrix", '-', "scrollCellToVisibleAtRow:column:", 'D', 'v', "qq"},
 {"NSMatrix", '-', "selectAll:", 'D', 'v', "@"},
 {"NSMatrix", '-', "selectCellAtRow:column:", 'D', 'v', "qq"},
 {"NSMatrix", '-', "selectCellWithTag:", 'D', 'B', "q"},
 {"NSMatrix", '-', "selectText:", 'D', 'v', "@"},
 {"NSMatrix", '-', "selectTextAtRow:column:", 'D', '@', "qq"},
-{"NSMatrix", '-', "selectedCell", 'D', '@', ""},
 {"NSMatrix", '-', "selectedCells", 'D', 'A', ""},
 {"NSMatrix", '-', "selectedColumn", 'D', 'q', ""},
 {"NSMatrix", '-', "selectedRow", 'D', 'q', ""},

@@ -1,5 +1,6 @@
 /* AppKit-lite model classes: NSToolbar, NSAnimation, NSPopover and the object / array controllers (AppKitModel.m). */
 #import "AppKitLite.h"
+#import "AppKitControls.h"
 
 @interface NSToolbarItem : NSObject <NSCopying> {
 @public
@@ -71,4 +72,13 @@
 @end
 @interface NSView (XEFGridDeclarations)
 - (void)invalidateIntrinsicContentSize; - (BOOL)isHidden; - (void)setHidden:(BOOL)f;
+@end
+
+/* NSMatrix: a grid of cells (radio groups, lists) that is one control */
+@interface NSMatrix : NSControl {
+@public
+  NSMutableArray *_cells, *_selected; NSInteger _rows, _cols, _mode, _selRow, _selCol; NSSize _cellSize, _spacing;
+  BOOL _allowsEmpty, _autosizes, _sizeSet; Class _cellClass; NSCell *_proto; id _target; SEL _action, _doubleAction; BOOL _enabled;
+}
+- (NSInteger)numberOfRows; - (NSInteger)numberOfColumns; - (NSCell *)cellAtRow:(NSInteger)r column:(NSInteger)c;
 @end

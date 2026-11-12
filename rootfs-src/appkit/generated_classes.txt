@@ -65,7 +65,6 @@ NSFilePromiseProvider
 NSFilePromiseReceiver
 NSFontAssetRequest
 NSFontCollection
-NSMatrix
 NSForm
 NSFormCell
 NSGlassEffectContainerView
