@@ -987,3 +987,13 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   (zmiany stosują się od razu — AppKit animuje, więc odczyt tuż po ustawieniu daje tam starą wartość), `convertBaseToScreen:`, `showsResizeIndicator` (NO) itd.
 - Stan: **5349 z 8257** metod prawdziwych; `macref.sh` 31/31.
 
+### 27. NSAttributedString — czytniki dokumentów; stałe tekstowe AppKit (2026-11-12)
+- **Znalezisko:** 86 publicznych stałych `NSString *const` AppKit (m.in. `NSDocumentTypeDocumentAttribute`, `NSRTFTextDocumentType`, `NSHTMLTextDocumentType`, `NSTextListMarker…`) nie miało wartości —
+  aplikacja dostawała śmieci zamiast stringu. Teraz są zdefiniowane w `AppKitText.m` z wartościami odczytanymi z macOS, a test `appkit_consts.m` (wygenerowany z nagłówków SDK, 820 stałych) porównuje
+  wszystkie z Makiem. Dodając nową stałą, uruchom `tests/darwin/macref.sh appkit_consts`. (`NSAppearanceNameAccessibilityHighContrastAqua` ma u Maca wartość `NSAppearanceNameAccessibilityAqua`.)
+- **NSAttributedString** (`AppKitText.m`, kategoria `XEFDocuments`, `appkit_attrstr.m` zgodny z Makiem): `initWithData:options:documentAttributes:error:` (RTF, HTML, tekst zwykły), `initWithRTF:`,
+  `initWithHTML:` itd. Parser HTML obsługuje `b/strong`, `i/em`, `u`, `br`, bloki (zamknięcie `p/div/h*/li` daje `\n`), encje, pomija `script/style/head`; parser RTF: grupy, `\b`, `\i`, `\par`, `\tab`, `\uN`, `\'hh`,
+  pomija tabele fontów i kolorów — **to nie WebKit ani pełny RTF** (brak tabel, obrazów, kolorów, rozmiarów czcionek). Błędny RTF → nil z błędem. `attributedStringWithAttachment:`, `lineBreakBeforeIndex:withinRange:`,
+  `textTypes`, zakresy bloków/list (puste).
+- Stan: **5376 z 8257** metod prawdziwych; `macref.sh` 33/33; pełny `run_tests.sh` przechodzi.
+

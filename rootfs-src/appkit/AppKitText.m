@@ -1238,3 +1238,190 @@ static BOOL XEFNextWord(NSString *s, NSUInteger from, NSUInteger limit, NSRange 
 - (NSUInteger)getGlyphsInRange:(NSRange)r glyphs:(NSGlyph *)g characterIndexes:(NSUInteger *)ci glyphInscriptions:(int *)gi elasticBits:(BOOL *)eb {
   NSUInteger n = 0; for (NSUInteger i = r.location; i < NSMaxRange(r) && i < [_attr length]; i++, n++) { if (g) g[n] = [[_attr string] characterAtIndex:i]; if (ci) ci[n] = i; if (gi) gi[n] = 0; if (eb) eb[n] = NO; } return n; }
 @end
+
+
+/* AppKit text-document attribute / option / type names (values read from macOS) */
+NSString *const NSAppearanceDocumentAttribute = @"NSAppearanceDocumentAttribute";
+NSString *const NSAuthorDocumentAttribute = @"NSAuthorDocumentAttribute";
+NSString *const NSBackgroundColorDocumentAttribute = @"BackgroundColor";
+NSString *const NSBaseURLDocumentOption = @"BaseURL";
+NSString *const NSBottomMarginDocumentAttribute = @"BottomMargin";
+NSString *const NSCategoryDocumentAttribute = @"NSCategoryDocumentAttribute";
+NSString *const NSCharacterEncodingDocumentAttribute = @"CharacterEncoding";
+NSString *const NSCharacterEncodingDocumentOption = @"CharacterEncoding";
+NSString *const NSCocoaVersionDocumentAttribute = @"CocoaRTFVersion";
+NSString *const NSCommentDocumentAttribute = @"NSCommentDocumentAttribute";
+NSString *const NSCompanyDocumentAttribute = @"NSCompanyDocumentAttribute";
+NSString *const NSConvertedDocumentAttribute = @"Converted";
+NSString *const NSCopyrightDocumentAttribute = @"NSCopyrightDocumentAttribute";
+NSString *const NSCreationTimeDocumentAttribute = @"NSCreationTimeDocumentAttribute";
+NSString *const NSDefaultAttributesDocumentAttribute = @"DefaultAttributes";
+NSString *const NSDefaultAttributesDocumentOption = @"DefaultAttributes";
+NSString *const NSDefaultFontExcludedDocumentAttribute = @"NoDefaultFonts";
+NSString *const NSDefaultTabIntervalDocumentAttribute = @"DefaultTabInterval";
+NSString *const NSDocFormatTextDocumentType = @"NSDocFormat";
+NSString *const NSDocumentTypeDocumentAttribute = @"DocumentType";
+NSString *const NSDocumentTypeDocumentOption = @"DocumentType";
+NSString *const NSEditorDocumentAttribute = @"NSEditorDocumentAttribute";
+NSString *const NSExcludedElementsDocumentAttribute = @"ExcludedElements";
+NSString *const NSFileTypeDocumentAttribute = @"UTI";
+NSString *const NSFileTypeDocumentOption = @"UTI";
+NSString *const NSHTMLTextDocumentType = @"NSHTML";
+NSString *const NSHyphenationFactorDocumentAttribute = @"HyphenationFactor";
+NSString *const NSKeywordsDocumentAttribute = @"NSKeywordsDocumentAttribute";
+NSString *const NSLeftMarginDocumentAttribute = @"LeftMargin";
+NSString *const NSMacSimpleTextDocumentType = @"NSMacSimpleText";
+NSString *const NSManagerDocumentAttribute = @"NSManagerDocumentAttribute";
+NSString *const NSModificationTimeDocumentAttribute = @"NSModificationTimeDocumentAttribute";
+NSString *const NSOfficeOpenXMLTextDocumentType = @"NSOfficeOpenXML";
+NSString *const NSOpenDocumentTextDocumentType = @"NSOpenDocument";
+NSString *const NSPaperSizeDocumentAttribute = @"PaperSize";
+NSString *const NSPlainTextDocumentType = @"NSPlainText";
+NSString *const NSPrefixSpacesDocumentAttribute = @"PrefixSpaces";
+NSString *const NSRTFDTextDocumentType = @"NSRTFD";
+NSString *const NSRTFTextDocumentType = @"NSRTF";
+NSString *const NSReadOnlyDocumentAttribute = @"ReadOnly";
+NSString *const NSRightMarginDocumentAttribute = @"RightMargin";
+NSString *const NSSourceTextScalingDocumentAttribute = @"SourceTextScaling";
+NSString *const NSSourceTextScalingDocumentOption = @"SourceTextScaling";
+NSString *const NSSubjectDocumentAttribute = @"NSSubjectDocumentAttribute";
+NSString *const NSTargetTextScalingDocumentOption = @"TargetTextScaling";
+NSString *const NSTextEncodingNameDocumentAttribute = @"TextEncodingName";
+NSString *const NSTextEncodingNameDocumentOption = @"TextEncodingName";
+NSString *const NSTextScalingDocumentAttribute = @"TextScaling";
+NSString *const NSTextSizeMultiplierDocumentOption = @"TextSizeMultiplier";
+NSString *const NSTimeoutDocumentOption = @"Timeout";
+NSString *const NSTitleDocumentAttribute = @"NSTitleDocumentAttribute";
+NSString *const NSTopMarginDocumentAttribute = @"TopMargin";
+NSString *const NSUsesScreenFontsDocumentAttribute = @"UsesScreenFonts";
+NSString *const NSViewModeDocumentAttribute = @"ViewMode";
+NSString *const NSViewSizeDocumentAttribute = @"ViewSize";
+NSString *const NSViewZoomDocumentAttribute = @"ViewZoom";
+NSString *const NSWebArchiveTextDocumentType = @"NSWebArchive";
+NSString *const NSWebPreferencesDocumentOption = @"WebPreferences";
+NSString *const NSWebResourceLoadDelegateDocumentOption = @"WebResourceLoadDelegate";
+NSString *const NSWordMLTextDocumentType = @"NSWordML";
+NSString *const NSAttributedStringDocumentAttribute = @"AttributedString";
+
+
+/* more AppKit string constants that were not exported (values read from macOS) */
+NSString *const NSTextHighlightColorSchemeBlue = @"NSTextHighlightColorSchemeBlue";
+NSString *const NSTextHighlightColorSchemeDefault = @"NSTextHighlightColorSchemeDefault";
+NSString *const NSTextHighlightColorSchemeMint = @"NSTextHighlightColorSchemeMint";
+NSString *const NSTextHighlightColorSchemeOrange = @"NSTextHighlightColorSchemeOrange";
+NSString *const NSTextHighlightColorSchemePink = @"NSTextHighlightColorSchemePink";
+NSString *const NSTextHighlightColorSchemePurple = @"NSTextHighlightColorSchemePurple";
+NSString *const NSTextHighlightStyleDefault = @"NSTextHighlightStyleDefault";
+NSString *const NSTextKit1ListMarkerFormatDocumentOption = @"TextKit1ListMarkerFormat";
+NSString *const NSTextListMarkerBox = @"{box}";
+NSString *const NSTextListMarkerCheck = @"{check}";
+NSString *const NSTextListMarkerCircle = @"{circle}";
+NSString *const NSTextListMarkerDecimal = @"{decimal}";
+NSString *const NSTextListMarkerDiamond = @"{diamond}";
+NSString *const NSTextListMarkerDisc = @"{disc}";
+NSString *const NSTextListMarkerHyphen = @"{hyphen}";
+NSString *const NSTextListMarkerLowercaseAlpha = @"{lower-alpha}";
+NSString *const NSTextListMarkerLowercaseHexadecimal = @"{lower-hexadecimal}";
+NSString *const NSTextListMarkerLowercaseLatin = @"{lower-latin}";
+NSString *const NSTextListMarkerLowercaseRoman = @"{lower-roman}";
+NSString *const NSTextListMarkerOctal = @"{octal}";
+NSString *const NSTextListMarkerSquare = @"{square}";
+NSString *const NSTextListMarkerUppercaseAlpha = @"{upper-alpha}";
+NSString *const NSTextListMarkerUppercaseHexadecimal = @"{upper-hexadecimal}";
+NSString *const NSTextListMarkerUppercaseLatin = @"{upper-latin}";
+NSString *const NSTextListMarkerUppercaseRoman = @"{upper-roman}";
+
+/* ---- NSAttributedString: document readers (plain, RTF, HTML), attachments, line breaks ---- */
+static NSString *XEFHTMLEntity(NSString *e) {
+  if ([e isEqualToString:@"amp"]) return @"&"; if ([e isEqualToString:@"lt"]) return @"<"; if ([e isEqualToString:@"gt"]) return @">"; if ([e isEqualToString:@"quot"]) return @"\""; if ([e isEqualToString:@"apos"]) return @"'"; if ([e isEqualToString:@"nbsp"]) return @" ";
+  if ([e hasPrefix:@"#"]) { unsigned long v = [e hasPrefix:@"#x"] ? strtoul([[e substringFromIndex:2] UTF8String], NULL, 16) : strtoul([[e substringFromIndex:1] UTF8String], NULL, 10); if (v) return [NSString stringWithFormat:@"%C", (unichar)v]; }
+  return nil; }
+static NSAttributedString *XEFParseHTML(NSString *h) {
+  NSMutableAttributedString *out = [[[NSMutableAttributedString alloc] init] autorelease]; NSUInteger i = 0, n = [h length]; int bold = 0, ital = 0, und = 0;
+  NSFontManager *fm = [NSFontManager sharedFontManager]; NSFont *base = [NSFont systemFontOfSize:12];
+  while (i < n) {
+    unichar c = [h characterAtIndex:i]; NSString *piece = nil;
+    if (c == '<') {
+      NSRange close = [h rangeOfString:@">" options:0 range:NSMakeRange(i, n - i)]; if (close.location == NSNotFound) break;
+      NSString *tag = [[h substringWithRange:NSMakeRange(i + 1, close.location - i - 1)] lowercaseString]; i = NSMaxRange(close);
+      BOOL end = [tag hasPrefix:@"/"]; if (end) tag = [tag substringFromIndex:1]; NSString *name = [[tag componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] firstObject];
+      if ([name isEqualToString:@"b"] || [name isEqualToString:@"strong"]) bold += end ? -1 : 1; else if ([name isEqualToString:@"i"] || [name isEqualToString:@"em"]) ital += end ? -1 : 1; else if ([name isEqualToString:@"u"]) und += end ? -1 : 1;
+      else if ([name isEqualToString:@"br"]) piece = @"\n";
+      else if (end && ([@[@"p", @"div", @"h1", @"h2", @"h3", @"h4", @"h5", @"h6", @"li", @"tr"] containsObject:name])) piece = @"\n";
+      else if ([@[@"script", @"style", @"head"] containsObject:name] && !end) { NSRange e = [h rangeOfString:[NSString stringWithFormat:@"</%@", name] options:NSCaseInsensitiveSearch range:NSMakeRange(i, n - i)]; if (e.location == NSNotFound) break; i = e.location; }
+    } else if (c == '&') {
+      NSRange semi = [h rangeOfString:@";" options:0 range:NSMakeRange(i, MIN((NSUInteger)10, n - i))]; NSString *rep = semi.location != NSNotFound ? XEFHTMLEntity([h substringWithRange:NSMakeRange(i + 1, semi.location - i - 1)]) : nil;
+      if (rep) { piece = rep; i = NSMaxRange(semi); } else { piece = @"&"; i++; }
+    } else { NSUInteger j = i; while (j < n && [h characterAtIndex:j] != '<' && [h characterAtIndex:j] != '&') j++; piece = [[h substringWithRange:NSMakeRange(i, j - i)] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]; i = j;
+      piece = [piece stringByReplacingOccurrencesOfString:@"  " withString:@" "]; }
+    if (!piece || ![piece length]) continue;
+    NSFont *f = base; if (bold > 0) f = [fm convertFont:f toHaveTrait:2]; if (ital > 0) f = [fm convertFont:f toHaveTrait:1];
+    NSMutableDictionary *at = [NSMutableDictionary dictionaryWithObject:f forKey:NSFontAttributeName]; if (und > 0) at[NSUnderlineStyleAttributeName] = @1;
+    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:piece attributes:at] autorelease]]; }
+  return out; }
+static NSAttributedString *XEFParseRTF(NSString *r) {
+  if (![r hasPrefix:@"{\\rtf"]) return nil;
+  NSMutableAttributedString *out = [[[NSMutableAttributedString alloc] init] autorelease]; NSFontManager *fm = [NSFontManager sharedFontManager]; NSFont *base = [NSFont systemFontOfSize:12];
+  NSUInteger i = 0, n = [r length]; int depth = 0; BOOL boldStack[64] = {0}, italStack[64] = {0}, skipStack[64] = {0}; BOOL bold = NO, ital = NO, skip = NO;
+  while (i < n) {
+    unichar c = [r characterAtIndex:i];
+    if (c == '{') { if (depth < 63) { boldStack[depth] = bold; italStack[depth] = ital; skipStack[depth] = skip; depth++; }
+      if (i + 2 < n && [r characterAtIndex:i + 1] == '\\' && [r characterAtIndex:i + 2] == '*') skip = YES; i++; continue; }
+    if (c == '}') { if (depth > 0) { depth--; bold = boldStack[depth]; ital = italStack[depth]; skip = skipStack[depth]; } i++; continue; }
+    if (c == '\\') {
+      i++; if (i >= n) break; unichar d = [r characterAtIndex:i];
+      if (d == '\\' || d == '{' || d == '}') { if (!skip) { NSString *s = [NSString stringWithFormat:@"%C", d]; [out appendAttributedString:[[[NSAttributedString alloc] initWithString:s attributes:@{ NSFontAttributeName: base }] autorelease]]; } i++; continue; }
+      if (d == '\'') { if (i + 2 < n) { unsigned v = (unsigned)strtoul([[r substringWithRange:NSMakeRange(i + 1, 2)] UTF8String], NULL, 16); if (!skip) [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%C", (unichar)v]] autorelease]]; i += 3; } continue; }
+      NSUInteger j = i; while (j < n && [[NSCharacterSet letterCharacterSet] characterIsMember:[r characterAtIndex:j]]) j++;
+      NSString *word = [r substringWithRange:NSMakeRange(i, j - i)]; NSUInteger k = j; if (k < n && ([r characterAtIndex:k] == '-')) k++; while (k < n && [[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[r characterAtIndex:k]]) k++;
+      NSInteger param = k > j ? [[r substringWithRange:NSMakeRange(j, k - j)] integerValue] : -1; BOOL hasParam = k > j; i = k; if (i < n && [r characterAtIndex:i] == ' ') i++;
+      if ([word isEqualToString:@"b"]) bold = !hasParam || param != 0; else if ([word isEqualToString:@"i"]) ital = !hasParam || param != 0;
+      else if ([word isEqualToString:@"par"] || [word isEqualToString:@"line"]) { if (!skip) [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n"] autorelease]]; }
+      else if ([word isEqualToString:@"tab"]) { if (!skip) [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\t"] autorelease]]; }
+      else if ([word isEqualToString:@"u"]) { if (!skip && hasParam) [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%C", (unichar)param]] autorelease]]; if (i < n) i++; }
+      else if ([@[@"fonttbl", @"colortbl", @"stylesheet", @"info", @"pict", @"header", @"footer"] containsObject:word]) skip = YES;
+      continue; }
+    if (c == '\n' || c == '\r') { i++; continue; }
+    NSUInteger j = i; while (j < n) { unichar x = [r characterAtIndex:j]; if (x == '\\' || x == '{' || x == '}' || x == '\n' || x == '\r') break; j++; }
+    if (!skip && j > i) { NSFont *f = base; if (bold) f = [fm convertFont:f toHaveTrait:2]; if (ital) f = [fm convertFont:f toHaveTrait:1];
+      [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[r substringWithRange:NSMakeRange(i, j - i)] attributes:@{ NSFontAttributeName: f }] autorelease]]; }
+    i = j; }
+  return out; }
+@implementation NSAttributedString (XEFDocuments)
+- (id)initWithData:(NSData *)data options:(NSDictionary *)o documentAttributes:(NSDictionary **)da error:(NSError **)e {
+  NSString *type = [o objectForKey:@"DocumentType"] ?: [o objectForKey:@"NSDocumentTypeDocumentAttribute"];
+  if ([type isEqualToString:@"NSRTFTextDocumentType"]) type = @"NSRTF"; else if ([type isEqualToString:@"NSHTMLTextDocumentType"]) type = @"NSHTML"; else if ([type isEqualToString:@"NSPlainTextDocumentType"]) type = @"NSPlainText"; NSString *s = [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
+  if (!s) s = [[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding] autorelease];
+  NSAttributedString *r = nil;
+  if ([type isEqualToString:@"NSRTF"] || (!type && [s hasPrefix:@"{\\rtf"])) r = XEFParseRTF(s);
+  else if ([type isEqualToString:@"NSHTML"] || (!type && [s rangeOfString:@"<"].location != NSNotFound && [s rangeOfString:@">"].location != NSNotFound)) r = XEFParseHTML(s);
+  else if (!type || [type isEqualToString:@"NSPlainText"]) r = s ? [[[NSAttributedString alloc] initWithString:s attributes:@{ NSFontAttributeName: [NSFont systemFontOfSize:12] }] autorelease] : nil;
+  if (!r) { if (e) *e = [NSError errorWithDomain:NSCocoaErrorDomain code:259 userInfo:nil]; [self release]; return nil; }
+  if (da) *da = type ? @{ @"DocumentType": type } : @{};
+  [self release]; return [r retain]; }
+- (id)initWithURL:(NSURL *)u options:(NSDictionary *)o documentAttributes:(NSDictionary **)da error:(NSError **)e { NSData *d = [NSData dataWithContentsOfURL:u]; if (!d) { if (e) *e = [NSError errorWithDomain:NSCocoaErrorDomain code:260 userInfo:nil]; [self release]; return nil; } return [self initWithData:d options:o documentAttributes:da error:e]; }
+- (id)initWithRTF:(NSData *)d documentAttributes:(NSDictionary **)da { return [self initWithData:d options:@{ @"DocumentType": @"NSRTF" } documentAttributes:da error:NULL]; }
+- (id)initWithRTFD:(NSData *)d documentAttributes:(NSDictionary **)da { return [self initWithRTF:d documentAttributes:da]; }
+- (id)initWithHTML:(NSData *)d documentAttributes:(NSDictionary **)da { return [self initWithData:d options:@{ @"DocumentType": @"NSHTML" } documentAttributes:da error:NULL]; }
+- (id)initWithHTML:(NSData *)d baseURL:(NSURL *)b documentAttributes:(NSDictionary **)da { return [self initWithHTML:d documentAttributes:da]; }
+- (id)initWithHTML:(NSData *)d options:(NSDictionary *)o documentAttributes:(NSDictionary **)da { return [self initWithHTML:d documentAttributes:da]; }
+- (id)initWithDocFormat:(NSData *)d documentAttributes:(NSDictionary **)da { [self release]; return nil; }
+- (id)initWithRTFDFileWrapper:(NSFileWrapper *)w documentAttributes:(NSDictionary **)da { return [self initWithRTF:[w regularFileContents] documentAttributes:da]; }
+- (id)initWithURL:(NSURL *)u documentAttributes:(NSDictionary **)da { return [self initWithURL:u options:@{} documentAttributes:da error:NULL]; }
+- (id)initWithPath:(NSString *)p documentAttributes:(NSDictionary **)da { return [self initWithURL:[NSURL fileURLWithPath:p] documentAttributes:da]; }
++ (NSAttributedString *)attributedStringWithAttachment:(id)a { return [self attributedStringWithAttachment:a attributes:@{}]; }
++ (NSAttributedString *)attributedStringWithAttachment:(id)a attributes:(NSDictionary *)at {
+  NSMutableDictionary *d = [NSMutableDictionary dictionaryWithDictionary:at]; d[@"NSAttachment"] = a; return [[[NSAttributedString alloc] initWithString:@"￼" attributes:d] autorelease]; }
+- (NSUInteger)lineBreakBeforeIndex:(NSUInteger)i withinRange:(NSRange)r {
+  NSString *s = [self string]; if (i > NSMaxRange(r)) i = NSMaxRange(r); NSUInteger k = i;
+  while (k > r.location) { if ([[NSCharacterSet whitespaceAndNewlineCharacterSet] characterIsMember:[s characterAtIndex:k - 1]]) return k; k--; }
+  return r.location; }
+- (NSUInteger)lineBreakByHyphenatingBeforeIndex:(NSUInteger)i withinRange:(NSRange)r { return [self lineBreakBeforeIndex:i withinRange:r]; }
+- (NSRange)rangeOfTextBlock:(id)b atIndex:(NSUInteger)i { return NSMakeRange(NSNotFound, 0); } - (NSRange)rangeOfTextTable:(id)t atIndex:(NSUInteger)i { return NSMakeRange(NSNotFound, 0); } - (NSRange)rangeOfTextList:(id)l atIndex:(NSUInteger)i { return NSMakeRange(NSNotFound, 0); }
+- (NSInteger)itemNumberInTextList:(id)l atIndex:(NSUInteger)i { return 0; }
+- (BOOL)prefersRTFDInRange:(NSRange)r { return NO; }
+- (NSURL *)URLAtIndex:(NSUInteger)i effectiveRange:(NSRangePointer)r { id l = [self attribute:@"NSLink" atIndex:i effectiveRange:r]; return [l isKindOfClass:[NSURL class]] ? l : nil; }
++ (NSArray *)textTypes { return @[@"public.rtf", @"public.html", @"public.plain-text", @"com.apple.rtfd"]; } + (NSArray *)textUnfilteredTypes { return [self textTypes]; }
++ (NSArray *)textFileTypes { return @[@"rtf", @"html", @"htm", @"txt", @"rtfd"]; } + (NSArray *)textUnfilteredFileTypes { return [self textFileTypes]; }
++ (NSArray *)textPasteboardTypes { return @[]; } + (NSArray *)textUnfilteredPasteboardTypes { return @[]; }
+@end

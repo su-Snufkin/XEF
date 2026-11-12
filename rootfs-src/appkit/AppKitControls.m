@@ -1052,7 +1052,7 @@ NSString *const NSAppearanceNameAqua = @"NSAppearanceNameAqua";
 NSString *const NSAppearanceNameDarkAqua = @"NSAppearanceNameDarkAqua";
 NSString *const NSAppearanceNameVibrantLight = @"NSAppearanceNameVibrantLight";
 NSString *const NSAppearanceNameVibrantDark = @"NSAppearanceNameVibrantDark";
-NSString *const NSAppearanceNameAccessibilityHighContrastAqua = @"NSAppearanceNameAccessibilityHighContrastAqua";
+NSString *const NSAppearanceNameAccessibilityHighContrastAqua = @"NSAppearanceNameAccessibilityAqua";
 
 /* ================================================================== action dispatch */
 @implementation NSApplication (XEFActions)
