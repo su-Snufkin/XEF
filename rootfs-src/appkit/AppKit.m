@@ -1961,3 +1961,13 @@ static NSMutableDictionary *g_exposed;
 @implementation NSTokenFieldCell (XEFTokenizing)
 + (NSCharacterSet *)defaultTokenizingCharacterSet { return [NSCharacterSet characterSetWithCharactersInString:@","]; }
 @end
+
+@implementation NSMenuItem (XEFMore)
+- (NSString *)subtitle { return XEFGet(self, "xef.subtitle"); } - (void)setSubtitle:(NSString *)s { XEFSet(self, "xef.subtitle", [[s copy] autorelease]); }
+- (id)badge { return XEFGet(self, "xef.badge"); } - (void)setBadge:(id)b { XEFSet(self, "xef.badge", b); }
+- (NSString *)identifier { return XEFGet(self, "xef.identifier"); } - (void)setIdentifier:(NSString *)i { XEFSet(self, "xef.identifier", [[i copy] autorelease]); }
+- (BOOL)allowsAutomaticKeyEquivalentLocalization { return XEFFlag(self, "xef.kel", YES); } - (void)setAllowsAutomaticKeyEquivalentLocalization:(BOOL)f { XEFSet(self, "xef.kel", [NSNumber numberWithBool:f]); }
+- (BOOL)allowsAutomaticKeyEquivalentMirroring { return XEFFlag(self, "xef.kem", YES); } - (void)setAllowsAutomaticKeyEquivalentMirroring:(BOOL)f { XEFSet(self, "xef.kem", [NSNumber numberWithBool:f]); }
+- (NSInteger)mnemonicLocation { return NSNotFound; } - (void)setMnemonicLocation:(NSUInteger)l {} - (NSString *)mnemonic { return @""; } - (void)setTitleWithMnemonic:(NSString *)t { [self setTitle:[t stringByReplacingOccurrencesOfString:@"&" withString:@""]]; }
++ (NSArray *)writingToolsItems { return @[]; }
+@end

@@ -1133,3 +1133,11 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `+[NSTextInputContext currentInputContext]` zwraca nil jak u Maca (§39).
 - Stan: patrz `tools/appkit_gap.sh`.
 
+### 45. NSToolbar, NSToolbarItem, NSMenuItem, NSDocumentController — uzupełnienia (2026-11-12)
+- `AppKitModel.m`, `AppKit.m`, `AppKitDocument.m`, test `appkit_toolbar2.m` zgodny z Makiem: `NSToolbar` — `removeItemWithItemIdentifier:`, `allowsDisplayModeCustomization` (YES), `itemIdentifiers`/`centeredItemIdentifiers`
+  (przechowywane, domyślnie puste), akcesorium pełnoekranowe; `NSToolbarItem` — `title`, `style`, `hidden`, `possibleLabels`, `badge`, `backgroundTintColor`; `NSMenuItem` — `subtitle`, `badge`, `identifier`,
+  automatyczna lokalizacja/odbicie skrótów (YES); `NSDocumentController` — `currentDirectory` nil, `beginOpenPanel:…`. Pasek narzędzi nadal nie jest rysowany.
+- Cztery pozostałe elementy Touch Bara (stepper, popover, wybór koloru, lista kandydatów) **działają jako atrapy z domyślnymi wartościami z Maca** (§33–35) — nie ma sensu pisać ich drugi raz, `appkit_gap.sh` liczy je jednak jako brakujące.
+- Zdarza się, że `macref.sh` zgłasza `BUILD FAIL` dla kilkunastu testów naraz (chwilowy zanik połączenia z Makiem) — wystarczy powtórzyć.
+- Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 59/59; pełny `run_tests.sh` przechodzi.
+

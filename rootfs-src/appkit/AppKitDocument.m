@@ -661,3 +661,10 @@ static const XEFType *XEFTypeForExt(NSString *e) {
 - (void)beginSheetWithPrintInfo:(id)i modalForWindow:(NSWindow *)w delegate:(id)d didEndSelector:(SEL)s contextInfo:(void *)c { if (d && s) ((void (*)(id, SEL, id, NSInteger, void *))objc_msgSend)(d, s, self, 0, c); }
 - (id)accessoryView { return nil; } - (void)setAccessoryView:(id)v {} - (void)updateFromPrintInfo {} - (NSInteger)finalWritePrintInfo { return 0; }
 @end
+
+@implementation NSDocumentController (XEFMore)
+- (NSString *)currentDirectory { return nil; } - (id)standardShareMenuItem { return nil; }
+- (void)beginOpenPanel:(NSOpenPanel *)p forTypes:(NSArray *)t completionHandler:(void (^)(NSInteger))h { NSInteger r = [self runModalOpenPanel:p forTypes:t]; if (h) h(r); }
+- (void)restoreWindowWithIdentifier:(NSString *)i state:(NSCoder *)s completionHandler:(void (^)(NSWindow *, NSError *))h { if (h) h(nil, nil); }
++ (void)restoreWindowWithIdentifier:(NSString *)i state:(NSCoder *)s completionHandler:(void (^)(NSWindow *, NSError *))h { if (h) h(nil, nil); }
+@end

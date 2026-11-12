@@ -1842,3 +1842,24 @@ static NSInteger g_speaking_count;
 - (void)navigateBack:(id)s { if (_sel > 0) _sel--; } - (void)navigateForward:(id)s { if (_sel + 1 < (NSInteger)[_objs count]) _sel++; } - (void)takeSelectedIndexFrom:(id)s { [self setSelectedIndex:[s integerValue]]; }
 - (id)animator { return self; } - (NSDictionary *)animations { return @{}; } - (void)setAnimations:(NSDictionary *)a {} - (id)animationForKey:(NSString *)k { return nil; } + (id)defaultAnimationForKey:(NSString *)k { return nil; }
 @end
+
+/* ---- NSToolbar / NSToolbarItem additions ---- */
+@implementation NSToolbar (XEFMore)
+- (void)removeItemWithItemIdentifier:(NSString *)i { for (NSUInteger k = 0; k < [_items count]; k++) if ([[_items[k] itemIdentifier] isEqualToString:i]) { [self removeItemAtIndex:k]; return; } }
+- (BOOL)allowsDisplayModeCustomization { NSNumber *n = objc_getAssociatedObject(self, "xef.dmc"); return n ? [n boolValue] : YES; } - (void)setAllowsDisplayModeCustomization:(BOOL)f { objc_setAssociatedObject(self, "xef.dmc", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (NSArray *)itemIdentifiers { return objc_getAssociatedObject(self, "xef.ids") ?: @[]; } - (void)setItemIdentifiers:(NSArray *)a { objc_setAssociatedObject(self, "xef.ids", [[a copy] autorelease], OBJC_ASSOCIATION_RETAIN); }
+- (NSSet *)centeredItemIdentifiers { return objc_getAssociatedObject(self, "xef.centered") ?: [NSSet set]; } - (void)setCenteredItemIdentifiers:(NSSet *)s { objc_setAssociatedObject(self, "xef.centered", [[s copy] autorelease], OBJC_ASSOCIATION_RETAIN); }
+- (NSString *)centeredItemIdentifier { return [[self centeredItemIdentifiers] anyObject]; } - (void)setCenteredItemIdentifier:(NSString *)i { [self setCenteredItemIdentifiers:i ? [NSSet setWithObject:i] : [NSSet set]]; }
+- (NSView *)fullScreenAccessoryView { return objc_getAssociatedObject(self, "xef.fsav"); } - (void)setFullScreenAccessoryView:(NSView *)v { objc_setAssociatedObject(self, "xef.fsav", v, OBJC_ASSOCIATION_RETAIN); }
+- (CGFloat)fullScreenAccessoryViewMinHeight { return [objc_getAssociatedObject(self, "xef.fsmin") doubleValue]; } - (void)setFullScreenAccessoryViewMinHeight:(CGFloat)h { objc_setAssociatedObject(self, "xef.fsmin", [NSNumber numberWithDouble:h], OBJC_ASSOCIATION_RETAIN); }
+- (CGFloat)fullScreenAccessoryViewMaxHeight { return [objc_getAssociatedObject(self, "xef.fsmax") doubleValue]; } - (void)setFullScreenAccessoryViewMaxHeight:(CGFloat)h { objc_setAssociatedObject(self, "xef.fsmax", [NSNumber numberWithDouble:h], OBJC_ASSOCIATION_RETAIN); }
+@end
+@implementation NSToolbarItem (XEFMore)
+- (NSString *)title { return objc_getAssociatedObject(self, "xef.title") ?: @""; } - (void)setTitle:(NSString *)t { objc_setAssociatedObject(self, "xef.title", [[t copy] autorelease], OBJC_ASSOCIATION_RETAIN); }
+- (NSSet *)possibleLabels { return objc_getAssociatedObject(self, "xef.pl") ?: [NSSet set]; } - (void)setPossibleLabels:(NSSet *)s { objc_setAssociatedObject(self, "xef.pl", [[s copy] autorelease], OBJC_ASSOCIATION_RETAIN); }
+- (NSColor *)backgroundTintColor { return objc_getAssociatedObject(self, "xef.tint"); } - (void)setBackgroundTintColor:(NSColor *)c { objc_setAssociatedObject(self, "xef.tint", c, OBJC_ASSOCIATION_RETAIN); }
+- (NSInteger)style { return [objc_getAssociatedObject(self, "xef.style") integerValue]; } - (void)setStyle:(NSInteger)s { objc_setAssociatedObject(self, "xef.style", [NSNumber numberWithInteger:s], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)isHidden { return [objc_getAssociatedObject(self, "xef.hidden") boolValue]; } - (void)setHidden:(BOOL)f { objc_setAssociatedObject(self, "xef.hidden", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); } - (BOOL)isVisible { return NO; }
+- (id)badge { return objc_getAssociatedObject(self, "xef.badge"); } - (void)setBadge:(id)b { objc_setAssociatedObject(self, "xef.badge", b, OBJC_ASSOCIATION_RETAIN); }
+- (void)validateToolbarItem {} - (BOOL)validateMenuItem:(id)i { return YES; }
+@end
