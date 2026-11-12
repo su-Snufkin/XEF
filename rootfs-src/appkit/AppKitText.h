@@ -76,3 +76,13 @@ typedef unsigned int NSGlyph;
 @interface NSSpellChecker : NSObject { @public NSMutableDictionary *_ignored; NSMutableSet *_learned; NSString *_language; BOOL _autoLang; id _accessory; }
 + (NSSpellChecker *)sharedSpellChecker; + (BOOL)sharedSpellCheckerExists; + (NSInteger)uniqueSpellDocumentTag;
 @end
+
+/* NSTypesetter / NSATSTypesetter: the settings and per-paragraph helpers; line layout itself is done by the layout manager */
+@interface NSTypesetter : NSObject {
+@public
+  NSAttributedString *_attr; NSRange _pgr, _sepr; BOOL _leading, _bidi; NSInteger _behavior; float _hyph; CGFloat _padding;
+}
++ (id)sharedSystemTypesetter; + (NSInteger)defaultTypesetterBehavior;
+@end
+@interface NSATSTypesetter : NSTypesetter
+@end

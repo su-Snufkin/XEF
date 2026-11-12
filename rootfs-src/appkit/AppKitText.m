@@ -1182,3 +1182,59 @@ static BOOL XEFNextWord(NSString *s, NSUInteger from, NSUInteger limit, NSRange 
 - (NSView *)rulerAccessoryViewForTextView:(NSTextView *)tv paragraphStyle:(NSParagraphStyle *)p ruler:(id)r enabled:(BOOL)e { return nil; }
 - (BOOL)layoutManagerOwnsFirstResponderInWindow:(NSWindow *)w { id fr = [w firstResponder]; for (NSTextContainer *c in _containers) if ([c textView] == fr) return YES; return NO; }
 @end
+
+/* ================================================================== NSTypesetter */
+@implementation NSTypesetter
++ (id)sharedSystemTypesetter { static NSATSTypesetter *t; if (!t) t = [[NSATSTypesetter alloc] init]; return t; }
++ (id)sharedSystemTypesetterForBehavior:(NSInteger)b { return [self sharedSystemTypesetter]; }
++ (NSInteger)defaultTypesetterBehavior { return 4; }
+- (id)init { if ((self = [super init])) { _leading = YES; _bidi = YES; _behavior = 4; } return self; }
+- (void)dealloc { [_attr release]; [super dealloc]; }
+- (BOOL)usesFontLeading { return _leading; } - (void)setUsesFontLeading:(BOOL)f { _leading = f; }
+- (NSInteger)typesetterBehavior { return _behavior; } - (void)setTypesetterBehavior:(NSInteger)b { _behavior = b == -1 ? 15 : b; }
+- (float)hyphenationFactor { return _hyph; } - (void)setHyphenationFactor:(float)f { _hyph = f; }
+- (CGFloat)lineFragmentPadding { return _padding; } - (void)setLineFragmentPadding:(CGFloat)p { _padding = p; }
+- (BOOL)bidiProcessingEnabled { return _bidi; } - (void)setBidiProcessingEnabled:(BOOL)f { _bidi = f; }
+- (NSAttributedString *)attributedString { return _attr; } - (void)setAttributedString:(NSAttributedString *)a { [a retain]; [_attr release]; _attr = a; }
+- (void)setParagraphGlyphRange:(NSRange)r separatorGlyphRange:(NSRange)s { _pgr = r; _sepr = s; }
+- (NSRange)paragraphGlyphRange { NSRange r = _pgr; r.length = r.length >= _sepr.length ? r.length - _sepr.length : r.length; return r; }
+- (NSRange)paragraphSeparatorGlyphRange { return _sepr; }
+- (NSRange)paragraphCharacterRange { return NSMakeRange(0, 0); } - (NSRange)paragraphSeparatorCharacterRange { return NSMakeRange(0, 0); }
+- (NSLayoutManager *)layoutManager { return nil; } - (NSArray *)textContainers { return @[]; } - (NSTextContainer *)currentTextContainer { return nil; } - (NSParagraphStyle *)currentParagraphStyle { return nil; }
+- (NSFont *)substituteFontForFont:(NSFont *)f { return f; }
+- (id)textTabForGlyphLocation:(CGFloat)loc writingDirection:(NSInteger)d maxLocation:(CGFloat)max { return nil; }
+- (NSUInteger)actionForControlCharacterAtIndex:(NSUInteger)i {
+  if (!_attr || i >= [_attr length]) return 1;
+  unichar c = [[_attr string] characterAtIndex:i];
+  if (c == '\n' || c == 0x2028 || c == 0x2029) return 24; if (c == '\t') return 4; if (c == 0x0C) return 32; return 1; }
+- (BOOL)shouldBreakLineByWordBeforeCharacterAtIndex:(NSUInteger)i { return YES; }
+- (BOOL)shouldBreakLineByHyphenatingBeforeCharacterAtIndex:(NSUInteger)i { return YES; }
+- (float)hyphenationFactorForGlyphAtIndex:(NSUInteger)i { return _hyph; }
+- (unichar)hyphenCharacterForGlyphAtIndex:(NSUInteger)i { return 0x2010; }
+- (CGFloat)lineSpacingAfterGlyphAtIndex:(NSUInteger)i withProposedLineFragmentRect:(NSRect)r { return 0; }
+- (CGFloat)paragraphSpacingBeforeGlyphAtIndex:(NSUInteger)i withProposedLineFragmentRect:(NSRect)r { return 0; }
+- (CGFloat)paragraphSpacingAfterGlyphAtIndex:(NSUInteger)i withProposedLineFragmentRect:(NSRect)r { return 0; }
+- (CGFloat)baselineOffsetInLayoutManager:(NSLayoutManager *)lm glyphIndex:(NSUInteger)i { return 0; }
+- (NSDictionary *)attributesForExtraLineFragment { return @{}; }
+- (void)beginParagraph {} - (void)endParagraph {} - (void)beginLineWithGlyphAtIndex:(NSUInteger)i {} - (void)endLineWithGlyphRange:(NSRange)r {}
+- (NSInteger)layoutParagraphAtPoint:(NSPointPointer)p { return 0; }
+- (NSUInteger)layoutGlyphsInLayoutManager:(NSLayoutManager *)lm startingAtGlyphIndex:(NSUInteger)i maxNumberOfLineFragments:(NSUInteger)n nextGlyphIndex:(NSUInteger *)next { if (next) *next = i; return 0; }
+- (void)layoutCharactersInRange:(NSRange)r forLayoutManager:(NSLayoutManager *)lm maximumNumberOfLineFragments:(NSUInteger)n {}
+- (void)setHardInvalidation:(BOOL)f forGlyphRange:(NSRange)r {}
++ (CGFloat)printingAdjustmentInLayoutManager:(NSLayoutManager *)lm forNominallySpacedGlyphRange:(NSRange)r packedGlyphs:(const unsigned char *)g count:(NSUInteger)n { return 0; }
+- (void)willSetLineFragmentRect:(NSRectPointer)f forGlyphRange:(NSRange)r usedRect:(NSRectPointer)u baselineOffset:(CGFloat *)b {}
+- (NSRect)boundingBoxForControlGlyphAtIndex:(NSUInteger)i forTextContainer:(NSTextContainer *)c proposedLineFragment:(NSRect)f glyphPosition:(NSPoint)p characterIndex:(NSUInteger)ci { return NSZeroRect; }
+- (void)getLineFragmentRect:(NSRectPointer)f usedRect:(NSRectPointer)u forParagraphSeparatorGlyphRange:(NSRange)r atProposedOrigin:(NSPoint)o { if (f) *f = NSMakeRect(o.x, o.y, 0, 0); if (u) *u = NSMakeRect(o.x, o.y, 0, 0); }
+- (NSUInteger)getLineFragmentRect:(NSRectPointer)f usedRect:(NSRectPointer)u remainingRect:(NSRectPointer)rem forStartingGlyphAtIndex:(NSUInteger)i proposedRect:(NSRect)p lineSpacing:(CGFloat)ls paragraphSpacingBefore:(CGFloat)pb paragraphSpacingAfter:(CGFloat)pa { if (f) *f = p; if (u) *u = p; if (rem) *rem = NSZeroRect; return 0; }
+- (void)setLineFragmentRect:(NSRect)f forGlyphRange:(NSRange)r usedRect:(NSRect)u baselineOffset:(CGFloat)b {}
+- (void)setNotShownAttribute:(BOOL)f forGlyphRange:(NSRange)r {} - (void)setDrawsOutsideLineFragment:(BOOL)f forGlyphRange:(NSRange)r {}
+- (void)setLocation:(NSPoint)p withAdvancements:(const CGFloat *)a forStartOfGlyphRange:(NSRange)r {} - (void)setAttachmentSize:(NSSize)s forGlyphRange:(NSRange)r {} - (void)setBidiLevels:(const unsigned char *)l forGlyphRange:(NSRange)r {}
+- (NSRange)characterRangeForGlyphRange:(NSRange)g actualGlyphRange:(NSRangePointer)a { return NSMakeRange(0, 0); }
+- (NSRange)glyphRangeForCharacterRange:(NSRange)c actualCharacterRange:(NSRangePointer)a { return NSMakeRange(0, 0); }
+@end
+@implementation NSATSTypesetter
++ (id)sharedTypesetter { return [NSTypesetter sharedSystemTypesetter]; }
+- (NSRect)lineFragmentRectForProposedRect:(NSRect)p remainingRect:(NSRectPointer)r { if (r) *r = NSZeroRect; return p; }
+- (NSUInteger)getGlyphsInRange:(NSRange)r glyphs:(NSGlyph *)g characterIndexes:(NSUInteger *)ci glyphInscriptions:(int *)gi elasticBits:(BOOL *)eb {
+  NSUInteger n = 0; for (NSUInteger i = r.location; i < NSMaxRange(r) && i < [_attr length]; i++, n++) { if (g) g[n] = [[_attr string] characterAtIndex:i]; if (ci) ci[n] = i; if (gi) gi[n] = 0; if (eb) eb[n] = NO; } return n; }
+@end

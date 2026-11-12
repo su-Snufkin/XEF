@@ -963,3 +963,10 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - Nadal brak: przewijania kolumn, przeciągania, klawiszy strzałek, `browser:createRowsForColumn:inMatrix:`, `browser:selectRow:inColumn:` i innych rzadkich callbacków.
 - Stan: **5161 z 8257** metod prawdziwych; `macref.sh` 27/27.
 
+### 24. NSTypesetter / NSATSTypesetter (2026-11-12)
+- `AppKitText.m` / `AppKitText.h`, `appkit_typesetter.m` zgodny z Makiem: prawdziwe klasy z ustawieniami (`usesFontLeading`, `hyphenationFactor`, `lineFragmentPadding`, `bidiProcessingEnabled`,
+  `typesetterBehavior` — `NSTypesetterLatestBehavior` czyta się jako 15, domyślnie 4), `+sharedSystemTypesetter` (instancja `NSATSTypesetter`), `attributedString`, zakresy akapitu
+  (`paragraphGlyphRange` bez separatora), `actionForControlCharacterAtIndex:` (nowa linia 24, tab 4, inne 1), decyzje łamania linii, znak dzielenia U+2010, odstępy 0. Układ linii nadal robi
+  `NSLayoutManager` — metody układu (`layoutParagraphAtPoint:`, `layoutGlyphsInLayoutManager:…`) są puste, więc własne podklasy typesettera nie wpływają na wygląd tekstu.
+- Stan: **5249+ z 8257** metod prawdziwych; `macref.sh` 28/28; pełny `run_tests.sh` przechodzi (uruchomiony w tej rundzie).
+
