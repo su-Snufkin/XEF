@@ -55,11 +55,13 @@ const NSPoint NSZeroPoint = {0.0, 0.0};
 const NSRect NSZeroRect = {{0.0, 0.0}, {0.0, 0.0}};
 
 BOOL NSPointInRect(NSPoint p, NSRect r) {
-  return (p.x >= r.origin.x && p.x <= (r.origin.x + r.size.width) &&
-          p.y >= r.origin.y && p.y <= (r.origin.y + r.size.height));
+  return (p.x >= r.origin.x && p.x < (r.origin.x + r.size.width) &&
+          p.y >= r.origin.y && p.y < (r.origin.y + r.size.height));
 }
+/* the edge a rectangle owns depends on where the origin is: the lower edge in a flipped system, the upper otherwise */
 BOOL NSMouseInRect(NSPoint p, NSRect r, BOOL flipped) {
-  return NSPointInRect(p, r);
+  if (p.x < r.origin.x || p.x >= r.origin.x + r.size.width) return NO;
+  return flipped ? (p.y >= r.origin.y && p.y < r.origin.y + r.size.height) : (p.y > r.origin.y && p.y <= r.origin.y + r.size.height);
 }
 
 static id lite_stub(id self, SEL _cmd, ...);
@@ -668,59 +670,117 @@ static void fixup_nsnumber_methods(void) {
 }
 - (id)init { return [self initWithFrame:NSMakeRect(0, 0, 0, 0)]; }
 - (NSRect)frame { return _frame; } - (NSRect)bounds { return _bounds; }
+- (void)_xefPost:(NSString *)name { [[NSNotificationCenter defaultCenter] postNotificationName:name object:self]; }
 - (void)setFrame:(NSRect)f {
-  NSSize oldSize = _frame.size;
-  _frame = f; _bounds.size = f.size; _needsDisplay = YES;
+  NSRect old = _frame;
+  if (NSEqualRects(old, f)) return;
+  /* a scaled bounds rectangle keeps its scale */
+  CGFloat sx = old.size.width > 0 && _bounds.size.width > 0 ? _bounds.size.width / old.size.width : 1;
+  CGFloat sy = old.size.height > 0 && _bounds.size.height > 0 ? _bounds.size.height / old.size.height : 1;
+  NSSize oldBounds = _bounds.size;
+  _frame = f; _bounds.size = NSMakeSize(f.size.width * sx, f.size.height * sy); _needsDisplay = YES;
+  if (_window) _window->_dirty2D = YES;
   if (_layer) {
     if ([_layer respondsToSelector:@selector(setFrame:)]) [_layer setFrame:_frame];
     if ([_layer respondsToSelector:@selector(setBounds:)]) [_layer setBounds:_bounds];
   }
-  if (_autoresizesSubviews && (oldSize.width != f.size.width || oldSize.height != f.size.height)) {
-    CGFloat dw = f.size.width - oldSize.width;
-    CGFloat dh = f.size.height - oldSize.height;
-    for (NSView *s in _subviews) {
-      NSRect sf = s->_frame;
-      NSUInteger mask = s->_autoresizingMask;
-      if (mask & 2 /* NSViewWidthSizable */) sf.size.width += dw;
-      if (mask & 16 /* NSViewHeightSizable */) sf.size.height += dh;
-      if (mask & 1 /* NSViewMinXMargin */) sf.origin.x += dw;
-      if (mask & 8 /* NSViewMinYMargin */) sf.origin.y += dh;
-      if ((mask & (2 | 16)) == (2 | 16) || (sf.origin.x == 0 && sf.origin.y == 0 && sf.size.width == oldSize.width && sf.size.height == oldSize.height)) {
-        sf.origin = NSMakePoint(0, 0);
-        sf.size = f.size;
-      }
-      [s setFrame:sf];
-      if ([s respondsToSelector:@selector(updateDrawableSize)]) {
-        [s performSelector:@selector(updateDrawableSize)];
-      }
-    }
-  }
+  if (_autoresizesSubviews && [_subviews count] && !NSEqualSizes(old.size, f.size)) [self resizeSubviewsWithOldSize:oldBounds];
+  if (!_noFrameNotes) [self _xefPost:@"NSViewFrameDidChangeNotification"];
 }
 - (void)setFrameSize:(NSSize)s { NSRect f = _frame; f.size = s; [self setFrame:f]; }
-- (void)setBounds:(NSRect)b {
-  _bounds = b;
-  if (_layer && [_layer respondsToSelector:@selector(setBounds:)]) [_layer setBounds:_bounds];
+- (void)setFrameOrigin:(NSPoint)p { NSRect f = _frame; f.origin = p; [self setFrame:f]; }
+- (void)resizeSubviewsWithOldSize:(NSSize)old {
+  for (NSView *s in [[_subviews copy] autorelease]) {
+    [s resizeWithOldSuperviewSize:old];
+    if ([s respondsToSelector:@selector(updateDrawableSize)]) [s performSelector:@selector(updateDrawableSize)];
+  }
 }
+/* One axis of AppKit's autoresizing: the change of the superview's length is shared between the flexible parts
+ * (margin before, length, margin after) in proportion to their sizes; results are rounded to whole points. */
+static void autoresize_axis(CGFloat *pos, CGFloat *len, CGFloat oldSuper, CGFloat newSuper, BOOL flexMin, BOOL flexLen, BOOL flexMax) {
+  CGFloat delta = newSuper - oldSuper, before = *pos, size = *len, after = oldSuper - before - size;
+  if (delta == 0 || (!flexMin && !flexLen)) return;
+  CGFloat total = (flexMin ? before : 0) + (flexLen ? size : 0) + (flexMax ? after : 0);
+  int parts = flexMin + flexLen + flexMax;
+  CGFloat dMin = flexMin ? (total > 0 ? delta * before / total : delta / parts) : 0;
+  CGFloat dLen = flexLen ? (total > 0 ? delta * size / total : delta / parts) : 0;
+  *pos = round(before + dMin);
+  *len = round(size + dLen); if (*len < 0) *len = 0;
+}
+- (void)resizeWithOldSuperviewSize:(NSSize)old {
+  if (!_superview) return;
+  NSSize now = _superview->_bounds.size; NSRect f = _frame; NSUInteger m = _autoresizingMask;
+  if (m == 0 && [self respondsToSelector:@selector(updateDrawableSize)] && f.origin.x == 0 && f.origin.y == 0 && NSEqualSizes(f.size, old)) {
+    f.size = now;                                  /* a rendering view that covered its superview keeps covering it */
+  } else {
+    autoresize_axis(&f.origin.x, &f.size.width, old.width, now.width, (m & 1) != 0, (m & 2) != 0, (m & 4) != 0);
+    autoresize_axis(&f.origin.y, &f.size.height, old.height, now.height, (m & 8) != 0, (m & 16) != 0, (m & 32) != 0);
+  }
+  [self setFrame:f];
+}
+- (void)setBounds:(NSRect)b {
+  if (NSEqualRects(_bounds, b)) return;
+  _bounds = b; _needsDisplay = YES; if (_window) _window->_dirty2D = YES;
+  if (_layer && [_layer respondsToSelector:@selector(setBounds:)]) [_layer setBounds:_bounds];
+  if (!_noBoundsNotes) [self _xefPost:@"NSViewBoundsDidChangeNotification"];
+}
+- (void)setBoundsOrigin:(NSPoint)p { NSRect b = _bounds; b.origin = p; [self setBounds:b]; }
+- (void)setBoundsSize:(NSSize)s { NSRect b = _bounds; b.size = s; [self setBounds:b]; }
+- (void)translateOriginToPoint:(NSPoint)p { [self setBoundsOrigin:NSMakePoint(_bounds.origin.x - p.x, _bounds.origin.y - p.y)]; }
+- (void)scaleUnitSquareToSize:(NSSize)s {
+  if (s.width == 0 || s.height == 0) return;
+  [self setBounds:NSMakeRect(_bounds.origin.x / s.width, _bounds.origin.y / s.height, _bounds.size.width / s.width, _bounds.size.height / s.height)]; }
 - (NSWindow *)window { return _window; } - (NSView *)superview { return _superview; } - (NSArray *)subviews { return _subviews; }
 /* a view leaving its window stops being the window's first responder (the window does not retain it: SDL2 removes and
  * releases its text-input view while it is first responder, and the next keyDown: went to freed memory) */
 - (void)_setWindow:(NSWindow *)w {
+  BOOL changes = _window != w;
+  if (changes) [self viewWillMoveToWindow:w];
   if (_window && _window != w && _window->_first == (NSResponder *)self) _window->_first = nil;
   _window = w;
   if (!_superview && w) [self setNextResponder:w];
   else if (_superview) [self setNextResponder:_superview];
-  for (NSView *s in _subviews) [s _setWindow:w];
-  [self viewDidMoveToWindow];
+  for (NSView *s in [[_subviews copy] autorelease]) [s _setWindow:w];
+  if (changes) [self viewDidMoveToWindow];
 }
-- (void)addSubview:(NSView *)v {
-  [_subviews addObject:v];
-  v->_superview = self;
-  [v setNextResponder:self];
-  [v _setWindow:_window];
+- (void)viewWillMoveToWindow:(NSWindow *)w {} - (void)viewWillMoveToSuperview:(NSView *)s {} - (void)viewDidMoveToSuperview {}
+- (void)didAddSubview:(NSView *)s {} - (void)willRemoveSubview:(NSView *)s {}
+/* the callbacks come in AppKit's order: will move to superview, old superview will remove, did add, did move, then the
+ * window callbacks when the window changes; adding a view its superview already has only moves it to the front */
+- (void)_xefInsertSubview:(NSView *)v atIndex:(NSUInteger)i {
+  if (!v || v == self) return;
+  [v retain];
+  NSView *old = v->_superview;
+  if (old == self) {
+    [_subviews removeObjectIdenticalTo:v];
+    [_subviews insertObject:v atIndex:i > [_subviews count] ? [_subviews count] : i];
+  } else {
+    [v viewWillMoveToSuperview:self];
+    if (old) { [old willRemoveSubview:v]; [old->_subviews removeObjectIdenticalTo:v]; if (old->_window) old->_window->_dirty2D = YES; }
+    [_subviews insertObject:v atIndex:i > [_subviews count] ? [_subviews count] : i];
+    v->_superview = self;
+    [v setNextResponder:self];
+    [self didAddSubview:v];
+    [v viewDidMoveToSuperview];
+    [v _setWindow:_window];
+  }
+  if (_window) _window->_dirty2D = YES;
+  [v release];
 }
-- (void)removeFromSuperview { NSView *s = _superview; if (!s) return; _superview = nil; [self _setWindow:nil]; [s->_subviews removeObject:self]; }
+- (void)addSubview:(NSView *)v { [self _xefInsertSubview:v atIndex:NSNotFound]; }
+- (void)removeFromSuperview {
+  NSView *s = _superview; if (!s) return;
+  [[self retain] autorelease];
+  [self viewWillMoveToSuperview:nil];
+  [s willRemoveSubview:self];
+  _superview = nil;
+  [s->_subviews removeObjectIdenticalTo:self];
+  if (s->_window) s->_window->_dirty2D = YES;
+  [self viewDidMoveToSuperview];
+  [self _setWindow:nil];
+}
 - (void)setNeedsDisplay:(BOOL)f { _needsDisplay = f; if (f && _window) _window->_dirty2D = YES; }
-- (BOOL)needsDisplay { return _needsDisplay; }
+- (BOOL)needsDisplay { return _needsDisplay && _window != nil; }
 /* windows drawn by AppKit-lite (2D) redraw their whole view tree; GL/Metal windows keep the old drawRect: walk */
 - (void)display {
   if (_window && [_window _xef2D]) { [_window _xefRedraw]; return; }
@@ -759,9 +819,11 @@ static void fixup_nsnumber_methods(void) {
 - (void)registerForDraggedTypes:(NSArray *)t { [t retain]; [_dragTypes release]; _dragTypes = t; }   /* no drag sources on X11-lite */
 - (BOOL)mouse:(NSPoint)p inRect:(NSRect)r { return NSPointInRect(p, r); }
 - (void)viewDidChangeBackingProperties {}
-- (BOOL)acceptsFirstResponder { return YES; }
+- (BOOL)acceptsFirstResponder { return NO; }
+- (NSMutableDictionary *)_xefExtra { if (!_extra) _extra = [[NSMutableDictionary alloc] init]; return _extra; }
 - (void)dealloc { if (_window && _window->_first == (NSResponder *)self) _window->_first = nil;
-  [_subviews release]; [_tracking release]; [_layer release]; [_dragTypes release]; [super dealloc]; }
+  for (NSView *v in _subviews) { v->_superview = nil; v->_window = nil; }
+  [_extra release]; [_subviews release]; [_tracking release]; [_layer release]; [_dragTypes release]; [super dealloc]; }
 @end
 
 /* ------------------------------------------------------------------- window */
@@ -1246,7 +1308,7 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
   NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 80, 24)]; [b setTitle:t]; [b setTag:1000 + [_buttons count]];
   [_buttons addObject:b]; [b release]; return b; }
 - (id)window { return nil; }
-- (void)layout {}
+
 - (NSInteger)runModal {
   fprintf(stderr, "[AppKit-lite NSAlert] %s%s%s\n", [_message UTF8String], [_info length] ? ": " : "", [_info UTF8String]);
   return 1000; }   /* NSAlertFirstButtonReturn */

@@ -13,7 +13,7 @@ COMMON="-arch arm64 -mmacosx-version-min=12.0"
 LIBS="$F/Foundation.framework/Versions/C/Foundation $F/CoreFoundation.framework/Versions/A/CoreFoundation -L$R/usr/lib -lobjc"
 HIT=$F/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/HIToolbox
 OBJS=""
-for m in AppKit AppKitNib AppKitGraphics AppKitControls AppKitControls2 AppKitTable AppKitMenu AppKitAssets AppKitFoundationCompat AppKitDocument AppKitText; do
+for m in AppKit AppKitNib AppKitGraphics AppKitControls AppKitControls2 AppKitTable AppKitView AppKitMenu AppKitAssets AppKitFoundationCompat AppKitDocument AppKitText; do
   clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/$m.m -o $O/$m.o &
   OBJS="$OBJS $O/$m.o"
 done
@@ -24,7 +24,7 @@ done
 wait
 clang $COMMON -dynamiclib -install_name /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit \
   -Wl,-compatibility_version,45 -Wl,-current_version,2685.10.108 -Wl,-not_for_dyld_shared_cache \
-  $OBJS $LIBS $HIT -Wl,-undefined,dynamic_lookup -o $F/AppKit.framework/Versions/C/AppKit
+  $OBJS $LIBS $HIT $F/CoreGraphics.framework/Versions/A/CoreGraphics $F/CoreText.framework/Versions/A/CoreText -Wl,-undefined,dynamic_lookup -o $F/AppKit.framework/Versions/C/AppKit
 codesign -f -s - $F/AppKit.framework/Versions/C/AppKit 2>/dev/null
 REMOTE
 rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/AppKit.framework darwin-rootfs/System/Library/Frameworks/

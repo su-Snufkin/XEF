@@ -1004,14 +1004,25 @@ static CGAffineTransform view_to_window(NSView *v) {
 /* p in the superview's coordinates */
 - (NSView *)hitTest:(NSPoint)p {
   if (_hidden) return nil;
+  if (_superview && !NSMouseInRect(p, _frame, [_superview isFlipped])) return nil;
   NSPoint q = _superview ? [self convertPoint:p fromView:_superview] : CGPointApplyAffineTransform(p, CGAffineTransformInvert(view_to_super(self)));
-  if (!NSPointInRect(q, _bounds)) return nil;
+  if (!_superview && !(q.x >= _bounds.origin.x && q.x <= NSMaxX(_bounds) && q.y >= _bounds.origin.y && q.y <= NSMaxY(_bounds))) return nil;
   for (NSView *s in [_subviews reverseObjectEnumerator]) { NSView *h = [s hitTest:q]; if (h) return h; }
   return self; }
-- (void)setHidden:(BOOL)f { if (_hidden == f) return; _hidden = f; if (_window) _window->_dirty2D = YES; }
+/* viewDidHide / viewDidUnhide reach the view and those of its descendants that are not hidden themselves */
+- (void)_xefHiddenChanged:(BOOL)hidden {
+  if (hidden) [self viewDidHide]; else [self viewDidUnhide];
+  for (NSView *s in [[_subviews copy] autorelease]) if (!s->_hidden) [s _xefHiddenChanged:hidden]; }
+- (void)viewDidHide {} - (void)viewDidUnhide {}
+- (void)setHidden:(BOOL)f {
+  if (_hidden == f) return;
+  _hidden = f; if (_window) _window->_dirty2D = YES;
+  BOOL ancestorHidden = NO; for (NSView *v = _superview; v; v = v->_superview) if (v->_hidden) ancestorHidden = YES;
+  if (!ancestorHidden) [self _xefHiddenChanged:f]; }
 - (BOOL)isHidden { return _hidden; }
 - (BOOL)isHiddenOrHasHiddenAncestor { for (NSView *v = self; v; v = v->_superview) if (v->_hidden) return YES; return NO; }
 - (NSRect)visibleRect {
+  if ([self isHiddenOrHasHiddenAncestor]) return NSZeroRect;
   NSRect r = _bounds;
   for (NSView *v = self; v->_superview; v = v->_superview) {
     NSRect sr = [v->_superview convertRect:v->_superview->_bounds toView:self];
@@ -1028,9 +1039,9 @@ static CGAffineTransform view_to_window(NSView *v) {
 - (void)getRectsBeingDrawn:(const NSRect **)rects count:(NSInteger *)n { static NSRect one; one = _bounds; if (rects) *rects = &one; if (n) *n = 1; }
 - (BOOL)wantsDefaultClipping { return YES; }
 - (void)setTag:(NSInteger)t { _tag = t; }
-- (NSInteger)tag { return _tag; }
+- (NSInteger)tag { return -1; }
 - (id)viewWithTag:(NSInteger)t {
-  if (_tag == t) return self;
+  if ([self tag] == t) return self;
   for (NSView *s in _subviews) { id v = [s viewWithTag:t]; if (v) return v; }
   return nil; }
 - (void)scrollPoint:(NSPoint)p { NSView *v = self; while (v->_superview && ![v->_superview respondsToSelector:@selector(scrollToPoint:)]) v = v->_superview;
@@ -1156,6 +1167,7 @@ static void dump_shot(const unsigned char *px, size_t w, size_t h) {
   CGColorSpaceRelease(cs); }
 - (void)_xefRedraw {
   if (![self _xef2D]) return;
+  [_content layoutSubtreeIfNeeded];
   [self _xefBacking];
   CGContextRef c = (CGContextRef)_backing;
   if (!c) return;

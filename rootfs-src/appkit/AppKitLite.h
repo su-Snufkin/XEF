@@ -184,6 +184,7 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
   NSMutableArray *_tracking; id _layer; BOOL _wantsLayer; NSArray *_dragTypes;
   NSUInteger _autoresizingMask; BOOL _autoresizesSubviews;
   BOOL _hidden, _glUsed; NSInteger _tag; id _toolTip;
+  BOOL _noFrameNotes, _noBoundsNotes, _layoutClean, _noTranslates; CGFloat _frameRotation, _boundsRotation; NSMutableDictionary *_extra;
 }
 + (Class)layerClass;
 - (id)makeBackingLayer;
@@ -204,6 +205,11 @@ BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect, BOOL flipped);
 - (void)addTrackingArea:(NSTrackingArea *)a; - (void)removeTrackingArea:(NSTrackingArea *)a; - (NSArray *)trackingAreas;
 - (void)registerForDraggedTypes:(NSArray *)t; - (BOOL)mouse:(NSPoint)p inRect:(NSRect)r; - (void)viewDidChangeBackingProperties;
 - (id)layer; - (void)setLayer:(id)l; - (BOOL)wantsLayer;
+- (void)viewWillMoveToWindow:(NSWindow *)w; - (void)viewWillMoveToSuperview:(NSView *)s; - (void)viewDidMoveToSuperview;
+- (void)didAddSubview:(NSView *)s; - (void)willRemoveSubview:(NSView *)s; - (void)viewDidHide; - (void)viewDidUnhide;
+- (void)resizeSubviewsWithOldSize:(NSSize)o; - (void)resizeWithOldSuperviewSize:(NSSize)o; - (void)setFrameOrigin:(NSPoint)p;
+- (void)setBoundsOrigin:(NSPoint)p; - (void)setBoundsSize:(NSSize)s; - (void)layout; - (void)layoutSubtreeIfNeeded; - (BOOL)needsLayout; - (void)setNeedsLayout:(BOOL)f;
+- (NSSize)intrinsicContentSize; - (NSSize)fittingSize; - (void)_xefInsertSubview:(NSView *)v atIndex:(NSUInteger)i; - (NSMutableDictionary *)_xefExtra;
 @end
 
 @interface NSWindow : NSResponder {
