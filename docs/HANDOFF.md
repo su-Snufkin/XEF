@@ -1127,3 +1127,9 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
   `executableArchitecture` arm64, `terminate`, `+runningApplicationWithProcessIdentifier:` (tylko bieżący proces; inne procesy nie są modelowane).
 - Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 57/57.
 
+### 44. NSSplitViewItem — uzupełnienia (2026-11-12)
+- `AppKitControllers.m`, `appkit_splititem.m` zgodny z Makiem: `collapseBehavior` (0), `canCollapseFromWindowResize` (NO), `automaticallyAdjustsSafeAreaInsets` (NO), listy kontrolerów akcesoriów górnych/dolnych
+  (dodawanie/wstawianie/usuwanie; **na Macu `add…AccessoryViewController:` dla elementu bez okna rzuca wyjątek** — test tego nie porównuje, tu działa jak zwykła lista), `animator` (zmiany od razu).
+  `+[NSTextInputContext currentInputContext]` zwraca nil jak u Maca (§39).
+- Stan: patrz `tools/appkit_gap.sh`.
+

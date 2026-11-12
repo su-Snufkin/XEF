@@ -400,3 +400,16 @@ FWD(mouseCancelled)
 - (void)restoreStateWithCoder:(NSCoder *)c {} - (void)invalidateRestorableState {}
 + (NSArray *)allowedClassesForRestorableStateKeyPath:(NSString *)k { return @[]; } + (NSArray *)restorableStateKeyPaths { return @[]; }
 @end
+
+/* ---- NSSplitViewItem: collapse behaviour, safe area, accessory controllers ---- */
+@implementation NSSplitViewItem (XEFMore)
+- (NSInteger)collapseBehavior { return [objc_getAssociatedObject(self, "xef.collapseB") integerValue]; } - (void)setCollapseBehavior:(NSInteger)b { objc_setAssociatedObject(self, "xef.collapseB", [NSNumber numberWithInteger:b], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)canCollapseFromWindowResize { return [objc_getAssociatedObject(self, "xef.collapseR") boolValue]; } - (void)setCanCollapseFromWindowResize:(BOOL)f { objc_setAssociatedObject(self, "xef.collapseR", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)automaticallyAdjustsSafeAreaInsets { return [objc_getAssociatedObject(self, "xef.safe") boolValue]; } - (void)setAutomaticallyAdjustsSafeAreaInsets:(BOOL)f { objc_setAssociatedObject(self, "xef.safe", [NSNumber numberWithBool:f], OBJC_ASSOCIATION_RETAIN); }
+- (NSMutableArray *)_xefAcc:(const char *)k { NSMutableArray *a = objc_getAssociatedObject(self, k); if (!a) { a = [NSMutableArray array]; objc_setAssociatedObject(self, k, a, OBJC_ASSOCIATION_RETAIN); } return a; }
+- (NSArray *)topAlignedAccessoryViewControllers { return [NSArray arrayWithArray:[self _xefAcc:"xef.topAcc"]]; } - (void)setTopAlignedAccessoryViewControllers:(NSArray *)a { [[self _xefAcc:"xef.topAcc"] setArray:a ?: @[]]; }
+- (NSArray *)bottomAlignedAccessoryViewControllers { return [NSArray arrayWithArray:[self _xefAcc:"xef.botAcc"]]; } - (void)setBottomAlignedAccessoryViewControllers:(NSArray *)a { [[self _xefAcc:"xef.botAcc"] setArray:a ?: @[]]; }
+- (void)addTopAlignedAccessoryViewController:(id)c { [[self _xefAcc:"xef.topAcc"] addObject:c]; } - (void)insertTopAlignedAccessoryViewController:(id)c atIndex:(NSInteger)i { NSMutableArray *a = [self _xefAcc:"xef.topAcc"]; [a insertObject:c atIndex:MIN((NSUInteger)i, [a count])]; } - (void)removeTopAlignedAccessoryViewControllerAtIndex:(NSInteger)i { NSMutableArray *a = [self _xefAcc:"xef.topAcc"]; if (i >= 0 && i < (NSInteger)[a count]) [a removeObjectAtIndex:i]; }
+- (void)addBottomAlignedAccessoryViewController:(id)c { [[self _xefAcc:"xef.botAcc"] addObject:c]; } - (void)insertBottomAlignedAccessoryViewController:(id)c atIndex:(NSInteger)i { NSMutableArray *a = [self _xefAcc:"xef.botAcc"]; [a insertObject:c atIndex:MIN((NSUInteger)i, [a count])]; } - (void)removeBottomAlignedAccessoryViewControllerAtIndex:(NSInteger)i { NSMutableArray *a = [self _xefAcc:"xef.botAcc"]; if (i >= 0 && i < (NSInteger)[a count]) [a removeObjectAtIndex:i]; }
+- (id)animator { return self; } - (NSDictionary *)animations { return @{}; } - (void)setAnimations:(NSDictionary *)a {} - (id)animationForKey:(NSString *)k { return nil; } + (id)defaultAnimationForKey:(NSString *)k { return nil; }
+@end
