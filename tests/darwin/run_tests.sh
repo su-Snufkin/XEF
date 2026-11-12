@@ -70,5 +70,12 @@ else
     echo "SKIP fwstubs_test (no stub frameworks in darwin-rootfs)"
 fi
 
+echo "--- Test 8: generated AppKit placeholders (tools/gen_appkit_stubs.py) ---"
+if [ -e "$ROOTFS/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit" ] && [ -x "$DIR/generated_test" ]; then
+    "$XEF_OSX" -L "$ROOTFS" "$DIR/generated_test"
+else
+    echo "SKIP generated_test (build it with tests/darwin/appkit_generated/build.sh)"
+fi
+
 echo "=== ALL TESTS COMPLETED SUCCESSFULLY! ==="
 
