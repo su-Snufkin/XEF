@@ -48,3 +48,27 @@
 }
 - (NSArray *)arrangedObjects; - (NSIndexSet *)selectionIndexes; - (void)rearrangeObjects;
 @end
+
+/* NSGridView: the model, and cell frames computed directly (the view reports its fitting size as its intrinsic size) */
+@class NSGridView, NSGridRow, NSGridColumn;
+@interface NSGridCell : NSObject {
+@public
+  NSView *_content; NSGridRow *_row; NSGridColumn *_column; NSInteger _x, _y, _rowAlign; NSArray *_custom; NSRange _cols, _rows;
+}
+- (NSView *)contentView; - (void)setContentView:(NSView *)v;
+@end
+@interface NSGridRow : NSObject { @public NSGridView *_grid; NSMutableArray *_cells; CGFloat _height, _top, _bottom; BOOL _hidden; NSInteger _y, _align; }
+@end
+@interface NSGridColumn : NSObject { @public NSGridView *_grid; CGFloat _width, _lead, _trail; BOOL _hidden; NSInteger _x; }
+@end
+@interface NSGridView : NSView {
+@public
+  NSMutableArray *_grows, *_gcols; NSInteger _x, _y, _align; CGFloat _rowSpacing, _colSpacing;
+}
+- (NSInteger)numberOfRows; - (NSInteger)numberOfColumns; - (NSGridCell *)cellAtColumnIndex:(NSInteger)c rowIndex:(NSInteger)r;
+- (void)_xefApplyHidden; - (void)mergeCellsInHorizontalRange:(NSRange)h verticalRange:(NSRange)v;
+- (NSGridRow *)addRowWithViews:(NSArray *)v; - (NSGridColumn *)addColumnWithViews:(NSArray *)v;
+@end
+@interface NSView (XEFGridDeclarations)
+- (void)invalidateIntrinsicContentSize; - (BOOL)isHidden; - (void)setHidden:(BOOL)f;
+@end

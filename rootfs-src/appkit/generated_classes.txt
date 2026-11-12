@@ -72,10 +72,6 @@ NSGlassEffectContainerView
 NSGlassEffectView
 NSGlyphGenerator
 NSGlyphInfo
-NSGridCell
-NSGridColumn
-NSGridRow
-NSGridView
 NSGroupTouchBarItem
 NSHapticFeedbackManager
 NSHelpManager

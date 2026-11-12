@@ -145,12 +145,12 @@ XEF, and the two outputs must match line for line (`tests/darwin/macref.sh appki
 | Views and windows | NSView (hierarchy callbacks, autoresizing, bounds transforms, hit testing, layout passes), NSWindow, NSPanel, sheets |
 | Auto Layout | NSLayoutConstraint, anchors, NSLayoutGuide, visual format language; a Cassowary solver with strict priorities |
 | Controls | buttons, text fields, pop-ups, sliders, steppers, progress indicators, segmented controls, switches, combo boxes, date pickers, level indicators, colour wells, image views |
-| Containers | NSScrollView, NSTabView, NSSplitView, NSStackView, NSBox; view controllers (NSSplitViewController, NSTabViewController) and gesture recognizers |
+| Containers | NSScrollView, NSTabView, NSSplitView, NSStackView, NSGridView, NSBox; view controllers (NSSplitViewController, NSTabViewController) and gesture recognizers |
 | Tables | NSTableView (cell- and view-based), NSOutlineView, headers with sorting and column resizing |
 | Drawing and text | NSBezierPath, NSColor, NSGradient, NSImage, NSFont, attributed strings, NSTextView |
 
 `tools/appkit_gap.sh` lists what of AppKit's public API (read from the SDK headers) is still missing, per class:
-4203 of 8257 public methods are implemented for real; the 4313 others are placeholders with the right calling convention (`tools/gen_appkit_stubs.py`: property pairs store their value, the rest returns zero), counted apart.
+4275 of 8257 public methods are implemented for real; the 4051 others are placeholders with the right calling convention (`tools/gen_appkit_stubs.py`: property pairs store their value, the rest returns zero), counted apart.
 
 ### Every other system framework: generated stubs
 

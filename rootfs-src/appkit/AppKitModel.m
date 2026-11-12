@@ -384,3 +384,188 @@ static BOOL xef_eval(NSPredicate *p, id obj) {
 - (void)remove:(id)s { if ([self canRemove]) [self removeObjectsAtArrangedObjectIndexes:_sel]; }
 - (id)newObject { return [[[_class alloc] init] autorelease]; }
 @end
+
+
+/* ================================================================== NSGridView */
+#define kAutoSize 1.17549435e-38f      /* NSGridViewSizeForContent: FLT_MIN */
+@implementation NSGridCell
+- (id)init { if ((self = [super init])) { _cols = NSMakeRange(0, 1); _rows = NSMakeRange(0, 1); } return self; }
+- (void)dealloc { [_content release]; [_custom release]; [super dealloc]; }
++ (NSView *)emptyContentView { static NSView *v; if (!v) v = [[NSView alloc] initWithFrame:NSZeroRect]; return v; }
+- (NSView *)contentView { return _content; }
+- (void)setContentView:(NSView *)v {
+  if (v == _content) return;
+  NSGridView *g = _row ? _row->_grid : nil;
+  if (_content && [_content superview] == g) [_content removeFromSuperview];
+  [v retain]; [_content release]; _content = v;
+  if (v && g && v != [NSGridCell emptyContentView]) [g addSubview:v];
+  [g setNeedsLayout:YES]; [g invalidateIntrinsicContentSize]; }
+- (NSGridRow *)row { return _row; } - (NSGridColumn *)column { return _column; }
+- (NSInteger)xPlacement { return _x; } - (void)setXPlacement:(NSInteger)p { _x = p; [_row->_grid setNeedsLayout:YES]; }
+- (NSInteger)yPlacement { return _y; } - (void)setYPlacement:(NSInteger)p { _y = p; [_row->_grid setNeedsLayout:YES]; }
+- (NSInteger)rowAlignment { return _rowAlign; } - (void)setRowAlignment:(NSInteger)a { _rowAlign = a; }
+- (NSArray *)customPlacementConstraints { return _custom ?: @[]; } - (void)setCustomPlacementConstraints:(NSArray *)a { [a retain]; [_custom release]; _custom = a; }
+@end
+@implementation NSGridRow
+- (id)init { if ((self = [super init])) { _cells = [[NSMutableArray alloc] init]; _height = kAutoSize; } return self; }
+- (void)dealloc { [_cells release]; [super dealloc]; }
+- (NSGridView *)gridView { return _grid; }
+- (NSInteger)numberOfCells { return [_cells count]; } - (NSGridCell *)cellAtIndex:(NSInteger)i { return i >= 0 && i < (NSInteger)[_cells count] ? _cells[i] : nil; }
+- (CGFloat)height { return _height; } - (void)setHeight:(CGFloat)h { _height = h; [_grid setNeedsLayout:YES]; [_grid invalidateIntrinsicContentSize]; }
+- (BOOL)isHidden { return _hidden; } - (void)setHidden:(BOOL)f { _hidden = f; [_grid _xefApplyHidden]; }
+- (CGFloat)topPadding { return _top; } - (void)setTopPadding:(CGFloat)p { _top = p; [_grid setNeedsLayout:YES]; [_grid invalidateIntrinsicContentSize]; }
+- (CGFloat)bottomPadding { return _bottom; } - (void)setBottomPadding:(CGFloat)p { _bottom = p; [_grid setNeedsLayout:YES]; [_grid invalidateIntrinsicContentSize]; }
+- (NSInteger)yPlacement { return _y; } - (void)setYPlacement:(NSInteger)p { _y = p; [_grid setNeedsLayout:YES]; }
+- (NSInteger)rowAlignment { return _align; } - (void)setRowAlignment:(NSInteger)a { _align = a; }
+- (void)mergeCellsInRange:(NSRange)r { NSInteger i = [_grid->_grows indexOfObjectIdenticalTo:self]; [_grid mergeCellsInHorizontalRange:r verticalRange:NSMakeRange(i, 1)]; }
+@end
+@implementation NSGridColumn
+- (id)init { if ((self = [super init])) { _width = kAutoSize; } return self; }
+- (NSGridView *)gridView { return _grid; }
+- (NSInteger)numberOfCells { return [_grid->_grows count]; }
+- (NSGridCell *)cellAtIndex:(NSInteger)i { NSInteger c = [_grid->_gcols indexOfObjectIdenticalTo:self]; return [_grid cellAtColumnIndex:c rowIndex:i]; }
+- (CGFloat)width { return _width; } - (void)setWidth:(CGFloat)w { _width = w; [_grid setNeedsLayout:YES]; [_grid invalidateIntrinsicContentSize]; }
+- (BOOL)isHidden { return _hidden; } - (void)setHidden:(BOOL)f { _hidden = f; [_grid _xefApplyHidden]; }
+- (CGFloat)leadingPadding { return _lead; } - (void)setLeadingPadding:(CGFloat)p { _lead = p; [_grid setNeedsLayout:YES]; [_grid invalidateIntrinsicContentSize]; }
+- (CGFloat)trailingPadding { return _trail; } - (void)setTrailingPadding:(CGFloat)p { _trail = p; [_grid setNeedsLayout:YES]; [_grid invalidateIntrinsicContentSize]; }
+- (NSInteger)xPlacement { return _x; } - (void)setXPlacement:(NSInteger)p { _x = p; [_grid setNeedsLayout:YES]; }
+- (void)mergeCellsInRange:(NSRange)r { NSInteger i = [_grid->_gcols indexOfObjectIdenticalTo:self]; [_grid mergeCellsInHorizontalRange:NSMakeRange(i, 1) verticalRange:r]; }
+@end
+
+@implementation NSGridView
+- (void)_xefGridInit { _grows = [[NSMutableArray alloc] init]; _gcols = [[NSMutableArray alloc] init]; _x = 2; _y = 2; _align = 1; _rowSpacing = _colSpacing = 6; }
+- (id)initWithFrame:(NSRect)f { if ((self = [super initWithFrame:f])) [self _xefGridInit]; return self; }
+- (id)initWithCoder:(NSCoder *)c { if ((self = [super initWithCoder:c])) [self _xefGridInit]; return self; }
+- (void)dealloc { [_grows release]; [_gcols release]; [super dealloc]; }
++ (NSGridView *)gridViewWithNumberOfColumns:(NSInteger)c rows:(NSInteger)r {
+  NSGridView *g = [[[self alloc] initWithFrame:NSZeroRect] autorelease];
+  for (NSInteger i = 0; i < c; i++) [g addColumnWithViews:@[]];
+  for (NSInteger i = 0; i < r; i++) [g addRowWithViews:@[]];
+  return g; }
++ (NSGridView *)gridViewWithViews:(NSArray *)rows {
+  NSGridView *g = [[[self alloc] initWithFrame:NSZeroRect] autorelease];
+  for (NSArray *row in rows) [g addRowWithViews:row];
+  return g; }
+- (BOOL)isFlipped { return NO; }
+- (NSInteger)numberOfRows { return [_grows count]; } - (NSInteger)numberOfColumns { return [_gcols count]; }
+- (NSGridRow *)rowAtIndex:(NSInteger)i { return i >= 0 && i < (NSInteger)[_grows count] ? _grows[i] : nil; }
+- (NSGridColumn *)columnAtIndex:(NSInteger)i { return i >= 0 && i < (NSInteger)[_gcols count] ? _gcols[i] : nil; }
+- (NSInteger)indexOfRow:(NSGridRow *)r { NSUInteger i = [_grows indexOfObjectIdenticalTo:r]; return i == NSNotFound ? NSNotFound : (NSInteger)i; }
+- (NSInteger)indexOfColumn:(NSGridColumn *)c { NSUInteger i = [_gcols indexOfObjectIdenticalTo:c]; return i == NSNotFound ? NSNotFound : (NSInteger)i; }
+- (NSGridCell *)cellAtColumnIndex:(NSInteger)c rowIndex:(NSInteger)r {
+  if (r < 0 || r >= (NSInteger)[_grows count]) return nil;
+  NSGridRow *row = _grows[r]; return c >= 0 && c < (NSInteger)[row->_cells count] ? row->_cells[c] : nil; }
+- (NSGridCell *)cellForView:(NSView *)v { for (NSGridRow *r in _grows) for (NSGridCell *c in r->_cells) if (c->_content == v) return c; return nil; }
+- (NSGridCell *)_xefNewCellRow:(NSGridRow *)r column:(NSGridColumn *)c view:(id)v {
+  NSGridCell *cell = [[[NSGridCell alloc] init] autorelease]; cell->_row = r; cell->_column = c;
+  if ([v isKindOfClass:[NSView class]] && v != [NSGridCell emptyContentView]) { cell->_content = [v retain]; if ([(NSView *)v superview] != self) [self addSubview:v]; }
+  return cell; }
+- (void)_xefChanged { [self setNeedsLayout:YES]; [self invalidateIntrinsicContentSize]; }
+- (NSGridRow *)insertRowAtIndex:(NSInteger)idx withViews:(NSArray *)views {
+  while ((NSInteger)[views count] > (NSInteger)[_gcols count]) [self addColumnWithViews:@[]];
+  NSGridRow *row = [[[NSGridRow alloc] init] autorelease]; row->_grid = self;
+  for (NSUInteger c = 0; c < [_gcols count]; c++) [row->_cells addObject:[self _xefNewCellRow:row column:_gcols[c] view:c < [views count] ? views[c] : nil]];
+  [_grows insertObject:row atIndex:idx < 0 ? 0 : idx > (NSInteger)[_grows count] ? [_grows count] : idx];
+  [self _xefChanged]; return row; }
+- (NSGridRow *)addRowWithViews:(NSArray *)views { return [self insertRowAtIndex:[_grows count] withViews:views]; }
+- (void)removeRowAtIndex:(NSInteger)i {
+  NSGridRow *r = [self rowAtIndex:i]; if (!r) return;
+  for (NSGridCell *c in r->_cells) if (c->_content && [c->_content superview] == self && c->_row == r) [c->_content removeFromSuperview];
+  [_grows removeObjectAtIndex:i]; [self _xefChanged]; }
+- (void)moveRowAtIndex:(NSInteger)from toIndex:(NSInteger)to {
+  NSGridRow *r = [[[self rowAtIndex:from] retain] autorelease]; if (!r) return;
+  [_grows removeObjectAtIndex:from]; [_grows insertObject:r atIndex:to < 0 ? 0 : to > (NSInteger)[_grows count] ? [_grows count] : to]; [self _xefChanged]; }
+- (NSGridColumn *)insertColumnAtIndex:(NSInteger)idx withViews:(NSArray *)views {
+  while ((NSInteger)[views count] > (NSInteger)[_grows count]) [self addRowWithViews:@[]];
+  NSGridColumn *col = [[[NSGridColumn alloc] init] autorelease]; col->_grid = self;
+  NSInteger at = idx < 0 ? 0 : idx > (NSInteger)[_gcols count] ? [_gcols count] : idx;
+  [_gcols insertObject:col atIndex:at];
+  for (NSUInteger r = 0; r < [_grows count]; r++) { NSGridRow *row = _grows[r]; [row->_cells insertObject:[self _xefNewCellRow:row column:col view:r < [views count] ? views[r] : nil] atIndex:at]; }
+  [self _xefChanged]; return col; }
+- (NSGridColumn *)addColumnWithViews:(NSArray *)views { return [self insertColumnAtIndex:[_gcols count] withViews:views]; }
+- (void)removeColumnAtIndex:(NSInteger)i {
+  NSGridColumn *col = [self columnAtIndex:i]; if (!col) return;
+  for (NSGridRow *r in _grows) { NSGridCell *c = r->_cells[i]; if (c->_content && [c->_content superview] == self && c->_column == col) [c->_content removeFromSuperview]; [r->_cells removeObjectAtIndex:i]; }
+  [_gcols removeObjectAtIndex:i]; [self _xefChanged]; }
+- (void)moveColumnAtIndex:(NSInteger)from toIndex:(NSInteger)to {
+  NSGridColumn *col = [[[self columnAtIndex:from] retain] autorelease]; if (!col) return;
+  NSInteger at = to < 0 ? 0 : to >= (NSInteger)[_gcols count] ? [_gcols count] - 1 : to;
+  [_gcols removeObjectAtIndex:from]; [_gcols insertObject:col atIndex:at];
+  for (NSGridRow *r in _grows) { id c = [[r->_cells[from] retain] autorelease]; [r->_cells removeObjectAtIndex:from]; [r->_cells insertObject:c atIndex:at]; }
+  [self _xefChanged]; }
+- (NSInteger)xPlacement { return _x; } - (void)setXPlacement:(NSInteger)p { _x = p; [self setNeedsLayout:YES]; }
+- (NSInteger)yPlacement { return _y; } - (void)setYPlacement:(NSInteger)p { _y = p; [self setNeedsLayout:YES]; }
+- (NSInteger)rowAlignment { return _align; } - (void)setRowAlignment:(NSInteger)a { _align = a; }
+- (CGFloat)rowSpacing { return _rowSpacing; } - (void)setRowSpacing:(CGFloat)s { _rowSpacing = s; [self _xefChanged]; }
+- (CGFloat)columnSpacing { return _colSpacing; } - (void)setColumnSpacing:(CGFloat)s { _colSpacing = s; [self _xefChanged]; }
+/* merging: every position of the block holds the top-left cell, which remembers the block */
+- (void)mergeCellsInHorizontalRange:(NSRange)h verticalRange:(NSRange)v {
+  if (!h.length || !v.length || NSMaxRange(h) > [_gcols count] || NSMaxRange(v) > [_grows count]) return;
+  NSGridCell *top = [self cellAtColumnIndex:h.location rowIndex:v.location];
+  for (NSUInteger r = v.location; r < NSMaxRange(v); r++) for (NSUInteger c = h.location; c < NSMaxRange(h); c++) {
+    NSGridCell *old = [self cellAtColumnIndex:c rowIndex:r];
+    if (old != top) { if (old->_content && [old->_content superview] == self) [old->_content removeFromSuperview]; [((NSGridRow *)_grows[r])->_cells replaceObjectAtIndex:c withObject:top]; } }
+  top->_cols = h; top->_rows = v; [self _xefChanged]; }
+- (void)_xefApplyHidden {
+  for (NSUInteger r = 0; r < [_grows count]; r++) for (NSUInteger c = 0; c < [_gcols count]; c++) {
+    NSGridCell *cell = [self cellAtColumnIndex:c rowIndex:r]; if (!cell->_content) continue;
+    BOOL hide = [_grows[r] isHidden] || [_gcols[c] isHidden]; [cell->_content setHidden:hide]; }
+  [self _xefChanged]; }
+/* ---- layout */
+static NSSize content_size(NSGridCell *c) {
+  NSView *v = c->_content; if (!v || [v isHidden]) return NSZeroSize;
+  NSSize s = [v intrinsicContentSize]; NSSize f = [v frame].size;
+  return NSMakeSize(s.width >= 0 ? s.width : f.width, s.height >= 0 ? s.height : f.height); }
+- (BOOL)_xefVisibleRow:(NSInteger)r { return ![_grows[r] isHidden]; } - (BOOL)_xefVisibleCol:(NSInteger)c { return ![_gcols[c] isHidden]; }
+/* column widths and row heights (zero for hidden ones); spanning cells do not contribute */
+- (void)_xefMeasure:(CGFloat *)widths heights:(CGFloat *)heights {
+  NSInteger nr = [_grows count], nc = [_gcols count];
+  for (NSInteger c = 0; c < nc; c++) {
+    NSGridColumn *col = _gcols[c]; if (col->_hidden) { widths[c] = 0; continue; }
+    CGFloat w = 0;
+    if (col->_width != kAutoSize) w = col->_width;
+    else for (NSInteger r = 0; r < nr; r++) { if (![self _xefVisibleRow:r]) continue; NSGridCell *cell = [self cellAtColumnIndex:c rowIndex:r]; if (cell->_cols.length > 1) continue; w = fmax(w, content_size(cell).width); }
+    widths[c] = w + col->_lead + col->_trail; }
+  for (NSInteger r = 0; r < nr; r++) {
+    NSGridRow *row = _grows[r]; if (row->_hidden) { heights[r] = 0; continue; }
+    CGFloat h = 0;
+    if (row->_height != kAutoSize) h = row->_height;
+    else for (NSInteger c = 0; c < nc; c++) { if (![self _xefVisibleCol:c]) continue; NSGridCell *cell = [self cellAtColumnIndex:c rowIndex:r]; if (cell->_rows.length > 1) continue; h = fmax(h, content_size(cell).height); }
+    heights[r] = h + row->_top + row->_bottom; } }
+- (NSSize)_xefTotal:(CGFloat *)w heights:(CGFloat *)h {
+  CGFloat tw = 0, th = 0; NSInteger vc = 0, vr = 0;
+  for (NSUInteger c = 0; c < [_gcols count]; c++) if ([self _xefVisibleCol:c]) { tw += w[c]; vc++; }
+  for (NSUInteger r = 0; r < [_grows count]; r++) if ([self _xefVisibleRow:r]) { th += h[r]; vr++; }
+  return NSMakeSize(tw + (vc > 1 ? (vc - 1) * _colSpacing : 0), th + (vr > 1 ? (vr - 1) * _rowSpacing : 0)); }
+- (NSSize)intrinsicContentSize {
+  NSInteger nr = [_grows count], nc = [_gcols count];
+  CGFloat *w = calloc(nc + 1, sizeof(CGFloat)), *h = calloc(nr + 1, sizeof(CGFloat));
+  [self _xefMeasure:w heights:h]; NSSize s = [self _xefTotal:w heights:h]; free(w); free(h); return s; }
+- (NSSize)fittingSize { return [self intrinsicContentSize]; }
+- (void)layout {
+  NSInteger nr = [_grows count], nc = [_gcols count]; if (!nr || !nc) return;
+  CGFloat *w = calloc(nc + 1, sizeof(CGFloat)), *h = calloc(nr + 1, sizeof(CGFloat)), *x = calloc(nc + 1, sizeof(CGFloat)), *y = calloc(nr + 1, sizeof(CGFloat));
+  [self _xefMeasure:w heights:h];
+  CGFloat cx = 0, cy = 0; BOOL firstC = YES, firstR = YES;
+  for (NSInteger c = 0; c < nc; c++) { if (![self _xefVisibleCol:c]) { x[c] = cx; continue; } if (!firstC) cx += _colSpacing; firstC = NO; x[c] = cx; cx += w[c]; }
+  for (NSInteger r = 0; r < nr; r++) { if (![self _xefVisibleRow:r]) { y[r] = cy; continue; } if (!firstR) cy += _rowSpacing; firstR = NO; y[r] = cy; cy += h[r]; }
+  CGFloat top = _bounds.size.height;
+  NSMutableSet *done = [NSMutableSet set];
+  for (NSInteger r = 0; r < nr; r++) for (NSInteger c = 0; c < nc; c++) {
+    NSGridCell *cell = [self cellAtColumnIndex:c rowIndex:r];
+    if ([done containsObject:cell] || !cell->_content || [cell->_content isHidden]) continue;
+    [done addObject:cell];
+    NSRange cr = cell->_cols.length > 1 ? cell->_cols : NSMakeRange(c, 1), rr = cell->_rows.length > 1 ? cell->_rows : NSMakeRange(r, 1);
+    NSInteger c1 = NSMaxRange(cr) - 1, r1 = NSMaxRange(rr) - 1;
+    CGFloat ax = x[cr.location] + ((NSGridColumn *)_gcols[cr.location])->_lead, aw = x[c1] + w[c1] - ((NSGridColumn *)_gcols[c1])->_trail - ax;
+    CGFloat ay = y[rr.location] + ((NSGridRow *)_grows[rr.location])->_top, ah = y[r1] + h[r1] - ((NSGridRow *)_grows[r1])->_bottom - ay;
+    NSSize cs = content_size(cell);
+    NSInteger xp = cell->_x ?: ((NSGridColumn *)_gcols[cr.location])->_x ?: _x, yp = cell->_y ?: ((NSGridRow *)_grows[rr.location])->_y ?: _y;
+    CGFloat fw = xp == 5 ? aw : cs.width, fh = yp == 5 ? ah : cs.height, fx = ax, fy = ay;
+    if (xp == 3) fx = ax + aw - fw; else if (xp == 4) fx = ax + (aw - fw) / 2;
+    if (yp == 3) fy = ay + ah - fh; else if (yp == 4) fy = ay + (ah - fh) / 2;
+    [cell->_content setFrame:NSMakeRect(fx, top - fy - fh, fw, fh)]; }
+  free(w); free(h); free(x); free(y); }
+- (void)setFrame:(NSRect)f { [super setFrame:f]; [self setNeedsLayout:YES]; }
+- (void)viewDidMoveToWindow { [super viewDidMoveToWindow]; [self setNeedsLayout:YES]; }
+@end

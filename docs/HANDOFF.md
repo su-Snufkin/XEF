@@ -772,3 +772,13 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - **Co jeszcze jest tylko atrapą (największe):** NSCollectionView, NSMatrix, NSBrowser, NSGridView, NSImageRep i podklasy,
   NSSound, NSTreeController, NSPathControl, NSSpellChecker, NSTypesetter, NSTextLayoutManager (TextKit 2), NSDrawer,
   NSRuleEditor, NSScrubber / Touch Bar, NSPrintOperation (pełne), NSWorkspace (większość), NSDocument (72 metody).
+- **NSGridView (zgodny z Makiem, `appkit_grid.m`):** NSGridView/NSGridRow/NSGridColumn/NSGridCell w `AppKitModel.m`. Ramki
+  liczone bezpośrednio, bez solvera: szerokość kolumny = max szerokości widoków z widocznych wierszy, wysokość wiersza
+  analogicznie, odstępy 6 pt tylko między widocznymi, **komórki scalone nie wliczają się do szerokości ani wysokości**,
+  rozmiar „automatyczny” to `FLT_MIN`, rozmieszczenie komórka → kolumna/wiersz → siatka (Leading/Top domyślnie). Widok
+  zgłasza `fittingSize` jako `intrinsicContentSize`, więc solver Auto Layout ustawia go na rozmiar treści. Stan: 4275 z 8257
+  metod prawdziwych (52%), atrap 4051 (185 klas).
+- **Kolejne największe luki do ręcznego napisania** (każda ma w `appkit_gap.sh` listę metod): NSMatrix, NSBrowser,
+  NSCollectionView (+Layout), NSImageRep (+PDF/Cached/Custom), NSTreeController, NSSound, NSPathControl, NSTextLayoutManager,
+  NSSpellChecker. **Warunek wstępny dla wielu rzeczy:** `NSInvocation` na arm64 (patrz wyżej) — bez niego KVO z selektorami,
+  undo i `NSPredicate` w Foundation Darlinga nie działają.
