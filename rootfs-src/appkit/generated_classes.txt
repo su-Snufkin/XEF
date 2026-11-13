@@ -19,7 +19,6 @@ NSCollectionLayoutDimension
 NSCollectionLayoutEdgeSpacing
 NSCollectionLayoutGroup
 NSCollectionLayoutGroupCustomItem
-NSCollectionLayoutSection
 NSCollectionLayoutSize
 NSCollectionLayoutSpacing
 NSCollectionViewCompositionalLayout
@@ -27,15 +26,12 @@ NSCollectionViewCompositionalLayoutConfiguration
 NSCollectionViewDiffableDataSource
 NSCollectionViewLayoutInvalidationContext
 NSCollectionViewFlowLayoutInvalidationContext
-NSCollectionViewGridLayout
 NSCollectionViewTransitionLayout
 NSCollectionViewUpdateItem
 NSColorPicker
 NSColorSampler
 NSComboButton
 NSDataAsset
-NSDictionaryController
-NSDictionaryControllerKeyValuePair
 NSDockTile
 NSDraggingImageComponent
 NSDraggingItem
@@ -48,7 +44,6 @@ NSGlassEffectView
 NSGlyphGenerator
 NSGlyphInfo
 NSHelpManager
-NSImageSymbolConfiguration
 NSItemBadge
 NSManagedObjectContext
 NSMediaLibraryBrowserController
@@ -62,10 +57,8 @@ NSNibControlConnector
 NSNibOutletConnector
 NSOpenGLLayer
 NSOpenGLPixelBuffer
-NSPDFInfo
 NSPDFPanel
 NSPICTImageRep
-NSPageLayout
 NSPersistentDocument
 NSPredicateEditor
 NSPredicateEditorRowTemplate
@@ -85,12 +78,10 @@ NSSharingServicePickerToolbarItem
 NSSharingServicePickerTouchBarItem
 NSSliderAccessory
 NSSliderAccessoryBehavior
-NSSpeechRecognizer
 NSSplitViewItemAccessoryViewController
 NSStatusBarButton
 NSStoryboardSegue
 NSStringDrawingContext
-NSTableViewDiffableDataSource
 NSTableViewRowAction
 NSTextAlternatives
 NSTextAttachmentCell
@@ -102,7 +93,6 @@ NSTextPreview
 NSTintConfiguration
 NSTouch
 NSTrackingSeparatorToolbarItem
-NSUserDefaultsController
 NSViewAnimation
 NSViewLayoutRegion
 NSWindowTab

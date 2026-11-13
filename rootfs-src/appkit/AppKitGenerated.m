@@ -11,6 +11,8 @@
 #import "AppKitText.h"
 #import "AppKitTextKit2.h"
 #import "AppKitMisc.h"
+#import "AppKitMisc2.h"
+#import "AppKitMisc3.h"
 #include <objc/runtime.h>
 #include <string.h>
 #include <ctype.h>
@@ -146,8 +148,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSCollectionLayoutGroup @end
 @interface NSCollectionLayoutGroupCustomItem : NSObject @end
 @implementation NSCollectionLayoutGroupCustomItem @end
-@interface NSCollectionLayoutSection : NSObject @end
-@implementation NSCollectionLayoutSection @end
 @interface NSCollectionLayoutSize : NSObject @end
 @implementation NSCollectionLayoutSize @end
 @interface NSCollectionLayoutSpacing : NSObject @end
@@ -162,8 +162,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSCollectionViewLayoutInvalidationContext @end
 @interface NSCollectionViewFlowLayoutInvalidationContext : NSCollectionViewLayoutInvalidationContext @end
 @implementation NSCollectionViewFlowLayoutInvalidationContext @end
-@interface NSCollectionViewGridLayout : NSCollectionViewLayout @end
-@implementation NSCollectionViewGridLayout @end
 @interface NSCollectionViewTransitionLayout : NSCollectionViewLayout @end
 @implementation NSCollectionViewTransitionLayout @end
 @interface NSCollectionViewUpdateItem : NSObject @end
@@ -176,10 +174,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSComboButton @end
 @interface NSDataAsset : NSObject @end
 @implementation NSDataAsset @end
-@interface NSDictionaryController : NSArrayController @end
-@implementation NSDictionaryController @end
-@interface NSDictionaryControllerKeyValuePair : NSObject @end
-@implementation NSDictionaryControllerKeyValuePair @end
 @interface NSDockTile : NSObject @end
 @implementation NSDockTile @end
 @interface NSDraggingImageComponent : NSObject @end
@@ -204,8 +198,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSGlyphInfo @end
 @interface NSHelpManager : NSObject @end
 @implementation NSHelpManager @end
-@interface NSImageSymbolConfiguration : NSObject @end
-@implementation NSImageSymbolConfiguration @end
 @interface NSItemBadge : NSObject @end
 @implementation NSItemBadge @end
 @interface NSManagedObjectContext : NSObject @end
@@ -232,14 +224,10 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSOpenGLLayer @end
 @interface NSOpenGLPixelBuffer : NSObject @end
 @implementation NSOpenGLPixelBuffer @end
-@interface NSPDFInfo : NSObject @end
-@implementation NSPDFInfo @end
 @interface NSPDFPanel : NSObject @end
 @implementation NSPDFPanel @end
 @interface NSPICTImageRep : NSImageRep @end
 @implementation NSPICTImageRep @end
-@interface NSPageLayout : NSObject @end
-@implementation NSPageLayout @end
 @interface NSPersistentDocument : NSDocument @end
 @implementation NSPersistentDocument @end
 @interface NSPredicateEditor : NSRuleEditor @end
@@ -278,8 +266,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSSliderAccessory @end
 @interface NSSliderAccessoryBehavior : NSObject @end
 @implementation NSSliderAccessoryBehavior @end
-@interface NSSpeechRecognizer : NSObject @end
-@implementation NSSpeechRecognizer @end
 @interface NSSplitViewItemAccessoryViewController : NSViewController @end
 @implementation NSSplitViewItemAccessoryViewController @end
 @interface NSStatusBarButton : NSButton @end
@@ -288,8 +274,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSStoryboardSegue @end
 @interface NSStringDrawingContext : NSObject @end
 @implementation NSStringDrawingContext @end
-@interface NSTableViewDiffableDataSource : NSObject @end
-@implementation NSTableViewDiffableDataSource @end
 @interface NSTableViewRowAction : NSObject @end
 @implementation NSTableViewRowAction @end
 @interface NSTextAlternatives : NSObject @end
@@ -312,8 +296,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSTouch @end
 @interface NSTrackingSeparatorToolbarItem : NSToolbarItem @end
 @implementation NSTrackingSeparatorToolbarItem @end
-@interface NSUserDefaultsController : NSController @end
-@implementation NSUserDefaultsController @end
 @interface NSViewAnimation : NSAnimation @end
 @implementation NSViewAnimation @end
 @interface NSViewLayoutRegion : NSObject @end
@@ -416,37 +398,6 @@ static const GenEntry kTable[] = {
 {"NSBindingSelectionMarker", '+', "notApplicableSelectionMarker", 'F', '@', ""},
 {"NSBindingSelectionMarker", '+', "setDefaultPlaceholder:forMarker:onClass:withBinding:", 'D', 'v', "@@#q"},
 {"NSBindingSelectionMarker", '-', "init", 'I', '@', ""},
-{"NSBitmapImageRep", '+', "TIFFRepresentationOfImageRepsInArray:usingCompression:factor:", 'D', '@', "@qf"},
-{"NSBitmapImageRep", '+', "getTIFFCompressionTypes:count:", 'D', 'v', "@^"},
-{"NSBitmapImageRep", '+', "localizedNameForTIFFCompressionType:", 'D', '@', "q"},
-{"NSBitmapImageRep", '-', "bitmapImageRepByConvertingToColorSpace:renderingIntent:", 'D', '@', "@q"},
-{"NSBitmapImageRep", '-', "bitmapImageRepByRetaggingWithColorSpace:", 'D', '@', "@"},
-{"NSBitmapImageRep", '-', "canBeCompressedUsing:", 'D', 'B', "q"},
-{"NSBitmapImageRep", '-', "colorSpace", 'D', '@', ""},
-{"NSBitmapImageRep", '-', "colorizeByMappingGray:toColor:blackMapping:whiteMapping:", 'D', 'v', "d@@@"},
-{"NSBitmapImageRep", '-', "getCompression:factor:", 'D', 'v', "@^"},
-{"NSBitmapImageRep", '-', "incrementalLoadFromData:complete:", 'D', 'q', "@B"},
-{"NSBitmapImageRep", '-', "initForIncrementalLoad", 'I', '@', ""},
-{"NSBitmapImageRep", '-', "initWithCIImage:", 'I', '@', "@"},
-{"NSBitmapImageRep", '-', "initWithFocusedViewRect:", 'I', '@', "R"},
-{"NSBitmapImageRep", '-', "setCompression:factor:", 'D', 'v', "qf"},
-{"NSBitmapImageRep", '-', "setProperty:withValue:", 'D', 'v', "q@"},
-{"NSBitmapImageRep", '-', "valueForProperty:", 'D', '@', "q"},
-{"NSBrowser", '+', "removeSavedColumnsWithAutosaveName:", 'D', 'v', "q"},
-{"NSBrowser", '-', "canDragRowsWithIndexes:inColumn:withEvent:", 'D', 'B', "@q@"},
-{"NSBrowser", '-', "columnsAutosaveName", 'G', 'q', ""},
-{"NSBrowser", '-', "draggingImageForRowsWithIndexes:inColumn:withEvent:offset:", 'D', '@', "@q@^"},
-{"NSBrowser", '-', "drawTitleOfColumn:inRect:", 'D', 'v', "qR"},
-{"NSBrowser", '-', "editItemAtIndexPath:withEvent:select:", 'D', 'v', "@@B"},
-{"NSBrowser", '-', "itemAtIndexPath:", 'D', '@', "@"},
-{"NSBrowser", '-', "noteHeightOfRowsWithIndexesChanged:inColumn:", 'D', 'v', "@q"},
-{"NSBrowser", '-', "prefersAllColumnUserResizing", 'G', 'B', ""},
-{"NSBrowser", '-', "scrollColumnsLeftBy:", 'D', 'v', "q"},
-{"NSBrowser", '-', "scrollColumnsRightBy:", 'D', 'v', "q"},
-{"NSBrowser", '-', "scrollViaScroller:", 'D', 'v', "@"},
-{"NSBrowser", '-', "setColumnsAutosaveName:", 'S', 'v', "q"},
-{"NSBrowser", '-', "setDraggingSourceOperationMask:forLocal:", 'D', 'v', "qB"},
-{"NSBrowser", '-', "setPrefersAllColumnUserResizing:", 'S', 'v', "B"},
 {"NSBrowserCell", '-', "highlightColorInView:", 'D', '@', "@"},
 {"NSBundle", '+', "loadNibFile:externalNameTable:withZone:", 'D', 'B', "@@^"},
 {"NSBundle", '-', "URLForImageResource:", 'D', '@', "q"},
@@ -532,12 +483,10 @@ static const GenEntry kTable[] = {
 {"NSCollectionLayoutItem", '-', "setContentInsets:", 'S', 'v', "E"},
 {"NSCollectionLayoutItem", '-', "setEdgeSpacing:", 'S', 'v', "@"},
 {"NSCollectionLayoutItem", '-', "supplementaryItems", 'D', 'A', ""},
-{"NSCollectionLayoutSection", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutSection", '+', "sectionWithGroup:", 'F', '@', "@"},
 {"NSCollectionLayoutSection", '-', "boundarySupplementaryItems", 'G', 'A', ""},
 {"NSCollectionLayoutSection", '-', "contentInsets", 'G', 'E', ""},
 {"NSCollectionLayoutSection", '-', "decorationItems", 'G', 'A', ""},
-{"NSCollectionLayoutSection", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutSection", '-', "interGroupSpacing", 'G', 'd', ""},
 {"NSCollectionLayoutSection", '-', "orthogonalScrollingBehavior", 'G', 'q', ""},
 {"NSCollectionLayoutSection", '-', "setBoundarySupplementaryItems:", 'S', 'v', "@"},
@@ -709,14 +658,12 @@ static const GenEntry kTable[] = {
 {"NSDictionaryController", '-', "initialValue", 'I', '@', ""},
 {"NSDictionaryController", '-', "localizedKeyDictionary", 'G', 'M', ""},
 {"NSDictionaryController", '-', "localizedKeyTable", 'G', '@', ""},
-{"NSDictionaryController", '-', "newObject", 'D', '@', ""},
 {"NSDictionaryController", '-', "setExcludedKeys:", 'S', 'v', "@"},
 {"NSDictionaryController", '-', "setIncludedKeys:", 'S', 'v', "@"},
 {"NSDictionaryController", '-', "setInitialKey:", 'S', 'v', "@"},
 {"NSDictionaryController", '-', "setInitialValue:", 'S', 'v', "@"},
 {"NSDictionaryController", '-', "setLocalizedKeyDictionary:", 'S', 'v', "@"},
 {"NSDictionaryController", '-', "setLocalizedKeyTable:", 'S', 'v', "@"},
-{"NSDictionaryControllerKeyValuePair", '-', "init", 'I', '@', ""},
 {"NSDictionaryControllerKeyValuePair", '-', "isExplicitlyIncluded", 'D', 'B', ""},
 {"NSDictionaryControllerKeyValuePair", '-', "key", 'G', '@', ""},
 {"NSDictionaryControllerKeyValuePair", '-', "localizedKey", 'G', '@', ""},
@@ -733,22 +680,6 @@ static const GenEntry kTable[] = {
 {"NSDockTile", '-', "setShowsApplicationBadge:", 'S', 'v', "B"},
 {"NSDockTile", '-', "showsApplicationBadge", 'G', 'B', ""},
 {"NSDockTile", '-', "size", 'D', 'S', ""},
-{"NSDocument", '-', "PDFPrintOperation", 'D', '@', ""},
-{"NSDocument", '-', "handleCloseScriptCommand:", 'D', '@', "@"},
-{"NSDocument", '-', "handlePrintScriptCommand:", 'D', '@', "@"},
-{"NSDocument", '-', "handleSaveScriptCommand:", 'D', '@', "@"},
-{"NSDocument", '-', "objectSpecifier", 'D', '@', ""},
-{"NSDocument", '-', "preparePageLayout:", 'D', 'B', "@"},
-{"NSDocument", '-', "prepareSharingServicePicker:", 'D', 'v', "@"},
-{"NSDocument", '-', "previewRepresentableActivityItems", 'G', 'A', ""},
-{"NSDocument", '-', "printShowingPrintPanel:", 'D', 'v', "B"},
-{"NSDocument", '-', "runModalPageLayoutWithPrintInfo:", 'D', 'q', "@"},
-{"NSDocument", '-', "runModalPageLayoutWithPrintInfo:delegate:didRunSelector:contextInfo:", 'D', 'v', "@@:^"},
-{"NSDocument", '-', "runModalPrintOperation:delegate:didRunSelector:contextInfo:", 'D', 'v', "@@:^"},
-{"NSDocument", '-', "saveToFile:saveOperation:delegate:didSaveSelector:contextInfo:", 'D', 'v', "@q@:^"},
-{"NSDocument", '-', "setPreviewRepresentableActivityItems:", 'S', 'v', "@"},
-{"NSDocument", '-', "shareDocumentWithSharingService:completionHandler:", 'D', 'v', "@@"},
-{"NSDocument", '-', "shouldChangePrintInfo:", 'D', 'B', "@"},
 {"NSDocumentController", '-', "documentForFileName:", 'D', '@', "@"},
 {"NSDocumentController", '-', "duplicateDocumentWithContentsOfURL:copying:displayName:error:", 'D', '@', "@B@@"},
 {"NSDocumentController", '-', "fileNamesFromRunningOpenPanel", 'D', 'A', ""},
@@ -913,21 +844,6 @@ static const GenEntry kTable[] = {
 {"NSItemProvider", '-', "registerCloudKitShare:container:", 'D', 'v', "@@"},
 {"NSItemProvider", '-', "registerCloudKitShareWithPreparationHandler:", 'D', 'v', "@"},
 {"NSItemProvider", '-', "sourceFrame", 'D', 'R', ""},
-{"NSLayoutManager", '-', "deleteGlyphsInRange:", 'D', 'v', "N"},
-{"NSLayoutManager", '-', "getGlyphsInRange:glyphs:characterIndexes:glyphInscriptions:elasticBits:", 'D', 'q', "N@^@@"},
-{"NSLayoutManager", '-', "getGlyphsInRange:glyphs:characterIndexes:glyphInscriptions:elasticBits:bidiLevels:", 'D', 'q', "N@^@@^"},
-{"NSLayoutManager", '-', "getLineFragmentInsertionPointsForCharacterAtIndex:alternatePositions:inDisplayOrder:positions:characterIndexes:", 'D', 'q', "qBB^^"},
-{"NSLayoutManager", '-', "insertGlyph:atGlyphIndex:characterIndex:", 'D', 'v', "qqq"},
-{"NSLayoutManager", '-', "insertGlyphs:length:forStartingGlyphAtIndex:characterIndex:", 'D', 'v', "@qqq"},
-{"NSLayoutManager", '-', "intAttribute:forGlyphAtIndex:", 'D', 'q', "qq"},
-{"NSLayoutManager", '-', "invalidateGlyphsOnLayoutInvalidationForGlyphRange:", 'D', 'v', "N"},
-{"NSLayoutManager", '-', "replaceGlyphAtIndex:withGlyph:", 'D', 'v', "qq"},
-{"NSLayoutManager", '-', "setCharacterIndex:forGlyphAtIndex:", 'D', 'v', "qq"},
-{"NSLayoutManager", '-', "setIntAttribute:value:forGlyphAtIndex:", 'D', 'v', "qqq"},
-{"NSLayoutManager", '-', "setLocations:startingGlyphIndexes:count:forGlyphRange:", 'D', 'v', "q^qN"},
-{"NSLayoutManager", '-', "showCGGlyphs:positions:count:font:matrix:attributes:inContext:", 'D', 'v', "^^q@@@@"},
-{"NSLayoutManager", '-', "showPackedGlyphs:length:glyphRange:atPoint:font:color:printingAdjustment:", 'D', 'v', "^qNP@@S"},
-{"NSLayoutManager", '-', "substituteFontForFont:", 'D', '@', "@"},
 {"NSManagedObjectContext", '-', "commitEditing", 'D', 'B', ""},
 {"NSManagedObjectContext", '-', "commitEditingAndReturnError:", 'D', 'B', "@"},
 {"NSManagedObjectContext", '-', "commitEditingWithDelegate:didCommitSelector:contextInfo:", 'D', 'v', "@:^"},
@@ -1330,7 +1246,6 @@ static const GenEntry kTable[] = {
 {"NSSpeechRecognizer", '-', "commands", 'G', 'A', ""},
 {"NSSpeechRecognizer", '-', "delegate", 'G', '@', ""},
 {"NSSpeechRecognizer", '-', "displayedCommandsTitle", 'G', '@', ""},
-{"NSSpeechRecognizer", '-', "init", 'I', '@', ""},
 {"NSSpeechRecognizer", '-', "listensInForegroundOnly", 'G', 'B', ""},
 {"NSSpeechRecognizer", '-', "setBlocksOtherRecognizers:", 'S', 'v', "B"},
 {"NSSpeechRecognizer", '-', "setCommands:", 'S', 'v', "@"},
@@ -1375,11 +1290,9 @@ static const GenEntry kTable[] = {
 {"NSTabViewController", '-', "toolbarAllowedItemIdentifiers:", 'D', 'A', "@"},
 {"NSTabViewController", '-', "toolbarDefaultItemIdentifiers:", 'D', 'A', "@"},
 {"NSTabViewController", '-', "toolbarSelectableItemIdentifiers:", 'D', 'A', "@"},
-{"NSTableViewDiffableDataSource", '+', "new", 'F', '@', ""},
 {"NSTableViewDiffableDataSource", '-', "applySnapshot:animatingDifferences:", 'D', 'v', "@B"},
 {"NSTableViewDiffableDataSource", '-', "applySnapshot:animatingDifferences:completion:", 'D', 'v', "@B@"},
 {"NSTableViewDiffableDataSource", '-', "defaultRowAnimation", 'G', 'q', ""},
-{"NSTableViewDiffableDataSource", '-', "init", 'I', '@', ""},
 {"NSTableViewDiffableDataSource", '-', "initWithTableView:cellProvider:", 'I', '@', "@q"},
 {"NSTableViewDiffableDataSource", '-', "itemIdentifierForRow:", 'D', 'q', "q"},
 {"NSTableViewDiffableDataSource", '-', "rowForItemIdentifier:", 'D', 'q', "q"},
@@ -1543,7 +1456,6 @@ static const GenEntry kTable[] = {
 {"NSUserDefaultsController", '-', "appliesImmediately", 'G', 'B', ""},
 {"NSUserDefaultsController", '-', "defaults", 'D', '@', ""},
 {"NSUserDefaultsController", '-', "hasUnappliedChanges", 'D', 'B', ""},
-{"NSUserDefaultsController", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSUserDefaultsController", '-', "initWithDefaults:initialValues:", 'I', '@', "@@"},
 {"NSUserDefaultsController", '-', "initialValues", 'G', 'M', ""},
 {"NSUserDefaultsController", '-', "revert:", 'D', 'q', "@"},
