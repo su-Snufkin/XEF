@@ -361,6 +361,54 @@ enum { kEditedAttributes = 1, kEditedCharacters = 2 };
 - (BOOL)isFlipped { return YES; }
 /* a plain NSText is a class cluster front: like AppKit, instances are NSTextViews */
 - (id)initWithFrame:(NSRect)f { if ([self class] == [NSText class]) { [self release]; return [[NSTextView alloc] initWithFrame:f]; } return [super initWithFrame:f]; }
+
+/* Base-class behaviour for NSText subclasses that are not NSTextViews: state is stored in associated objects, text in "xef.nt.str". */
+static id NTGet(id o, const char *k) { return objc_getAssociatedObject(o, k); }
+static void NTSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k, v, OBJC_ASSOCIATION_RETAIN); }
+static BOOL NTFlag(id o, const char *k, BOOL d) { NSNumber *n = NTGet(o, k); return n ? [n boolValue] : d; }
+static void NTSetFlag(id o, const char *k, BOOL f) { NTSet(o, k, [NSNumber numberWithBool:f]); }
+- (NSString *)string { NSString *s = NTGet(self, "xef.nt.str"); return s ? s : @""; }
+- (void)setString:(NSString *)s { NTSet(self, "xef.nt.str", [[s copy] autorelease]); NTSet(self, "xef.nt.sel", [NSValue valueWithRange:NSMakeRange(0, 0)]); }
+- (void)replaceCharactersInRange:(NSRange)r withString:(NSString *)s { [self setString:[[self string] stringByReplacingCharactersInRange:r withString:s ? s : @""]]; }
+- (void)replaceCharactersInRange:(NSRange)r withRTF:(NSData *)d { NSAttributedString *a = [[[NSAttributedString alloc] initWithRTF:d documentAttributes:NULL] autorelease]; [self replaceCharactersInRange:r withString:[a string]]; }
+- (void)replaceCharactersInRange:(NSRange)r withRTFD:(NSData *)d { [self replaceCharactersInRange:r withRTF:d]; }
+- (NSData *)RTFFromRange:(NSRange)r { NSAttributedString *a = [[[NSAttributedString alloc] initWithString:[[self string] substringWithRange:r]] autorelease]; return [a RTFFromRange:NSMakeRange(0, [a length]) documentAttributes:@{}]; }
+- (NSData *)RTFDFromRange:(NSRange)r { return [self RTFFromRange:r]; }
+- (BOOL)writeRTFDToFile:(NSString *)p atomically:(BOOL)a { return [[self RTFDFromRange:NSMakeRange(0, [[self string] length])] writeToFile:p atomically:a]; }
+- (BOOL)readRTFDFromFile:(NSString *)p { NSData *d = [NSData dataWithContentsOfFile:p]; if (!d) return NO; [self replaceCharactersInRange:NSMakeRange(0, [[self string] length]) withRTF:d]; return YES; }
+- (id)delegate { return NTGet(self, "xef.nt.del"); } - (void)setDelegate:(id)d { objc_setAssociatedObject(self, "xef.nt.del", d, OBJC_ASSOCIATION_ASSIGN); }
+- (BOOL)isEditable { return NTFlag(self, "xef.nt.ed", YES); } - (void)setEditable:(BOOL)f { NTSetFlag(self, "xef.nt.ed", f); }
+- (BOOL)isSelectable { return NTFlag(self, "xef.nt.sl", YES); } - (void)setSelectable:(BOOL)f { NTSetFlag(self, "xef.nt.sl", f); }
+- (BOOL)isRichText { return NTFlag(self, "xef.nt.rt", YES); } - (void)setRichText:(BOOL)f { NTSetFlag(self, "xef.nt.rt", f); }
+- (BOOL)importsGraphics { return NTFlag(self, "xef.nt.ig", NO); } - (void)setImportsGraphics:(BOOL)f { NTSetFlag(self, "xef.nt.ig", f); }
+- (BOOL)isFieldEditor { return NTFlag(self, "xef.nt.fe", NO); } - (void)setFieldEditor:(BOOL)f { NTSetFlag(self, "xef.nt.fe", f); }
+- (BOOL)usesFontPanel { return NTFlag(self, "xef.nt.fp", YES); } - (void)setUsesFontPanel:(BOOL)f { NTSetFlag(self, "xef.nt.fp", f); }
+- (BOOL)drawsBackground { return NTFlag(self, "xef.nt.db", YES); } - (void)setDrawsBackground:(BOOL)f { NTSetFlag(self, "xef.nt.db", f); }
+- (void)setBackgroundColor:(NSColor *)c { NTSet(self, "xef.nt.bg", c); }
+- (BOOL)isRulerVisible { return NTFlag(self, "xef.nt.rv", NO); }
+- (NSRange)selectedRange { NSValue *v = NTGet(self, "xef.nt.sel"); return v ? [v rangeValue] : NSMakeRange(0, 0); }
+- (void)setSelectedRange:(NSRange)r { NTSet(self, "xef.nt.sel", [NSValue valueWithRange:r]); }
+- (void)scrollRangeToVisible:(NSRange)r {}
+- (NSFont *)font { NSFont *f = NTGet(self, "xef.nt.font"); return f ? f : [NSFont systemFontOfSize:[NSFont systemFontSize]]; } - (void)setFont:(NSFont *)f { NTSet(self, "xef.nt.font", f); }
+- (NSColor *)textColor { NSColor *c = NTGet(self, "xef.nt.tc"); return c ? c : [NSColor textColor]; } - (void)setTextColor:(NSColor *)c { NTSet(self, "xef.nt.tc", c); }
+- (NSInteger)alignment { return [NTGet(self, "xef.nt.al") integerValue]; } - (void)setAlignment:(NSInteger)a { NTSet(self, "xef.nt.al", [NSNumber numberWithInteger:a]); }
+- (NSInteger)baseWritingDirection { NSNumber *n = NTGet(self, "xef.nt.bwd"); return n ? [n integerValue] : -1; } - (void)setBaseWritingDirection:(NSInteger)d { NTSet(self, "xef.nt.bwd", [NSNumber numberWithInteger:d]); }
+- (void)setTextColor:(NSColor *)c range:(NSRange)r { [self setTextColor:c]; } - (void)setFont:(NSFont *)f range:(NSRange)r { [self setFont:f]; }
+- (NSSize)maxSize { NSValue *v = NTGet(self, "xef.nt.max"); return v ? [v sizeValue] : NSMakeSize(1e7, 1e7); } - (void)setMaxSize:(NSSize)s { NTSet(self, "xef.nt.max", [NSValue valueWithSize:s]); }
+- (NSSize)minSize { NSValue *v = NTGet(self, "xef.nt.min"); return v ? [v sizeValue] : NSZeroSize; } - (void)setMinSize:(NSSize)s { NTSet(self, "xef.nt.min", [NSValue valueWithSize:s]); }
+- (BOOL)isHorizontallyResizable { return NTFlag(self, "xef.nt.hr", NO); } - (void)setHorizontallyResizable:(BOOL)f { NTSetFlag(self, "xef.nt.hr", f); }
+- (BOOL)isVerticallyResizable { return NTFlag(self, "xef.nt.vr", YES); } - (void)setVerticallyResizable:(BOOL)f { NTSetFlag(self, "xef.nt.vr", f); }
+- (void)sizeToFit {}
+- (void)copy:(id)s { NSRange r = [self selectedRange]; if (!r.length) return; NSPasteboard *pb = [NSPasteboard generalPasteboard]; [pb clearContents]; [pb setString:[[self string] substringWithRange:r] forType:NSPasteboardTypeString]; }
+- (void)cut:(id)s { [self copy:s]; [self delete:s]; }
+- (void)delete:(id)s { NSRange r = [self selectedRange]; if (r.length && [self isEditable]) { [self replaceCharactersInRange:r withString:@""]; [self setSelectedRange:NSMakeRange(r.location, 0)]; } }
+- (void)paste:(id)s { NSString *t = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString]; if (t && [self isEditable]) { NSRange r = [self selectedRange]; [self replaceCharactersInRange:r withString:t]; [self setSelectedRange:NSMakeRange(r.location + [t length], 0)]; } }
+- (void)selectAll:(id)s { [self setSelectedRange:NSMakeRange(0, [[self string] length])]; }
+- (void)copyFont:(id)s {} - (void)copyRuler:(id)s {} - (void)pasteFont:(id)s {} - (void)pasteRuler:(id)s {}
+- (void)changeFont:(id)s { NSFont *f = [[NSFontManager sharedFontManager] convertFont:[self font]]; if (f) [self setFont:f]; }
+- (void)alignLeft:(id)s { [self setAlignment:0]; } - (void)alignRight:(id)s { [self setAlignment:1]; } - (void)alignCenter:(id)s { [self setAlignment:2]; }
+- (void)subscript:(id)s {} - (void)superscript:(id)s {} - (void)underline:(id)s {} - (void)unscript:(id)s {}
+- (void)showGuessPanel:(id)s {} - (void)checkSpelling:(id)s {} - (void)toggleRuler:(id)s { NTSetFlag(self, "xef.nt.rv", !NTFlag(self, "xef.nt.rv", NO)); } - (void)changeSpelling:(id)s {} - (void)ignoreSpelling:(id)s {}
 @end
 
 static BOOL is_word_char(unichar c) { return [[NSCharacterSet alphanumericCharacterSet] characterIsMember:c] || c == '_'; }

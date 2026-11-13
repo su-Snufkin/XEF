@@ -1160,3 +1160,7 @@ A Mac-vs-XEF audit found 212 of 250 adopted class/protocol pairs differing. `too
 ## 48. NSButtonCell extras, NSMenuItemCell
 
 Real NSMenuItemCell (no longer a generated placeholder) and the missing NSButtonCell methods (AppKitControls.h/.m); deprecated gradientType/mnemonic methods are macOS no-ops and match that. Test `appkit_buttoncell`. Coverage 6476 of 8257. The Mac tunnel changed: update `HostName` in ~/.ssh/config and add the new host to the XEF environment's allowed hosts (update_environment). `foundation_more` currently aborts in NSDateFormatter setup (nil time zone, Foundation side, not AppKit); `appkit_spell` is flaky under load (passes alone).
+
+## 49. NSText base class
+
+NSText now implements its whole public API itself (state in associated objects, text in `xef.nt.str`) so NSText subclasses that are not NSTextViews work; NSTextView overrides everything it already implemented. Coverage 6547 of 8257.

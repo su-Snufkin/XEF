@@ -42,6 +42,20 @@ typedef unsigned int NSGlyph;
 @end
 
 @interface NSText : NSView
+- (NSString *)string; - (void)setString:(NSString *)s;
+- (void)replaceCharactersInRange:(NSRange)r withString:(NSString *)s; - (void)replaceCharactersInRange:(NSRange)r withRTF:(NSData *)d; - (void)replaceCharactersInRange:(NSRange)r withRTFD:(NSData *)d;
+- (NSData *)RTFFromRange:(NSRange)r; - (NSData *)RTFDFromRange:(NSRange)r; - (BOOL)writeRTFDToFile:(NSString *)p atomically:(BOOL)a; - (BOOL)readRTFDFromFile:(NSString *)p;
+- (id)delegate; - (void)setDelegate:(id)d; - (BOOL)isEditable; - (void)setEditable:(BOOL)f; - (BOOL)isSelectable; - (void)setSelectable:(BOOL)f;
+- (BOOL)isRichText; - (void)setRichText:(BOOL)f; - (BOOL)importsGraphics; - (void)setImportsGraphics:(BOOL)f; - (BOOL)isFieldEditor; - (void)setFieldEditor:(BOOL)f;
+- (BOOL)usesFontPanel; - (void)setUsesFontPanel:(BOOL)f; - (BOOL)drawsBackground; - (void)setDrawsBackground:(BOOL)f; - (void)setBackgroundColor:(NSColor *)c;
+- (BOOL)isRulerVisible; - (NSRange)selectedRange; - (void)setSelectedRange:(NSRange)r; - (void)scrollRangeToVisible:(NSRange)r;
+- (NSFont *)font; - (void)setFont:(NSFont *)f; - (NSColor *)textColor; - (void)setTextColor:(NSColor *)c; - (NSInteger)alignment; - (void)setAlignment:(NSInteger)a;
+- (NSInteger)baseWritingDirection; - (void)setBaseWritingDirection:(NSInteger)d; - (void)setTextColor:(NSColor *)c range:(NSRange)r; - (void)setFont:(NSFont *)f range:(NSRange)r;
+- (NSSize)maxSize; - (void)setMaxSize:(NSSize)s; - (NSSize)minSize; - (void)setMinSize:(NSSize)s;
+- (BOOL)isHorizontallyResizable; - (void)setHorizontallyResizable:(BOOL)f; - (BOOL)isVerticallyResizable; - (void)setVerticallyResizable:(BOOL)f; - (void)sizeToFit;
+- (void)copy:(id)s; - (void)copyFont:(id)s; - (void)copyRuler:(id)s; - (void)cut:(id)s; - (void)delete:(id)s; - (void)paste:(id)s; - (void)pasteFont:(id)s; - (void)pasteRuler:(id)s; - (void)selectAll:(id)s;
+- (void)changeFont:(id)s; - (void)alignLeft:(id)s; - (void)alignRight:(id)s; - (void)alignCenter:(id)s; - (void)subscript:(id)s; - (void)superscript:(id)s; - (void)underline:(id)s; - (void)unscript:(id)s;
+- (void)showGuessPanel:(id)s; - (void)checkSpelling:(id)s; - (void)toggleRuler:(id)s; - (void)changeSpelling:(id)s; - (void)ignoreSpelling:(id)s;
 @end
 
 @interface NSTextView : NSText {
