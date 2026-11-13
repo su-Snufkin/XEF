@@ -226,7 +226,7 @@ def parse_dir(path):
             protocols.setdefault(m.group(1), []).extend(members(required))
     classes = collections.OrderedDict()
     for text in texts:
-        for m in re.finditer(r'@interface\s+(\w+)\s*(:\s*(\w+))?([^\n]*)\n(.*?)\n\s*@end', text, flags=re.S):
+        for m in re.finditer(r'@interface\s+(\w+)\s*(:\s*(\w+))?([^\n]*)\n(.*?)^[ \t]*@end', text, flags=re.S | re.M):
             name, sup, head, body = m.group(1), m.group(3), m.group(4), m.group(5)
             c = classes.setdefault(name, {'super': None, 'methods': collections.OrderedDict()})
             if sup and not c['super']:

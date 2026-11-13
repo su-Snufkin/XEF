@@ -45,7 +45,6 @@ NSDraggingSession
 NSFilePromiseProvider
 NSFilePromiseReceiver
 NSFontAssetRequest
-NSFontCollection
 NSGlassEffectContainerView
 NSGlassEffectView
 NSGlyphGenerator
@@ -54,6 +53,7 @@ NSHelpManager
 NSImageSymbolConfiguration
 NSInputServer
 NSItemBadge
+NSManagedObjectContext
 NSMediaLibraryBrowserController
 NSMenuItemBadge
 NSMenuToolbarItem
@@ -88,6 +88,7 @@ NSSharingCollaborationModeRestriction
 NSSharingServicePickerToolbarItem
 NSSharingServicePickerTouchBarItem
 NSSliderAccessory
+NSSliderAccessoryBehavior
 NSSpeechRecognizer
 NSSplitViewItemAccessoryViewController
 NSStatusBarButton
@@ -97,6 +98,7 @@ NSStringDrawingContext
 NSTableViewDiffableDataSource
 NSTableViewRowAction
 NSTextAlternatives
+NSTextAttachmentCell
 NSTextAttachmentViewProvider
 NSTextCheckingController
 NSTextFinder
@@ -105,11 +107,9 @@ NSTextList
 NSTextListElement
 NSTextPreview
 NSTintConfiguration
-NSTitlebarAccessoryViewController
 NSTouch
 NSTrackingSeparatorToolbarItem
 NSUserDefaultsController
-NSUserInterfaceCompressionOptions
 NSViewAnimation
 NSViewLayoutRegion
 NSWindowTab
