@@ -1189,3 +1189,8 @@ New `AppKitTextKit2.m/.h`: NSTextRange, NSCountableTextLocation, NSTextElement/N
 ## 54. AppKitMisc4
 
 Compositional layout model (NSCollectionLayoutSize/Dimension/Spacing/EdgeSpacing/Anchor/Item/SupplementaryItem/BoundarySupplementaryItem/DecorationItem/Group/GroupCustomItem; items copy their layoutSize/edgeSpacing/interItemSpacing like macOS), NSTextList (marker formats), NSWindowTabGroup (NSWindow.tabGroup is still nil, as on an untabbed macOS window), NSComboButton, NSCollectionViewLayoutInvalidationContext, NSScrubberLayout base, NSHelpManager, NSFontManager collections, NSPrintInfo/NSOpenPanel extras. Test `appkit_misc8`. `visualDescription` is a simplified box, not macOS's ASCII art. Coverage 7514 of 8275 (761 missing); 143/144 macref.
+
+## 55. AppKitMisc5
+
+NSDockTile, NSMenuItemBadge, NSGlyphInfo, NSAccessibilityCustomAction/Rotor, NSTextAttachmentCell/ViewProvider, NSOpenGLLayer, NSColorPicker, NSTouch, NSDraggingSession, NSPredicateEditorRowTemplate, plus NSTokenFieldCell/NSSound/NSPopUpButton/NSPasteboardItem extras. Test `appkit_misc9`.
+**ARC gotcha**: a class method whose selector starts with `new` + uppercase (e.g. `+[NSMenuItemBadge newItemsWithCount:]`) is in the ObjC "new" family: ARC callers (the Mac-comparison tests compile with -fobjc-arc) assume +1 and release the result, so the implementation must return an owned object (`[[self alloc] init…]`, not autoreleased) — otherwise use-after-free shows up much later at pool drain. Coverage 7672 of 8275 (603 missing); 144/145 macref.
