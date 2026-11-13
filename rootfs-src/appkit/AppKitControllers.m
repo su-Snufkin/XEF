@@ -233,6 +233,9 @@ static void put(NSMutableDictionary *d, NSString *k, id v) { if (v) d[k] = v; el
 @end
 enum { kPossible, kBegan, kChanged, kEnded, kCancelled, kFailed };
 @implementation NSGestureRecognizer
+- (NSUInteger)modifierFlags { return 0; } - (void)setAllowedTouchTypes:(NSUInteger)t { objc_setAssociatedObject(self, "xef.att", [NSNumber numberWithUnsignedInteger:t], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)shouldRequireFailureOfGestureRecognizer:(id)g { return NO; } - (BOOL)shouldBeRequiredToFailByGestureRecognizer:(id)g { return NO; }
+- (void)mouseCancelled:(NSEvent *)e {} - (void)tabletPoint:(NSEvent *)e {} - (void)pressureChangeWithEvent:(NSEvent *)e {}
 - (id)init { return [self initWithTarget:nil action:NULL]; }
 - (id)initWithTarget:(id)t action:(SEL)a { if ((self = [super init])) { _target = t; _action = a; _enabled = YES; _delaysPrimary = YES; _buttonMask = 1; } return self; }
 - (id)initWithCoder:(NSCoder *)c { return [self init]; } - (void)encodeWithCoder:(NSCoder *)c {}
