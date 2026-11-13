@@ -1152,3 +1152,7 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - **NSTextInputContext** (`appkit_inputctx.m`): `initWithClient:`, `acceptsGlyphInfo` (YES), źródła klawiatury (`com.apple.keylayout.US`), `+currentInputContext` nil; **NSObject: starsza nieformalna ankieta dostępności** (`accessibilityAttributeNames`… — zwracają puste/nil).
 - Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 63/63; pełny `run_tests.sh` przechodzi.
 
+
+## 47. Protocol conformance
+
+A Mac-vs-XEF audit found 212 of 250 adopted class/protocol pairs differing. `tools/gen_appkit_stubs.py` now emits `kProtoTable` and a constructor (`xef_register_protocols`) that registers each protocol by name (if missing) and `class_addProtocol`s it. After the fix all 250 pairs match the Mac (prober: /tmp/probe/proto, not committed). Remaining gaps: NSTextLayoutManager, NSInputManager, NSTextContentManager, NSTextLayoutFragment, NSInputServer, NSMenuItemCell, NSButtonCell, NSTextSelection/Block/Finder, NSSharingService, NSWritingToolsCoordinator.

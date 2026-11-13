@@ -139,6 +139,14 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 LOADER = r'''
 static const unsigned long kGenCount = sizeof kTable / sizeof kTable[0];
 unsigned long XEFGeneratedCount(void) { return kGenCount; }
+extern const struct XEFProto kProtoTable[];
+/* protocols are compared by name, so the ones AppKit declares can simply be registered empty and added to the classes that adopt them */
+__attribute__((constructor)) static void xef_register_protocols(void) {
+  for (const struct XEFProto *e = kProtoTable; e->cls; e++) {
+    Class c = objc_getClass(e->cls); if (!c) continue;
+    Protocol *p = objc_getProtocol(e->proto);
+    if (!p) { Protocol *np = objc_allocateProtocol(e->proto); if (np) { objc_registerProtocol(np); p = np; } }
+    if (p && !class_conformsToProtocol(c, p)) class_addProtocol(c, p); } }
 __attribute__((constructor)) static void xef_register_generated(void) {
   if (getenv("XEF_APPKIT_NO_GENERATED")) return;
   for (unsigned long i = 0; i < kGenCount; i++) {
@@ -157,6 +165,21 @@ __attribute__((constructor)) static void xef_register_generated(void) {
 
 
 NIL_FACTORIES = set()
+
+
+def adopted_protocol_pairs():
+    """(class, protocol) for every protocol a public AppKit class adopts in its @interface line (conformance is checked by name at runtime)"""
+    import glob
+    txt = ''
+    for f in sorted(glob.glob(os.path.join(REPO, 'mac-out', 'headers', '*.h'))):
+        t = open(f, errors='replace').read()
+        txt += re.sub(r'/\*.*?\*/', ' ', re.sub(r'//[^\n]*', '', t), flags=re.S) + '\n'
+    pairs = set()
+    for m in re.finditer(r'@interface\s+(\w+)\s*:\s*\w+\s*(?:<([^>]*)>)?', txt):
+        if m.group(2):
+            for p in re.findall(r'\w+', m.group(2)):
+                pairs.add((m.group(1), p))
+    return sorted(pairs)
 
 
 def load_gap(path):
@@ -299,6 +322,11 @@ def main():
                 out.append('{%s, %s, \'%s\', %s},' % (cstr(f[0]), cstr(f[1]), f[2], cstr(f[3]))); ncount += 1
     out.append('{0, 0, 0, 0} };')
     out.append('const unsigned long kDefaultsCount = %d;' % ncount)
+    out.append('struct XEFProto { const char *cls, *proto; };')
+    out.append('const struct XEFProto kProtoTable[] = {')
+    for c, p in adopted_protocol_pairs():
+        out.append('{%s, %s},' % (cstr(c), cstr(p)))
+    out.append('{0, 0} };')
     out.append(LOADER)
     with open(OUT, 'w') as f:
         f.write('\n'.join(out) + '\n')
