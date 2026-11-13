@@ -1141,3 +1141,14 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 - Zdarza się, że `macref.sh` zgłasza `BUILD FAIL` dla kilkunastu testów naraz (chwilowy zanik połączenia z Makiem) — wystarczy powtórzyć.
 - Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 59/59; pełny `run_tests.sh` przechodzi.
 
+### 46. Eksportowane funkcje C, stałe liczbowe i tekstowe, NSTextInputContext (2026-11-12)
+- **Audyt symboli** (testy `appkit_symbols.m`, `appkit_consts.m`, `appkit_axconsts.m` — wszystkie wygenerowane z nagłówków SDK i porównane z Makiem): **61 z 91 eksportowanych funkcji C AppKit nie istniało** (`dlsym` nie znajdował ich) —
+  teraz są w nowym **`rootfs-src/appkit/AppKitFunctions.m`** (dopisany do `tools/build_appkit*.sh`): panele alertów (`NSRunAlertPanel…`, `NSBeginAlertSheet…` na `NSAlert`; `NSGetAlertPanel` zwraca nil), listy okien
+  (`NSCountWindows`, `NSWindowList`), głębie (`NSBestDepth`, `NSAvailableWindowDepths`), `NSDrawTiledRects`/`NSDrawColorTiledRects`, `NSRectFillListWith…`, **`NSDrawThreePartImage`/`NSDrawNinePartImage`**, `NSReadPixel`,
+  `NSDrawBitmap`, pomocnicy typów pasteboardu, opcje OpenGL, usługi (tylko stan), pomocnicy dostępności (opisy ról — słowa z CamelCase małymi literami, `NSAccessibilityUnignoredChildren` zostawia tylko widoki/komórki/okna).
+  `NSCopyBits` i funkcje usług to puste atrapy. Dodając eksportowaną funkcję, uruchom `macref.sh appkit_symbols`.
+- **Brakujące stałe**: 6 tekstowych (`NSAllRomanInputSourcesLocaleIdentifier` — **śmieciowa wartość w tablicy wieszała program**, `NSFontColorAttribute` miał złą wartość, `NSTabColumnTerminatorsAttributeName`, `NSTextLayoutSection…`) i 3 liczbowe
+  (`NSSplitViewItemUnspecifiedDimension` -1, `NSUnderlineByWordMask`, `NSUnderlineStrikethroughMask`). Test `appkit_consts.m` obejmuje teraz ~1130 stałych tekstowych i wszystkie liczbowe z nagłówków.
+- **NSTextInputContext** (`appkit_inputctx.m`): `initWithClient:`, `acceptsGlyphInfo` (YES), źródła klawiatury (`com.apple.keylayout.US`), `+currentInputContext` nil; **NSObject: starsza nieformalna ankieta dostępności** (`accessibilityAttributeNames`… — zwracają puste/nil).
+- Stan: patrz `tools/appkit_gap.sh`; `macref.sh` 63/63; pełny `run_tests.sh` przechodzi.
+

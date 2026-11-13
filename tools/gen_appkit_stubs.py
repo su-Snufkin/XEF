@@ -156,7 +156,7 @@ __attribute__((constructor)) static void xef_register_generated(void) {
 '''
 
 
-NIL_FACTORIES = {('NSTextInputContext', 'currentInputContext')}
+NIL_FACTORIES = set()
 
 
 def load_gap(path):

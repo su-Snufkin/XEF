@@ -59,7 +59,7 @@ NSString *const NSFontWeightTrait = @"NSCTFontWeightTrait";
 NSString *const NSFontSymbolicTrait = @"NSCTFontSymbolicTrait";
 NSString *const NSFontFixedAdvanceAttribute = @"NSCTFontFixedAdvanceAttribute";
 NSString *const NSFontFeatureSettingsAttribute = @"NSCTFontFeatureSettingsAttribute";
-NSString *const NSFontColorAttribute = @"NSColor";
+NSString *const NSFontColorAttribute = @"NSFontColorAttribute";
 NSString *const NSFontVisibleNameAttribute = @"NSFontVisibleNameAttribute";
 NSString *const NSFontMatrixAttribute = @"NSFontMatrixAttribute";
 const CGFloat NSFontWeightUltraLight = -0.8, NSFontWeightThin = -0.6, NSFontWeightLight = -0.4, NSFontWeightRegular = 0,

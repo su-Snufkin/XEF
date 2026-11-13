@@ -96,3 +96,8 @@ typedef unsigned int NSGlyph;
 @interface NSTextAttachment : NSObject <NSCoding, NSSecureCoding> { @public NSData *_contents; NSString *_fileType; NSImage *_image; NSRect _bounds; NSFileWrapper *_wrapper; CGFloat _padding; id _cell; BOOL _allowsView; }
 - (id)initWithData:(NSData *)d ofType:(NSString *)t; - (id)initWithFileWrapper:(NSFileWrapper *)w; - (NSRect)bounds; - (NSImage *)image;
 @end
+
+/* NSTextInputContext: bookkeeping only; there is no input method engine on the host */
+@interface NSTextInputContext : NSObject { @public id _client; BOOL _glyph; NSArray *_locales; NSString *_source; }
++ (NSTextInputContext *)currentInputContext; - (id)initWithClient:(id)c; - (id)client;
+@end

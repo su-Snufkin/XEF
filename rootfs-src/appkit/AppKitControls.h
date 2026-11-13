@@ -162,3 +162,7 @@ void XEFRedrawWindowNow(NSWindow *w);       /* presents the window right away (i
 @interface NSView (XEFKeyEquivalents)
 - (BOOL)performKeyEquivalent:(NSEvent *)e;
 @end
+
+@interface NSAlert : NSObject { NSString *_message, *_info; NSMutableArray *_buttons; NSUInteger _style; }
+- (void)setMessageText:(NSString *)s; - (void)setInformativeText:(NSString *)s; - (void)setAlertStyle:(NSUInteger)s; - (id)addButtonWithTitle:(NSString *)t; - (NSInteger)runModal;
+@end

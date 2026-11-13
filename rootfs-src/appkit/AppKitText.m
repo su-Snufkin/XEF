@@ -1363,6 +1363,17 @@ NSString *const NSTextListMarkerUppercaseHexadecimal = @"{upper-hexadecimal}";
 NSString *const NSTextListMarkerUppercaseLatin = @"{upper-latin}";
 NSString *const NSTextListMarkerUppercaseRoman = @"{upper-roman}";
 
+
+/* more AppKit string constants (values read from macOS; found by tests/darwin/mac/appkit_consts.m) */
+const CGFloat NSSplitViewItemUnspecifiedDimension = -1;
+const NSUInteger NSUnderlineByWordMask = 32768;
+const NSUInteger NSUnderlineStrikethroughMask = 16384;
+NSString *NSAllRomanInputSourcesLocaleIdentifier = @"NSAllRomanInputSourcesLocaleIdentifier";
+NSString *const NSTabColumnTerminatorsAttributeName = @"NSTabColumnTerminatorsAttributeName";
+NSString *const NSTextLayoutSectionOrientation = @"NSTextLayoutSectionOrientation";
+NSString *const NSTextLayoutSectionRange = @"NSTextLayoutSectionRange";
+NSString *const NSTextLayoutSectionsAttribute = @"NSTextLayoutSectionsAttribute";
+
 /* ---- NSAttributedString: document readers (plain, RTF, HTML), attachments, line breaks ---- */
 static NSString *XEFHTMLEntity(NSString *e) {
   if ([e isEqualToString:@"amp"]) return @"&"; if ([e isEqualToString:@"lt"]) return @"<"; if ([e isEqualToString:@"gt"]) return @">"; if ([e isEqualToString:@"quot"]) return @"\""; if ([e isEqualToString:@"apos"]) return @"'"; if ([e isEqualToString:@"nbsp"]) return @" ";
@@ -1482,4 +1493,16 @@ static NSAttributedString *XEFParseRTF(NSString *r) {
 - (NSRect)attachmentBoundsForAttributes:(NSDictionary *)a location:(id)l textContainer:(NSTextContainer *)c proposedLineFragment:(NSRect)f position:(NSPoint)p {
   if (!NSEqualRects(_bounds, NSZeroRect)) return _bounds; NSSize s = _image ? [_image size] : NSZeroSize; return NSMakeRect(0, 0, s.width, s.height); }
 - (NSRect)attachmentBoundsForTextContainer:(NSTextContainer *)c proposedLineFragment:(NSRect)f glyphPosition:(NSPoint)p characterIndex:(NSUInteger)i { return [self attachmentBoundsForAttributes:@{} location:nil textContainer:c proposedLineFragment:f position:p]; }
+@end
+
+@implementation NSTextInputContext
++ (NSTextInputContext *)currentInputContext { return nil; }
++ (NSString *)localizedNameForInputSource:(NSString *)s { return [s hasSuffix:@".US"] ? @"U.S." : s; }
+- (id)initWithClient:(id)c { if ((self = [super init])) { _client = c; _glyph = YES; _source = @"com.apple.keylayout.US"; } return self; }
+- (void)dealloc { [_locales release]; [_source release]; [super dealloc]; }
+- (id)client { return _client; } - (BOOL)acceptsGlyphInfo { return _glyph; } - (void)setAcceptsGlyphInfo:(BOOL)f { _glyph = f; }
+- (NSArray *)allowedInputSourceLocales { return _locales; } - (void)setAllowedInputSourceLocales:(NSArray *)a { [a retain]; [_locales release]; _locales = a; }
+- (NSArray *)keyboardInputSources { return @[@"com.apple.keylayout.US"]; } - (NSString *)selectedKeyboardInputSource { return _source; } - (void)setSelectedKeyboardInputSource:(NSString *)s { [s retain]; [_source release]; _source = s; }
+- (void)activate {} - (void)deactivate {} - (BOOL)handleEvent:(NSEvent *)e { return NO; } - (void)discardMarkedText {} - (void)invalidateCharacterCoordinates {}
+- (void)textInputClientWillStartScrollingOrZooming {} - (void)textInputClientDidEndScrollingOrZooming {} - (void)textInputClientDidUpdateSelection {} - (void)textInputClientDidScroll {}
 @end

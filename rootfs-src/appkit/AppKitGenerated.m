@@ -322,8 +322,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSTextElement @end
 @interface NSTextFinder : NSObject @end
 @implementation NSTextFinder @end
-@interface NSTextInputContext : NSObject @end
-@implementation NSTextInputContext @end
 @interface NSTextInsertionIndicator : NSView @end
 @implementation NSTextInsertionIndicator @end
 @interface NSTextLayoutFragment : NSObject @end
@@ -1896,27 +1894,6 @@ static const GenEntry kTable[] = {
 {"NSTextFinder", '-', "setFindIndicatorNeedsUpdate:", 'S', 'v', "B"},
 {"NSTextFinder", '-', "setIncrementalSearchingEnabled:", 'S', 'v', "B"},
 {"NSTextFinder", '-', "setIncrementalSearchingShouldDimContentView:", 'S', 'v', "B"},
-{"NSTextInputContext", '+', "currentInputContext", 'D', '@', ""},
-{"NSTextInputContext", '+', "localizedNameForInputSource:", 'D', '@', "q"},
-{"NSTextInputContext", '-', "acceptsGlyphInfo", 'G', 'B', ""},
-{"NSTextInputContext", '-', "activate", 'D', 'v', ""},
-{"NSTextInputContext", '-', "allowedInputSourceLocales", 'G', 'A', ""},
-{"NSTextInputContext", '-', "client", 'D', '@', ""},
-{"NSTextInputContext", '-', "deactivate", 'D', 'v', ""},
-{"NSTextInputContext", '-', "discardMarkedText", 'D', 'v', ""},
-{"NSTextInputContext", '-', "handleEvent:", 'D', 'B', "@"},
-{"NSTextInputContext", '-', "init", 'I', '@', ""},
-{"NSTextInputContext", '-', "initWithClient:", 'I', '@', "@"},
-{"NSTextInputContext", '-', "invalidateCharacterCoordinates", 'D', 'v', ""},
-{"NSTextInputContext", '-', "keyboardInputSources", 'D', 'A', ""},
-{"NSTextInputContext", '-', "selectedKeyboardInputSource", 'G', 'q', ""},
-{"NSTextInputContext", '-', "setAcceptsGlyphInfo:", 'S', 'v', "B"},
-{"NSTextInputContext", '-', "setAllowedInputSourceLocales:", 'S', 'v', "@"},
-{"NSTextInputContext", '-', "setSelectedKeyboardInputSource:", 'S', 'v', "q"},
-{"NSTextInputContext", '-', "textInputClientDidEndScrollingOrZooming", 'D', 'v', ""},
-{"NSTextInputContext", '-', "textInputClientDidScroll", 'D', 'v', ""},
-{"NSTextInputContext", '-', "textInputClientDidUpdateSelection", 'D', 'v', ""},
-{"NSTextInputContext", '-', "textInputClientWillStartScrollingOrZooming", 'D', 'v', ""},
 {"NSTextInsertionIndicator", '-', "automaticModeOptions", 'G', 'q', ""},
 {"NSTextInsertionIndicator", '-', "color", 'G', '@', ""},
 {"NSTextInsertionIndicator", '-', "displayMode", 'G', 'q', ""},

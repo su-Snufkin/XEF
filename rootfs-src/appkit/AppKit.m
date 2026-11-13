@@ -1334,8 +1334,6 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 /* ---------------------------------------------------------------- alerts */
 /* There is no modal UI: an alert is written to stderr and answered with its first button (NSAlertFirstButtonReturn),
  * which is what the default-button keyboard shortcut would do. Used by SDL_ShowMessageBox for fatal errors. */
-@interface NSAlert : NSObject { NSString *_message, *_info; NSMutableArray *_buttons; NSUInteger _style; }
-@end
 @implementation NSAlert
 - (id)init { if ((self = [super init])) { _buttons = [[NSMutableArray alloc] init]; _message = @""; _info = @""; } return self; }
 - (void)setMessageText:(NSString *)s { [s retain]; [_message release]; _message = s ? s : @""; }
@@ -1970,4 +1968,14 @@ static NSMutableDictionary *g_exposed;
 - (BOOL)allowsAutomaticKeyEquivalentMirroring { return XEFFlag(self, "xef.kem", YES); } - (void)setAllowsAutomaticKeyEquivalentMirroring:(BOOL)f { XEFSet(self, "xef.kem", [NSNumber numberWithBool:f]); }
 - (NSInteger)mnemonicLocation { return NSNotFound; } - (void)setMnemonicLocation:(NSUInteger)l {} - (NSString *)mnemonic { return @""; } - (void)setTitleWithMnemonic:(NSString *)t { [self setTitle:[t stringByReplacingOccurrencesOfString:@"&" withString:@""]]; }
 + (NSArray *)writingToolsItems { return @[]; }
+@end
+
+/* ---- NSObject: the legacy accessibility informal protocol (nothing is exposed to assistive technology here) ---- */
+@implementation NSObject (XEFLegacyAccessibility)
+- (NSArray *)accessibilityAttributeNames { return @[]; } - (id)accessibilityAttributeValue:(NSString *)a { return nil; } - (BOOL)accessibilityIsAttributeSettable:(NSString *)a { return NO; }
+- (BOOL)accessibilitySetValue:(id)v forAttribute:(NSString *)a { return NO; } - (NSArray *)accessibilityParameterizedAttributeNames { return @[]; } - (id)accessibilityAttributeValue:(NSString *)a forParameter:(id)p { return nil; }
+- (NSArray *)accessibilityActionNames { return @[]; } - (NSString *)accessibilityActionDescription:(NSString *)a { return nil; } - (void)accessibilityPerformAction:(NSString *)a {}
+- (BOOL)accessibilityIsIgnored { return YES; } - (id)accessibilityHitTest:(NSPoint)p { return nil; } - (id)accessibilityFocusedUIElement { return nil; }
+- (NSUInteger)accessibilityIndexOfChild:(id)c { return NSNotFound; } - (NSUInteger)accessibilityArrayAttributeCount:(NSString *)a { return 0; } - (NSArray *)accessibilityArrayAttributeValues:(NSString *)a index:(NSUInteger)i maxCount:(NSUInteger)m { return @[]; }
+- (BOOL)accessibilityNotifiesWhenDestroyed { return NO; } - (void)accessibilitySetOverrideValue:(id)v forAttribute:(NSString *)a {}
 @end

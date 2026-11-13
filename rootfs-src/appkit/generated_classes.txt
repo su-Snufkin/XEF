@@ -108,7 +108,6 @@ NSTextContentManager
 NSTextContentStorage
 NSTextElement
 NSTextFinder
-NSTextInputContext
 NSTextInsertionIndicator
 NSTextLayoutFragment
 NSTextLayoutManager
