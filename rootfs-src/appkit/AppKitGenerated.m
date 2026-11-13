@@ -13,6 +13,7 @@
 #import "AppKitMisc.h"
 #import "AppKitMisc2.h"
 #import "AppKitMisc3.h"
+#import "AppKitMisc4.h"
 #include <objc/runtime.h>
 #include <string.h>
 #include <ctype.h>
@@ -130,36 +131,12 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSBindingSelectionMarker @end
 @interface NSCIImageRep : NSImageRep @end
 @implementation NSCIImageRep @end
-@interface NSCollectionLayoutAnchor : NSObject @end
-@implementation NSCollectionLayoutAnchor @end
-@interface NSCollectionLayoutItem : NSObject @end
-@implementation NSCollectionLayoutItem @end
-@interface NSCollectionLayoutSupplementaryItem : NSCollectionLayoutItem @end
-@implementation NSCollectionLayoutSupplementaryItem @end
-@interface NSCollectionLayoutBoundarySupplementaryItem : NSCollectionLayoutSupplementaryItem @end
-@implementation NSCollectionLayoutBoundarySupplementaryItem @end
-@interface NSCollectionLayoutDecorationItem : NSCollectionLayoutItem @end
-@implementation NSCollectionLayoutDecorationItem @end
-@interface NSCollectionLayoutDimension : NSObject @end
-@implementation NSCollectionLayoutDimension @end
-@interface NSCollectionLayoutEdgeSpacing : NSObject @end
-@implementation NSCollectionLayoutEdgeSpacing @end
-@interface NSCollectionLayoutGroup : NSCollectionLayoutItem @end
-@implementation NSCollectionLayoutGroup @end
-@interface NSCollectionLayoutGroupCustomItem : NSObject @end
-@implementation NSCollectionLayoutGroupCustomItem @end
-@interface NSCollectionLayoutSize : NSObject @end
-@implementation NSCollectionLayoutSize @end
-@interface NSCollectionLayoutSpacing : NSObject @end
-@implementation NSCollectionLayoutSpacing @end
 @interface NSCollectionViewCompositionalLayout : NSCollectionViewLayout @end
 @implementation NSCollectionViewCompositionalLayout @end
 @interface NSCollectionViewCompositionalLayoutConfiguration : NSObject @end
 @implementation NSCollectionViewCompositionalLayoutConfiguration @end
 @interface NSCollectionViewDiffableDataSource : NSObject @end
 @implementation NSCollectionViewDiffableDataSource @end
-@interface NSCollectionViewLayoutInvalidationContext : NSObject @end
-@implementation NSCollectionViewLayoutInvalidationContext @end
 @interface NSCollectionViewFlowLayoutInvalidationContext : NSCollectionViewLayoutInvalidationContext @end
 @implementation NSCollectionViewFlowLayoutInvalidationContext @end
 @interface NSCollectionViewTransitionLayout : NSCollectionViewLayout @end
@@ -170,8 +147,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSColorPicker @end
 @interface NSColorSampler : NSObject @end
 @implementation NSColorSampler @end
-@interface NSComboButton : NSControl @end
-@implementation NSComboButton @end
 @interface NSDataAsset : NSObject @end
 @implementation NSDataAsset @end
 @interface NSDockTile : NSObject @end
@@ -196,8 +171,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSGlyphGenerator @end
 @interface NSGlyphInfo : NSObject @end
 @implementation NSGlyphInfo @end
-@interface NSHelpManager : NSObject @end
-@implementation NSHelpManager @end
 @interface NSItemBadge : NSObject @end
 @implementation NSItemBadge @end
 @interface NSManagedObjectContext : NSObject @end
@@ -240,8 +213,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPreviewRepresentingActivityItem @end
 @interface NSScrubberArrangedView : NSView @end
 @implementation NSScrubberArrangedView @end
-@interface NSScrubberLayout : NSObject @end
-@implementation NSScrubberLayout @end
 @interface NSScrubberFlowLayout : NSScrubberLayout @end
 @implementation NSScrubberFlowLayout @end
 @interface NSScrubberImageItemView : NSScrubberArrangedView @end
@@ -284,8 +255,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSTextAttachmentViewProvider @end
 @interface NSTextInsertionIndicator : NSView @end
 @implementation NSTextInsertionIndicator @end
-@interface NSTextList : NSObject @end
-@implementation NSTextList @end
 @interface NSTextListElement : NSTextParagraph @end
 @implementation NSTextListElement @end
 @interface NSTextPreview : NSObject @end
@@ -302,8 +271,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSViewLayoutRegion @end
 @interface NSWindowTab : NSObject @end
 @implementation NSWindowTab @end
-@interface NSWindowTabGroup : NSObject @end
-@implementation NSWindowTabGroup @end
 @interface NSWorkspaceAuthorization : NSObject @end
 @implementation NSWorkspaceAuthorization @end
 @interface NSWritingToolsCoordinatorAnimationParameters : NSObject @end
@@ -414,53 +381,41 @@ static const GenEntry kTable[] = {
 {"NSCollectionLayoutAnchor", '+', "layoutAnchorWithEdges:", 'F', '@', "q"},
 {"NSCollectionLayoutAnchor", '+', "layoutAnchorWithEdges:absoluteOffset:", 'F', '@', "qP"},
 {"NSCollectionLayoutAnchor", '+', "layoutAnchorWithEdges:fractionalOffset:", 'F', '@', "qP"},
-{"NSCollectionLayoutAnchor", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutAnchor", '-', "edges", 'D', 'q', ""},
-{"NSCollectionLayoutAnchor", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutAnchor", '-', "isAbsoluteOffset", 'D', 'B', ""},
 {"NSCollectionLayoutAnchor", '-', "isFractionalOffset", 'D', 'B', ""},
 {"NSCollectionLayoutAnchor", '-', "offset", 'D', 'P', ""},
 {"NSCollectionLayoutBoundarySupplementaryItem", '+', "boundarySupplementaryItemWithLayoutSize:elementKind:alignment:", 'F', '@', "@@q"},
 {"NSCollectionLayoutBoundarySupplementaryItem", '+', "boundarySupplementaryItemWithLayoutSize:elementKind:alignment:absoluteOffset:", 'F', '@', "@@qP"},
-{"NSCollectionLayoutBoundarySupplementaryItem", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutBoundarySupplementaryItem", '-', "alignment", 'D', 'q', ""},
 {"NSCollectionLayoutBoundarySupplementaryItem", '-', "extendsBoundary", 'G', 'B', ""},
-{"NSCollectionLayoutBoundarySupplementaryItem", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutBoundarySupplementaryItem", '-', "offset", 'D', 'P', ""},
 {"NSCollectionLayoutBoundarySupplementaryItem", '-', "pinToVisibleBounds", 'G', 'B', ""},
 {"NSCollectionLayoutBoundarySupplementaryItem", '-', "setExtendsBoundary:", 'S', 'v', "B"},
 {"NSCollectionLayoutBoundarySupplementaryItem", '-', "setPinToVisibleBounds:", 'S', 'v', "B"},
 {"NSCollectionLayoutDecorationItem", '+', "backgroundDecorationItemWithElementKind:", 'F', '@', "@"},
-{"NSCollectionLayoutDecorationItem", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutDecorationItem", '-', "elementKind", 'D', '@', ""},
-{"NSCollectionLayoutDecorationItem", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutDecorationItem", '-', "setZIndex:", 'S', 'v', "q"},
 {"NSCollectionLayoutDecorationItem", '-', "zIndex", 'G', 'q', ""},
 {"NSCollectionLayoutDimension", '+', "absoluteDimension:", 'F', '@', "d"},
 {"NSCollectionLayoutDimension", '+', "estimatedDimension:", 'F', '@', "d"},
 {"NSCollectionLayoutDimension", '+', "fractionalHeightDimension:", 'F', '@', "d"},
 {"NSCollectionLayoutDimension", '+', "fractionalWidthDimension:", 'F', '@', "d"},
-{"NSCollectionLayoutDimension", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutDimension", '-', "dimension", 'D', 'd', ""},
-{"NSCollectionLayoutDimension", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutDimension", '-', "isAbsolute", 'D', 'B', ""},
 {"NSCollectionLayoutDimension", '-', "isEstimated", 'D', 'B', ""},
 {"NSCollectionLayoutDimension", '-', "isFractionalHeight", 'D', 'B', ""},
 {"NSCollectionLayoutDimension", '-', "isFractionalWidth", 'D', 'B', ""},
-{"NSCollectionLayoutEdgeSpacing", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutEdgeSpacing", '+', "spacingForLeading:top:trailing:bottom:", 'F', '@', "@@@@"},
 {"NSCollectionLayoutEdgeSpacing", '-', "bottom", 'D', '@', ""},
-{"NSCollectionLayoutEdgeSpacing", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutEdgeSpacing", '-', "leading", 'D', '@', ""},
 {"NSCollectionLayoutEdgeSpacing", '-', "top", 'D', '@', ""},
 {"NSCollectionLayoutEdgeSpacing", '-', "trailing", 'D', '@', ""},
 {"NSCollectionLayoutGroup", '+', "customGroupWithLayoutSize:itemProvider:", 'F', '@', "@q"},
 {"NSCollectionLayoutGroup", '+', "horizontalGroupWithLayoutSize:subitem:count:", 'F', '@', "@@q"},
 {"NSCollectionLayoutGroup", '+', "horizontalGroupWithLayoutSize:subitems:", 'F', '@', "@@"},
-{"NSCollectionLayoutGroup", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutGroup", '+', "verticalGroupWithLayoutSize:subitem:count:", 'F', '@', "@@q"},
 {"NSCollectionLayoutGroup", '+', "verticalGroupWithLayoutSize:subitems:", 'F', '@', "@@"},
-{"NSCollectionLayoutGroup", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutGroup", '-', "interItemSpacing", 'G', '@', ""},
 {"NSCollectionLayoutGroup", '-', "setInterItemSpacing:", 'S', 'v', "@"},
 {"NSCollectionLayoutGroup", '-', "setSupplementaryItems:", 'S', 'v', "@"},
@@ -469,53 +424,28 @@ static const GenEntry kTable[] = {
 {"NSCollectionLayoutGroup", '-', "visualDescription", 'D', '@', ""},
 {"NSCollectionLayoutGroupCustomItem", '+', "customItemWithFrame:", 'F', '@', "R"},
 {"NSCollectionLayoutGroupCustomItem", '+', "customItemWithFrame:zIndex:", 'F', '@', "Rq"},
-{"NSCollectionLayoutGroupCustomItem", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutGroupCustomItem", '-', "frame", 'D', 'R', ""},
-{"NSCollectionLayoutGroupCustomItem", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutGroupCustomItem", '-', "zIndex", 'D', 'q', ""},
 {"NSCollectionLayoutItem", '+', "itemWithLayoutSize:", 'F', '@', "@"},
 {"NSCollectionLayoutItem", '+', "itemWithLayoutSize:supplementaryItems:", 'F', '@', "@@"},
-{"NSCollectionLayoutItem", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutItem", '-', "contentInsets", 'G', 'E', ""},
 {"NSCollectionLayoutItem", '-', "edgeSpacing", 'G', '@', ""},
-{"NSCollectionLayoutItem", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutItem", '-', "layoutSize", 'D', '@', ""},
 {"NSCollectionLayoutItem", '-', "setContentInsets:", 'S', 'v', "E"},
 {"NSCollectionLayoutItem", '-', "setEdgeSpacing:", 'S', 'v', "@"},
 {"NSCollectionLayoutItem", '-', "supplementaryItems", 'D', 'A', ""},
-{"NSCollectionLayoutSection", '+', "sectionWithGroup:", 'F', '@', "@"},
-{"NSCollectionLayoutSection", '-', "boundarySupplementaryItems", 'G', 'A', ""},
-{"NSCollectionLayoutSection", '-', "contentInsets", 'G', 'E', ""},
-{"NSCollectionLayoutSection", '-', "decorationItems", 'G', 'A', ""},
-{"NSCollectionLayoutSection", '-', "interGroupSpacing", 'G', 'd', ""},
-{"NSCollectionLayoutSection", '-', "orthogonalScrollingBehavior", 'G', 'q', ""},
-{"NSCollectionLayoutSection", '-', "setBoundarySupplementaryItems:", 'S', 'v', "@"},
-{"NSCollectionLayoutSection", '-', "setContentInsets:", 'S', 'v', "E"},
-{"NSCollectionLayoutSection", '-', "setDecorationItems:", 'S', 'v', "@"},
-{"NSCollectionLayoutSection", '-', "setInterGroupSpacing:", 'S', 'v', "d"},
-{"NSCollectionLayoutSection", '-', "setOrthogonalScrollingBehavior:", 'S', 'v', "q"},
-{"NSCollectionLayoutSection", '-', "setSupplementariesFollowContentInsets:", 'S', 'v', "B"},
-{"NSCollectionLayoutSection", '-', "setVisibleItemsInvalidationHandler:", 'S', 'v', "q"},
-{"NSCollectionLayoutSection", '-', "supplementariesFollowContentInsets", 'G', 'B', ""},
-{"NSCollectionLayoutSection", '-', "visibleItemsInvalidationHandler", 'G', 'q', ""},
-{"NSCollectionLayoutSize", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutSize", '+', "sizeWithWidthDimension:heightDimension:", 'F', '@', "@@"},
 {"NSCollectionLayoutSize", '-', "heightDimension", 'D', '@', ""},
-{"NSCollectionLayoutSize", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutSize", '-', "widthDimension", 'D', '@', ""},
 {"NSCollectionLayoutSpacing", '+', "fixedSpacing:", 'F', '@', "d"},
 {"NSCollectionLayoutSpacing", '+', "flexibleSpacing:", 'F', '@', "d"},
-{"NSCollectionLayoutSpacing", '+', "new", 'F', '@', ""},
-{"NSCollectionLayoutSpacing", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutSpacing", '-', "isFixedSpacing", 'D', 'B', ""},
 {"NSCollectionLayoutSpacing", '-', "isFlexibleSpacing", 'D', 'B', ""},
 {"NSCollectionLayoutSpacing", '-', "spacing", 'D', 'd', ""},
-{"NSCollectionLayoutSupplementaryItem", '+', "new", 'F', '@', ""},
 {"NSCollectionLayoutSupplementaryItem", '+', "supplementaryItemWithLayoutSize:elementKind:containerAnchor:", 'F', '@', "@@@"},
 {"NSCollectionLayoutSupplementaryItem", '+', "supplementaryItemWithLayoutSize:elementKind:containerAnchor:itemAnchor:", 'F', '@', "@@@@"},
 {"NSCollectionLayoutSupplementaryItem", '-', "containerAnchor", 'D', '@', ""},
 {"NSCollectionLayoutSupplementaryItem", '-', "elementKind", 'D', '@', ""},
-{"NSCollectionLayoutSupplementaryItem", '-', "init", 'I', '@', ""},
 {"NSCollectionLayoutSupplementaryItem", '-', "itemAnchor", 'D', '@', ""},
 {"NSCollectionLayoutSupplementaryItem", '-', "setZIndex:", 'S', 'v', "q"},
 {"NSCollectionLayoutSupplementaryItem", '-', "zIndex", 'G', 'q', ""},
@@ -560,22 +490,6 @@ static const GenEntry kTable[] = {
 {"NSCollectionViewFlowLayoutInvalidationContext", '-', "invalidateFlowLayoutDelegateMetrics", 'G', 'B', ""},
 {"NSCollectionViewFlowLayoutInvalidationContext", '-', "setInvalidateFlowLayoutAttributes:", 'S', 'v', "B"},
 {"NSCollectionViewFlowLayoutInvalidationContext", '-', "setInvalidateFlowLayoutDelegateMetrics:", 'S', 'v', "B"},
-{"NSCollectionViewGridLayout", '-', "backgroundColors", 'G', 'A', ""},
-{"NSCollectionViewGridLayout", '-', "margins", 'G', 'E', ""},
-{"NSCollectionViewGridLayout", '-', "maximumItemSize", 'G', 'S', ""},
-{"NSCollectionViewGridLayout", '-', "maximumNumberOfColumns", 'G', 'q', ""},
-{"NSCollectionViewGridLayout", '-', "maximumNumberOfRows", 'G', 'q', ""},
-{"NSCollectionViewGridLayout", '-', "minimumInteritemSpacing", 'G', 'd', ""},
-{"NSCollectionViewGridLayout", '-', "minimumItemSize", 'G', 'S', ""},
-{"NSCollectionViewGridLayout", '-', "minimumLineSpacing", 'G', 'd', ""},
-{"NSCollectionViewGridLayout", '-', "setBackgroundColors:", 'S', 'v', "@"},
-{"NSCollectionViewGridLayout", '-', "setMargins:", 'S', 'v', "E"},
-{"NSCollectionViewGridLayout", '-', "setMaximumItemSize:", 'S', 'v', "S"},
-{"NSCollectionViewGridLayout", '-', "setMaximumNumberOfColumns:", 'S', 'v', "q"},
-{"NSCollectionViewGridLayout", '-', "setMaximumNumberOfRows:", 'S', 'v', "q"},
-{"NSCollectionViewGridLayout", '-', "setMinimumInteritemSpacing:", 'S', 'v', "d"},
-{"NSCollectionViewGridLayout", '-', "setMinimumItemSize:", 'S', 'v', "S"},
-{"NSCollectionViewGridLayout", '-', "setMinimumLineSpacing:", 'S', 'v', "d"},
 {"NSCollectionViewLayoutAttributes", '+', "layoutAttributesForDecorationViewOfKind:withIndexPath:", 'F', '@', "q@"},
 {"NSCollectionViewLayoutAttributes", '+', "layoutAttributesForInterItemGapBeforeIndexPath:", 'F', '@', "@"},
 {"NSCollectionViewLayoutAttributes", '+', "layoutAttributesForSupplementaryViewOfKind:withIndexPath:", 'F', '@', "q@"},
@@ -623,26 +537,12 @@ static const GenEntry kTable[] = {
 {"NSComboButton", '+', "comboButtonWithTitle:menu:target:action:", 'F', '@', "@@@:"},
 {"NSComboButton", '-', "image", 'G', '@', ""},
 {"NSComboButton", '-', "imageScaling", 'G', 'q', ""},
-{"NSComboButton", '-', "menu", 'G', '@', ""},
 {"NSComboButton", '-', "setImage:", 'S', 'v', "@"},
 {"NSComboButton", '-', "setImageScaling:", 'S', 'v', "q"},
-{"NSComboButton", '-', "setMenu:", 'S', 'v', "@"},
 {"NSComboButton", '-', "setStyle:", 'S', 'v', "q"},
 {"NSComboButton", '-', "setTitle:", 'S', 'v', "@"},
 {"NSComboButton", '-', "style", 'G', 'q', ""},
 {"NSComboButton", '-', "title", 'G', '@', ""},
-{"NSControl", '-', "baseWritingDirection", 'G', 'q', ""},
-{"NSControl", '-', "drawWithExpansionFrame:inView:", 'D', 'v', "R@"},
-{"NSControl", '-', "editWithFrame:editor:delegate:event:", 'D', 'v', "R@@@"},
-{"NSControl", '-', "endEditing:", 'D', 'v', "@"},
-{"NSControl", '-', "expansionFrameWithFrame:", 'D', 'R', "R"},
-{"NSControl", '-', "invalidateIntrinsicContentSizeForCell:", 'D', 'v', "@"},
-{"NSControl", '-', "selectWithFrame:editor:delegate:start:length:", 'D', 'v', "R@@qq"},
-{"NSControl", '-', "setBaseWritingDirection:", 'S', 'v', "q"},
-{"NSControl", '-', "setFloatingPointFormat:left:right:", 'D', 'v', "Bqq"},
-{"NSControl", '-', "setNeedsDisplay", 'D', 'v', ""},
-{"NSControl", '-', "takeFloatValueFrom:", 'D', 'v', "@"},
-{"NSControl", '-', "takeIntegerValueFrom:", 'D', 'v', "@"},
 {"NSController", '-', "commitEditingWithDelegate:didCommitSelector:contextInfo:", 'D', 'v', "@:^"},
 {"NSCursor", '+', "pop", 'D', 'v', ""},
 {"NSCursor", '-', "initWithCoder:", 'I', '@', "@"},
@@ -652,25 +552,6 @@ static const GenEntry kTable[] = {
 {"NSDataAsset", '-', "initWithName:bundle:", 'I', '@', "q@"},
 {"NSDataAsset", '-', "name", 'D', 'q', ""},
 {"NSDataAsset", '-', "typeIdentifier", 'D', '@', ""},
-{"NSDictionaryController", '-', "excludedKeys", 'G', 'A', ""},
-{"NSDictionaryController", '-', "includedKeys", 'G', 'A', ""},
-{"NSDictionaryController", '-', "initialKey", 'G', '@', ""},
-{"NSDictionaryController", '-', "initialValue", 'I', '@', ""},
-{"NSDictionaryController", '-', "localizedKeyDictionary", 'G', 'M', ""},
-{"NSDictionaryController", '-', "localizedKeyTable", 'G', '@', ""},
-{"NSDictionaryController", '-', "setExcludedKeys:", 'S', 'v', "@"},
-{"NSDictionaryController", '-', "setIncludedKeys:", 'S', 'v', "@"},
-{"NSDictionaryController", '-', "setInitialKey:", 'S', 'v', "@"},
-{"NSDictionaryController", '-', "setInitialValue:", 'S', 'v', "@"},
-{"NSDictionaryController", '-', "setLocalizedKeyDictionary:", 'S', 'v', "@"},
-{"NSDictionaryController", '-', "setLocalizedKeyTable:", 'S', 'v', "@"},
-{"NSDictionaryControllerKeyValuePair", '-', "isExplicitlyIncluded", 'D', 'B', ""},
-{"NSDictionaryControllerKeyValuePair", '-', "key", 'G', '@', ""},
-{"NSDictionaryControllerKeyValuePair", '-', "localizedKey", 'G', '@', ""},
-{"NSDictionaryControllerKeyValuePair", '-', "setKey:", 'S', 'v', "@"},
-{"NSDictionaryControllerKeyValuePair", '-', "setLocalizedKey:", 'S', 'v', "@"},
-{"NSDictionaryControllerKeyValuePair", '-', "setValue:", 'S', 'v', "@"},
-{"NSDictionaryControllerKeyValuePair", '-', "value", 'G', '@', ""},
 {"NSDockTile", '-', "badgeLabel", 'G', '@', ""},
 {"NSDockTile", '-', "contentView", 'G', '@', ""},
 {"NSDockTile", '-', "display", 'D', 'v', ""},
@@ -680,18 +561,6 @@ static const GenEntry kTable[] = {
 {"NSDockTile", '-', "setShowsApplicationBadge:", 'S', 'v', "B"},
 {"NSDockTile", '-', "showsApplicationBadge", 'G', 'B', ""},
 {"NSDockTile", '-', "size", 'D', 'S', ""},
-{"NSDocumentController", '-', "documentForFileName:", 'D', '@', "@"},
-{"NSDocumentController", '-', "duplicateDocumentWithContentsOfURL:copying:displayName:error:", 'D', '@', "@B@@"},
-{"NSDocumentController", '-', "fileNamesFromRunningOpenPanel", 'D', 'A', ""},
-{"NSDocumentController", '-', "makeDocumentWithContentsOfFile:ofType:", 'D', '@', "@@"},
-{"NSDocumentController", '-', "makeDocumentWithContentsOfURL:ofType:", 'D', '@', "@@"},
-{"NSDocumentController", '-', "makeUntitledDocumentOfType:", 'D', '@', "@"},
-{"NSDocumentController", '-', "openDocumentWithContentsOfFile:display:", 'D', '@', "@B"},
-{"NSDocumentController", '-', "openDocumentWithContentsOfURL:display:", 'D', '@', "@B"},
-{"NSDocumentController", '-', "openUntitledDocumentOfType:display:", 'D', '@', "@B"},
-{"NSDocumentController", '-', "presentError:modalForWindow:delegate:didPresentSelector:contextInfo:", 'D', 'v', "@@@:^"},
-{"NSDocumentController", '-', "reopenDocumentForURL:withContentsOfURL:error:", 'D', 'B', "@@@"},
-{"NSDocumentController", '-', "setShouldCreateUI:", 'S', 'v', "B"},
 {"NSDraggingImageComponent", '+', "draggingImageComponentWithKey:", 'D', '@', "q"},
 {"NSDraggingImageComponent", '-', "contents", 'G', '@', ""},
 {"NSDraggingImageComponent", '-', "frame", 'G', 'R', ""},
@@ -738,18 +607,6 @@ static const GenEntry kTable[] = {
 {"NSFilePromiseReceiver", '-', "receivePromisedFilesAtDestination:options:operationQueue:reader:", 'D', 'v', "@@@@"},
 {"NSFileWrapper", '-', "icon", 'G', '@', ""},
 {"NSFileWrapper", '-', "setIcon:", 'S', 'v', "@"},
-{"NSFont", '+', "fontWithName:matrix:", 'D', '@', "@^"},
-{"NSFont", '+', "preferredFontForTextStyle:options:", 'D', '@', "q@"},
-{"NSFont", '+', "systemFontOfSize:weight:width:", 'D', '@', "dqq"},
-{"NSFont", '-', "advancementForCGGlyph:", 'D', 'S', "q"},
-{"NSFont", '-', "boundingRectForCGGlyph:", 'D', 'R', "q"},
-{"NSFont", '-', "fontWithSize:", 'D', '@', "d"},
-{"NSFont", '-', "getAdvancements:forCGGlyphs:count:", 'D', 'v', "q^q"},
-{"NSFont", '-', "getAdvancements:forGlyphs:count:", 'D', 'v', "q@q"},
-{"NSFont", '-', "getAdvancements:forPackedGlyphs:length:", 'D', 'v', "q^q"},
-{"NSFont", '-', "getBoundingRects:forCGGlyphs:count:", 'D', 'v', "q^q"},
-{"NSFont", '-', "getBoundingRects:forGlyphs:count:", 'D', 'v', "q@q"},
-{"NSFont", '-', "glyphWithName:", 'D', 'q', "@"},
 {"NSFontAssetRequest", '-', "downloadFontAssetsWithCompletionHandler:", 'D', 'v', "@"},
 {"NSFontAssetRequest", '-', "downloadedFontDescriptors", 'D', 'A', ""},
 {"NSFontAssetRequest", '-', "init", 'I', '@', ""},
@@ -812,29 +669,6 @@ static const GenEntry kTable[] = {
 {"NSHelpManager", '-', "removeContextHelpForObject:", 'D', 'v', "@"},
 {"NSHelpManager", '-', "setContextHelp:forObject:", 'D', 'v', "@@"},
 {"NSHelpManager", '-', "showContextHelpForObject:locationHint:", 'D', 'B', "@P"},
-{"NSImageSymbolConfiguration", '+', "configurationPreferringHierarchical", 'F', '@', ""},
-{"NSImageSymbolConfiguration", '+', "configurationPreferringMonochrome", 'F', '@', ""},
-{"NSImageSymbolConfiguration", '+', "configurationPreferringMulticolor", 'F', '@', ""},
-{"NSImageSymbolConfiguration", '+', "configurationWithColorRenderingMode:", 'F', '@', "q"},
-{"NSImageSymbolConfiguration", '+', "configurationWithHierarchicalColor:", 'F', '@', "@"},
-{"NSImageSymbolConfiguration", '+', "configurationWithPaletteColors:", 'F', '@', "@"},
-{"NSImageSymbolConfiguration", '+', "configurationWithPointSize:weight:", 'F', '@', "dq"},
-{"NSImageSymbolConfiguration", '+', "configurationWithPointSize:weight:scale:", 'F', '@', "dqq"},
-{"NSImageSymbolConfiguration", '+', "configurationWithScale:", 'F', '@', "q"},
-{"NSImageSymbolConfiguration", '+', "configurationWithTextStyle:", 'F', '@', "q"},
-{"NSImageSymbolConfiguration", '+', "configurationWithTextStyle:scale:", 'F', '@', "qq"},
-{"NSImageSymbolConfiguration", '+', "configurationWithVariableValueMode:", 'F', '@', "q"},
-{"NSImageSymbolConfiguration", '-', "configurationByApplyingConfiguration:", 'D', '@', "@"},
-{"NSImageView", '+', "defaultPreferredImageDynamicRange", 'G', 'q', ""},
-{"NSImageView", '+', "setDefaultPreferredImageDynamicRange:", 'S', 'v', "q"},
-{"NSImageView", '-', "addSymbolEffect:options:", 'D', 'v', "@@"},
-{"NSImageView", '-', "addSymbolEffect:options:animated:", 'D', 'v', "@@B"},
-{"NSImageView", '-', "removeAllSymbolEffectsWithOptions:", 'D', 'v', "@"},
-{"NSImageView", '-', "removeAllSymbolEffectsWithOptions:animated:", 'D', 'v', "@B"},
-{"NSImageView", '-', "removeSymbolEffectOfType:options:", 'D', 'v', "@@"},
-{"NSImageView", '-', "removeSymbolEffectOfType:options:animated:", 'D', 'v', "@@B"},
-{"NSImageView", '-', "setSymbolImage:withContentTransition:", 'D', 'v', "@@"},
-{"NSImageView", '-', "setSymbolImage:withContentTransition:options:", 'D', 'v', "@@@"},
 {"NSItemBadge", '+', "badgeWithCount:", 'D', '@', "q"},
 {"NSItemBadge", '+', "badgeWithText:", 'D', '@', "@"},
 {"NSItemBadge", '+', "indicatorBadge", 'F', '@', ""},
@@ -939,18 +773,6 @@ static const GenEntry kTable[] = {
 {"NSObjectController", '-', "setEntityName:", 'S', 'v', "@"},
 {"NSObjectController", '-', "setFetchPredicate:", 'S', 'v', "@"},
 {"NSObjectController", '-', "setManagedObjectContext:", 'S', 'v', "@"},
-{"NSOpenGLContext", '-', "copyAttributesFromContext:withMask:", 'D', 'v', "@q"},
-{"NSOpenGLContext", '-', "createTexture:fromView:internalFormat:", 'D', 'v', "i@i"},
-{"NSOpenGLContext", '-', "currentVirtualScreen", 'G', 'i', ""},
-{"NSOpenGLContext", '-', "initWithCGLContextObj:", 'I', '@', "q"},
-{"NSOpenGLContext", '-', "pixelBuffer", 'D', '@', ""},
-{"NSOpenGLContext", '-', "pixelBufferCubeMapFace", 'D', 'i', ""},
-{"NSOpenGLContext", '-', "pixelBufferMipMapLevel", 'D', 'i', ""},
-{"NSOpenGLContext", '-', "setCurrentVirtualScreen:", 'S', 'v', "i"},
-{"NSOpenGLContext", '-', "setFullScreen", 'D', 'v', ""},
-{"NSOpenGLContext", '-', "setOffScreen:width:height:rowbytes:", 'D', 'v', "^qqi"},
-{"NSOpenGLContext", '-', "setPixelBuffer:cubeMapFace:mipMapLevel:currentVirtualScreen:", 'D', 'v', "@iii"},
-{"NSOpenGLContext", '-', "setTextureImageToPixelBuffer:colorBuffer:", 'D', 'v', "@i"},
 {"NSOpenGLLayer", '-', "canDrawInOpenGLContext:pixelFormat:forLayerTime:displayTime:", 'D', 'B', "@@d@"},
 {"NSOpenGLLayer", '-', "drawInOpenGLContext:pixelFormat:forLayerTime:displayTime:", 'D', 'v', "@@d@"},
 {"NSOpenGLLayer", '-', "openGLContext", 'G', '@', ""},
@@ -982,17 +804,6 @@ static const GenEntry kTable[] = {
 {"NSOpenPanel", '-', "setCanDownloadUbiquitousContents:", 'S', 'v', "B"},
 {"NSOpenPanel", '-', "setCanResolveUbiquitousConflicts:", 'S', 'v', "B"},
 {"NSOpenPanel", '-', "setResolvesAliases:", 'S', 'v', "B"},
-{"NSPDFInfo", '-', "URL", 'G', '@', ""},
-{"NSPDFInfo", '-', "attributes", 'D', 'M', ""},
-{"NSPDFInfo", '-', "isFileExtensionHidden", 'G', 'B', ""},
-{"NSPDFInfo", '-', "orientation", 'G', 'q', ""},
-{"NSPDFInfo", '-', "paperSize", 'G', 'S', ""},
-{"NSPDFInfo", '-', "setFileExtensionHidden:", 'S', 'v', "B"},
-{"NSPDFInfo", '-', "setOrientation:", 'S', 'v', "q"},
-{"NSPDFInfo", '-', "setPaperSize:", 'S', 'v', "S"},
-{"NSPDFInfo", '-', "setTagNames:", 'S', 'v', "@"},
-{"NSPDFInfo", '-', "setURL:", 'S', 'v', "@"},
-{"NSPDFInfo", '-', "tagNames", 'G', 'A', ""},
 {"NSPDFPanel", '+', "panel", 'F', '@', ""},
 {"NSPDFPanel", '-', "accessoryController", 'G', '@', ""},
 {"NSPDFPanel", '-', "beginSheetWithPDFInfo:modalForWindow:completionHandler:", 'D', 'v', "@@@"},
@@ -1005,32 +816,7 @@ static const GenEntry kTable[] = {
 {"NSPICTImageRep", '-', "PICTRepresentation", 'D', '@', ""},
 {"NSPICTImageRep", '-', "boundingBox", 'D', 'R', ""},
 {"NSPICTImageRep", '-', "initWithData:", 'I', '@', "@"},
-{"NSPageLayout", '+', "pageLayout", 'F', '@', ""},
-{"NSPageLayout", '-', "accessoryControllers", 'D', 'A', ""},
-{"NSPageLayout", '-', "accessoryView", 'G', '@', ""},
-{"NSPageLayout", '-', "addAccessoryController:", 'D', 'v', "@"},
-{"NSPageLayout", '-', "beginSheetUsingPrintInfo:onWindow:completionHandler:", 'D', 'v', "@@@"},
-{"NSPageLayout", '-', "beginSheetWithPrintInfo:modalForWindow:delegate:didEndSelector:contextInfo:", 'D', 'v', "@@@:^"},
-{"NSPageLayout", '-', "printInfo", 'D', '@', ""},
-{"NSPageLayout", '-', "readPrintInfo", 'D', 'v', ""},
-{"NSPageLayout", '-', "removeAccessoryController:", 'D', 'v', "@"},
-{"NSPageLayout", '-', "runModal", 'D', 'q', ""},
-{"NSPageLayout", '-', "runModalWithPrintInfo:", 'D', 'q', "@"},
-{"NSPageLayout", '-', "setAccessoryView:", 'S', 'v', "@"},
-{"NSPageLayout", '-', "writePrintInfo", 'D', 'v', ""},
 {"NSParagraphStyle", '-', "lineBreakStrategy", 'D', 'q', ""},
-{"NSPasteboard", '+', "pasteboardByFilteringData:ofType:", 'D', '@', "@q"},
-{"NSPasteboard", '+', "pasteboardByFilteringFile:", 'D', '@', "@"},
-{"NSPasteboard", '+', "pasteboardByFilteringTypesInPasteboard:", 'D', '@', "@"},
-{"NSPasteboard", '-', "accessBehavior", 'D', 'q', ""},
-{"NSPasteboard", '-', "detectMetadataForTypes:completionHandler:", 'D', 'v', "@@"},
-{"NSPasteboard", '-', "detectPatternsForPatterns:completionHandler:", 'D', 'v', "@@"},
-{"NSPasteboard", '-', "detectValuesForPatterns:completionHandler:", 'D', 'v', "@@"},
-{"NSPasteboard", '-', "indexOfPasteboardItem:", 'D', 'q', "@"},
-{"NSPasteboard", '-', "readFileContentsType:toFile:", 'D', '@', "q@"},
-{"NSPasteboard", '-', "readFileWrapper", 'D', '@', ""},
-{"NSPasteboard", '-', "writeFileContents:", 'D', 'B', "@"},
-{"NSPasteboard", '-', "writeFileWrapper:", 'D', 'B', "@"},
 {"NSPasteboardItem", '+', "readableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSPasteboardItem", '-', "availableTypeFromArray:", 'D', 'q', "@"},
 {"NSPasteboardItem", '-', "detectMetadataForTypes:completionHandler:", 'D', 'v', "@@"},
@@ -1040,19 +826,6 @@ static const GenEntry kTable[] = {
 {"NSPasteboardItem", '-', "setDataProvider:forTypes:", 'D', 'B', "@@"},
 {"NSPasteboardItem", '-', "setPropertyList:forType:", 'D', 'B', "@q"},
 {"NSPasteboardItem", '-', "writableTypesForPasteboard:", 'D', 'A', "@"},
-{"NSPathCell", '+', "pathComponentCellClass", 'D', '#', ""},
-{"NSPathCell", '-', "allowedTypes", 'G', 'A', ""},
-{"NSPathCell", '-', "backgroundColor", 'G', '@', ""},
-{"NSPathCell", '-', "clickedPathComponentCell", 'D', '@', ""},
-{"NSPathCell", '-', "doubleAction", 'G', ':', ""},
-{"NSPathCell", '-', "mouseEntered:withFrame:inView:", 'D', 'v', "@R@"},
-{"NSPathCell", '-', "mouseExited:withFrame:inView:", 'D', 'v', "@R@"},
-{"NSPathCell", '-', "pathComponentCellAtPoint:withFrame:inView:", 'D', '@', "PR@"},
-{"NSPathCell", '-', "rectOfPathComponentCell:withFrame:inView:", 'D', 'R', "@R@"},
-{"NSPathCell", '-', "setAllowedTypes:", 'S', 'v', "@"},
-{"NSPathCell", '-', "setBackgroundColor:", 'S', 'v', "@"},
-{"NSPathCell", '-', "setDoubleAction:", 'S', 'v', ":"},
-{"NSPathCell", '-', "setPlaceholderAttributedString:", 'S', 'v', "@"},
 {"NSPersistentDocument", '-', "configurePersistentStoreCoordinatorForURL:ofType:error:", 'D', 'B', "@@@"},
 {"NSPersistentDocument", '-', "configurePersistentStoreCoordinatorForURL:ofType:modelConfiguration:storeOptions:error:", 'D', 'B', "@@@@@"},
 {"NSPersistentDocument", '-', "managedObjectContext", 'G', '@', ""},
@@ -1139,7 +912,6 @@ static const GenEntry kTable[] = {
 {"NSScrubberImageItemView", '-', "setImageAlignment:", 'S', 'v', "q"},
 {"NSScrubberLayout", '+', "layoutAttributesClass", 'D', '#', ""},
 {"NSScrubberLayout", '-', "automaticallyMirrorsInRightToLeftLayout", 'D', 'B', ""},
-{"NSScrubberLayout", '-', "init", 'I', '@', ""},
 {"NSScrubberLayout", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSScrubberLayout", '-', "invalidateLayout", 'D', 'v', ""},
 {"NSScrubberLayout", '-', "layoutAttributesForItemAtIndex:", 'D', '@', "q"},
@@ -1222,17 +994,6 @@ static const GenEntry kTable[] = {
 {"NSSliderAccessoryBehavior", '+', "valueResetBehavior", 'F', '@', ""},
 {"NSSliderAccessoryBehavior", '+', "valueStepBehavior", 'F', '@', ""},
 {"NSSliderAccessoryBehavior", '-', "handleAction:", 'D', 'v', "@"},
-{"NSSliderCell", '-', "drawBarInside:flipped:", 'D', 'v', "RB"},
-{"NSSliderCell", '-', "drawKnob", 'D', 'v', ""},
-{"NSSliderCell", '-', "drawKnob:", 'D', 'v', "R"},
-{"NSSliderCell", '-', "drawTickMarks", 'D', 'v', ""},
-{"NSSliderCell", '-', "indexOfTickMarkAtPoint:", 'D', 'q', "P"},
-{"NSSliderCell", '-', "setTitleCell:", 'S', 'v', "@"},
-{"NSSliderCell", '-', "setTitleColor:", 'S', 'v', "@"},
-{"NSSliderCell", '-', "setTitleFont:", 'S', 'v', "@"},
-{"NSSliderCell", '-', "titleCell", 'G', '@', ""},
-{"NSSliderCell", '-', "titleColor", 'G', '@', ""},
-{"NSSliderCell", '-', "titleFont", 'G', '@', ""},
 {"NSSound", '+', "canInitWithPasteboard:", 'D', 'B', "@"},
 {"NSSound", '+', "readableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSSound", '-', "channelMapping", 'G', 'A', ""},
@@ -1242,18 +1003,6 @@ static const GenEntry kTable[] = {
 {"NSSound", '-', "setPlaybackDeviceIdentifier:", 'S', 'v', "q"},
 {"NSSound", '-', "writableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSSound", '-', "writeToPasteboard:", 'D', 'v', "@"},
-{"NSSpeechRecognizer", '-', "blocksOtherRecognizers", 'G', 'B', ""},
-{"NSSpeechRecognizer", '-', "commands", 'G', 'A', ""},
-{"NSSpeechRecognizer", '-', "delegate", 'G', '@', ""},
-{"NSSpeechRecognizer", '-', "displayedCommandsTitle", 'G', '@', ""},
-{"NSSpeechRecognizer", '-', "listensInForegroundOnly", 'G', 'B', ""},
-{"NSSpeechRecognizer", '-', "setBlocksOtherRecognizers:", 'S', 'v', "B"},
-{"NSSpeechRecognizer", '-', "setCommands:", 'S', 'v', "@"},
-{"NSSpeechRecognizer", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSSpeechRecognizer", '-', "setDisplayedCommandsTitle:", 'S', 'v', "@"},
-{"NSSpeechRecognizer", '-', "setListensInForegroundOnly:", 'S', 'v', "B"},
-{"NSSpeechRecognizer", '-', "startListening", 'D', 'v', ""},
-{"NSSpeechRecognizer", '-', "stopListening", 'D', 'v', ""},
 {"NSSplitView", '-', "isPaneSplitter", 'D', 'B', ""},
 {"NSSplitView", '-', "setIsPaneSplitter:", 'S', 'v', "B"},
 {"NSSplitViewController", '-', "minimumThicknessForInlineSidebars", 'G', 'd', ""},
@@ -1290,20 +1039,6 @@ static const GenEntry kTable[] = {
 {"NSTabViewController", '-', "toolbarAllowedItemIdentifiers:", 'D', 'A', "@"},
 {"NSTabViewController", '-', "toolbarDefaultItemIdentifiers:", 'D', 'A', "@"},
 {"NSTabViewController", '-', "toolbarSelectableItemIdentifiers:", 'D', 'A', "@"},
-{"NSTableViewDiffableDataSource", '-', "applySnapshot:animatingDifferences:", 'D', 'v', "@B"},
-{"NSTableViewDiffableDataSource", '-', "applySnapshot:animatingDifferences:completion:", 'D', 'v', "@B@"},
-{"NSTableViewDiffableDataSource", '-', "defaultRowAnimation", 'G', 'q', ""},
-{"NSTableViewDiffableDataSource", '-', "initWithTableView:cellProvider:", 'I', '@', "@q"},
-{"NSTableViewDiffableDataSource", '-', "itemIdentifierForRow:", 'D', 'q', "q"},
-{"NSTableViewDiffableDataSource", '-', "rowForItemIdentifier:", 'D', 'q', "q"},
-{"NSTableViewDiffableDataSource", '-', "rowForSectionIdentifier:", 'D', 'q', "q"},
-{"NSTableViewDiffableDataSource", '-', "rowViewProvider", 'G', 'q', ""},
-{"NSTableViewDiffableDataSource", '-', "sectionHeaderViewProvider", 'G', 'q', ""},
-{"NSTableViewDiffableDataSource", '-', "sectionIdentifierForRow:", 'D', 'q', "q"},
-{"NSTableViewDiffableDataSource", '-', "setDefaultRowAnimation:", 'S', 'v', "q"},
-{"NSTableViewDiffableDataSource", '-', "setRowViewProvider:", 'S', 'v', "q"},
-{"NSTableViewDiffableDataSource", '-', "setSectionHeaderViewProvider:", 'S', 'v', "q"},
-{"NSTableViewDiffableDataSource", '-', "snapshot", 'D', '@', ""},
 {"NSTableViewRowAction", '+', "rowActionWithStyle:title:handler:", 'F', '@', "q@@"},
 {"NSTableViewRowAction", '-', "backgroundColor", 'G', '@', ""},
 {"NSTableViewRowAction", '-', "image", 'G', '@', ""},
@@ -1452,18 +1187,6 @@ static const GenEntry kTable[] = {
 {"NSURL", '+', "readableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSURL", '-', "writableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSURL", '-', "writeToPasteboard:", 'D', 'v', "@"},
-{"NSUserDefaultsController", '+', "sharedUserDefaultsController", 'T', '@', ""},
-{"NSUserDefaultsController", '-', "appliesImmediately", 'G', 'B', ""},
-{"NSUserDefaultsController", '-', "defaults", 'D', '@', ""},
-{"NSUserDefaultsController", '-', "hasUnappliedChanges", 'D', 'B', ""},
-{"NSUserDefaultsController", '-', "initWithDefaults:initialValues:", 'I', '@', "@@"},
-{"NSUserDefaultsController", '-', "initialValues", 'G', 'M', ""},
-{"NSUserDefaultsController", '-', "revert:", 'D', 'q', "@"},
-{"NSUserDefaultsController", '-', "revertToInitialValues:", 'D', 'q', "@"},
-{"NSUserDefaultsController", '-', "save:", 'D', 'q', "@"},
-{"NSUserDefaultsController", '-', "setAppliesImmediately:", 'S', 'v', "B"},
-{"NSUserDefaultsController", '-', "setInitialValues:", 'S', 'v', "@"},
-{"NSUserDefaultsController", '-', "values", 'D', '@', ""},
 {"NSViewAnimation", '-', "initWithViewAnimations:", 'I', '@', "@"},
 {"NSViewAnimation", '-', "setViewAnimations:", 'S', 'v', "@"},
 {"NSViewAnimation", '-', "viewAnimations", 'G', 'A', ""},
@@ -1517,8 +1240,6 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSDraggingSession", "draggingFormation", 'q', "-1"},
 {"NSDraggingSession", "draggingLeaderIndex", 'q', "-1"},
 {"NSGlassEffectView", "cornerRadius", 'd', "8"},
-{"NSPDFInfo", "isFileExtensionHidden", 'B', "1"},
-{"NSPDFInfo", "paperSize", 'S', "612,792"},
 {"NSPDFPanel", "defaultFileName", '@', "Untitled"},
 {"NSScrubberFlowLayout", "itemSize", 'S', "50,30"},
 {"NSScrubberLayout", "automaticallyMirrorsInRightToLeftLayout", 'B', "1"},
@@ -1527,14 +1248,12 @@ const struct XEFDefault kDefaultsTable[] = {
 {"NSScrubberProportionalLayout", "numberOfVisibleItems", 'q', "5"},
 {"NSSearchToolbarItem", "preferredWidthForSearchField", 'd', "240"},
 {"NSSharingServicePickerTouchBarItem", "isEnabled", 'B', "1"},
-{"NSSpeechRecognizer", "listensInForegroundOnly", 'B', "1"},
 {"NSSplitViewItemAccessoryViewController", "automaticallyAppliesContentInsets", 'B', "1"},
 {"NSTextContentManager", "automaticallySynchronizesTextLayoutManagers", 'B', "1"},
 {"NSTextInsertionIndicator", "automaticModeOptions", 'q', "1"},
 {"NSTextList", "markerFormat", 'q', "8494874104"},
-{"NSUserDefaultsController", "appliesImmediately", 'B', "1"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 25;
+const unsigned long kDefaultsCount = 21;
 struct XEFProto { const char *cls, *proto; };
 const struct XEFProto kProtoTable[] = {
 {"NSAccessibilityElement", "NSAccessibility"},
