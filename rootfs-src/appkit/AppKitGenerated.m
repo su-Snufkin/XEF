@@ -9,6 +9,7 @@
 #import "AppKitDocument.h"
 #import "AppKitModel.h"
 #import "AppKitText.h"
+#import "AppKitTextKit2.h"
 #include <objc/runtime.h>
 #include <string.h>
 #include <ctype.h>
@@ -312,42 +313,20 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSTextBlock @end
 @interface NSTextCheckingController : NSObject @end
 @implementation NSTextCheckingController @end
-@interface NSTextContentManager : NSObject @end
-@implementation NSTextContentManager @end
-@interface NSTextContentStorage : NSTextContentManager @end
-@implementation NSTextContentStorage @end
-@interface NSTextElement : NSObject @end
-@implementation NSTextElement @end
 @interface NSTextFinder : NSObject @end
 @implementation NSTextFinder @end
 @interface NSTextInsertionIndicator : NSView @end
 @implementation NSTextInsertionIndicator @end
-@interface NSTextLayoutFragment : NSObject @end
-@implementation NSTextLayoutFragment @end
-@interface NSTextLayoutManager : NSObject @end
-@implementation NSTextLayoutManager @end
-@interface NSTextLineFragment : NSObject @end
-@implementation NSTextLineFragment @end
 @interface NSTextList : NSObject @end
 @implementation NSTextList @end
-@interface NSTextParagraph : NSTextElement @end
-@implementation NSTextParagraph @end
 @interface NSTextListElement : NSTextParagraph @end
 @implementation NSTextListElement @end
 @interface NSTextPreview : NSObject @end
 @implementation NSTextPreview @end
-@interface NSTextRange : NSObject @end
-@implementation NSTextRange @end
-@interface NSTextSelection : NSObject @end
-@implementation NSTextSelection @end
-@interface NSTextSelectionNavigation : NSObject @end
-@implementation NSTextSelectionNavigation @end
 @interface NSTextTable : NSTextBlock @end
 @implementation NSTextTable @end
 @interface NSTextTableBlock : NSTextBlock @end
 @implementation NSTextTableBlock @end
-@interface NSTextViewportLayoutController : NSObject @end
-@implementation NSTextViewportLayoutController @end
 @interface NSTintConfiguration : NSObject @end
 @implementation NSTintConfiguration @end
 @interface NSTitlebarAccessoryViewController : NSViewController @end
@@ -1652,77 +1631,6 @@ static const GenEntry kTable[] = {
 {"NSTableViewRowAction", '-', "setTitle:", 'S', 'v', "@"},
 {"NSTableViewRowAction", '-', "style", 'D', 'q', ""},
 {"NSTableViewRowAction", '-', "title", 'G', '@', ""},
-{"NSText", '-', "RTFDFromRange:", 'D', '@', "N"},
-{"NSText", '-', "RTFFromRange:", 'D', '@', "N"},
-{"NSText", '-', "alignCenter:", 'D', 'v', "@"},
-{"NSText", '-', "alignLeft:", 'D', 'v', "@"},
-{"NSText", '-', "alignRight:", 'D', 'v', "@"},
-{"NSText", '-', "alignment", 'G', 'q', ""},
-{"NSText", '-', "baseWritingDirection", 'G', 'q', ""},
-{"NSText", '-', "changeFont:", 'D', 'v', "@"},
-{"NSText", '-', "changeSpelling:", 'D', 'v', "@"},
-{"NSText", '-', "checkSpelling:", 'D', 'v', "@"},
-{"NSText", '-', "copy:", 'D', 'v', "@"},
-{"NSText", '-', "copyFont:", 'D', 'v', "@"},
-{"NSText", '-', "copyRuler:", 'D', 'v', "@"},
-{"NSText", '-', "cut:", 'D', 'v', "@"},
-{"NSText", '-', "delegate", 'G', '@', ""},
-{"NSText", '-', "delete:", 'D', 'v', "@"},
-{"NSText", '-', "drawsBackground", 'G', 'B', ""},
-{"NSText", '-', "font", 'G', '@', ""},
-{"NSText", '-', "ignoreSpelling:", 'D', 'v', "@"},
-{"NSText", '-', "importsGraphics", 'G', 'B', ""},
-{"NSText", '-', "isEditable", 'G', 'B', ""},
-{"NSText", '-', "isFieldEditor", 'G', 'B', ""},
-{"NSText", '-', "isHorizontallyResizable", 'G', 'B', ""},
-{"NSText", '-', "isRichText", 'G', 'B', ""},
-{"NSText", '-', "isRulerVisible", 'D', 'B', ""},
-{"NSText", '-', "isSelectable", 'G', 'B', ""},
-{"NSText", '-', "isVerticallyResizable", 'G', 'B', ""},
-{"NSText", '-', "maxSize", 'G', 'S', ""},
-{"NSText", '-', "minSize", 'G', 'S', ""},
-{"NSText", '-', "paste:", 'D', 'v', "@"},
-{"NSText", '-', "pasteFont:", 'D', 'v', "@"},
-{"NSText", '-', "pasteRuler:", 'D', 'v', "@"},
-{"NSText", '-', "readRTFDFromFile:", 'D', 'B', "@"},
-{"NSText", '-', "replaceCharactersInRange:withRTF:", 'D', 'v', "N@"},
-{"NSText", '-', "replaceCharactersInRange:withRTFD:", 'D', 'v', "N@"},
-{"NSText", '-', "replaceCharactersInRange:withString:", 'D', 'v', "N@"},
-{"NSText", '-', "scrollRangeToVisible:", 'D', 'v', "N"},
-{"NSText", '-', "selectAll:", 'D', 'v', "@"},
-{"NSText", '-', "selectedRange", 'G', 'N', ""},
-{"NSText", '-', "setAlignment:", 'S', 'v', "q"},
-{"NSText", '-', "setBackgroundColor:", 'S', 'v', "@"},
-{"NSText", '-', "setBaseWritingDirection:", 'S', 'v', "q"},
-{"NSText", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSText", '-', "setDrawsBackground:", 'S', 'v', "B"},
-{"NSText", '-', "setEditable:", 'S', 'v', "B"},
-{"NSText", '-', "setFieldEditor:", 'S', 'v', "B"},
-{"NSText", '-', "setFont:", 'S', 'v', "@"},
-{"NSText", '-', "setFont:range:", 'D', 'v', "@N"},
-{"NSText", '-', "setHorizontallyResizable:", 'S', 'v', "B"},
-{"NSText", '-', "setImportsGraphics:", 'S', 'v', "B"},
-{"NSText", '-', "setMaxSize:", 'S', 'v', "S"},
-{"NSText", '-', "setMinSize:", 'S', 'v', "S"},
-{"NSText", '-', "setRichText:", 'S', 'v', "B"},
-{"NSText", '-', "setSelectable:", 'S', 'v', "B"},
-{"NSText", '-', "setSelectedRange:", 'S', 'v', "N"},
-{"NSText", '-', "setString:", 'S', 'v', "@"},
-{"NSText", '-', "setTextColor:", 'S', 'v', "@"},
-{"NSText", '-', "setTextColor:range:", 'D', 'v', "@N"},
-{"NSText", '-', "setUsesFontPanel:", 'S', 'v', "B"},
-{"NSText", '-', "setVerticallyResizable:", 'S', 'v', "B"},
-{"NSText", '-', "showGuessPanel:", 'D', 'v', "@"},
-{"NSText", '-', "sizeToFit", 'D', 'v', ""},
-{"NSText", '-', "string", 'G', '@', ""},
-{"NSText", '-', "subscript:", 'D', 'v', "@"},
-{"NSText", '-', "superscript:", 'D', 'v', "@"},
-{"NSText", '-', "textColor", 'G', '@', ""},
-{"NSText", '-', "toggleRuler:", 'D', 'v', "@"},
-{"NSText", '-', "underline:", 'D', 'v', "@"},
-{"NSText", '-', "unscript:", 'D', 'v', "@"},
-{"NSText", '-', "usesFontPanel", 'G', 'B', ""},
-{"NSText", '-', "writeRTFDToFile:atomically:", 'D', 'B', "@B"},
 {"NSTextAlternatives", '-', "alternativeStrings", 'D', 'A', ""},
 {"NSTextAlternatives", '-', "initWithPrimaryString:alternativeStrings:", 'I', '@', "@@"},
 {"NSTextAlternatives", '-', "noteSelectedAlternativeString:", 'D', 'v', "@"},
@@ -1791,7 +1699,6 @@ static const GenEntry kTable[] = {
 {"NSTextContentManager", '-', "documentRange", 'D', '@', ""},
 {"NSTextContentManager", '-', "enumerateTextElementsFromLocation:options:usingBlock:", 'D', '@', "@qq"},
 {"NSTextContentManager", '-', "hasEditingTransaction", 'D', 'B', ""},
-{"NSTextContentManager", '-', "init", 'I', '@', ""},
 {"NSTextContentManager", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSTextContentManager", '-', "performEditingTransactionUsingBlock:", 'D', 'v', "q"},
 {"NSTextContentManager", '-', "primaryTextLayoutManager", 'G', '@', ""},
@@ -1861,7 +1768,6 @@ static const GenEntry kTable[] = {
 {"NSTextLayoutFragment", '-', "bottomMargin", 'D', 'd', ""},
 {"NSTextLayoutFragment", '-', "drawAtPoint:inContext:", 'D', 'v', "P^"},
 {"NSTextLayoutFragment", '-', "frameForTextAttachmentAtLocation:", 'D', 'R', "@"},
-{"NSTextLayoutFragment", '-', "init", 'I', '@', ""},
 {"NSTextLayoutFragment", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSTextLayoutFragment", '-', "initWithTextElement:range:", 'I', '@', "@@"},
 {"NSTextLayoutFragment", '-', "invalidateLayout", 'D', 'v', ""},
@@ -1892,7 +1798,6 @@ static const GenEntry kTable[] = {
 {"NSTextLayoutManager", '-', "enumerateSubstringsFromLocation:options:usingBlock:", 'D', 'v', "@qq"},
 {"NSTextLayoutManager", '-', "enumerateTextLayoutFragmentsFromLocation:options:usingBlock:", 'D', '@', "@qq"},
 {"NSTextLayoutManager", '-', "enumerateTextSegmentsInRange:type:options:usingBlock:", 'D', 'v', "@qqq"},
-{"NSTextLayoutManager", '-', "init", 'I', '@', ""},
 {"NSTextLayoutManager", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSTextLayoutManager", '-', "invalidateLayoutForRange:", 'D', 'v', "@"},
 {"NSTextLayoutManager", '-', "invalidateRenderingAttributesForTextRange:", 'D', 'v', "@"},
@@ -1936,7 +1841,6 @@ static const GenEntry kTable[] = {
 {"NSTextLineFragment", '-', "drawAtPoint:inContext:", 'D', 'v', "P^"},
 {"NSTextLineFragment", '-', "fractionOfDistanceThroughGlyphForPoint:", 'D', 'd', "P"},
 {"NSTextLineFragment", '-', "glyphOrigin", 'D', 'P', ""},
-{"NSTextLineFragment", '-', "init", 'I', '@', ""},
 {"NSTextLineFragment", '-', "initWithAttributedString:range:", 'I', '@', "@N"},
 {"NSTextLineFragment", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSTextLineFragment", '-', "initWithString:attributes:range:", 'I', '@', "@@N"},
@@ -1972,11 +1876,9 @@ static const GenEntry kTable[] = {
 {"NSTextPreview", '-', "initWithSnapshotImage:presentationFrame:candidateRects:", 'I', '@', "^R@"},
 {"NSTextPreview", '-', "presentationFrame", 'D', 'R', ""},
 {"NSTextPreview", '-', "previewImage", 'D', '^', ""},
-{"NSTextRange", '+', "new", 'F', '@', ""},
 {"NSTextRange", '-', "containsLocation:", 'D', 'B', "@"},
 {"NSTextRange", '-', "containsRange:", 'D', 'B', "@"},
 {"NSTextRange", '-', "endLocation", 'D', '@', ""},
-{"NSTextRange", '-', "init", 'I', '@', ""},
 {"NSTextRange", '-', "initWithLocation:", 'I', '@', "@"},
 {"NSTextRange", '-', "initWithLocation:endLocation:", 'I', '@', "@@"},
 {"NSTextRange", '-', "intersectsWithTextRange:", 'D', 'B', "@"},
@@ -1988,7 +1890,6 @@ static const GenEntry kTable[] = {
 {"NSTextSelection", '-', "affinity", 'D', 'q', ""},
 {"NSTextSelection", '-', "anchorPositionOffset", 'G', 'd', ""},
 {"NSTextSelection", '-', "granularity", 'D', 'q', ""},
-{"NSTextSelection", '-', "init", 'I', '@', ""},
 {"NSTextSelection", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSTextSelection", '-', "initWithLocation:affinity:", 'I', '@', "@q"},
 {"NSTextSelection", '-', "initWithRange:affinity:granularity:", 'I', '@', "@qq"},
@@ -2003,12 +1904,10 @@ static const GenEntry kTable[] = {
 {"NSTextSelection", '-', "textRanges", 'D', 'A', ""},
 {"NSTextSelection", '-', "textSelectionWithTextRanges:", 'D', '@', "@"},
 {"NSTextSelection", '-', "typingAttributes", 'G', 'M', ""},
-{"NSTextSelectionNavigation", '+', "new", 'F', '@', ""},
 {"NSTextSelectionNavigation", '-', "allowsNonContiguousRanges", 'G', 'B', ""},
 {"NSTextSelectionNavigation", '-', "deletionRangesForTextSelection:direction:destination:allowsDecomposition:", 'D', 'A', "@qqB"},
 {"NSTextSelectionNavigation", '-', "destinationSelectionForTextSelection:direction:destination:extending:confined:", 'D', '@', "@qqBB"},
 {"NSTextSelectionNavigation", '-', "flushLayoutCache", 'D', 'v', ""},
-{"NSTextSelectionNavigation", '-', "init", 'I', '@', ""},
 {"NSTextSelectionNavigation", '-', "initWithDataSource:", 'I', '@', "@"},
 {"NSTextSelectionNavigation", '-', "resolvedInsertionLocationForTextSelection:writingDirection:", 'D', '@', "@q"},
 {"NSTextSelectionNavigation", '-', "rotatesCoordinateSystemForLayoutOrientation", 'G', 'B', ""},
@@ -2053,10 +1952,8 @@ static const GenEntry kTable[] = {
 {"NSTextView", '-', "mathExpressionCompletionType", 'G', 'q', ""},
 {"NSTextView", '-', "quickLookPreviewableItemsInRanges:", 'D', 'A', "@"},
 {"NSTextView", '-', "toggleTraditionalCharacterShape:", 'D', 'v', "@"},
-{"NSTextViewportLayoutController", '+', "new", 'F', '@', ""},
 {"NSTextViewportLayoutController", '-', "adjustViewportByVerticalOffset:", 'D', 'v', "d"},
 {"NSTextViewportLayoutController", '-', "delegate", 'G', '@', ""},
-{"NSTextViewportLayoutController", '-', "init", 'I', '@', ""},
 {"NSTextViewportLayoutController", '-', "initWithTextLayoutManager:", 'I', '@', "@"},
 {"NSTextViewportLayoutController", '-', "layoutViewport", 'D', 'v', ""},
 {"NSTextViewportLayoutController", '-', "relocateViewportToTextLocation:", 'D', 'd', "@"},

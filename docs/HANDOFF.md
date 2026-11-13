@@ -1164,3 +1164,7 @@ Real NSMenuItemCell (no longer a generated placeholder) and the missing NSButton
 ## 49. NSText base class
 
 NSText now implements its whole public API itself (state in associated objects, text in `xef.nt.str`) so NSText subclasses that are not NSTextViews work; NSTextView overrides everything it already implemented. Coverage 6547 of 8257.
+
+## 50. TextKit 2 model
+
+New `AppKitTextKit2.m/.h`: NSTextRange, NSCountableTextLocation, NSTextElement/NSTextParagraph, NSTextContentManager/NSTextContentStorage, NSTextLayoutManager (paragraph fragments, greedy word-wrapped line fragments, rendering attributes, segments, granularity), NSTextLayoutFragment, NSTextLineFragment, NSTextSelection, NSTextSelectionNavigation, NSTextViewportLayoutController, NSTextContainer.textLayoutManager. Matched against macOS by `appkit_textkit2` (replaceContents… are no-ops on macOS too; reverse enumeration from a nil location yields nothing; textElementsForRange returns elements *contained* in the range; add→primaryTextLayoutManager stays nil). Font metrics on XEF differ from macOS (ascender 14 vs 13.5), so the test prints sizes as booleans. The host NSString lacks NSStringEnumerationByWords — XEFWords helper in the file. Coverage 6726 of 8257. Gap report note: ~35 "NSObject" gaps are informal-protocol delegate methods that real NSObject does not implement either (verified), so they are not real gaps. `foundation_more` still fails (Foundation NSDateFormatter, pre-existing).
