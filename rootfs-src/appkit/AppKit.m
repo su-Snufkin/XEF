@@ -1401,7 +1401,7 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)setAllowsConcurrentViewDrawing:(BOOL)f {} - (void)setColorSpace:(id)c {} - (void)setAnimationBehavior:(NSInteger)b {}
 - (void)setTitleVisibility:(NSInteger)v {} - (void)setTitlebarAppearsTransparent:(BOOL)f {}
 - (void)setDisplaysWhenScreenProfileChanges:(BOOL)f {} - (void)setHidesOnDeactivate:(BOOL)f {}
-- (void)setAppearance:(id)a {} - (id)appearance { return nil; } - (id)effectiveAppearance { return nil; }
+- (void)setAppearance:(id)a {} - (id)appearance { return nil; } - (id)effectiveAppearance { return [NSClassFromString(@"NSAppearance") performSelector:@selector(currentAppearance)]; }
 - (void)setMinSize:(NSSize)s {} - (void)setMaxSize:(NSSize)s {}
 - (NSSize)contentMinSize { return _minSize; } - (NSSize)contentMaxSize { return _maxSize; }
 - (BOOL)inLiveResize { return NO; } - (BOOL)hasShadow { return _shadow; } - (BOOL)ignoresMouseEvents { return _ignoresMouse; }
@@ -1425,7 +1425,7 @@ static NSString *const kWinDidResize = @"NSWindowDidResizeNotification", *const 
 - (void)activate { _active = YES; }
 - (BOOL)isHidden { return NO; } - (void)unhide:(id)s {} - (void)unhideWithoutActivation {}
 - (void)cancelUserAttentionRequest:(NSInteger)r {}
-- (id)effectiveAppearance { return nil; } - (void)setAppearance:(id)a {}
+- (id)effectiveAppearance { return [NSClassFromString(@"NSAppearance") performSelector:@selector(currentAppearance)]; } - (void)setAppearance:(id)a {}
 - (void)discardEventsMatchingMask:(NSUInteger)m beforeEvent:(NSEvent *)e {}
 - (id)servicesProvider { return nil; } - (void)setServicesProvider:(id)p {}
 - (void)registerUserInterfaceItemSearchHandler:(id)h {}

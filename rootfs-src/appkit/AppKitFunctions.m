@@ -40,7 +40,7 @@ static const NSWindowDepth kDepths[] = { 0x2200 /* 24-bit RGB */, 0x2220 /* 32-b
 const NSWindowDepth *NSAvailableWindowDepths(void) { return kDepths; }
 NSWindowDepth NSBestDepth(NSString *cs, NSInteger bps, NSInteger bpp, BOOL planar, BOOL *exact) { if (exact) *exact = YES; return bps > 8 ? 0x2220 : 0x2200; }
 NSInteger NSInterfaceStyleForKey(NSString *key, NSResponder *r) { return 3; }
-BOOL NSIsControllerMarker(id o) { return o && ([o isEqual:@"NSMultipleValuesMarker"] || [o isEqual:@"NSNoSelectionMarker"] || [o isEqual:@"NSNotApplicableMarker"] || [[o description] hasPrefix:@"NSControllerMarker"]); }
+BOOL NSIsControllerMarker(id o) { return o && ([o isKindOfClass:NSClassFromString(@"NSBindingSelectionMarker")] || [o isEqual:@"NSMultipleValuesMarker"] || [o isEqual:@"NSNoSelectionMarker"] || [o isEqual:@"NSNotApplicableMarker"] || [[o description] hasPrefix:@"NSControllerMarker"]); }
 
 /* ---- pasteboard type helpers ---- */
 NSString *NSCreateFilenamePboardType(NSString *t) { return t ? [@"NSTypedFilenamesPboardType:" stringByAppendingString:t] : nil; }

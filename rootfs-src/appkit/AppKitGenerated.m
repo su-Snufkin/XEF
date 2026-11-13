@@ -16,6 +16,7 @@
 #import "AppKitMisc4.h"
 #import "AppKitMisc5.h"
 #import "AppKitMisc6.h"
+#import "AppKitMisc7.h"
 #include <objc/runtime.h>
 #include <string.h>
 #include <ctype.h>
@@ -113,38 +114,20 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation CIColor @end
 @interface CIImage : NSObject @end
 @implementation CIImage @end
-@interface NSAccessibilityCustomRotorSearchParameters : NSObject @end
-@implementation NSAccessibilityCustomRotorSearchParameters @end
 @interface NSAccessibilityElement : NSObject @end
 @implementation NSAccessibilityElement @end
 @interface NSAdaptiveImageGlyph : NSObject @end
 @implementation NSAdaptiveImageGlyph @end
-@interface NSAlignmentFeedbackFilter : NSObject @end
-@implementation NSAlignmentFeedbackFilter @end
 @interface NSBackgroundExtensionView : NSView @end
 @implementation NSBackgroundExtensionView @end
-@interface NSBindingSelectionMarker : NSObject @end
-@implementation NSBindingSelectionMarker @end
 @interface NSCIImageRep : NSImageRep @end
 @implementation NSCIImageRep @end
-@interface NSCollectionViewCompositionalLayout : NSCollectionViewLayout @end
-@implementation NSCollectionViewCompositionalLayout @end
-@interface NSCollectionViewCompositionalLayoutConfiguration : NSObject @end
-@implementation NSCollectionViewCompositionalLayoutConfiguration @end
-@interface NSCollectionViewDiffableDataSource : NSObject @end
-@implementation NSCollectionViewDiffableDataSource @end
 @interface NSCollectionViewFlowLayoutInvalidationContext : NSCollectionViewLayoutInvalidationContext @end
 @implementation NSCollectionViewFlowLayoutInvalidationContext @end
-@interface NSCollectionViewTransitionLayout : NSCollectionViewLayout @end
-@implementation NSCollectionViewTransitionLayout @end
 @interface NSCollectionViewUpdateItem : NSObject @end
 @implementation NSCollectionViewUpdateItem @end
 @interface NSColorSampler : NSObject @end
 @implementation NSColorSampler @end
-@interface NSDataAsset : NSObject @end
-@implementation NSDataAsset @end
-@interface NSFilePromiseReceiver : NSObject @end
-@implementation NSFilePromiseReceiver @end
 @interface NSFontAssetRequest : NSObject @end
 @implementation NSFontAssetRequest @end
 @interface NSGlassEffectContainerView : NSView @end
@@ -161,8 +144,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSMovie @end
 @interface NSMutableFontCollection : NSFontCollection @end
 @implementation NSMutableFontCollection @end
-@interface NSNib : NSObject @end
-@implementation NSNib @end
 @interface NSNibControlConnector : NSNibConnector @end
 @implementation NSNibControlConnector @end
 @interface NSNibOutletConnector : NSNibConnector @end
@@ -177,12 +158,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSPressureConfiguration @end
 @interface NSPreviewRepresentingActivityItem : NSObject @end
 @implementation NSPreviewRepresentingActivityItem @end
-@interface NSScrubberArrangedView : NSView @end
-@implementation NSScrubberArrangedView @end
-@interface NSScrubberFlowLayout : NSScrubberLayout @end
-@implementation NSScrubberFlowLayout @end
-@interface NSScrubberImageItemView : NSScrubberArrangedView @end
-@implementation NSScrubberImageItemView @end
 @interface NSScrubberProportionalLayout : NSScrubberLayout @end
 @implementation NSScrubberProportionalLayout @end
 @interface NSScrubberSelectionStyle : NSObject @end
@@ -191,48 +166,22 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSScrubberTextItemView @end
 @interface NSSharingServicePickerToolbarItem : NSToolbarItem @end
 @implementation NSSharingServicePickerToolbarItem @end
-@interface NSSliderAccessory : NSObject @end
-@implementation NSSliderAccessory @end
-@interface NSSliderAccessoryBehavior : NSObject @end
-@implementation NSSliderAccessoryBehavior @end
 @interface NSStatusBarButton : NSButton @end
 @implementation NSStatusBarButton @end
-@interface NSStoryboardSegue : NSObject @end
-@implementation NSStoryboardSegue @end
 @interface NSStringDrawingContext : NSObject @end
 @implementation NSStringDrawingContext @end
-@interface NSTextAlternatives : NSObject @end
-@implementation NSTextAlternatives @end
-@interface NSTextListElement : NSTextParagraph @end
-@implementation NSTextListElement @end
-@interface NSTextPreview : NSObject @end
-@implementation NSTextPreview @end
-@interface NSTrackingSeparatorToolbarItem : NSToolbarItem @end
-@implementation NSTrackingSeparatorToolbarItem @end
 @interface NSViewAnimation : NSAnimation @end
 @implementation NSViewAnimation @end
 @interface NSViewLayoutRegion : NSObject @end
 @implementation NSViewLayoutRegion @end
 @interface NSWorkspaceAuthorization : NSObject @end
 @implementation NSWorkspaceAuthorization @end
-@interface NSWritingToolsCoordinatorAnimationParameters : NSObject @end
-@implementation NSWritingToolsCoordinatorAnimationParameters @end
-@interface NSWritingToolsCoordinatorContext : NSObject @end
-@implementation NSWritingToolsCoordinatorContext @end
 
 static const GenEntry kTable[] = {
 {"CIColor", '-', "initWithColor:", 'I', '@', "@"},
 {"CIImage", '-', "drawAtPoint:fromRect:operation:fraction:", 'D', 'v', "PRqd"},
 {"CIImage", '-', "drawInRect:fromRect:operation:fraction:", 'D', 'v', "RRqd"},
 {"CIImage", '-', "initWithBitmapImageRep:", 'I', '@', "@"},
-{"NSAccessibilityCustomRotorItemResult", '-', "customLabel", 'G', '@', ""},
-{"NSAccessibilityCustomRotorItemResult", '-', "initWithItemLoadingToken:customLabel:", 'I', '@', "q@"},
-{"NSAccessibilityCustomRotorItemResult", '-', "initWithTargetElement:", 'I', '@', "@"},
-{"NSAccessibilityCustomRotorItemResult", '-', "itemLoadingToken", 'D', 'q', ""},
-{"NSAccessibilityCustomRotorItemResult", '-', "setCustomLabel:", 'S', 'v', "@"},
-{"NSAccessibilityCustomRotorItemResult", '-', "setTargetRange:", 'S', 'v', "N"},
-{"NSAccessibilityCustomRotorItemResult", '-', "targetElement", 'D', '@', ""},
-{"NSAccessibilityCustomRotorItemResult", '-', "targetRange", 'G', 'N', ""},
 {"NSAccessibilityCustomRotorSearchParameters", '-', "currentItem", 'G', '@', ""},
 {"NSAccessibilityCustomRotorSearchParameters", '-', "filterString", 'G', '@', ""},
 {"NSAccessibilityCustomRotorSearchParameters", '-', "searchDirection", 'G', 'q', ""},
@@ -284,7 +233,6 @@ static const GenEntry kTable[] = {
 {"NSBindingSelectionMarker", '+', "noSelectionMarker", 'F', '@', ""},
 {"NSBindingSelectionMarker", '+', "notApplicableSelectionMarker", 'F', '@', ""},
 {"NSBindingSelectionMarker", '+', "setDefaultPlaceholder:forMarker:onClass:withBinding:", 'D', 'v', "@@#q"},
-{"NSBindingSelectionMarker", '-', "init", 'I', '@', ""},
 {"NSBrowserCell", '-', "highlightColorInView:", 'D', '@', "@"},
 {"NSBundle", '+', "loadNibFile:externalNameTable:withZone:", 'D', 'B', "@@^"},
 {"NSBundle", '-', "URLForImageResource:", 'D', '@', "q"},
@@ -298,20 +246,7 @@ static const GenEntry kTable[] = {
 {"NSClipView", '-', "documentCursor", 'G', '@', ""},
 {"NSClipView", '-', "setDocumentCursor:", 'S', 'v', "@"},
 {"NSCoder", '-', "decodeNXColor", 'D', '@', ""},
-{"NSCollectionView", '-', "itemPrototype", 'G', '@', ""},
-{"NSCollectionView", '-', "maxItemSize", 'G', 'S', ""},
-{"NSCollectionView", '-', "maxNumberOfColumns", 'G', 'q', ""},
-{"NSCollectionView", '-', "maxNumberOfRows", 'G', 'q', ""},
-{"NSCollectionView", '-', "minItemSize", 'G', 'S', ""},
-{"NSCollectionView", '-', "newItemForRepresentedObject:", 'D', '@', "@"},
-{"NSCollectionView", '-', "setItemPrototype:", 'S', 'v', "@"},
-{"NSCollectionView", '-', "setMaxItemSize:", 'S', 'v', "S"},
-{"NSCollectionView", '-', "setMaxNumberOfColumns:", 'S', 'v', "q"},
-{"NSCollectionView", '-', "setMaxNumberOfRows:", 'S', 'v', "q"},
-{"NSCollectionView", '-', "setMinItemSize:", 'S', 'v', "S"},
-{"NSCollectionViewCompositionalLayout", '+', "new", 'F', '@', ""},
 {"NSCollectionViewCompositionalLayout", '-', "configuration", 'G', '@', ""},
-{"NSCollectionViewCompositionalLayout", '-', "init", 'I', '@', ""},
 {"NSCollectionViewCompositionalLayout", '-', "initWithSection:", 'I', '@', "@"},
 {"NSCollectionViewCompositionalLayout", '-', "initWithSection:configuration:", 'I', '@', "@@"},
 {"NSCollectionViewCompositionalLayout", '-', "initWithSectionProvider:", 'I', '@', "q"},
@@ -323,10 +258,8 @@ static const GenEntry kTable[] = {
 {"NSCollectionViewCompositionalLayoutConfiguration", '-', "setBoundarySupplementaryItems:", 'S', 'v', "@"},
 {"NSCollectionViewCompositionalLayoutConfiguration", '-', "setInterSectionSpacing:", 'S', 'v', "d"},
 {"NSCollectionViewCompositionalLayoutConfiguration", '-', "setScrollDirection:", 'S', 'v', "q"},
-{"NSCollectionViewDiffableDataSource", '+', "new", 'F', '@', ""},
 {"NSCollectionViewDiffableDataSource", '-', "applySnapshot:animatingDifferences:", 'D', 'v', "@B"},
 {"NSCollectionViewDiffableDataSource", '-', "indexPathForItemIdentifier:", 'D', '@', "q"},
-{"NSCollectionViewDiffableDataSource", '-', "init", 'I', '@', ""},
 {"NSCollectionViewDiffableDataSource", '-', "initWithCollectionView:itemProvider:", 'I', '@', "@q"},
 {"NSCollectionViewDiffableDataSource", '-', "itemIdentifierForIndexPath:", 'D', 'q', "@"},
 {"NSCollectionViewDiffableDataSource", '-', "setSupplementaryViewProvider:", 'S', 'v', "q"},
@@ -362,37 +295,12 @@ static const GenEntry kTable[] = {
 {"NSCursor", '+', "pop", 'D', 'v', ""},
 {"NSCursor", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSDataAsset", '-', "data", 'D', '@', ""},
-{"NSDataAsset", '-', "init", 'I', '@', ""},
 {"NSDataAsset", '-', "initWithName:", 'I', '@', "q"},
 {"NSDataAsset", '-', "initWithName:bundle:", 'I', '@', "q@"},
 {"NSDataAsset", '-', "name", 'D', 'q', ""},
 {"NSDataAsset", '-', "typeIdentifier", 'D', '@', ""},
-{"NSDraggingImageComponent", '+', "draggingImageComponentWithKey:", 'D', '@', "q"},
-{"NSDraggingImageComponent", '-', "contents", 'G', '@', ""},
-{"NSDraggingImageComponent", '-', "frame", 'G', 'R', ""},
-{"NSDraggingImageComponent", '-', "initWithKey:", 'I', '@', "q"},
-{"NSDraggingImageComponent", '-', "key", 'G', 'q', ""},
-{"NSDraggingImageComponent", '-', "setContents:", 'S', 'v', "@"},
-{"NSDraggingImageComponent", '-', "setFrame:", 'S', 'v', "R"},
-{"NSDraggingImageComponent", '-', "setKey:", 'S', 'v', "q"},
-{"NSDraggingItem", '-', "draggingFrame", 'G', 'R', ""},
-{"NSDraggingItem", '-', "imageComponents", 'D', 'A', ""},
-{"NSDraggingItem", '-', "imageComponentsProvider", 'G', '@', ""},
-{"NSDraggingItem", '-', "initWithPasteboardWriter:", 'I', '@', "@"},
-{"NSDraggingItem", '-', "item", 'D', '@', ""},
-{"NSDraggingItem", '-', "setDraggingFrame:", 'S', 'v', "R"},
-{"NSDraggingItem", '-', "setDraggingFrame:contents:", 'D', 'v', "R@"},
-{"NSDraggingItem", '-', "setImageComponentsProvider:", 'S', 'v', "@"},
 {"NSEvent", '-', "context", 'D', '@', ""},
 {"NSFileManager", '+', "fileManagerWithAuthorization:", 'F', '@', "@"},
-{"NSFilePromiseProvider", '-', "delegate", 'G', '@', ""},
-{"NSFilePromiseProvider", '-', "fileType", 'G', '@', ""},
-{"NSFilePromiseProvider", '-', "initWithFileType:delegate:", 'I', '@', "@@"},
-{"NSFilePromiseProvider", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSFilePromiseProvider", '-', "setFileType:", 'S', 'v', "@"},
-{"NSFilePromiseProvider", '-', "setUserInfo:", 'S', 'v', "@"},
-{"NSFilePromiseProvider", '-', "userInfo", 'G', '@', ""},
-{"NSFilePromiseProvider", '-', "writableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSFilePromiseReceiver", '+', "readableDraggedTypes", 'D', 'A', ""},
 {"NSFilePromiseReceiver", '+', "readableTypesForPasteboard:", 'D', 'A', "@"},
 {"NSFilePromiseReceiver", '-', "fileNames", 'D', 'A', ""},
@@ -411,25 +319,10 @@ static const GenEntry kTable[] = {
 {"NSFontDescriptor", '-', "matchingFontDescriptorWithMandatoryKeys:", 'D', '@', "@"},
 {"NSFontDescriptor", '-', "matrix", 'D', '@', ""},
 {"NSFontDescriptor", '-', "requiresFontAssetRequest", 'D', 'B', ""},
-{"NSGestureRecognizer", '-', "modifierFlags", 'D', 'q', ""},
-{"NSGestureRecognizer", '-', "mouseCancelled:", 'D', 'v', "@"},
-{"NSGestureRecognizer", '-', "pressureChangeWithEvent:", 'D', 'v', "@"},
-{"NSGestureRecognizer", '-', "setAllowedTouchTypes:", 'S', 'v', "q"},
-{"NSGestureRecognizer", '-', "shouldBeRequiredToFailByGestureRecognizer:", 'D', 'B', "@"},
-{"NSGestureRecognizer", '-', "shouldRequireFailureOfGestureRecognizer:", 'D', 'B', "@"},
-{"NSGestureRecognizer", '-', "tabletPoint:", 'D', 'v', "@"},
 {"NSGlassEffectContainerView", '-', "contentView", 'G', '@', ""},
 {"NSGlassEffectContainerView", '-', "setContentView:", 'S', 'v', "@"},
 {"NSGlassEffectContainerView", '-', "setSpacing:", 'S', 'v', "d"},
 {"NSGlassEffectContainerView", '-', "spacing", 'G', 'd', ""},
-{"NSGlassEffectView", '-', "contentView", 'G', '@', ""},
-{"NSGlassEffectView", '-', "cornerRadius", 'G', 'd', ""},
-{"NSGlassEffectView", '-', "setContentView:", 'S', 'v', "@"},
-{"NSGlassEffectView", '-', "setCornerRadius:", 'S', 'v', "d"},
-{"NSGlassEffectView", '-', "setStyle:", 'S', 'v', "q"},
-{"NSGlassEffectView", '-', "setTintColor:", 'S', 'v', "@"},
-{"NSGlassEffectView", '-', "style", 'G', 'q', ""},
-{"NSGlassEffectView", '-', "tintColor", 'G', '@', ""},
 {"NSGlyphGenerator", '+', "sharedGlyphGenerator", 'T', '@', ""},
 {"NSGlyphGenerator", '-', "generateGlyphsForGlyphStorage:desiredNumberOfCharacters:glyphIndex:characterIndex:", 'D', 'v', "@q^^"},
 {"NSGraphicsContext", '+', "setGraphicsState:", 'S', 'v', "q"},
@@ -447,14 +340,6 @@ static const GenEntry kTable[] = {
 {"NSManagedObjectContext", '-', "commitEditingAndReturnError:", 'D', 'B', "@"},
 {"NSManagedObjectContext", '-', "commitEditingWithDelegate:didCommitSelector:contextInfo:", 'D', 'v', "@:^"},
 {"NSManagedObjectContext", '-', "discardEditing", 'D', 'v', ""},
-{"NSMediaLibraryBrowserController", '+', "sharedMediaLibraryBrowserController", 'T', '@', ""},
-{"NSMediaLibraryBrowserController", '-', "frame", 'G', 'R', ""},
-{"NSMediaLibraryBrowserController", '-', "isVisible", 'G', 'B', ""},
-{"NSMediaLibraryBrowserController", '-', "mediaLibraries", 'G', 'q', ""},
-{"NSMediaLibraryBrowserController", '-', "setFrame:", 'S', 'v', "R"},
-{"NSMediaLibraryBrowserController", '-', "setMediaLibraries:", 'S', 'v', "q"},
-{"NSMediaLibraryBrowserController", '-', "setVisible:", 'S', 'v', "B"},
-{"NSMediaLibraryBrowserController", '-', "togglePanel:", 'D', 'q', "@"},
 {"NSMenuToolbarItem", '-', "menu", 'G', '@', ""},
 {"NSMenuToolbarItem", '-', "setMenu:", 'S', 'v', "@"},
 {"NSMenuToolbarItem", '-', "setShowsIndicator:", 'S', 'v', "B"},
@@ -487,14 +372,6 @@ static const GenEntry kTable[] = {
 {"NSNib", '-', "instantiateNibWithExternalNameTable:", 'D', 'B', "@"},
 {"NSNib", '-', "instantiateNibWithOwner:topLevelObjects:", 'D', 'B', "@@"},
 {"NSNib", '-', "instantiateWithOwner:topLevelObjects:", 'D', 'B', "@@"},
-{"NSNibConnector", '-', "destination", 'G', '@', ""},
-{"NSNibConnector", '-', "establishConnection", 'D', 'v', ""},
-{"NSNibConnector", '-', "label", 'G', '@', ""},
-{"NSNibConnector", '-', "replaceObject:withObject:", 'D', 'v', "@@"},
-{"NSNibConnector", '-', "setDestination:", 'S', 'v', "@"},
-{"NSNibConnector", '-', "setLabel:", 'S', 'v', "@"},
-{"NSNibConnector", '-', "setSource:", 'S', 'v', "@"},
-{"NSNibConnector", '-', "source", 'G', '@', ""},
 {"NSNibControlConnector", '-', "establishConnection", 'D', 'v', ""},
 {"NSNibOutletConnector", '-', "establishConnection", 'D', 'v', ""},
 {"NSObject", '+', "defaultPlaceholderForMarker:withBinding:", 'D', '@', "@q"},
@@ -522,33 +399,11 @@ static const GenEntry kTable[] = {
 {"NSObject", '-', "panel:shouldShowFilename:", 'D', 'B', "@@"},
 {"NSObject", '-', "pasteboardChangedOwner:", 'D', 'v', "@"},
 {"NSObject", '-', "validModesForFontPanel:", 'D', 'q', "@"},
-{"NSObjectController", '-', "defaultFetchRequest", 'D', '@', ""},
-{"NSObjectController", '-', "entityName", 'G', '@', ""},
-{"NSObjectController", '-', "fetchPredicate", 'G', '@', ""},
-{"NSObjectController", '-', "setEntityName:", 'S', 'v', "@"},
-{"NSObjectController", '-', "setFetchPredicate:", 'S', 'v', "@"},
-{"NSObjectController", '-', "setManagedObjectContext:", 'S', 'v', "@"},
-{"NSOpenGLPixelBuffer", '-', "CGLPBufferObj", 'D', 'q', ""},
-{"NSOpenGLPixelBuffer", '-', "initWithCGLPBufferObj:", 'I', '@', "q"},
-{"NSOpenGLPixelBuffer", '-', "initWithTextureTarget:textureInternalFormat:textureMaxMipMapLevel:pixelsWide:pixelsHigh:", 'I', '@', "iiiqq"},
-{"NSOpenGLPixelBuffer", '-', "pixelsHigh", 'D', 'q', ""},
-{"NSOpenGLPixelBuffer", '-', "pixelsWide", 'D', 'q', ""},
-{"NSOpenGLPixelBuffer", '-', "textureInternalFormat", 'D', 'i', ""},
-{"NSOpenGLPixelBuffer", '-', "textureMaxMipMapLevel", 'D', 'i', ""},
-{"NSOpenGLPixelBuffer", '-', "textureTarget", 'D', 'i', ""},
 {"NSOpenGLPixelFormat", '-', "attributes", 'G', '@', ""},
 {"NSOpenGLPixelFormat", '-', "initWithCGLPixelFormatObj:", 'I', '@', "q"},
 {"NSOpenGLPixelFormat", '-', "setAttributes:", 'S', 'v', "@"},
 {"NSOpenPanel", '-', "beginForDirectory:file:types:modelessDelegate:didEndSelector:contextInfo:", 'D', 'v', "@@@@:^"},
 {"NSOpenPanel", '-', "beginSheetForDirectory:file:types:modalForWindow:modalDelegate:didEndSelector:contextInfo:", 'D', 'v', "@@@@@:^"},
-{"NSPDFPanel", '+', "panel", 'F', '@', ""},
-{"NSPDFPanel", '-', "accessoryController", 'G', '@', ""},
-{"NSPDFPanel", '-', "beginSheetWithPDFInfo:modalForWindow:completionHandler:", 'D', 'v', "@@@"},
-{"NSPDFPanel", '-', "defaultFileName", 'G', '@', ""},
-{"NSPDFPanel", '-', "options", 'G', 'q', ""},
-{"NSPDFPanel", '-', "setAccessoryController:", 'S', 'v', "@"},
-{"NSPDFPanel", '-', "setDefaultFileName:", 'S', 'v', "@"},
-{"NSPDFPanel", '-', "setOptions:", 'S', 'v', "q"},
 {"NSPICTImageRep", '+', "imageRepWithData:", 'F', '@', "@"},
 {"NSPICTImageRep", '-', "PICTRepresentation", 'D', '@', ""},
 {"NSPICTImageRep", '-', "boundingBox", 'D', 'R', ""},
@@ -603,13 +458,6 @@ static const GenEntry kTable[] = {
 {"NSScrubberImageItemView", '-', "imageView", 'D', '@', ""},
 {"NSScrubberImageItemView", '-', "setImage:", 'S', 'v', "@"},
 {"NSScrubberImageItemView", '-', "setImageAlignment:", 'S', 'v', "q"},
-{"NSScrubberLayoutAttributes", '+', "layoutAttributesForItemAtIndex:", 'F', '@', "q"},
-{"NSScrubberLayoutAttributes", '-', "alpha", 'G', 'd', ""},
-{"NSScrubberLayoutAttributes", '-', "frame", 'G', 'R', ""},
-{"NSScrubberLayoutAttributes", '-', "itemIndex", 'G', 'q', ""},
-{"NSScrubberLayoutAttributes", '-', "setAlpha:", 'S', 'v', "d"},
-{"NSScrubberLayoutAttributes", '-', "setFrame:", 'S', 'v', "R"},
-{"NSScrubberLayoutAttributes", '-', "setItemIndex:", 'S', 'v', "q"},
 {"NSScrubberProportionalLayout", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSScrubberProportionalLayout", '-', "initWithNumberOfVisibleItems:", 'I', '@', "q"},
 {"NSScrubberProportionalLayout", '-', "numberOfVisibleItems", 'G', 'q', ""},
@@ -622,14 +470,6 @@ static const GenEntry kTable[] = {
 {"NSScrubberTextItemView", '-', "setTitle:", 'S', 'v', "@"},
 {"NSScrubberTextItemView", '-', "textField", 'D', '@', ""},
 {"NSScrubberTextItemView", '-', "title", 'G', '@', ""},
-{"NSSearchToolbarItem", '-', "beginSearchInteraction", 'D', 'v', ""},
-{"NSSearchToolbarItem", '-', "endSearchInteraction", 'D', 'v', ""},
-{"NSSearchToolbarItem", '-', "preferredWidthForSearchField", 'G', 'd', ""},
-{"NSSearchToolbarItem", '-', "resignsFirstResponderWithCancel", 'G', 'B', ""},
-{"NSSearchToolbarItem", '-', "searchField", 'G', '@', ""},
-{"NSSearchToolbarItem", '-', "setPreferredWidthForSearchField:", 'S', 'v', "d"},
-{"NSSearchToolbarItem", '-', "setResignsFirstResponderWithCancel:", 'S', 'v', "B"},
-{"NSSearchToolbarItem", '-', "setSearchField:", 'S', 'v', "@"},
 {"NSSecureTextFieldCell", '-', "echosBullets", 'G', 'B', ""},
 {"NSSecureTextFieldCell", '-', "setEchosBullets:", 'S', 'v', "B"},
 {"NSSegmentedCell", '-', "drawSegment:inFrame:withView:", 'D', 'v', "qR@"},
@@ -639,26 +479,8 @@ static const GenEntry kTable[] = {
 {"NSSet", '+', "setWithCollectionViewIndexPath:", 'F', '@', "@"},
 {"NSSet", '+', "setWithCollectionViewIndexPaths:", 'F', '@', "@"},
 {"NSSet", '-', "enumerateIndexPathsWithOptions:usingBlock:", 'D', 'v', "qq"},
-{"NSSharingCollaborationModeRestriction", '-', "alertDismissButtonTitle", 'D', '@', ""},
-{"NSSharingCollaborationModeRestriction", '-', "alertMessage", 'D', '@', ""},
-{"NSSharingCollaborationModeRestriction", '-', "alertRecoverySuggestionButtonLaunchURL", 'D', '@', ""},
-{"NSSharingCollaborationModeRestriction", '-', "alertRecoverySuggestionButtonTitle", 'D', '@', ""},
-{"NSSharingCollaborationModeRestriction", '-', "alertTitle", 'D', '@', ""},
-{"NSSharingCollaborationModeRestriction", '-', "disabledMode", 'D', 'q', ""},
-{"NSSharingCollaborationModeRestriction", '-', "initWithDisabledMode:", 'I', '@', "q"},
-{"NSSharingCollaborationModeRestriction", '-', "initWithDisabledMode:alertTitle:alertMessage:", 'I', '@', "q@@"},
-{"NSSharingCollaborationModeRestriction", '-', "initWithDisabledMode:alertTitle:alertMessage:alertDismissButtonTitle:", 'I', '@', "q@@@"},
-{"NSSharingCollaborationModeRestriction", '-', "initWithDisabledMode:alertTitle:alertMessage:alertDismissButtonTitle:alertRecoverySuggestionButtonTitle:alertRecoverySuggestionButtonLaunchURL:", 'I', '@', "q@@@@@"},
 {"NSSharingServicePickerToolbarItem", '-', "delegate", 'G', '@', ""},
 {"NSSharingServicePickerToolbarItem", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSSharingServicePickerTouchBarItem", '-', "buttonImage", 'G', '@', ""},
-{"NSSharingServicePickerTouchBarItem", '-', "buttonTitle", 'G', '@', ""},
-{"NSSharingServicePickerTouchBarItem", '-', "delegate", 'G', '@', ""},
-{"NSSharingServicePickerTouchBarItem", '-', "isEnabled", 'G', 'B', ""},
-{"NSSharingServicePickerTouchBarItem", '-', "setButtonImage:", 'S', 'v', "@"},
-{"NSSharingServicePickerTouchBarItem", '-', "setButtonTitle:", 'S', 'v', "@"},
-{"NSSharingServicePickerTouchBarItem", '-', "setDelegate:", 'S', 'v', "@"},
-{"NSSharingServicePickerTouchBarItem", '-', "setEnabled:", 'S', 'v', "B"},
 {"NSSliderAccessory", '+', "accessoryWithImage:", 'D', '@', "@"},
 {"NSSliderAccessory", '-', "behavior", 'G', '@', ""},
 {"NSSliderAccessory", '-', "isEnabled", 'G', 'B', ""},
@@ -674,15 +496,6 @@ static const GenEntry kTable[] = {
 {"NSSplitView", '-', "setIsPaneSplitter:", 'S', 'v', "B"},
 {"NSSplitViewController", '-', "minimumThicknessForInlineSidebars", 'G', 'd', ""},
 {"NSSplitViewController", '-', "setMinimumThicknessForInlineSidebars:", 'S', 'v', "d"},
-{"NSSplitViewItemAccessoryViewController", '+', "defaultAnimationForKey:", 'D', '@', "q"},
-{"NSSplitViewItemAccessoryViewController", '-', "animationForKey:", 'D', '@', "q"},
-{"NSSplitViewItemAccessoryViewController", '-', "animations", 'G', 'M', ""},
-{"NSSplitViewItemAccessoryViewController", '-', "animator", 'D', '@', ""},
-{"NSSplitViewItemAccessoryViewController", '-', "automaticallyAppliesContentInsets", 'G', 'B', ""},
-{"NSSplitViewItemAccessoryViewController", '-', "isHidden", 'G', 'B', ""},
-{"NSSplitViewItemAccessoryViewController", '-', "setAnimations:", 'S', 'v', "@"},
-{"NSSplitViewItemAccessoryViewController", '-', "setAutomaticallyAppliesContentInsets:", 'S', 'v', "B"},
-{"NSSplitViewItemAccessoryViewController", '-', "setHidden:", 'S', 'v', "B"},
 {"NSStatusBarButton", '-', "appearsDisabled", 'G', 'B', ""},
 {"NSStatusBarButton", '-', "setAppearsDisabled:", 'S', 'v', "B"},
 {"NSStoryboard", '-', "instantiateControllerWithIdentifier:creator:", 'D', '@', "qq"},
@@ -702,14 +515,6 @@ static const GenEntry kTable[] = {
 {"NSTabViewController", '-', "toolbarAllowedItemIdentifiers:", 'D', 'A', "@"},
 {"NSTabViewController", '-', "toolbarDefaultItemIdentifiers:", 'D', 'A', "@"},
 {"NSTabViewController", '-', "toolbarSelectableItemIdentifiers:", 'D', 'A', "@"},
-{"NSTableViewRowAction", '+', "rowActionWithStyle:title:handler:", 'F', '@', "q@@"},
-{"NSTableViewRowAction", '-', "backgroundColor", 'G', '@', ""},
-{"NSTableViewRowAction", '-', "image", 'G', '@', ""},
-{"NSTableViewRowAction", '-', "setBackgroundColor:", 'S', 'v', "@"},
-{"NSTableViewRowAction", '-', "setImage:", 'S', 'v', "@"},
-{"NSTableViewRowAction", '-', "setTitle:", 'S', 'v', "@"},
-{"NSTableViewRowAction", '-', "style", 'D', 'q', ""},
-{"NSTableViewRowAction", '-', "title", 'G', '@', ""},
 {"NSTextAlternatives", '-', "alternativeStrings", 'D', 'A', ""},
 {"NSTextAlternatives", '-', "initWithPrimaryString:alternativeStrings:", 'I', '@', "@@"},
 {"NSTextAlternatives", '-', "noteSelectedAlternativeString:", 'D', 'v', "@"},
@@ -722,28 +527,15 @@ static const GenEntry kTable[] = {
 {"NSTextFieldCell", '-', "setAllowedInputSourceLocales:", 'S', 'v', "@"},
 {"NSTextFieldCell", '-', "setPlaceholderAttributedString:", 'S', 'v', "@"},
 {"NSTextFieldCell", '-', "setWantsNotificationForMarkedText:", 'S', 'v', "B"},
-{"NSTextInsertionIndicator", '-', "automaticModeOptions", 'G', 'q', ""},
-{"NSTextInsertionIndicator", '-', "color", 'G', '@', ""},
-{"NSTextInsertionIndicator", '-', "displayMode", 'G', 'q', ""},
-{"NSTextInsertionIndicator", '-', "effectsViewInserter", 'G', '@', ""},
-{"NSTextInsertionIndicator", '-', "setAutomaticModeOptions:", 'S', 'v', "q"},
-{"NSTextInsertionIndicator", '-', "setColor:", 'S', 'v', "@"},
-{"NSTextInsertionIndicator", '-', "setDisplayMode:", 'S', 'v', "q"},
-{"NSTextInsertionIndicator", '-', "setEffectsViewInserter:", 'S', 'v', "@"},
 {"NSTextLayoutFragment", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSTextLineFragment", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSTextListElement", '+', "textListElementWithChildElements:textList:nestingLevel:", 'F', '@', "@@q"},
 {"NSTextListElement", '+', "textListElementWithContents:markerAttributes:textList:childElements:", 'F', '@', "@@@@"},
-{"NSTextListElement", '-', "attributedString", 'D', '@', ""},
-{"NSTextListElement", '-', "childElements", 'D', 'A', ""},
 {"NSTextListElement", '-', "contents", 'D', '@', ""},
-{"NSTextListElement", '-', "initWithAttributedString:", 'I', '@', "@"},
 {"NSTextListElement", '-', "initWithParentElement:textList:contents:markerAttributes:childElements:", 'I', '@', "@@@@@"},
 {"NSTextListElement", '-', "markerAttributes", 'D', 'M', ""},
-{"NSTextListElement", '-', "parentElement", 'D', '@', ""},
 {"NSTextListElement", '-', "textList", 'D', '@', ""},
 {"NSTextPreview", '-', "candidateRects", 'D', 'A', ""},
-{"NSTextPreview", '-', "init", 'I', '@', ""},
 {"NSTextPreview", '-', "initWithSnapshotImage:presentationFrame:", 'I', '@', "^R"},
 {"NSTextPreview", '-', "initWithSnapshotImage:presentationFrame:candidateRects:", 'I', '@', "^R@"},
 {"NSTextPreview", '-', "presentationFrame", 'D', 'R', ""},
@@ -754,33 +546,6 @@ static const GenEntry kTable[] = {
 {"NSTextStorage", '-', "setParagraphs:", 'S', 'v', "@"},
 {"NSTextStorage", '-', "setWords:", 'S', 'v', "@"},
 {"NSTextTab", '+', "columnTerminatorsForLocale:", 'D', '@', "@"},
-{"NSTextView", '+', "textViewUsingTextLayoutManager:", 'F', '@', "B"},
-{"NSTextView", '-', "allowedWritingToolsResultOptions", 'G', 'q', ""},
-{"NSTextView", '-', "conversationIdentifier", 'D', 'q', ""},
-{"NSTextView", '-', "dragImageForSelectionWithEvent:origin:", 'D', '@', "@^"},
-{"NSTextView", '-', "dragOperationForDraggingInfo:type:", 'D', 'q', "@q"},
-{"NSTextView", '-', "dragSelectionWithEvent:offset:slideBack:", 'D', 'B', "@SB"},
-{"NSTextView", '-', "drawTextHighlightBackgroundForTextRange:origin:", 'D', 'v', "@P"},
-{"NSTextView", '-', "handleTextCheckingResults:forRange:types:options:orthography:wordCount:", 'D', 'v', "@Nq@@q"},
-{"NSTextView", '-', "initUsingTextLayoutManager:", 'I', '@', "B"},
-{"NSTextView", '-', "inlinePredictionType", 'G', 'q', ""},
-{"NSTextView", '-', "mathExpressionCompletionType", 'G', 'q', ""},
-{"NSTextView", '-', "quickLookPreviewableItemsInRanges:", 'D', 'A', "@"},
-{"NSTextView", '-', "toggleTraditionalCharacterShape:", 'D', 'v', "@"},
-{"NSTintConfiguration", '+', "defaultTintConfiguration", 'T', '@', ""},
-{"NSTintConfiguration", '+', "monochromeTintConfiguration", 'F', '@', ""},
-{"NSTintConfiguration", '+', "tintConfigurationWithFixedColor:", 'F', '@', "@"},
-{"NSTintConfiguration", '+', "tintConfigurationWithPreferredColor:", 'F', '@', "@"},
-{"NSTintConfiguration", '-', "adaptsToUserAccentColor", 'D', 'B', ""},
-{"NSTintConfiguration", '-', "baseTintColor", 'D', '@', ""},
-{"NSTintConfiguration", '-', "equivalentContentTintColor", 'D', '@', ""},
-{"NSTokenField", '+', "defaultCompletionDelay", 'D', 'd', ""},
-{"NSTokenField", '-', "completionDelay", 'G', 'd', ""},
-{"NSTokenField", '-', "setCompletionDelay:", 'S', 'v', "d"},
-{"NSTokenField", '-', "setTokenStyle:", 'S', 'v', "q"},
-{"NSTokenField", '-', "setTokenizingCharacterSet:", 'S', 'v', "@"},
-{"NSTokenField", '-', "tokenStyle", 'G', 'q', ""},
-{"NSTokenField", '-', "tokenizingCharacterSet", 'G', '@', ""},
 {"NSToolbarItemGroup", '+', "groupWithItemIdentifier:images:selectionMode:labels:target:action:", 'F', '@', "q@q@@:"},
 {"NSToolbarItemGroup", '+', "groupWithItemIdentifier:titles:selectionMode:labels:target:action:", 'F', '@', "q@q@@:"},
 {"NSToolbarItemGroup", '-', "isSelectedAtIndex:", 'D', 'B', "q"},
@@ -807,44 +572,26 @@ static const GenEntry kTable[] = {
 {"NSWindowController", '-', "initWithWindowNibPath:owner:", 'I', '@', "@@"},
 {"NSWindowController", '-', "previewRepresentableActivityItems", 'G', 'A', ""},
 {"NSWindowController", '-', "setPreviewRepresentableActivityItems:", 'S', 'v', "@"},
-{"NSWindowTab", '-', "accessoryView", 'G', '@', ""},
-{"NSWindowTab", '-', "attributedTitle", 'G', '@', ""},
-{"NSWindowTab", '-', "setAccessoryView:", 'S', 'v', "@"},
-{"NSWindowTab", '-', "setAttributedTitle:", 'S', 'v', "@"},
-{"NSWindowTab", '-', "setTitle:", 'S', 'v', "@"},
-{"NSWindowTab", '-', "setToolTip:", 'S', 'v', "@"},
-{"NSWindowTab", '-', "title", 'G', '@', ""},
-{"NSWindowTab", '-', "toolTip", 'G', '@', ""},
 {"NSWorkspace", '-', "requestAuthorizationOfType:completionHandler:", 'D', 'v', "q@"},
 {"NSWritingToolsCoordinatorAnimationParameters", '-', "completionHandler", 'G', '@', ""},
 {"NSWritingToolsCoordinatorAnimationParameters", '-', "delay", 'D', 'd', ""},
 {"NSWritingToolsCoordinatorAnimationParameters", '-', "duration", 'D', 'd', ""},
-{"NSWritingToolsCoordinatorAnimationParameters", '-', "init", 'I', '@', ""},
 {"NSWritingToolsCoordinatorAnimationParameters", '-', "progressHandler", 'G', '@', ""},
 {"NSWritingToolsCoordinatorAnimationParameters", '-', "setCompletionHandler:", 'S', 'v', "@"},
 {"NSWritingToolsCoordinatorAnimationParameters", '-', "setProgressHandler:", 'S', 'v', "@"},
 {"NSWritingToolsCoordinatorContext", '-', "attributedString", 'D', '@', ""},
 {"NSWritingToolsCoordinatorContext", '-', "identifier", 'D', '@', ""},
-{"NSWritingToolsCoordinatorContext", '-', "init", 'I', '@', ""},
 {"NSWritingToolsCoordinatorContext", '-', "initWithAttributedString:range:", 'I', '@', "@N"},
 {"NSWritingToolsCoordinatorContext", '-', "range", 'D', 'N', ""},
 {"NSWritingToolsCoordinatorContext", '-', "resolvedRange", 'D', 'N', ""},
 };
 const struct XEFDefault kDefaultsTable[] = {
 {"NSBackgroundExtensionView", "automaticallyPlacesContentView", 'B', "1"},
-{"NSGlassEffectView", "cornerRadius", 'd', "8"},
-{"NSPDFPanel", "defaultFileName", '@', "Untitled"},
 {"NSScrubberFlowLayout", "itemSize", 'S', "50,30"},
-{"NSScrubberLayoutAttributes", "itemIndex", 'q', "-1"},
-{"NSScrubberLayoutAttributes", "alpha", 'd', "1"},
 {"NSScrubberProportionalLayout", "numberOfVisibleItems", 'q', "5"},
-{"NSSearchToolbarItem", "preferredWidthForSearchField", 'd', "240"},
-{"NSSharingServicePickerTouchBarItem", "isEnabled", 'B', "1"},
-{"NSSplitViewItemAccessoryViewController", "automaticallyAppliesContentInsets", 'B', "1"},
 {"NSTextContentManager", "automaticallySynchronizesTextLayoutManagers", 'B', "1"},
-{"NSTextInsertionIndicator", "automaticModeOptions", 'q', "1"},
 {0, 0, 0, 0} };
-const unsigned long kDefaultsCount = 12;
+const unsigned long kDefaultsCount = 4;
 struct XEFProto { const char *cls, *proto; };
 const struct XEFProto kProtoTable[] = {
 {"NSAccessibilityElement", "NSAccessibility"},
