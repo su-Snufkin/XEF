@@ -220,8 +220,6 @@ typedef struct { const char *cls; char kind; const char *sel; char role, ret; co
 @implementation NSMediaLibraryBrowserController @end
 @interface NSMenuItemBadge : NSObject @end
 @implementation NSMenuItemBadge @end
-@interface NSMenuItemCell : NSButtonCell @end
-@implementation NSMenuItemCell @end
 @interface NSMenuToolbarItem : NSToolbarItem @end
 @implementation NSMenuToolbarItem @end
 @interface NSMovie : NSObject @end
@@ -1152,8 +1150,6 @@ static const GenEntry kTable[] = {
 {"NSMenuItemCell", '-', "drawStateImageWithFrame:inView:", 'D', 'v', "R@"},
 {"NSMenuItemCell", '-', "drawTitleWithFrame:inView:", 'D', 'v', "R@"},
 {"NSMenuItemCell", '-', "imageWidth", 'D', 'd', ""},
-{"NSMenuItemCell", '-', "initTextCell:", 'I', '@', "@"},
-{"NSMenuItemCell", '-', "initWithCoder:", 'I', '@', "@"},
 {"NSMenuItemCell", '-', "keyEquivalentRectForBounds:", 'D', 'R', "R"},
 {"NSMenuItemCell", '-', "keyEquivalentWidth", 'D', 'd', ""},
 {"NSMenuItemCell", '-', "menuItem", 'G', '@', ""},
@@ -1162,11 +1158,8 @@ static const GenEntry kTable[] = {
 {"NSMenuItemCell", '-', "setMenuItem:", 'S', 'v', "@"},
 {"NSMenuItemCell", '-', "setNeedsDisplay:", 'S', 'v', "B"},
 {"NSMenuItemCell", '-', "setNeedsSizing:", 'S', 'v', "B"},
-{"NSMenuItemCell", '-', "setTag:", 'S', 'v', "q"},
 {"NSMenuItemCell", '-', "stateImageRectForBounds:", 'D', 'R', "R"},
 {"NSMenuItemCell", '-', "stateImageWidth", 'D', 'd', ""},
-{"NSMenuItemCell", '-', "tag", 'G', 'q', ""},
-{"NSMenuItemCell", '-', "titleRectForBounds:", 'D', 'R', "R"},
 {"NSMenuItemCell", '-', "titleWidth", 'D', 'd', ""},
 {"NSMenuToolbarItem", '-', "menu", 'G', '@', ""},
 {"NSMenuToolbarItem", '-', "setMenu:", 'S', 'v', "@"},

@@ -1287,3 +1287,39 @@ static void XEFCSet(id o, const char *k, id v) { objc_setAssociatedObject(o, k, 
 - (NSRect)searchTextRectForBounds:(NSRect)b { return NSMakeRect(b.origin.x + 20, b.origin.y, MAX(0, b.size.width - 40), b.size.height); }
 - (NSRect)searchButtonRectForBounds:(NSRect)b { return NSMakeRect(b.origin.x + 2, b.origin.y, 18, b.size.height); } - (NSRect)cancelButtonRectForBounds:(NSRect)b { return NSMakeRect(NSMaxX(b) - 20, b.origin.y, 18, b.size.height); }
 @end
+
+/* ---- NSButtonCell extras, NSMenuItemCell ---- */
+@implementation NSButtonCell (XEFExtras)
+- (NSAttributedString *)attributedAlternateTitle { NSAttributedString *a = XEFCGet(self, "xef.aat"); if (a) return a; NSString *t = [self alternateTitle]; return [[[NSAttributedString alloc] initWithString:t ? t : @""] autorelease]; }
+- (void)setAttributedAlternateTitle:(NSAttributedString *)t { XEFCSet(self, "xef.aat", t); [self setAlternateTitle:[t string]]; }
+- (id)sound { return XEFCGet(self, "xef.snd"); } - (void)setSound:(id)s { XEFCSet(self, "xef.snd", s); }
+- (void)mouseEntered:(NSEvent *)e {} - (void)mouseExited:(NSEvent *)e {}
+- (void)drawBezelWithFrame:(NSRect)f inView:(NSView *)v { [self drawWithFrame:f inView:v]; }
+- (void)drawImage:(NSImage *)i withFrame:(NSRect)f inView:(NSView *)v { [i drawInRect:f fromRect:NSZeroRect operation:2 fraction:1.0]; }
+- (NSRect)drawTitle:(NSAttributedString *)t withFrame:(NSRect)f inView:(NSView *)v { [t drawInRect:f]; return f; }
+- (NSInteger)gradientType { return 0; } - (void)setGradientType:(NSInteger)t {}   /* deprecated no-ops on macOS */
+- (void)setAlternateTitleWithMnemonic:(NSString *)s {} - (void)setAlternateMnemonicLocation:(NSUInteger)l {}
+- (NSUInteger)alternateMnemonicLocation { return NSNotFound; } - (NSString *)alternateMnemonic { return @""; }
+- (NSFont *)keyEquivalentFont { NSFont *f = XEFCGet(self, "xef.kef"); return f ? f : [self font]; } - (void)setKeyEquivalentFont:(NSFont *)f { XEFCSet(self, "xef.kef", f); }
+- (void)setKeyEquivalentFont:(NSString *)n size:(CGFloat)s { NSFont *f = [NSFont fontWithName:n size:s]; if (f) [self setKeyEquivalentFont:f]; }
+@end
+
+@implementation NSMenuItemCell
+- (id)menuItem { return XEFCGet(self, "xef.mi"); }
+- (void)setMenuItem:(id)i { XEFCSet(self, "xef.mi", i); [self setNeedsSizing:YES]; if ([i respondsToSelector:@selector(title)]) [self setTitle:[i title]]; }
+- (BOOL)needsSizing { NSNumber *n = XEFCGet(self, "xef.nsz"); return n ? [n boolValue] : YES; } - (void)setNeedsSizing:(BOOL)f { XEFCSet(self, "xef.nsz", [NSNumber numberWithBool:f]); }
+- (BOOL)needsDisplay { return [XEFCGet(self, "xef.ndp") boolValue]; } - (void)setNeedsDisplay:(BOOL)f { XEFCSet(self, "xef.ndp", [NSNumber numberWithBool:f]); }
+- (void)calcSize { [self setNeedsSizing:NO]; }
+- (CGFloat)stateImageWidth { return 18; }
+- (CGFloat)imageWidth { id i = [self menuItem]; NSImage *im = [i respondsToSelector:@selector(image)] ? [i image] : nil; return im ? [im size].width : 0; }
+- (CGFloat)titleWidth { id i = [self menuItem]; NSString *t = i ? [i title] : [self title]; return [t sizeWithAttributes:[NSDictionary dictionaryWithObject:[NSFont menuFontOfSize:0] forKey:NSFontAttributeName]].width; }
+- (CGFloat)keyEquivalentWidth { id i = [self menuItem]; NSString *k = [i respondsToSelector:@selector(keyEquivalent)] ? [i keyEquivalent] : nil; return [k length] ? 20 : 0; }
+- (NSRect)stateImageRectForBounds:(NSRect)b { return NSMakeRect(b.origin.x, b.origin.y, [self stateImageWidth], b.size.height); }
+- (NSRect)keyEquivalentRectForBounds:(NSRect)b { CGFloat w = [self keyEquivalentWidth]; return NSMakeRect(NSMaxX(b) - w, b.origin.y, w, b.size.height); }
+- (void)drawSeparatorItemWithFrame:(NSRect)f inView:(NSView *)v { [[NSColor grayColor] set]; NSRectFill(NSMakeRect(f.origin.x, NSMidY(f), f.size.width, 1)); }
+- (void)drawStateImageWithFrame:(NSRect)f inView:(NSView *)v {}
+- (void)drawImageWithFrame:(NSRect)f inView:(NSView *)v { id i = [self menuItem]; NSImage *im = [i respondsToSelector:@selector(image)] ? [i image] : nil; if (im) [self drawImage:im withFrame:f inView:v]; }
+- (void)drawTitleWithFrame:(NSRect)f inView:(NSView *)v { id i = [self menuItem]; NSString *t = i ? [i title] : [self title]; [t drawInRect:f withAttributes:[NSDictionary dictionaryWithObject:[NSFont menuFontOfSize:0] forKey:NSFontAttributeName]]; }
+- (void)drawKeyEquivalentWithFrame:(NSRect)f inView:(NSView *)v {}
+- (void)drawBorderAndBackgroundWithFrame:(NSRect)f inView:(NSView *)v {}
+@end

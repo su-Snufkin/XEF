@@ -1156,3 +1156,7 @@ tools/build_foundation.sh && rsync -a mac:xef-remote/out/rootfs/System/Library/F
 ## 47. Protocol conformance
 
 A Mac-vs-XEF audit found 212 of 250 adopted class/protocol pairs differing. `tools/gen_appkit_stubs.py` now emits `kProtoTable` and a constructor (`xef_register_protocols`) that registers each protocol by name (if missing) and `class_addProtocol`s it. After the fix all 250 pairs match the Mac (prober: /tmp/probe/proto, not committed). Remaining gaps: NSTextLayoutManager, NSInputManager, NSTextContentManager, NSTextLayoutFragment, NSInputServer, NSMenuItemCell, NSButtonCell, NSTextSelection/Block/Finder, NSSharingService, NSWritingToolsCoordinator.
+
+## 48. NSButtonCell extras, NSMenuItemCell
+
+Real NSMenuItemCell (no longer a generated placeholder) and the missing NSButtonCell methods (AppKitControls.h/.m); deprecated gradientType/mnemonic methods are macOS no-ops and match that. Test `appkit_buttoncell`. Coverage 6476 of 8257. The Mac tunnel changed: update `HostName` in ~/.ssh/config and add the new host to the XEF environment's allowed hosts (update_environment). `foundation_more` currently aborts in NSDateFormatter setup (nil time zone, Foundation side, not AppKit); `appkit_spell` is flaky under load (passes alone).

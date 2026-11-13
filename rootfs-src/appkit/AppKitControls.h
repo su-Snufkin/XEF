@@ -66,6 +66,27 @@ void XEFRedrawWindowNow(NSWindow *w);       /* presents the window right away (i
 - (NSAttributedString *)attributedTitle; - (void)setAttributedTitle:(NSAttributedString *)t;
 @end
 
+@interface NSButtonCell (XEFExtras)
+- (NSAttributedString *)attributedAlternateTitle; - (void)setAttributedAlternateTitle:(NSAttributedString *)t;
+- (id)sound; - (void)setSound:(id)s;
+- (void)mouseEntered:(NSEvent *)e; - (void)mouseExited:(NSEvent *)e;
+- (void)drawBezelWithFrame:(NSRect)f inView:(NSView *)v; - (void)drawImage:(NSImage *)i withFrame:(NSRect)f inView:(NSView *)v;
+- (NSRect)drawTitle:(NSAttributedString *)t withFrame:(NSRect)f inView:(NSView *)v;
+- (NSInteger)gradientType; - (void)setGradientType:(NSInteger)t;
+- (void)setAlternateTitleWithMnemonic:(NSString *)s; - (void)setAlternateMnemonicLocation:(NSUInteger)l; - (NSUInteger)alternateMnemonicLocation; - (NSString *)alternateMnemonic;
+- (NSFont *)keyEquivalentFont; - (void)setKeyEquivalentFont:(NSFont *)f; - (void)setKeyEquivalentFont:(NSString *)n size:(CGFloat)s;
+@end
+
+@interface NSMenuItemCell : NSButtonCell
+- (id)menuItem; - (void)setMenuItem:(id)i; - (BOOL)needsSizing; - (void)setNeedsSizing:(BOOL)f; - (void)calcSize;
+- (BOOL)needsDisplay; - (void)setNeedsDisplay:(BOOL)f;
+- (CGFloat)stateImageWidth; - (CGFloat)imageWidth; - (CGFloat)titleWidth; - (CGFloat)keyEquivalentWidth;
+- (NSRect)stateImageRectForBounds:(NSRect)b; - (NSRect)keyEquivalentRectForBounds:(NSRect)b;
+- (void)drawSeparatorItemWithFrame:(NSRect)f inView:(NSView *)v; - (void)drawStateImageWithFrame:(NSRect)f inView:(NSView *)v;
+- (void)drawImageWithFrame:(NSRect)f inView:(NSView *)v; - (void)drawTitleWithFrame:(NSRect)f inView:(NSView *)v;
+- (void)drawKeyEquivalentWithFrame:(NSRect)f inView:(NSView *)v; - (void)drawBorderAndBackgroundWithFrame:(NSRect)f inView:(NSView *)v;
+@end
+
 @interface NSButton : NSControl
 - (NSString *)title; - (void)setTitle:(NSString *)t; - (NSInteger)state; - (void)setState:(NSInteger)s;
 - (void)setButtonType:(NSInteger)t; - (NSString *)keyEquivalent; - (void)setKeyEquivalent:(NSString *)k;
