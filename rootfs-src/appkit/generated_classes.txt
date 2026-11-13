@@ -52,7 +52,6 @@ NSGlyphGenerator
 NSGlyphInfo
 NSHelpManager
 NSImageSymbolConfiguration
-NSInputManager
 NSInputServer
 NSItemBadge
 NSMediaLibraryBrowserController
@@ -86,8 +85,6 @@ NSScrubberSelectionStyle
 NSScrubberTextItemView
 NSSearchToolbarItem
 NSSharingCollaborationModeRestriction
-NSSharingService
-NSSharingServicePicker
 NSSharingServicePickerToolbarItem
 NSSharingServicePickerTouchBarItem
 NSSliderAccessory
@@ -101,15 +98,12 @@ NSTableViewDiffableDataSource
 NSTableViewRowAction
 NSTextAlternatives
 NSTextAttachmentViewProvider
-NSTextBlock
 NSTextCheckingController
 NSTextFinder
 NSTextInsertionIndicator
 NSTextList
 NSTextListElement
 NSTextPreview
-NSTextTable
-NSTextTableBlock
 NSTintConfiguration
 NSTitlebarAccessoryViewController
 NSTouch

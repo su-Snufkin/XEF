@@ -1168,3 +1168,9 @@ NSText now implements its whole public API itself (state in associated objects, 
 ## 50. TextKit 2 model
 
 New `AppKitTextKit2.m/.h`: NSTextRange, NSCountableTextLocation, NSTextElement/NSTextParagraph, NSTextContentManager/NSTextContentStorage, NSTextLayoutManager (paragraph fragments, greedy word-wrapped line fragments, rendering attributes, segments, granularity), NSTextLayoutFragment, NSTextLineFragment, NSTextSelection, NSTextSelectionNavigation, NSTextViewportLayoutController, NSTextContainer.textLayoutManager. Matched against macOS by `appkit_textkit2` (replaceContents… are no-ops on macOS too; reverse enumeration from a nil location yields nothing; textElementsForRange returns elements *contained* in the range; add→primaryTextLayoutManager stays nil). Font metrics on XEF differ from macOS (ascender 14 vs 13.5), so the test prints sizes as booleans. The host NSString lacks NSStringEnumerationByWords — XEFWords helper in the file. Coverage 6726 of 8257. Gap report note: ~35 "NSObject" gaps are informal-protocol delegate methods that real NSObject does not implement either (verified), so they are not real gaps. `foundation_more` still fails (Foundation NSDateFormatter, pre-existing).
+
+## 51. NSTextBlock family, sharing, NSInputManager, system images
+
+- NSTextBlock/NSTextTable/NSTextTableBlock (AppKitTextKit2.m, test `appkit_textblock`), NSSharingService/Picker and NSInputManager (`appkit_sharing`; `+currentInputManager` is nil on macOS).
+- System images behind NSImageName*: `tools/dump_named_images.m` + `tools/capture_named_images.sh` dump them from the user's Mac into `darwin-rootfs/.../AppKit.framework/Resources/NamedImages` (not committed; build_appkit_only.sh runs it the first time); `+[NSImage imageNamed:]` falls back to them (AppKitAssets.m). Test `appkit_namedimages`.
+- Coverage 6815 of 8257; 137/138 macref pass (only the Foundation `foundation_more` fails).

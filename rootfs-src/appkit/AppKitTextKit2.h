@@ -117,3 +117,46 @@
 @end
 
 @interface NSTextContainer (XEFTextKit2) - (NSTextLayoutManager *)textLayoutManager; - (void)setTextLayoutManager:(NSTextLayoutManager *)m; @end
+
+/* NSTextBlock family (AppKitTextKit2.m) */
+@interface NSTextBlock : NSObject <NSCopying> { @public CGFloat _dv[7]; NSInteger _dt[7]; CGFloat _wv[3][4]; NSInteger _wt[3][4]; NSColor *_bc[4]; NSColor *_bg; NSInteger _va; }
+- (void)setValue:(CGFloat)v type:(NSInteger)t forDimension:(NSInteger)d; - (CGFloat)valueForDimension:(NSInteger)d; - (NSInteger)valueTypeForDimension:(NSInteger)d;
+- (void)setContentWidth:(CGFloat)v type:(NSInteger)t; - (CGFloat)contentWidth; - (NSInteger)contentWidthValueType;
+- (void)setWidth:(CGFloat)v type:(NSInteger)t forLayer:(NSInteger)l edge:(NSUInteger)e; - (void)setWidth:(CGFloat)v type:(NSInteger)t forLayer:(NSInteger)l;
+- (CGFloat)widthForLayer:(NSInteger)l edge:(NSUInteger)e; - (NSInteger)widthValueTypeForLayer:(NSInteger)l edge:(NSUInteger)e;
+- (NSInteger)verticalAlignment; - (void)setVerticalAlignment:(NSInteger)a; - (NSColor *)backgroundColor; - (void)setBackgroundColor:(NSColor *)c;
+- (void)setBorderColor:(NSColor *)c forEdge:(NSUInteger)e; - (void)setBorderColor:(NSColor *)c; - (NSColor *)borderColorForEdge:(NSUInteger)e;
+- (NSRect)rectForLayoutAtPoint:(NSPoint)p inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)cr;
+- (NSRect)boundsRectForContentRect:(NSRect)cr inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)range;
+- (void)drawBackgroundWithFrame:(NSRect)f inView:(NSView *)v characterRange:(NSRange)r layoutManager:(NSLayoutManager *)lm;
+- (NSRect)_xefBaseRect:(NSPoint)p inRect:(NSRect)r;
+@end
+@interface NSTextTable : NSTextBlock { @public NSUInteger _cols; NSInteger _layout; BOOL _collapse, _hide; }
+- (NSUInteger)numberOfColumns; - (void)setNumberOfColumns:(NSUInteger)n; - (NSInteger)layoutAlgorithm; - (void)setLayoutAlgorithm:(NSInteger)a;
+- (BOOL)collapsesBorders; - (void)setCollapsesBorders:(BOOL)f; - (BOOL)hidesEmptyCells; - (void)setHidesEmptyCells:(BOOL)f;
+- (NSRect)rectForBlock:(NSTextBlock *)b layoutAtPoint:(NSPoint)p inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)cr;
+- (NSRect)boundsRectForBlock:(NSTextBlock *)b contentRect:(NSRect)cr inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)range;
+- (void)drawBackgroundForBlock:(NSTextBlock *)b withFrame:(NSRect)f inView:(NSView *)v characterRange:(NSRange)r layoutManager:(NSLayoutManager *)lm;
+@end
+@interface NSTextTableBlock : NSTextBlock { @public NSTextTable *_table; NSInteger _row, _rspan, _col, _cspan; }
+- (id)initWithTable:(NSTextTable *)t startingRow:(NSInteger)r rowSpan:(NSInteger)rs startingColumn:(NSInteger)c columnSpan:(NSInteger)cs;
+- (NSTextTable *)table; - (NSInteger)startingRow; - (NSInteger)rowSpan; - (NSInteger)startingColumn; - (NSInteger)columnSpan;
+@end
+
+/* sharing, input manager (AppKitTextKit2.m) */
+@interface NSSharingService : NSObject { @public id _delegate; NSString *_title, *_menuTitle, *_subject, *_name; NSImage *_image, *_alt; NSArray *_recipients; void (^_handler)(void); }
+- (id)delegate; - (void)setDelegate:(id)d; - (NSString *)title; - (NSImage *)image; - (NSImage *)alternateImage; - (NSString *)menuItemTitle; - (void)setMenuItemTitle:(NSString *)t;
+- (NSArray *)recipients; - (void)setRecipients:(NSArray *)r; - (NSString *)subject; - (void)setSubject:(NSString *)s; - (NSString *)messageBody; - (id)permanentLink; - (NSString *)accountName; - (NSArray *)attachmentFileURLs;
++ (NSArray *)sharingServicesForItems:(NSArray *)items; + (NSSharingService *)sharingServiceNamed:(NSString *)n;
+- (id)initWithTitle:(NSString *)t image:(NSImage *)i alternateImage:(NSImage *)a handler:(void (^)(void))h; - (BOOL)canPerformWithItems:(NSArray *)items; - (void)performWithItems:(NSArray *)items;
+@end
+@interface NSSharingServicePicker : NSObject { @public id _delegate; NSArray *_items; }
+- (id)delegate; - (void)setDelegate:(id)d; - (id)initWithItems:(NSArray *)i; - (void)showRelativeToRect:(NSRect)r ofView:(NSView *)v preferredEdge:(NSUInteger)e; - (void)close; - (NSMenuItem *)standardShareMenuItem;
+@end
+@interface NSInputManager : NSObject { @public NSString *_name; id _host; }
++ (NSInputManager *)currentInputManager; + (void)cycleToNextInputLanguage:(id)s; + (void)cycleToNextInputServerInLanguage:(id)s;
+- (id)initWithName:(NSString *)n host:(NSString *)h; - (NSString *)localizedInputManagerName; - (void)markedTextAbandoned:(id)c; - (void)markedTextSelectionChanged:(NSRange)r client:(id)c;
+- (BOOL)wantsToInterpretAllKeystrokes; - (NSString *)language; - (NSImage *)image; - (id)server; - (BOOL)wantsToHandleMouseEvents; - (BOOL)handleMouseEvent:(NSEvent *)e; - (BOOL)wantsToDelayTextChangeNotifications;
+- (void)insertText:(id)s; - (void)doCommandBySelector:(SEL)s; - (void)setMarkedText:(id)t selectedRange:(NSRange)r; - (void)unmarkText; - (BOOL)hasMarkedText; - (NSInteger)conversationIdentifier;
+- (NSAttributedString *)attributedSubstringFromRange:(NSRange)r; - (NSRange)markedRange; - (NSRange)selectedRange; - (NSRect)firstRectForCharacterRange:(NSRange)r; - (NSUInteger)characterIndexForPoint:(NSPoint)p; - (NSArray *)validAttributesForMarkedText;
+@end

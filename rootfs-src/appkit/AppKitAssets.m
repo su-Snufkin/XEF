@@ -202,11 +202,25 @@ static NSArray *catalog_bundles(NSBundle *b) { return b ? @[b] : [@[[NSBundle ma
 
 @implementation NSImage (XEFAssets)
 static NSMutableDictionary *g_named_images;
+/* system images (NSImageName*), captured from the Mac by tools/capture_named_images.sh */
+static NSImage *xef_system_image(NSString *n) {
+  static NSDictionary *manifest; static dispatch_once_t once; static NSString *dir = @"/System/Library/Frameworks/AppKit.framework/Resources/NamedImages";
+  dispatch_once(&once, ^{
+    NSString *t = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"manifest.txt"] encoding:NSUTF8StringEncoding error:nil];
+    NSMutableDictionary *m = [NSMutableDictionary dictionary];
+    for (NSString *line in [t componentsSeparatedByString:@"\n"]) { NSArray *f = [line componentsSeparatedByString:@"\t"]; if ([f count] == 4) [m setObject:f forKey:[f objectAtIndex:0]]; }
+    manifest = [m retain]; });
+  NSArray *f = [manifest objectForKey:n]; if (!f) return nil;
+  NSImage *img = [[[NSImage alloc] initWithContentsOfFile:[dir stringByAppendingPathComponent:[[n stringByReplacingOccurrencesOfString:@"/" withString:@"_"] stringByAppendingString:@".png"]]] autorelease];
+  if (!img) return nil;
+  [img setSize:NSMakeSize([[f objectAtIndex:1] doubleValue], [[f objectAtIndex:2] doubleValue])]; [img setTemplate:[[f objectAtIndex:3] boolValue]];
+  return img; }
 + (NSImage *)imageNamed:(NSString *)n {
   if (![n length]) return nil;
   NSImage *img = [g_named_images objectForKey:n];
   if (img) return img;
   for (NSBundle *bb in catalog_bundles(nil)) { img = [[XEFCarFile catalogForBundle:bb] imageNamed:n]; if (img) break; }
+  if (!img) img = xef_system_image(n);
   if (img) { if (!g_named_images) g_named_images = [[NSMutableDictionary alloc] init]; [g_named_images setObject:img forKey:n]; }
   return img; }
 - (BOOL)setName:(NSString *)n {

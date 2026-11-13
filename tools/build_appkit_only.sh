@@ -31,3 +31,6 @@ rsync -a mac:xef-remote/out/rootfs/System/Library/Frameworks/AppKit.framework da
 echo "AppKit.framework rebuilt"
 # NSSpellChecker reads /usr/share/dict/words: taken from the Mac the first time (the rootfs is built from the user's own Mac)
 [ -f darwin-rootfs/usr/share/dict/words ] || { mkdir -p darwin-rootfs/usr/share/dict; scp -q mac:/usr/share/dict/words darwin-rootfs/usr/share/dict/words; }
+
+# system images (NSImageName*): taken from the Mac the first time
+[ -f darwin-rootfs/System/Library/Frameworks/AppKit.framework/Resources/NamedImages/manifest.txt ] || tools/capture_named_images.sh

@@ -4,6 +4,7 @@
 #include <objc/runtime.h>
 #include <objc/message.h>
 #include <math.h>
+#include <string.h>
 
 /* ---- locations ---- */
 @interface NSCountableTextLocation : NSObject <NSTextLocation, NSCopying> { @public NSInteger _i; }
@@ -410,4 +411,102 @@ static CGFloat LineHeight(NSFont *f) { CGFloat h = [f ascender] - [f descender] 
   if ([_delegate respondsToSelector:@selector(textViewportLayoutControllerDidLayout:)]) [_delegate performSelector:@selector(textViewportLayoutControllerDidLayout:) withObject:self]; }
 - (void)relocateViewportToTextLocation:(id)l { NSTextLayoutFragment *f = [_lm textLayoutFragmentForLocation:l]; if (f) _vb.origin.y = f->_frame.origin.y; }
 - (CGFloat)adjustViewportByVerticalOffset:(CGFloat)o { _vb.origin.y += o; return o; }
+@end
+
+/* ---- NSTextBlock family ---- */
+@implementation NSTextBlock
+- (id)copyWithZone:(NSZone *)z { NSTextBlock *c = [[[self class] allocWithZone:z] init]; memcpy(c->_dv, _dv, sizeof _dv); memcpy(c->_dt, _dt, sizeof _dt); memcpy(c->_wv, _wv, sizeof _wv); memcpy(c->_wt, _wt, sizeof _wt);
+  for (int i = 0; i < 4; i++) c->_bc[i] = [_bc[i] retain]; c->_bg = [_bg retain]; c->_va = _va; return c; }
+- (void)dealloc { for (int i = 0; i < 4; i++) [_bc[i] release]; [_bg release]; [super dealloc]; }
+- (void)setValue:(CGFloat)v type:(NSInteger)t forDimension:(NSInteger)d { if (d < 0 || d > 6) return; _dv[d] = v; _dt[d] = t; }
+- (CGFloat)valueForDimension:(NSInteger)d { return d >= 0 && d <= 6 ? _dv[d] : 0; } - (NSInteger)valueTypeForDimension:(NSInteger)d { return d >= 0 && d <= 6 ? _dt[d] : 0; }
+- (void)setContentWidth:(CGFloat)v type:(NSInteger)t { [self setValue:v type:t forDimension:0]; } - (CGFloat)contentWidth { return _dv[0]; } - (NSInteger)contentWidthValueType { return _dt[0]; }
+static int LayerIdx(NSInteger l) { return l < 0 ? 0 : (l == 0 ? 1 : 2); }
+- (void)setWidth:(CGFloat)v type:(NSInteger)t forLayer:(NSInteger)l edge:(NSUInteger)e { if (e > 3) return; _wv[LayerIdx(l)][e] = v; _wt[LayerIdx(l)][e] = t; }
+- (void)setWidth:(CGFloat)v type:(NSInteger)t forLayer:(NSInteger)l { for (NSUInteger e = 0; e < 4; e++) [self setWidth:v type:t forLayer:l edge:e]; }
+- (CGFloat)widthForLayer:(NSInteger)l edge:(NSUInteger)e { return e > 3 ? 0 : _wv[LayerIdx(l)][e]; } - (NSInteger)widthValueTypeForLayer:(NSInteger)l edge:(NSUInteger)e { return e > 3 ? 0 : _wt[LayerIdx(l)][e]; }
+- (NSInteger)verticalAlignment { return _va; } - (void)setVerticalAlignment:(NSInteger)a { _va = a; }
+- (NSColor *)backgroundColor { return _bg; } - (void)setBackgroundColor:(NSColor *)c { [c retain]; [_bg release]; _bg = c; }
+- (void)setBorderColor:(NSColor *)c forEdge:(NSUInteger)e { if (e > 3) return; [c retain]; [_bc[e] release]; _bc[e] = c; }
+- (void)setBorderColor:(NSColor *)c { for (NSUInteger e = 0; e < 4; e++) [self setBorderColor:c forEdge:e]; }
+- (NSColor *)borderColorForEdge:(NSUInteger)e { return e > 3 ? nil : _bc[e]; }
+- (CGFloat)_sum:(NSUInteger)a and:(NSUInteger)b { CGFloat s = 0; for (int l = 0; l < 3; l++) s += _wv[l][a] + _wv[l][b]; return s; }
+- (NSRect)rectForLayoutAtPoint:(NSPoint)p inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)cr { return [self _xefBaseRect:p inRect:r]; }
+- (NSRect)_xefBaseRect:(NSPoint)p inRect:(NSRect)r {
+  CGFloat l = 0, t = 0; for (int i = 0; i < 3; i++) { l += _wv[i][0]; t += _wv[i][1]; }
+  CGFloat w = r.size.width - [self _sum:0 and:2]; if (_dt[0] == 1 && _dv[0] > 0) w = (r.size.width) * _dv[0] / 100 - [self _sum:0 and:2]; else if (_dv[0] > 0) w = _dv[0];
+  return NSMakeRect(p.x + l, p.y + t, MAX(0, w), 0); }
+- (NSRect)boundsRectForContentRect:(NSRect)cr inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)range {
+  CGFloat l = 0, t = 0; for (int i = 0; i < 3; i++) { l += _wv[i][0]; t += _wv[i][1]; }
+  return NSMakeRect(cr.origin.x - l, cr.origin.y - t, cr.size.width + [self _sum:0 and:2], cr.size.height + [self _sum:1 and:3]); }
+- (void)drawBackgroundWithFrame:(NSRect)f inView:(NSView *)v characterRange:(NSRange)r layoutManager:(NSLayoutManager *)lm {
+  if (_bg) { [_bg set]; NSRectFill(f); }
+  for (int e = 0; e < 4; e++) { if (!_bc[e] || _wv[1][e] <= 0) continue; [_bc[e] set]; CGFloat w = _wv[1][e];
+    NSRect b = e == 0 ? NSMakeRect(f.origin.x, f.origin.y, w, f.size.height) : e == 1 ? NSMakeRect(f.origin.x, f.origin.y, f.size.width, w) : e == 2 ? NSMakeRect(NSMaxX(f) - w, f.origin.y, w, f.size.height) : NSMakeRect(f.origin.x, NSMaxY(f) - w, f.size.width, w); NSRectFill(b); } }
+@end
+
+@implementation NSTextTable
+- (NSUInteger)numberOfColumns { return _cols; } - (void)setNumberOfColumns:(NSUInteger)n { _cols = n; }
+- (NSInteger)layoutAlgorithm { return _layout; } - (void)setLayoutAlgorithm:(NSInteger)a { _layout = a; }
+- (BOOL)collapsesBorders { return _collapse; } - (void)setCollapsesBorders:(BOOL)f { _collapse = f; }
+- (BOOL)hidesEmptyCells { return _hide; } - (void)setHidesEmptyCells:(BOOL)f { _hide = f; }
+- (id)copyWithZone:(NSZone *)z { NSTextTable *c = [super copyWithZone:z]; c->_cols = _cols; c->_layout = _layout; c->_collapse = _collapse; c->_hide = _hide; return c; }
+- (NSRect)rectForBlock:(NSTextBlock *)b layoutAtPoint:(NSPoint)p inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)cr {
+  NSTextTableBlock *tb = [b isKindOfClass:[NSTextTableBlock class]] ? (NSTextTableBlock *)b : nil; NSUInteger n = _cols ? _cols : 1;
+  CGFloat cw = r.size.width / n; CGFloat x = r.origin.x + (tb ? tb->_col * cw : 0), w = tb ? cw * tb->_cspan : r.size.width;
+  NSRect cell = NSMakeRect(x, p.y, w, 0); return [b isKindOfClass:[NSTextBlock class]] ? [b _xefBaseRect:NSMakePoint(x, p.y) inRect:cell] : NSZeroRect; }
+- (NSRect)boundsRectForBlock:(NSTextBlock *)b contentRect:(NSRect)cr inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)range { return [b boundsRectForContentRect:cr inRect:r textContainer:c characterRange:range]; }
+- (void)drawBackgroundForBlock:(NSTextBlock *)b withFrame:(NSRect)f inView:(NSView *)v characterRange:(NSRange)r layoutManager:(NSLayoutManager *)lm { [b drawBackgroundWithFrame:f inView:v characterRange:r layoutManager:lm]; }
+@end
+
+@implementation NSTextTableBlock
+- (id)initWithTable:(NSTextTable *)t startingRow:(NSInteger)r rowSpan:(NSInteger)rs startingColumn:(NSInteger)c columnSpan:(NSInteger)cs { self = [super init]; _table = t; _row = r; _rspan = rs; _col = c; _cspan = cs; return self; }
+- (NSTextTable *)table { return _table; } - (NSInteger)startingRow { return _row; } - (NSInteger)rowSpan { return _rspan; } - (NSInteger)startingColumn { return _col; } - (NSInteger)columnSpan { return _cspan; }
+- (NSRect)rectForLayoutAtPoint:(NSPoint)p inRect:(NSRect)r textContainer:(NSTextContainer *)c characterRange:(NSRange)cr { return _table ? [_table rectForBlock:self layoutAtPoint:p inRect:r textContainer:c characterRange:cr] : [super rectForLayoutAtPoint:p inRect:r textContainer:c characterRange:cr]; }
+@end
+
+/* ---- sharing ---- */
+@implementation NSSharingService
+- (id)initWithTitle:(NSString *)t image:(NSImage *)i alternateImage:(NSImage *)a handler:(void (^)(void))h {
+  self = [super init]; _title = [t copy]; _menuTitle = [t copy]; _image = [i retain]; _alt = [(a ? a : i) retain]; _handler = h ? Block_copy(h) : NULL; return self; }
+- (void)dealloc { [_title release]; [_menuTitle release]; [_subject release]; [_name release]; [_image release]; [_alt release]; [_recipients release]; if (_handler) Block_release(_handler); [super dealloc]; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (NSString *)title { return _title; } - (NSImage *)image { return _image; } - (NSImage *)alternateImage { return _alt; }
+- (NSString *)menuItemTitle { return _menuTitle; } - (void)setMenuItemTitle:(NSString *)t { [t retain]; [_menuTitle release]; _menuTitle = t; }
+- (NSArray *)recipients { return _recipients; } - (void)setRecipients:(NSArray *)r { [r retain]; [_recipients release]; _recipients = r; }
+- (NSString *)subject { return _subject; } - (void)setSubject:(NSString *)s { [s retain]; [_subject release]; _subject = s; }
+- (NSString *)messageBody { return nil; } - (id)permanentLink { return nil; } - (NSString *)accountName { return nil; } - (NSArray *)attachmentFileURLs { return nil; }
++ (NSArray *)sharingServicesForItems:(NSArray *)items {
+  if (![items count]) return [NSArray array]; NSMutableArray *a = [NSMutableArray array];
+  for (NSString *t in [NSArray arrayWithObjects:@"Mail", @"Messages", @"AirDrop", @"Notes", @"Reminders", @"Add to Reading List", @"Freeform", @"Add to Photos", nil]) [a addObject:[[[NSSharingService alloc] initWithTitle:t image:nil alternateImage:nil handler:NULL] autorelease]];
+  return a; }
++ (NSSharingService *)sharingServiceNamed:(NSString *)n {
+  if (![n hasPrefix:@"com.apple.share."] && ![n hasPrefix:@"com.apple.Notes"] && ![n hasPrefix:@"com.apple.reminders"]) return nil;
+  NSString *t = [n rangeOfString:@"Mail"].location != NSNotFound ? @"Mail" : [n hasSuffix:@"Message"] ? @"Messages" : [n hasSuffix:@"AirDrop"] ? @"AirDrop" : @"Share";
+  NSSharingService *s = [[[NSSharingService alloc] initWithTitle:t image:nil alternateImage:nil handler:NULL] autorelease]; s->_name = [n copy]; return s; }
+- (BOOL)canPerformWithItems:(NSArray *)items { return items != nil && [items count] > 0; }
+- (void)performWithItems:(NSArray *)items { if (_handler) _handler(); }
+@end
+@implementation NSSharingServicePicker
+- (id)initWithItems:(NSArray *)i { self = [super init]; _items = [i copy]; return self; }
+- (void)dealloc { [_items release]; [super dealloc]; }
+- (id)delegate { return _delegate; } - (void)setDelegate:(id)d { _delegate = d; }
+- (void)showRelativeToRect:(NSRect)r ofView:(NSView *)v preferredEdge:(NSUInteger)e {} - (void)close {}
+- (NSMenuItem *)standardShareMenuItem { return [[[NSMenuItem alloc] initWithTitle:@"Share…" action:NULL keyEquivalent:@""] autorelease]; }
+@end
+
+/* ---- NSInputManager (obsolete; currentInputManager is nil on current macOS) ---- */
+@implementation NSInputManager
++ (NSInputManager *)currentInputManager { return nil; }
++ (void)cycleToNextInputLanguage:(id)s {} + (void)cycleToNextInputServerInLanguage:(id)s {}
+- (id)initWithName:(NSString *)n host:(NSString *)h { self = [super init]; _name = [n copy]; return self; }
+- (void)dealloc { [_name release]; [super dealloc]; }
+- (NSString *)localizedInputManagerName { return _name; }
+- (void)markedTextAbandoned:(id)c {} - (void)markedTextSelectionChanged:(NSRange)r client:(id)c {}
+- (BOOL)wantsToInterpretAllKeystrokes { return NO; } - (NSString *)language { return @"en"; } - (NSImage *)image { return nil; } - (id)server { return nil; }
+- (BOOL)wantsToHandleMouseEvents { return NO; } - (BOOL)handleMouseEvent:(NSEvent *)e { return NO; } - (BOOL)wantsToDelayTextChangeNotifications { return NO; }
+- (void)insertText:(id)s {} - (void)doCommandBySelector:(SEL)s {} - (void)setMarkedText:(id)t selectedRange:(NSRange)r {} - (void)unmarkText {} - (BOOL)hasMarkedText { return NO; }
+- (NSInteger)conversationIdentifier { return 0; } - (NSAttributedString *)attributedSubstringFromRange:(NSRange)r { return nil; }
+- (NSRange)markedRange { return NSMakeRange(NSNotFound, 0); } - (NSRange)selectedRange { return NSMakeRange(NSNotFound, 0); }
+- (NSRect)firstRectForCharacterRange:(NSRange)r { return NSZeroRect; } - (NSUInteger)characterIndexForPoint:(NSPoint)p { return NSNotFound; } - (NSArray *)validAttributesForMarkedText { return [NSArray array]; }
 @end
