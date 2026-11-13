@@ -10,7 +10,6 @@ NSAlignmentFeedbackFilter
 NSBackgroundExtensionView
 NSBindingSelectionMarker
 NSCIImageRep
-NSCandidateListTouchBarItem
 NSCollectionLayoutAnchor
 NSCollectionLayoutItem
 NSCollectionLayoutSupplementaryItem
@@ -32,7 +31,6 @@ NSCollectionViewGridLayout
 NSCollectionViewTransitionLayout
 NSCollectionViewUpdateItem
 NSColorPicker
-NSColorPickerTouchBarItem
 NSColorSampler
 NSComboButton
 NSDataAsset
@@ -51,7 +49,6 @@ NSGlyphGenerator
 NSGlyphInfo
 NSHelpManager
 NSImageSymbolConfiguration
-NSInputServer
 NSItemBadge
 NSManagedObjectContext
 NSMediaLibraryBrowserController
@@ -70,7 +67,6 @@ NSPDFPanel
 NSPICTImageRep
 NSPageLayout
 NSPersistentDocument
-NSPopoverTouchBarItem
 NSPredicateEditor
 NSPredicateEditorRowTemplate
 NSPressureConfiguration
@@ -92,7 +88,6 @@ NSSliderAccessoryBehavior
 NSSpeechRecognizer
 NSSplitViewItemAccessoryViewController
 NSStatusBarButton
-NSStepperTouchBarItem
 NSStoryboardSegue
 NSStringDrawingContext
 NSTableViewDiffableDataSource
@@ -100,8 +95,6 @@ NSTableViewRowAction
 NSTextAlternatives
 NSTextAttachmentCell
 NSTextAttachmentViewProvider
-NSTextCheckingController
-NSTextFinder
 NSTextInsertionIndicator
 NSTextList
 NSTextListElement
@@ -115,6 +108,5 @@ NSViewLayoutRegion
 NSWindowTab
 NSWindowTabGroup
 NSWorkspaceAuthorization
-NSWritingToolsCoordinator
 NSWritingToolsCoordinatorAnimationParameters
 NSWritingToolsCoordinatorContext

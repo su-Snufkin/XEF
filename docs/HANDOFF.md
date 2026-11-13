@@ -1174,3 +1174,10 @@ New `AppKitTextKit2.m/.h`: NSTextRange, NSCountableTextLocation, NSTextElement/N
 - NSTextBlock/NSTextTable/NSTextTableBlock (AppKitTextKit2.m, test `appkit_textblock`), NSSharingService/Picker and NSInputManager (`appkit_sharing`; `+currentInputManager` is nil on macOS).
 - System images behind NSImageName*: `tools/dump_named_images.m` + `tools/capture_named_images.sh` dump them from the user's Mac into `darwin-rootfs/.../AppKit.framework/Resources/NamedImages` (not committed; build_appkit_only.sh runs it the first time); `+[NSImage imageNamed:]` falls back to them (AppKitAssets.m). Test `appkit_namedimages`.
 - Coverage 6815 of 8257; 137/138 macref pass (only the Foundation `foundation_more` fails).
+
+## 52. Misc classes, Touch Bar items, bitmap rep extras; API extractor fix
+
+- **tools/appkit_headers.py bug fixed**: an empty `@interface X () <P>` followed directly by `@end` made the regex swallow the next block, so NSView's constraint categories were attributed to NSLayoutConstraint. Totals are now 8275 public methods (was 8257).
+- New `AppKitMisc.m/.h`: NSUserInterfaceCompressionOptions, NSFontCollection (+named collections), NSTitlebarAccessoryViewController, NSApplication extras (sheets, search, remote notifications), NSColorPicker/Stepper/Popover/CandidateList Touch Bar items, NSWritingToolsCoordinator, NSTextFinder, NSTextCheckingController, NSInputServer, NSSpellChecker extras, NSBitmapImageRep (compression, properties, colour space conversion), NSBrowser/NSDocument/NSLayoutManager extras. Tests `appkit_misc3/4/5`.
+- Gotcha: inside the framework, `initWithBitmapDataPlanes:…colorSpaceName:bytesPerRow:bitsPerPixel:` (without bitmapFormat) returned nil for a 1-sample gray rep; call the bitmapFormat: form.
+- Coverage 7127 of 8275.
