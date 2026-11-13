@@ -2,6 +2,8 @@
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+# the rootfs data (time zones, ...) comes from tools/setup_darwin_rootfs_data.sh; a fresh checkout/container lacks it
+[ -d darwin-rootfs/var/db/timezone/zoneinfo ] || bash tools/setup_darwin_rootfs_data.sh >/dev/null 2>&1
 BUILD_DIR="$DIR/../../build"
 XEF_OSX="$BUILD_DIR/xef-osx"
 

@@ -1216,3 +1216,8 @@ Remaining odds and ends: NSSplitViewController/NSTabViewController delegate hook
 ## 60. Gap accounting
 
 `tools/appkit_exempt.txt` lists the 35 selectors the SDK headers declare on NSObject/NSApplication categories (informal-protocol delegate/data-source hooks such as controlTextDidChange:, validateMenuItem:, draggedImage:…, application:printFiles:) that macOS itself does not implement. `tools/verify_exempt.sh` re-checks that on the Mac (`checked 35, mac implements 0`) and `tools/appkit_api.py` leaves them out, so `tools/appkit_gap.sh` now reports 8240 public methods, 8240 implemented, 0 missing. Adding them to NSObject would be wrong (delegate dispatch uses respondsToSelector:).
+
+## 61. foundation_more root cause
+
+`foundation_more` failed ("Cannot set nil objects nor nil keys") only because `darwin-rootfs/var/db/timezone/zoneinfo` was missing in a fresh container (`tools/setup_darwin_rootfs_data.sh` had not been run), so `+[NSTimeZone timeZoneWithName:@"UTC"]` was nil — not an AppKit or Foundation bug. `tests/darwin/macref.sh` and `tests/darwin/run_tests.sh` now run that script when the directory is missing. Result: 149/149 macref tests pass, run_tests.sh passes, gap report 8240/8240 (35 informal-protocol hooks exempt, see §60).
+Scope note: Core Data, Core Image, QuickTime and PICT are separate frameworks; AppKit's own additions to them exist as stubs (host has no such frameworks).

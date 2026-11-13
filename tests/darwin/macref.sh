@@ -5,6 +5,8 @@
 cd "$(dirname "$0")/../.."
 X=build/xef-osx
 OUT=${TMPDIR:-/tmp}/xef-macref; mkdir -p $OUT
+# the rootfs data (time zones, ...) comes from tools/setup_darwin_rootfs_data.sh; a fresh checkout/container lacks it
+[ -d darwin-rootfs/var/db/timezone/zoneinfo ] || bash tools/setup_darwin_rootfs_data.sh >/dev/null 2>&1
 rsync -az --delete tests/darwin/mac/ mac:xef-remote/src/macref/
 names=("$@"); [ ${#names[@]} -eq 0 ] && names=($(cd tests/darwin/mac; ls *.c *.cpp *.m 2>/dev/null | sed 's/\.[^.]*$//'))
 pass=0; fail=0
