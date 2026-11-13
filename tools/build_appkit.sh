@@ -47,7 +47,7 @@ mk AppKit C
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/AppKit.m -o $O/AppKit.o
 clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/AppKitNib.m -o $O/AppKitNib.o
 APPKIT_OBJS="$O/AppKit.o $O/AppKitNib.o"
-for m in AppKitFunctions AppKitGraphics AppKitControls AppKitControls2 AppKitTable AppKitView AppKitLayout AppKitControllers AppKitModel AppKitGenerated AppKitMenu AppKitAssets AppKitFoundationCompat AppKitDocument AppKitText AppKitTextKit2 AppKitMisc AppKitMisc2 AppKitMisc3 AppKitMisc4 AppKitMisc5 AppKitMisc6 AppKitMisc7 AppKitMisc8; do
+for m in AppKitFunctions AppKitGraphics AppKitControls AppKitControls2 AppKitTable AppKitView AppKitLayout AppKitControllers AppKitModel AppKitGenerated AppKitMenu AppKitAssets AppKitFoundationCompat AppKitDocument AppKitText AppKitTextKit2 AppKitMisc AppKitMisc2 AppKitMisc3 AppKitMisc4 AppKitMisc5 AppKitMisc6 AppKitMisc7 AppKitMisc8 AppKitMisc9; do
   clang $COMMON -O2 -w -fno-objc-arc -fobjc-exceptions -fblocks -isysroot $SDK -I$S -c $S/$m.m -o $O/$m.o
   APPKIT_OBJS="$APPKIT_OBJS $O/$m.o"
 done

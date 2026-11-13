@@ -135,6 +135,11 @@ static void put(NSMutableDictionary *d, NSString *k, id v) { if (v) d[k] = v; el
 }
 @end
 @implementation NSSplitViewController
+- (CGFloat)minimumThicknessForInlineSidebars { NSNumber *n = objc_getAssociatedObject(self, "xef.mtis"); return n ? [n doubleValue] : -3.4028234663852886e+38; } - (void)setMinimumThicknessForInlineSidebars:(CGFloat)t { objc_setAssociatedObject(self, "xef.mtis", [NSNumber numberWithDouble:t], OBJC_ASSOCIATION_RETAIN); }
+- (BOOL)splitView:(NSSplitView *)sv shouldCollapseSubview:(NSView *)v forDoubleClickOnDividerAtIndex:(NSInteger)i { return NO; }
+- (BOOL)splitView:(NSSplitView *)sv shouldHideDividerAtIndex:(NSInteger)i { return NO; }
+- (NSRect)splitView:(NSSplitView *)sv effectiveRect:(NSRect)r forDrawnRect:(NSRect)d ofDividerAtIndex:(NSInteger)i { return r; }
+- (NSRect)splitView:(NSSplitView *)sv additionalEffectiveRectOfDividerAtIndex:(NSInteger)i { return NSZeroRect; }
 - (id)initWithNibName:(NSString *)n bundle:(NSBundle *)b { if ((self = [super initWithNibName:n bundle:b])) { _items = [[NSMutableArray alloc] init]; } return self; }
 - (id)initWithCoder:(NSCoder *)c { if ((self = [super initWithCoder:c])) { _items = [[NSMutableArray alloc] init]; } return self; }
 - (void)dealloc { [_sv release]; [_items release]; [super dealloc]; }
@@ -180,6 +185,9 @@ static void put(NSMutableDictionary *d, NSString *k, id v) { if (v) d[k] = v; el
 }
 @end
 @implementation NSTabViewController
+- (void)tabView:(NSTabView *)tv willSelectTabViewItem:(NSTabViewItem *)i {} - (BOOL)tabView:(NSTabView *)tv shouldSelectTabViewItem:(NSTabViewItem *)i { return YES; }
+- (id)toolbar:(id)t itemForItemIdentifier:(NSString *)i willBeInsertedIntoToolbar:(BOOL)f { return nil; }
+- (NSArray *)toolbarDefaultItemIdentifiers:(id)t { return [NSArray array]; } - (NSArray *)toolbarAllowedItemIdentifiers:(id)t { return [NSArray array]; } - (NSArray *)toolbarSelectableItemIdentifiers:(id)t { return [NSArray array]; }
 - (void)_xefInit { _items = [[NSMutableArray alloc] init]; _sel = -1; _propagate = YES; _transition = 0x1000; }
 - (id)initWithNibName:(NSString *)n bundle:(NSBundle *)b { if ((self = [super initWithNibName:n bundle:b])) [self _xefInit]; return self; }
 - (id)initWithCoder:(NSCoder *)c { if ((self = [super initWithCoder:c])) [self _xefInit]; return self; }

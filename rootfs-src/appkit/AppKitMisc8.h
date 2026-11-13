@@ -174,3 +174,45 @@
 - (BOOL)readFromData:(NSData *)d options:(NSDictionary *)o documentAttributes:(NSDictionary **)a error:(NSError **)e; - (BOOL)readFromURL:(NSURL *)u options:(NSDictionary *)o documentAttributes:(NSDictionary **)a error:(NSError **)e;
 - (BOOL)readFromData:(NSData *)d options:(NSDictionary *)o documentAttributes:(NSDictionary **)a; - (BOOL)readFromURL:(NSURL *)u options:(NSDictionary *)o documentAttributes:(NSDictionary **)a; - (void)updateAttachmentsFromPath:(NSString *)p;
 @end
+
+@interface NSMovie (XEFMisc)
+- (id)initWithCoder:(NSCoder *)c; - (id)initWithMovie:(id)m; - (id)QTMovie;
+@end
+@interface NSBindingSelectionMarker (XEFMisc)
++ (void)setDefaultPlaceholder:(id)p forMarker:(NSBindingSelectionMarker *)m onClass:(Class)c withBinding:(NSString *)b; + (id)defaultPlaceholderForMarker:(NSBindingSelectionMarker *)m onClass:(Class)c withBinding:(NSString *)b;
+@end
+@interface NSController (XEFMisc)
+- (void)commitEditingWithDelegate:(id)d didCommitSelector:(SEL)s contextInfo:(void *)ci;
+@end
+@interface NSSavePanel (XEFMisc)
+@end
+@interface NSOpenPanel (XEFMisc3)
+- (void)beginSheetForDirectory:(NSString *)d file:(NSString *)f types:(NSArray *)t modalForWindow:(NSWindow *)w modalDelegate:(id)md didEndSelector:(SEL)s contextInfo:(void *)ci;
+- (void)beginForDirectory:(NSString *)d file:(NSString *)f types:(NSArray *)t modelessDelegate:(id)md didEndSelector:(SEL)s contextInfo:(void *)ci;
+@end
+@interface NSTableHeaderView (XEFMisc)
+- (NSString *)view:(NSView *)v stringForToolTip:(NSInteger)tag point:(NSPoint)p userData:(void *)u;
+@end
+@interface NSTypesetter (XEFMisc)
+- (NSUInteger)getGlyphsInRange:(NSRange)r glyphs:(NSGlyph *)g characterIndexes:(NSUInteger *)c glyphInscriptions:(NSInteger *)i elasticBits:(BOOL *)e bidiLevels:(unsigned char *)b;
+- (void)substituteGlyphsInRange:(NSRange)r withGlyphs:(NSGlyph *)g; - (void)insertGlyph:(NSGlyph)g atGlyphIndex:(NSUInteger)i characterIndex:(NSUInteger)c; - (void)deleteGlyphsInRange:(NSRange)r;
+@end
+@interface NSAttributedString (XEFAppKit3)
++ (id)attributedStringWithAdaptiveImageGlyph:(id)g attributes:(NSDictionary *)a; - (NSFileWrapper *)fileWrapperFromRange:(NSRange)r documentAttributes:(NSDictionary *)d error:(NSError **)e; - (NSData *)docFormatFromRange:(NSRange)r documentAttributes:(NSDictionary *)d;
+@end
+@interface NSEvent (XEFMisc)
+- (id)context;
+@end
+@interface NSGraphicsContext (XEFMisc)
+- (id)CIContext; + (void)setGraphicsState:(NSInteger)g;
+@end
+@interface NSPopover (XEFMisc2)
+- (id)initWithCoder:(NSCoder *)c;
+@end
+@interface NSTextSelection (XEFMisc) - (id)initWithCoder:(NSCoder *)c; @end
+@interface NSTextLineFragment (XEFMisc) - (id)initWithCoder:(NSCoder *)c; @end
+@interface NSTextLayoutFragment (XEFMisc) - (id)initWithCoder:(NSCoder *)c; @end
+@interface NSTextContentManager (XEFMisc) - (id)initWithCoder:(NSCoder *)c; @end
+@interface NSObject (XEFBindingPlaceholders)
++ (void)setDefaultPlaceholder:(id)p forMarker:(id)m withBinding:(NSString *)b; + (id)defaultPlaceholderForMarker:(id)m withBinding:(NSString *)b;
+@end

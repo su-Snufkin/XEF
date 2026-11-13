@@ -1,6 +1,7 @@
 /* The last small classes and extras; matched against macOS by tests/darwin/mac/appkit_misc12.m. */
 #import "AppKitMisc8.h"
 #include <objc/runtime.h>
+#include <objc/message.h>
 
 #define STR(iv, getter, setter) - (NSString *)getter { return iv; } - (void)setter:(NSString *)v { [v retain]; [iv release]; iv = v; }
 
@@ -234,4 +235,57 @@
 - (BOOL)readFromData:(NSData *)d options:(NSDictionary *)o documentAttributes:(NSDictionary **)a { return [self readFromData:d options:o documentAttributes:a error:NULL]; }
 - (BOOL)readFromURL:(NSURL *)u options:(NSDictionary *)o documentAttributes:(NSDictionary **)a { return [self readFromURL:u options:o documentAttributes:a error:NULL]; }
 - (void)updateAttachmentsFromPath:(NSString *)p {}
+@end
+
+/* ---- the remaining odds and ends ---- */
+@implementation NSMovie (XEFMisc)
+- (id)initWithCoder:(NSCoder *)c { return [self init]; } - (id)initWithMovie:(id)m { return [self init]; } - (id)QTMovie { return nil; }
+@end
+static NSMutableDictionary *g_bsm_ph;
+@implementation NSBindingSelectionMarker (XEFMisc)
++ (void)setDefaultPlaceholder:(id)p forMarker:(NSBindingSelectionMarker *)m onClass:(Class)c withBinding:(NSString *)b { if (!g_bsm_ph) g_bsm_ph = [[NSMutableDictionary alloc] init]; NSString *k = [NSString stringWithFormat:@"%@/%@/%@", m, NSStringFromClass(c), b]; if (p) [g_bsm_ph setObject:p forKey:k]; else [g_bsm_ph removeObjectForKey:k]; }
++ (id)defaultPlaceholderForMarker:(NSBindingSelectionMarker *)m onClass:(Class)c withBinding:(NSString *)b { return [g_bsm_ph objectForKey:[NSString stringWithFormat:@"%@/%@/%@", m, NSStringFromClass(c), b]]; }
+@end
+@implementation NSController (XEFMisc)
+- (void)commitEditingWithDelegate:(id)d didCommitSelector:(SEL)s contextInfo:(void *)ci { BOOL ok = [self commitEditing]; if (d && s && [d respondsToSelector:s]) { void (*f)(id, SEL, id, BOOL, void *) = (void (*)(id, SEL, id, BOOL, void *))objc_msgSend; f(d, s, self, ok, ci); } }
+@end
+@implementation NSOpenPanel (XEFMisc3)
+- (void)beginSheetForDirectory:(NSString *)d file:(NSString *)f types:(NSArray *)t modalForWindow:(NSWindow *)w modalDelegate:(id)md didEndSelector:(SEL)s contextInfo:(void *)ci {
+  if (d) [self setDirectoryURL:[NSURL fileURLWithPath:d]]; if (t) [self setAllowedFileTypes:t];
+  [self beginSheetModalForWindow:w completionHandler:^(NSModalResponse r) { if (md && s && [md respondsToSelector:s]) { void (*fn)(id, SEL, id, NSInteger, void *) = (void (*)(id, SEL, id, NSInteger, void *))objc_msgSend; fn(md, s, self, (NSInteger)r, ci); } }]; }
+- (void)beginForDirectory:(NSString *)d file:(NSString *)f types:(NSArray *)t modelessDelegate:(id)md didEndSelector:(SEL)s contextInfo:(void *)ci {
+  if (d) [self setDirectoryURL:[NSURL fileURLWithPath:d]]; if (t) [self setAllowedFileTypes:t];
+  [self beginWithCompletionHandler:^(NSModalResponse r) { if (md && s && [md respondsToSelector:s]) { void (*fn)(id, SEL, id, NSInteger, void *) = (void (*)(id, SEL, id, NSInteger, void *))objc_msgSend; fn(md, s, self, (NSInteger)r, ci); } }]; }
+@end
+@implementation NSTableHeaderView (XEFMisc)
+- (NSString *)view:(NSView *)v stringForToolTip:(NSInteger)tag point:(NSPoint)p userData:(void *)u { return nil; }
+@end
+@implementation NSTypesetter (XEFMisc)
+- (NSUInteger)getGlyphsInRange:(NSRange)r glyphs:(NSGlyph *)g characterIndexes:(NSUInteger *)c glyphInscriptions:(NSInteger *)i elasticBits:(BOOL *)e bidiLevels:(unsigned char *)b { return 0; }
+- (void)substituteGlyphsInRange:(NSRange)r withGlyphs:(NSGlyph *)g {} - (void)insertGlyph:(NSGlyph)g atGlyphIndex:(NSUInteger)i characterIndex:(NSUInteger)c {} - (void)deleteGlyphsInRange:(NSRange)r {}
+@end
+@implementation NSAttributedString (XEFAppKit3)
++ (id)attributedStringWithAdaptiveImageGlyph:(id)g attributes:(NSDictionary *)a { return [[[NSAttributedString alloc] initWithString:@"￼" attributes:a] autorelease]; }
+- (NSFileWrapper *)fileWrapperFromRange:(NSRange)r documentAttributes:(NSDictionary *)d error:(NSError **)e { NSData *x = [self RTFFromRange:r documentAttributes:d ? d : @{}]; return x ? [[[NSFileWrapper alloc] initRegularFileWithContents:x] autorelease] : nil; }
+- (NSData *)docFormatFromRange:(NSRange)r documentAttributes:(NSDictionary *)d { return nil; }
+@end
+@implementation NSEvent (XEFMisc)
+- (id)context { return nil; }
+@end
+@implementation NSGraphicsContext (XEFMisc)
+- (id)CIContext { return nil; } + (void)setGraphicsState:(NSInteger)g {}
+@end
+@implementation NSPopover (XEFMisc2)
+- (id)initWithCoder:(NSCoder *)c { return [self init]; }
+@end
+@implementation NSTextSelection (XEFMisc) - (id)initWithCoder:(NSCoder *)c { return [self initWithLocation:((id (*)(id, SEL, NSInteger))objc_msgSend)((id)objc_getClass("NSCountableTextLocation"), sel_registerName("at:"), 0) affinity:0]; } @end
+@implementation NSTextLineFragment (XEFMisc) - (id)initWithCoder:(NSCoder *)c { return [self initWithString:@"" attributes:nil range:NSMakeRange(0, 0)]; } @end
+@implementation NSTextLayoutFragment (XEFMisc) - (id)initWithCoder:(NSCoder *)c { return [self initWithTextElement:nil range:nil]; } @end
+@implementation NSTextContentManager (XEFMisc) - (id)initWithCoder:(NSCoder *)c { return [self init]; } @end
+
+/* NSObject's class-level binding placeholders */
+static NSMutableDictionary *g_obj_ph;
+@implementation NSObject (XEFBindingPlaceholders)
++ (void)setDefaultPlaceholder:(id)p forMarker:(id)m withBinding:(NSString *)b { if (!g_obj_ph) g_obj_ph = [[NSMutableDictionary alloc] init]; NSString *k = [NSString stringWithFormat:@"%@/%@/%@", NSStringFromClass(self), m, b]; if (p) [g_obj_ph setObject:p forKey:k]; else [g_obj_ph removeObjectForKey:k]; }
++ (id)defaultPlaceholderForMarker:(id)m withBinding:(NSString *)b { return [g_obj_ph objectForKey:[NSString stringWithFormat:@"%@/%@/%@", NSStringFromClass(self), m, b]]; }
 @end

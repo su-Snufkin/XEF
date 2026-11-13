@@ -471,6 +471,8 @@ static NSStoryboard *g_main_storyboard;
   if (!c) for (id t in top) if ([t isKindOfClass:[NSViewController class]] || [t isKindOfClass:[NSWindowController class]]) c = t;
   return c;
 }
+- (id)instantiateInitialControllerWithCreator:(id)c { return [self instantiateInitialController]; }
+- (id)instantiateControllerWithIdentifier:(NSString *)ident creator:(id)c { return [self instantiateControllerWithIdentifier:ident]; }
 - (id)instantiateInitialController {
   NSString *entry = [_info objectForKey:@"NSStoryboardDesignatedEntryPointIdentifier"];
   return entry ? [self instantiateControllerWithIdentifier:entry] : nil;
