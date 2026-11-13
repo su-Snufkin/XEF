@@ -106,6 +106,7 @@
 - (NSData *)PICTRepresentation { return _d; } - (NSRect)boundingBox { return _bb; }
 @end
 @implementation NSMovie
+- (id)init { [self release]; return nil; }   /* QuickTime movies are gone: init fails on current macOS too */
 @end
 
 @implementation NSToolbarItemGroup (XEFMisc)
@@ -239,7 +240,7 @@
 
 /* ---- the remaining odds and ends ---- */
 @implementation NSMovie (XEFMisc)
-- (id)initWithCoder:(NSCoder *)c { return [self init]; } - (id)initWithMovie:(id)m { return [self init]; } - (id)QTMovie { return nil; }
+- (id)initWithCoder:(NSCoder *)c { [self release]; return nil; } - (id)initWithMovie:(id)m { [self release]; return nil; } - (id)QTMovie { return nil; }
 @end
 static NSMutableDictionary *g_bsm_ph;
 @implementation NSBindingSelectionMarker (XEFMisc)

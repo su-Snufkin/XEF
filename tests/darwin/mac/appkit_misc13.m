@@ -14,4 +14,5 @@ int main(void){ @autoreleasepool { [NSApplication sharedApplication];
  NSAttributedString *as=[NSAttributedString attributedStringWithAdaptiveImageGlyph:nil attributes:@{}] ; printf("adaptive %d\n",1);
  NSMovie *mv=nil; printf("movie %d\n",NSClassFromString(@"NSMovie")!=nil);
  printf("tableheader tip %d\n",[[[NSTableHeaderView alloc] init] view:nil stringForToolTip:0 point:NSZeroPoint userData:NULL]==nil);
+ { NSMovie *m=[[NSMovie alloc] init]; printf("movie init %d\n",m!=nil); NSPICTImageRep *pr=[NSPICTImageRep imageRepWithData:[@"junk" dataUsingEncoding:NSUTF8StringEncoding]]; printf("pict garbage %d\n",pr!=nil); }
  return 0;}}

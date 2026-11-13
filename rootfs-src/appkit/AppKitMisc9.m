@@ -27,7 +27,7 @@ static void imp_commit_delegate(id s, SEL c, id d, SEL sel, void *ci) { if (d &&
 static id imp_cirep_make(id cls, SEL c, id img) { return [[[cls alloc] init] autorelease]; }
 static id imp_cirep_init(id s, SEL c, id img) { return [s init]; }
 static BOOL imp_pdoc_cfg2(id s, SEL c, id u, id t, NSError **e) { return YES; }
-static id imp_pdoc_type(id s, SEL c, id t) { return @"SQLite"; }
+static id imp_pdoc_type(id s, SEL c, id t) { return @"XML"; }
 static BOOL imp_pdoc_cfg(id s, SEL c, id u, id t, id mc, id so, NSError **e) { return YES; }
 
 __attribute__((constructor)) static void xef_misc9(void) {
