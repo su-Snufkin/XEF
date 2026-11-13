@@ -16,6 +16,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import appkit_headers  # noqa: E402
 
 classes, _ = appkit_headers.parse_dir(sys.argv[1])
+exempt = set()
+for line in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'appkit_exempt.txt')):
+    if line.strip() and not line.startswith('#'):
+        c, sel = line.split()
+        exempt.add((c, sel))
 for name, info in classes.items():
     for m in info['methods'].values():
+        if (name, m.kind + m.sel) in exempt:
+            continue
         print('%s\t%s\t%s\t%s' % (name, m.kind, m.sel, m.dep))

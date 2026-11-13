@@ -1,0 +1,37 @@
+# Selectors the SDK headers list on NSObject/NSApplication categories (informal protocols) that macOS itself does NOT implement.
+# Verified on the Mac with instancesRespondToSelector:/respondsToSelector: (tools/verify_exempt.sh): 0 of these respond. tools/appkit_api.py leaves them out.
+NSObject -application:delegateHandlesKey:
+NSObject -changeColor:
+NSObject -controlTextDidBeginEditing:
+NSObject -controlTextDidEndEditing:
+NSObject -controlTextDidChange:
+NSObject -namesOfPromisedFilesDroppedAtDestination:
+NSObject -draggingSourceOperationMaskForLocal:
+NSObject -draggedImage:beganAt:
+NSObject -draggedImage:endedAt:operation:
+NSObject -draggedImage:movedTo:
+NSObject -ignoreModifierKeysWhileDragging
+NSObject -draggedImage:endedAt:deposited:
+NSObject -fontManager:willIncludeFont:
+NSObject -changeFont:
+NSObject -validModesForFontPanel:
+NSObject -discardEditing
+NSObject -commitEditing
+NSObject -commitEditingWithDelegate:didCommitSelector:contextInfo:
+NSObject -commitEditingAndReturnError:
+NSObject -objectDidBeginEditing:
+NSObject -objectDidEndEditing:
+NSObject -validateMenuItem:
+NSObject -pasteboard:provideDataForType:
+NSObject -pasteboardChangedOwner:
+NSObject -panel:isValidFilename:
+NSObject -panel:directoryDidChange:
+NSObject -panel:compareFilename:with:caseSensitive:
+NSObject -panel:shouldShowFilename:
+NSObject -tableView:writeRows:toPasteboard:
+NSObject -textStorageWillProcessEditing:
+NSObject -textStorageDidProcessEditing:
+NSObject -validateToolbarItem:
+NSObject -layer:shouldInheritContentsScale:fromWindow:
+NSObject -view:stringForToolTip:point:userData:
+NSApplication -application:printFiles:
